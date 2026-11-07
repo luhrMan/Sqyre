@@ -2,6 +2,42 @@
 
 use eframe::egui::{self, Pos2, Vec2};
 
+/// How long a marker drawn on a preview stays visible before it hides.
+/// A text caret is on for about half a second, then off for the same.
+const PREVIEW_MARKER_BLINK_ON: f64 = 0.53;
+const PREVIEW_MARKER_BLINK_PERIOD: f64 = PREVIEW_MARKER_BLINK_ON * 2.0;
+
+/// Whether `time_secs` (egui input time) falls in the visible half of the blink.
+pub(crate) fn preview_marker_visible_at(time_secs: f64) -> bool {
+    let t = if time_secs.is_finite() {
+        time_secs.max(0.0)
+    } else {
+        0.0
+    };
+    t.rem_euclid(PREVIEW_MARKER_BLINK_PERIOD) < PREVIEW_MARKER_BLINK_ON
+}
+
+/// Square-wave visibility for markers drawn on preview images.
+///
+/// Schedules a repaint at the next on/off edge so the mark keeps blinking
+/// while the preview is on screen, without a continuous repaint.
+pub(crate) fn preview_marker_blink_on(ctx: &egui::Context) -> bool {
+    let time = ctx.input(|i| i.time);
+    let t = if time.is_finite() { time.max(0.0) } else { 0.0 };
+    let into = t.rem_euclid(PREVIEW_MARKER_BLINK_PERIOD);
+    let until = if into < PREVIEW_MARKER_BLINK_ON {
+        PREVIEW_MARKER_BLINK_ON - into
+    } else {
+        PREVIEW_MARKER_BLINK_PERIOD - into
+    };
+    // One frame minimum so a pass that lands on the edge does not spin.
+    let until = until.clamp(0.016, PREVIEW_MARKER_BLINK_ON);
+    if let Ok(duration) = core::time::Duration::try_from_secs_f64(until) {
+        ctx.request_repaint_after(duration);
+    }
+    preview_marker_visible_at(time)
+}
+
 const IMAGE_ZOOM_MIN: f32 = 0.5;
 const IMAGE_ZOOM_MAX: f32 = 16.0;
 /// Fit-relative zoom at reset / first open: slightly under 1 so images aren't flush
@@ -410,5 +446,35 @@ mod tests {
         let padded = image_content_rect(vp, img, IMAGE_ZOOM_DEFAULT, Vec2::ZERO);
         assert!(padded.height() < r.height());
         assert!((padded.center().y - r.center().y).abs() < 0.01);
+    }
+
+    #[test]
+    fn preview_marker_blink_matches_a_caret() {
+        assert!(preview_marker_visible_at(0.0));
+        assert!(preview_marker_visible_at(0.4));
+        assert!(!preview_marker_visible_at(0.6));
+        assert!(!preview_marker_visible_at(1.0));
+        assert!(preview_marker_visible_at(1.1));
+
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(80.0, 40.0));
+        let phase = |time: f64| {
+            let on = std::cell::Cell::new(false);
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    on.set(preview_marker_blink_on(ui.ctx()));
+                },
+            );
+            out.drop_without_applying_deltas();
+            on.get()
+        };
+        assert!(phase(0.0));
+        assert!(!phase(0.6));
+        assert!(phase(1.1));
     }
 }

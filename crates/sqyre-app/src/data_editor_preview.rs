@@ -762,6 +762,14 @@ pub(crate) fn paint_grid_overlay_painter(
     rows: i32,
     cols: i32,
 ) {
+    if !rect.is_positive() {
+        return;
+    }
+    // Cell lines are the marker on a collection / disk preview. Blink them
+    // like a caret so the grid reads against a busy image.
+    if !image_view::preview_marker_blink_on(painter.ctx()) {
+        return;
+    }
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
     let stroke = egui::Stroke::new(1.0, theme::preview_grid_stroke());
@@ -1234,5 +1242,45 @@ mod tests {
             .query_all_by_role(egui::accesskit::Role::TextInput)
             .next()
             .is_some());
+    }
+
+    #[test]
+    fn collection_grid_blinks_off_like_a_cursor() {
+        let color = theme::preview_grid_stroke();
+        let count_at = |time: f64| {
+            let ctx = egui::Context::default();
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 160.0));
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    let rect =
+                        egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 80.0));
+                    paint_grid_overlay(ui, rect, 2, 2);
+                },
+            );
+            let n = marker_shapes(&out.shapes, color);
+            out.drop_without_applying_deltas();
+            n
+        };
+        // Border plus one row line and one column line.
+        assert_eq!(count_at(0.0), 3);
+        assert_eq!(count_at(0.6), 0);
+        assert_eq!(count_at(1.1), 3);
+    }
+
+    fn marker_shapes(shapes: &[egui::epaint::ClippedShape], color: egui::Color32) -> usize {
+        fn walk(shape: &egui::Shape, color: egui::Color32) -> usize {
+            match shape {
+                egui::Shape::Vec(v) => v.iter().map(|s| walk(s, color)).sum(),
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == color => 1,
+                egui::Shape::Rect(r) if r.stroke.color == color && r.stroke.width > 0.0 => 1,
+                _ => 0,
+            }
+        }
+        shapes.iter().map(|c| walk(&c.shape, color)).sum()
     }
 }

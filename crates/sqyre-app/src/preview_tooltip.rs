@@ -2,7 +2,7 @@
 
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
-use image::{Rgba, RgbaImage};
+use image::RgbaImage;
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
@@ -32,8 +32,17 @@ const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 /// Transient `NotReady` errors (stream restarting, first frame pending) retry
 /// after this much shorter window — the shared capturer may already be back.
 const RETRY_FAIL_TTL: Duration = Duration::from_millis(500);
-const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
 const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
+/// Point-marker ring radius in capture pixels (the raster ring sat near r = 7–8).
+const POINT_RING_RADIUS: f32 = 7.5;
+/// Point-marker crosshair half-length in capture pixels.
+const POINT_ARM: f32 = 15.0;
+/// Crosshair thickness in capture pixels.
+const POINT_STROKE_PX: f32 = 2.0;
+/// Search-area outline and grid thickness in capture pixels.
+const AREA_STROKE_PX: f32 = 1.0;
+/// Screen-pixel floor so a fitted preview still shows a blinking mark.
+const MARKER_MIN_STROKE: f32 = 1.5;
 /// In-flight preview capture. A slept PipeWire stream shows a spinner instead.
 const CAPTURE_PENDING: &str = "Capturing…";
 /// Half-size of the desktop outline box drawn around a point (px).
@@ -51,8 +60,16 @@ struct CacheEntry {
     caption: String,
     /// Absolute desktop region this texture was captured for (manual ↻ clears matches).
     coords: PreviewCoords,
+    /// Location mark in capture pixels. Painted each frame so it can blink.
+    marker: PreviewMarker,
     /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
     region: Option<Arc<RgbaImage>>,
+}
+
+struct ReadyPreview {
+    texture: TextureHandle,
+    caption: String,
+    marker: PreviewMarker,
 }
 
 struct FailureEntry {
@@ -72,8 +89,10 @@ struct PendingCapture {
 
 struct CapturedPreview {
     display: RgbaImage,
-    /// Exclusive `[left,right)×[top,bottom)` pixels before overlay/downscale.
+    /// Exclusive `[left,right)×[top,bottom)` pixels before downscale.
     region: Option<RgbaImage>,
+    /// Mark in pre-downscale capture pixels. Not baked into `display`.
+    marker: PreviewMarker,
 }
 
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
@@ -260,7 +279,9 @@ impl PreviewTooltipCache {
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
                 show_preview_hover_ui(response, |ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+                    Ok(ready) => {
+                        paint_preview(ui, &ready.texture, &ready.caption, show_size, ready.marker)
+                    }
                     Err(err) => paint_preview_status(ui, caption.as_str(), err),
                 });
             }
@@ -305,11 +326,12 @@ impl PreviewTooltipCache {
         match preview {
             // Tip/edit surface is viewport-relative (see action_tooltip::tip_max_width);
             // keep the smaller display fit so preview doesn't force the tip wider.
-            Ok((tex, cap)) => paint_preview(
+            Ok(ready) => paint_preview(
                 ui,
-                &tex,
-                &cap,
+                &ready.texture,
+                &ready.caption,
                 matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
+                ready.marker,
             ),
             Err(err) if choose_app => self.paint_no_saved_screen_inline(ui, &err),
             Err(err) => {
@@ -346,7 +368,7 @@ impl PreviewTooltipCache {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
                 match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
-                    Ok((tex, cap)) => Ok((tex, cap)),
+                    Ok(ready) => Ok(ready),
                     Err(err) => Err((caption, err)),
                 }
             }
@@ -359,7 +381,9 @@ impl PreviewTooltipCache {
                 ui.add(egui::Label::new(egui::RichText::new(help).weak()).wrap());
             }
             match &preview {
-                Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+                Ok(ready) => {
+                    paint_preview(ui, &ready.texture, &ready.caption, show_size, ready.marker)
+                }
                 Err((cap, err)) => paint_preview_status(ui, cap, err),
             }
         });
@@ -390,7 +414,7 @@ impl PreviewTooltipCache {
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Ok(ready) => paint_preview_panel_image(ui, &ready.texture, view, ready.marker),
             Err(err) if self.failure_is_no_saved_screen(&key) => {
                 self.paint_no_saved_screen_panel(ui, &err, view)
             }
@@ -445,9 +469,9 @@ impl PreviewTooltipCache {
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => {
-                let [tw, th] = tex.size();
-                let rect = paint_preview_panel_image(ui, &tex, view);
+            Ok(ready) => {
+                let [tw, th] = ready.texture.size();
+                let rect = paint_preview_panel_image(ui, &ready.texture, view, ready.marker);
                 (rect, egui::vec2(tw as f32, th as f32))
             }
             Err(err) if self.failure_is_no_saved_screen(&key) => (
@@ -469,7 +493,7 @@ impl PreviewTooltipCache {
         coords: PreviewCoords,
         force: bool,
         max_dim: u32,
-    ) -> Result<(TextureHandle, String), String> {
+    ) -> Result<ReadyPreview, String> {
         #[cfg(target_os = "android")]
         self.poll_app_shot(ctx);
         #[cfg(target_os = "android")]
@@ -480,10 +504,13 @@ impl PreviewTooltipCache {
             self.invalidate_coords(coords);
         }
         if let Some(entry) = self.entries.get(key) {
-            let tex = entry.texture.clone();
-            let caption = entry.caption.clone();
+            let ready = ReadyPreview {
+                texture: entry.texture.clone(),
+                caption: entry.caption.clone(),
+                marker: entry.marker,
+            };
             self.touch(key);
-            return Ok((tex, caption));
+            return Ok(ready);
         }
 
         let now = Instant::now();
@@ -628,7 +655,7 @@ impl PreviewTooltipCache {
         coords: PreviewCoords,
         captured: CapturedPreview,
         keep_region: bool,
-    ) -> Result<(TextureHandle, String), String> {
+    ) -> Result<ReadyPreview, String> {
         let img = captured.display;
         let size = [img.width() as usize, img.height() as usize];
         mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
@@ -645,17 +672,23 @@ impl PreviewTooltipCache {
         } else {
             None
         };
+        let marker = captured.marker;
         self.insert(
             key.to_string(),
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
                 coords,
+                marker,
                 region,
             },
         );
         mark_site("preview:finish_texture:done");
-        Ok((tex, caption.to_string()))
+        Ok(ReadyPreview {
+            texture: tex,
+            caption: caption.to_string(),
+            marker,
+        })
     }
 
     fn ensure_capturer(&mut self) -> Result<(), String> {
@@ -831,6 +864,28 @@ struct PreviewShot {
     status: String,
 }
 
+/// Location mark in pre-downscale capture pixels. Painted over the image so
+/// it can blink; the cached texture stays unmarked.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PreviewMarker {
+    Point {
+        x: f32,
+        y: f32,
+        src_w: u32,
+        src_h: u32,
+    },
+    Area {
+        /// Exclusive rect. The outline is stroked just outside it.
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        grid: Option<(i32, i32)>,
+        src_w: u32,
+        src_h: u32,
+    },
+}
+
 #[derive(Clone, Copy)]
 enum PreviewCoords {
     Point {
@@ -906,9 +961,15 @@ fn capture_preview(
                 )));
             }
             let bounds = preview_bounds_for_point(x, y, vb);
-            let mut img = capture_rect(bounds)?;
-            draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
+            let img = capture_rect(bounds)?;
+            let (src_w, src_h) = img.dimensions();
             Ok(CapturedPreview {
+                marker: PreviewMarker::Point {
+                    x: (x - bounds.x) as f32,
+                    y: (y - bounds.y) as f32,
+                    src_w,
+                    src_h,
+                },
                 display: downscale_max_dim(img, max_dim),
                 region: None,
             })
@@ -934,7 +995,8 @@ fn capture_preview(
             // silently cropping the wrong monitor and churning recaptures.
             clamp_search_rect(lx, ty, rx, by, Some(vb))?;
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-            let mut img = capture_rect(bounds)?;
+            let img = capture_rect(bounds)?;
+            let (src_w, src_h) = img.dimensions();
             let olx = lx - bounds.x;
             let oty = ty - bounds.y;
             let orx = rx - bounds.x;
@@ -944,11 +1006,16 @@ fn capture_preview(
             } else {
                 None
             };
-            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY);
-            if let Some((rows, cols)) = grid {
-                draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
-            }
             Ok(CapturedPreview {
+                marker: PreviewMarker::Area {
+                    x0: olx as f32,
+                    y0: oty as f32,
+                    x1: orx as f32,
+                    y1: oby as f32,
+                    grid,
+                    src_w,
+                    src_h,
+                },
                 display: downscale_max_dim(img, max_dim),
                 region,
             })
@@ -1256,12 +1323,19 @@ fn show_preview_hover_ui(response: &egui::Response, add_contents: impl FnOnce(&m
     tip.show(add_contents);
 }
 
-fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_image_size: bool) {
+fn paint_preview(
+    ui: &mut egui::Ui,
+    tex: &TextureHandle,
+    caption: &str,
+    show_image_size: bool,
+    marker: PreviewMarker,
+) {
     let [tw, th] = tex.size();
     let size = fit_display(ui, tw as f32, th as f32);
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
-    image_view::add_checkered_image(ui, tex, size, egui::Sense::click(), 0.0);
+    let image = image_view::add_checkered_image(ui, tex, size, egui::Sense::click(), 0.0);
+    paint_blinking_marker(&ui.painter_at(image.rect), image.rect, marker);
     ui.add(egui::Label::new(caption).wrap());
     if show_image_size {
         ui.label(
@@ -1406,6 +1480,7 @@ fn paint_preview_panel_image(
     ui: &mut egui::Ui,
     tex: &TextureHandle,
     view: &mut ImageViewTransform,
+    marker: PreviewMarker,
 ) -> egui::Rect {
     let [tw, th] = tex.size();
     let image_size = Vec2::new(tw as f32, th as f32);
@@ -1423,6 +1498,7 @@ fn paint_preview_panel_image(
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        paint_blinking_marker(&painter, content, marker);
         crate::data_editor_preview::paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
@@ -1591,95 +1667,109 @@ fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
     image::imageops::resize(&img, nw, nh, filter)
 }
 
-fn put_pixel_safe(img: &mut RgbaImage, x: i32, y: i32, c: Rgba<u8>) {
-    if x < 0 || y < 0 {
+/// Paint `marker` over `content` (the image rect, including zoom/pan).
+///
+/// The mark is not in the texture: it toggles on and off like a text caret so
+/// it stays visible on a busy capture. `painter` should already be clipped to
+/// the viewport.
+fn paint_blinking_marker(painter: &egui::Painter, content: egui::Rect, marker: PreviewMarker) {
+    if !content.is_positive() || !marker_in_frame(marker) {
         return;
     }
-    let (w, h) = img.dimensions();
-    if (x as u32) < w && (y as u32) < h {
-        img.put_pixel(x as u32, y as u32, c);
+    if !crate::image_view::preview_marker_blink_on(painter.ctx()) {
+        return;
     }
-}
-
-fn draw_hline(img: &mut RgbaImage, y: i32, x0: i32, x1: i32, c: Rgba<u8>, thick: i32) {
-    let (x0, x1) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
-    for t in 0..thick {
-        for x in x0..=x1 {
-            put_pixel_safe(img, x, y + t, c);
+    let color = crate::theme::preview_grid_stroke();
+    let (sx, sy) = marker_scale(content, marker);
+    let scale = (sx + sy) * 0.5;
+    let stroke_px = match marker {
+        PreviewMarker::Point { .. } => POINT_STROKE_PX,
+        PreviewMarker::Area { .. } => AREA_STROKE_PX,
+    };
+    let stroke = egui::Stroke::new((stroke_px * scale).max(MARKER_MIN_STROKE), color);
+    match marker {
+        PreviewMarker::Point { x, y, .. } => {
+            let c = egui::pos2(content.left() + x * sx, content.top() + y * sy);
+            painter.circle_stroke(c, POINT_RING_RADIUS * scale, stroke);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - POINT_ARM * sx, c.y),
+                    egui::pos2(c.x + POINT_ARM * sx, c.y),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(c.x, c.y - POINT_ARM * sy),
+                    egui::pos2(c.x, c.y + POINT_ARM * sy),
+                ],
+                stroke,
+            );
         }
-    }
-}
-
-fn draw_vline(img: &mut RgbaImage, x: i32, y0: i32, y1: i32, c: Rgba<u8>, thick: i32) {
-    let (y0, y1) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
-    for t in 0..thick {
-        for y in y0..=y1 {
-            put_pixel_safe(img, x + t, y, c);
-        }
-    }
-}
-
-/// 1px stroke immediately outside exclusive `[lx, rx) × [ty, by)` so search
-/// pixels stay unpainted.
-fn draw_rect_outline(img: &mut RgbaImage, lx: i32, ty: i32, rx: i32, by: i32, c: Rgba<u8>) {
-    let (lx, ty, rx, by) = normalize_rect(lx, ty, rx, by);
-    if rx <= lx || by <= ty {
-        return;
-    }
-    let ox0 = lx - 1;
-    let oy0 = ty - 1;
-    let ox1 = rx;
-    let oy1 = by;
-    draw_hline(img, oy0, ox0, ox1, c, 1);
-    draw_hline(img, oy1, ox0, ox1, c, 1);
-    draw_vline(img, ox0, oy0, oy1, c, 1);
-    draw_vline(img, ox1, oy0, oy1, c, 1);
-}
-
-fn draw_grid_lines(
-    img: &mut RgbaImage,
-    rect: (i32, i32, i32, i32),
-    rows: i32,
-    cols: i32,
-    c: Rgba<u8>,
-    thick: i32,
-) {
-    let (lx, ty, rx, by) = normalize_rect(rect.0, rect.1, rect.2, rect.3);
-    if rx <= lx || by <= ty {
-        return;
-    }
-    let rows = rows.max(1);
-    let cols = cols.max(1);
-    let w = rx - lx;
-    let h = by - ty;
-    let x1 = rx - 1;
-    let y1 = by - 1;
-    for i in 1..rows {
-        let y = ty + i * h / rows;
-        draw_hline(img, y, lx, x1, c, thick);
-    }
-    for i in 1..cols {
-        let x = lx + i * w / cols;
-        draw_vline(img, x, ty, y1, c, thick);
-    }
-}
-
-fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: i32) {
-    // Circle radius 8 (approx) + crosshair arms ±15.
-    for dy in -8..=8 {
-        for dx in -8..=8 {
-            if dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64 {
-                put_pixel_safe(img, cx + dx, cy + dy, c);
+        PreviewMarker::Area {
+            x0,
+            y0,
+            x1,
+            y1,
+            grid,
+            ..
+        } => {
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(content.left() + x0 * sx, content.top() + y0 * sy),
+                egui::pos2(content.left() + x1 * sx, content.top() + y1 * sy),
+            );
+            if !rect.is_positive() {
+                return;
+            }
+            // Outside the exclusive region so searched pixels stay unpainted.
+            painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
+            if let Some((rows, cols)) = grid {
+                let rows = rows.max(1);
+                let cols = cols.max(1);
+                for i in 1..rows {
+                    let y = rect.top() + rect.height() * (i as f32) / (rows as f32);
+                    painter.hline(rect.x_range(), y, stroke);
+                }
+                for i in 1..cols {
+                    let x = rect.left() + rect.width() * (i as f32) / (cols as f32);
+                    painter.vline(x, rect.y_range(), stroke);
+                }
             }
         }
     }
-    draw_hline(img, cy, cx - 15, cx + 15, c, thick);
-    draw_vline(img, cx, cy - 15, cy + 15, c, thick);
+}
+
+fn marker_in_frame(marker: PreviewMarker) -> bool {
+    match marker {
+        PreviewMarker::Point { src_w, src_h, .. } => src_w > 0 && src_h > 0,
+        PreviewMarker::Area {
+            x0,
+            y0,
+            x1,
+            y1,
+            src_w,
+            src_h,
+            ..
+        } => src_w > 0 && src_h > 0 && x1 > x0 && y1 > y0,
+    }
+}
+
+fn marker_scale(content: egui::Rect, marker: PreviewMarker) -> (f32, f32) {
+    let (src_w, src_h) = match marker {
+        PreviewMarker::Point { src_w, src_h, .. } | PreviewMarker::Area { src_w, src_h, .. } => {
+            (src_w, src_h)
+        }
+    };
+    (
+        content.width() / src_w.max(1) as f32,
+        content.height() / src_h.max(1) as f32,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::Rgba;
 
     fn phone_screen() -> egui::Rect {
         egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0))
@@ -1856,7 +1946,18 @@ mod tests {
         let out = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.scope_builder(egui::UiBuilder::new().max_rect(bound), |ui| {
                 crate::theme::framed_section(ui, |ui| {
-                    paint_preview(ui, &tex, "X: 1, Y: 2", true);
+                    paint_preview(
+                        ui,
+                        &tex,
+                        "X: 1, Y: 2",
+                        true,
+                        PreviewMarker::Point {
+                            x: 320.0,
+                            y: 180.0,
+                            src_w: 640,
+                            src_h: 360,
+                        },
+                    );
                 });
                 crate::theme::framed_section(ui, |ui| {
                     paint_preview_status(ui, "cap", "failed");
@@ -1899,24 +2000,98 @@ mod tests {
     }
 
     #[test]
-    fn search_area_outline_is_one_px_outside() {
-        let black = Rgba([0, 0, 0, 255]);
-        let mut img = RgbaImage::from_pixel(10, 10, black);
-        // Exclusive search area [3, 7) × [3, 7).
-        draw_rect_outline(&mut img, 3, 3, 7, 7, OVERLAY);
-        for y in 3..7 {
-            for x in 3..7 {
-                assert_eq!(*img.get_pixel(x, y), black, "inner ({x},{y})");
+    fn search_area_outline_sits_outside_and_blinks_off() {
+        let marker = PreviewMarker::Area {
+            x0: 10.0,
+            y0: 20.0,
+            x1: 40.0,
+            y1: 50.0,
+            grid: Some((2, 2)),
+            src_w: 100,
+            src_h: 100,
+        };
+        let shapes = paint_marker_at(0.0, marker);
+        let color = crate::theme::preview_grid_stroke();
+        let outline = shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if r.stroke.color == color => Some(r),
+            _ => None,
+        });
+        let outline = outline.expect("search-area outline");
+        assert_eq!(outline.stroke_kind, egui::StrokeKind::Outside);
+        let expected = egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(40.0, 50.0));
+        assert!((outline.rect.min.x - expected.min.x).abs() < 0.01);
+        assert!((outline.rect.min.y - expected.min.y).abs() < 0.01);
+        assert!((outline.rect.max.x - expected.max.x).abs() < 0.01);
+        assert!((outline.rect.max.y - expected.max.y).abs() < 0.01);
+        // One outline plus the row and column lines.
+        assert_eq!(marker_ink(&shapes, color), 3);
+        let hidden = paint_marker_at(0.6, marker);
+        assert_eq!(marker_ink(&hidden, color), 0);
+    }
+
+    #[test]
+    fn point_marker_sits_on_the_point_and_blinks_off() {
+        let marker = PreviewMarker::Point {
+            x: 40.0,
+            y: 50.0,
+            src_w: 100,
+            src_h: 100,
+        };
+        let content = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(100.0, 100.0));
+        let shapes = paint_marker_in(0.0, content, marker);
+        let color = crate::theme::preview_grid_stroke();
+        let circle = shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Circle(circle) if circle.stroke.color == color => Some(circle),
+            _ => None,
+        });
+        let circle = circle.expect("point ring");
+        assert!((circle.center.x - 50.0).abs() < 0.01, "{:?}", circle.center);
+        assert!((circle.center.y - 70.0).abs() < 0.01, "{:?}", circle.center);
+        assert!((circle.radius - POINT_RING_RADIUS).abs() < 0.01);
+        // Ring plus the two crosshair arms.
+        assert_eq!(marker_ink(&shapes, color), 3);
+        let hidden = paint_marker_in(0.6, content, marker);
+        assert_eq!(marker_ink(&hidden, color), 0);
+    }
+
+    fn paint_marker_at(time: f64, marker: PreviewMarker) -> Vec<egui::epaint::ClippedShape> {
+        let content = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 100.0));
+        paint_marker_in(time, content, marker)
+    }
+
+    fn paint_marker_in(
+        time: f64,
+        content: egui::Rect,
+        marker: PreviewMarker,
+    ) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(240.0, 200.0));
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                paint_blinking_marker(&ui.painter_at(screen), content, marker);
+            },
+        );
+        let shapes = out.shapes.clone();
+        out.drop_without_applying_deltas();
+        shapes
+    }
+
+    fn marker_ink(shapes: &[egui::epaint::ClippedShape], color: egui::Color32) -> usize {
+        fn walk(shape: &egui::Shape, color: egui::Color32) -> usize {
+            match shape {
+                egui::Shape::Vec(v) => v.iter().map(|s| walk(s, color)).sum(),
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == color => 1,
+                egui::Shape::Rect(r) if r.stroke.color == color && r.stroke.width > 0.0 => 1,
+                egui::Shape::Circle(c) if c.stroke.color == color && c.stroke.width > 0.0 => 1,
+                _ => 0,
             }
         }
-        for x in 2..=7 {
-            assert_eq!(*img.get_pixel(x, 2), OVERLAY);
-            assert_eq!(*img.get_pixel(x, 7), OVERLAY);
-        }
-        for y in 3..7 {
-            assert_eq!(*img.get_pixel(2, y), OVERLAY);
-            assert_eq!(*img.get_pixel(7, y), OVERLAY);
-        }
+        shapes.iter().map(|c| walk(&c.shape, color)).sum()
     }
 
     #[test]
