@@ -146,6 +146,7 @@ fn paint_row(ui: &mut egui::Ui, row: &Row) -> Option<Fix> {
             row.status.label(),
             row.status.glyph(),
             row.status.color(),
+            false,
         );
         ui.label(RichText::new(row.summary).weak().small());
         if let Some(detail) = &row.detail {

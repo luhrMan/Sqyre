@@ -179,7 +179,7 @@ impl AppList {
     ) -> Option<ShotApp> {
         let failed = match &self.phase {
             Phase::Idle | Phase::Loading(_) => {
-                ui.label("Loading apps…");
+                crate::widgets::loading_line(ui, "Loading apps…");
                 return None;
             }
             Phase::Failed(message) => Some(message.clone()),

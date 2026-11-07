@@ -369,6 +369,9 @@ impl DataEditor {
         );
         let saving = self.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
+            if saving {
+                crate::widgets::brand_spinner(ui);
+            }
             let save_tip = if saving {
                 "Saving…".to_owned()
             } else {

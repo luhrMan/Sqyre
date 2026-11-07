@@ -1282,12 +1282,7 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
 /// hover tooltip can never fire — so the error stays as centered visible text
 /// rather than collapsing to an icon like interactive surfaces do.
 fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
-    paint_preview_status_waking(
-        ui,
-        caption,
-        err,
-        err == CAPTURE_PENDING && sqyre_capture::pipewire_stream_waking(),
-    );
+    paint_preview_status_waking(ui, caption, err, err == CAPTURE_PENDING);
 }
 
 fn paint_preview_status_waking(ui: &mut egui::Ui, caption: &str, err: &str, waking: bool) {
@@ -1445,7 +1440,7 @@ fn paint_preview_panel_placeholder(
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
-    if err == CAPTURE_PENDING && sqyre_capture::pipewire_stream_waking() {
+    if err == CAPTURE_PENDING {
         paint_wake_spinner(ui, rect);
     } else {
         crate::data_editor_preview::attach_preview_error_icon(ui, rect, err);

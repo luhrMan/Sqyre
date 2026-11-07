@@ -136,19 +136,24 @@ impl DataEditor {
                 EditorTab::Programs => {
                     #[cfg(feature = "native-runtime")]
                     {
-                        if ui
-                            .add_enabled(
-                                !running_pending,
-                                crate::widgets::IconButton::new(
-                                    egui_phosphor::regular::PERSON_SIMPLE_RUN,
-                                    ht::ED_ADD_ALL_PROGRAMS,
-                                    Some(crate::theme::MACRO_START),
-                                ),
-                            )
-                            .clicked()
-                        {
-                            wants_add_running.set(true);
-                        }
+                        ui.horizontal(|ui| {
+                            if running_pending {
+                                crate::widgets::brand_spinner(ui);
+                            }
+                            if ui
+                                .add_enabled(
+                                    !running_pending,
+                                    crate::widgets::IconButton::new(
+                                        egui_phosphor::regular::PERSON_SIMPLE_RUN,
+                                        ht::ED_ADD_ALL_PROGRAMS,
+                                        Some(crate::theme::MACRO_START),
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                wants_add_running.set(true);
+                            }
+                        });
                     }
                     for name in editor_program_names(catalog) {
                         if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {

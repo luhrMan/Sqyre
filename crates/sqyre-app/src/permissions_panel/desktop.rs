@@ -188,6 +188,7 @@ impl PermissionsPanel {
                 || self.refresh_when_capture_ready
                 || sqyre_capture::shared_capturer_is_opening()
             {
+                crate::widgets::brand_spinner(ui);
                 ui.weak("Checking…");
             }
             // The scroll clip is inset by the reserved scrollbar lane, but
@@ -217,8 +218,10 @@ impl PermissionsPanel {
         }
 
         if (self.running || self.refresh_when_capture_ready) && self.items.is_empty() {
-            crate::widgets::brand_spinner(ui);
-            ui.weak("Probing screen capture, portals, and input access…");
+            crate::widgets::loading_line(
+                ui,
+                RichText::new("Probing screen capture, portals, and input access…").weak(),
+            );
             return;
         }
 
@@ -399,6 +402,7 @@ fn paint_permission_row(
             item.eligibility.label(),
             eligibility_glyph(item.eligibility),
             eligibility_color(item.eligibility),
+            item.eligibility == PermissionEligibility::Checking,
         );
         ui.label(RichText::new(item.summary).weak().small());
         if let Some(detail) = &item.detail {

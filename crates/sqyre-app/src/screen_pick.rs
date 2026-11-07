@@ -218,7 +218,10 @@ impl ScreenPick {
                     Err(TryRecvError::Empty) => {
                         ctx.request_repaint_after(POLL);
                         paint_bar(ctx, |ui| {
-                            ui.label(taking_picture_of(&of));
+                            ui.horizontal(|ui| {
+                                crate::widgets::brand_spinner(ui);
+                                ui.label(taking_picture_of(&of));
+                            });
                             cancel_row(ui)
                         })
                     }

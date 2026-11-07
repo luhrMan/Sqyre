@@ -416,7 +416,7 @@ pub fn show_active_picker(
                     let search_changed =
                         picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
                             if loading {
-                                ui.label("Loading windows…");
+                                crate::widgets::loading_line(ui, "Loading windows…");
                             }
                             let mut visible = 0usize;
                             for w in windows.iter() {

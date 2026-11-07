@@ -31,11 +31,17 @@ fn row_header(
     status: &str,
     glyph: &'static str,
     color: Color32,
+    loading: bool,
 ) {
     crate::widgets::fill_row(
         ui,
         |ui| {
-            crate::widgets::controls::status_icon(ui, glyph, color, status);
+            if loading {
+                let resp = crate::widgets::brand_spinner(ui);
+                resp.on_hover_text(status);
+            } else {
+                crate::widgets::controls::status_icon(ui, glyph, color, status);
+            }
         },
         |ui| {
             ui.add(egui::Label::new(RichText::new(title).strong()).wrap())

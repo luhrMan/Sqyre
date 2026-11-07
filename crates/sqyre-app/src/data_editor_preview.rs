@@ -617,6 +617,9 @@ pub(crate) fn paint_zoomable_collection_preview(
             ui.label(egui::RichText::new("Collection image").strong()),
             crate::action_tooltip::help::DE_PREVIEW_ZOOM,
         );
+        if capturing {
+            crate::widgets::brand_spinner(ui);
+        }
         if ui
             .add_enabled(
                 !capturing,

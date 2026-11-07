@@ -16,8 +16,6 @@ mod pair;
 mod row_ids;
 pub mod scroll;
 pub mod sections;
-/// Every `brand_spinner` call site today is native-runtime only.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod spinner;
 pub mod tags;
 pub mod wrap;
@@ -69,7 +67,6 @@ pub use sections::{
     advanced_section, collapsible_header, collapsible_section, float_bottom_right,
     frame_outer_rect, section_separator, split_view, tinted_section, SplitView,
 };
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-pub(crate) use spinner::brand_spinner;
+pub(crate) use spinner::{brand_spinner, loading_line};
 pub use tags::{tag_chip_editor, TagChipOptions};
 pub use wrap::{wrap_unit, wrapped_row};

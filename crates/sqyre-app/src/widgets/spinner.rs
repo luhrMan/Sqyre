@@ -27,6 +27,15 @@ pub fn brand_spinner_sized(ui: &mut Ui, side: f32) -> Response {
     response
 }
 
+/// Brand spinner beside a loading message. The spinner keeps the UI repainting.
+pub fn loading_line(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> Response {
+    ui.horizontal(|ui| {
+        brand_spinner(ui);
+        ui.label(text)
+    })
+    .inner
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,5 +54,18 @@ mod tests {
             delay < std::time::Duration::MAX,
             "an animated spinner must keep scheduling repaints"
         );
+    }
+
+    #[test]
+    fn loading_line_shows_the_message_beside_the_spinner() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 48.0])
+            .build_ui(|ui| {
+                loading_line(ui, "Loading windows…");
+            });
+        h.run_steps(1);
+        h.get_by_label("Loading windows…");
+        h.get_by_role(egui::accesskit::Role::ProgressIndicator);
     }
 }

@@ -2017,7 +2017,15 @@ impl SettingsUi {
                 }
                 UpdateState::Failed { message } => format!("Update check failed: {message}"),
             };
-            ui.label(egui::RichText::new(status).weak().small());
+            let busy = matches!(
+                update.state,
+                UpdateState::Checking | UpdateState::Downloading { .. }
+            );
+            if busy {
+                crate::widgets::loading_line(ui, egui::RichText::new(status).weak().small());
+            } else {
+                ui.label(egui::RichText::new(status).weak().small());
+            }
         }
     }
 
