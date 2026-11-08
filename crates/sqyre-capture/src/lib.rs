@@ -436,6 +436,34 @@ pub fn portal_remote_desktop_granted() -> bool {
     }
 }
 
+/// Whether portal PipeWire nodes suspend after the desktop sits idle.
+///
+/// Default is on. An open Wayland session applies the change on its stream
+/// thread; the next session reads it at connect. No-op without portal capture.
+pub fn set_pipewire_suspend_on_idle(suspend: bool) {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::set_pipewire_suspend_on_idle(suspend);
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        let _ = suspend;
+    }
+}
+
+/// True while idle-suspend is on and a capture is waiting for a PipeWire
+/// stream that is not streaming yet.
+pub fn pipewire_stream_waking() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::pipewire_stream_waking()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
 /// EIS input backend is connected (Wayland combined portal session).
 pub fn portal_input_ready() -> bool {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]
@@ -579,10 +607,16 @@ pub fn capture_frame_cache_bytes() -> usize {
 /// [`shared_capturer`] unless that would wait on a portal picker from this thread.
 ///
 /// Use from the UI thread. The deferred Linux probe (or a worker) should call
-/// [`shared_capturer`] to start the open.
+/// [`shared_capturer`] to start the open. When the live capturer's PipeWire
+/// stream has ended, a background reopen is queued once and callers see
+/// [`NotReady::AwaitingFirstFrame`] until it lands.
 pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
     if shared_capturer_open_may_block() {
         match shared_capturer_if_ready() {
+            Some(Ok(c)) if c.is_dead() => {
+                kick_portal_reopen();
+                Err(NotReady::AwaitingFirstFrame.into())
+            }
             Some(r) => r,
             None if shared_capturer_is_opening() || portal_screencast_granted() => {
                 Err(NotReady::AwaitingFirstFrame.into())
@@ -593,6 +627,31 @@ pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, Captu
         shared_capturer()
     }
 }
+
+#[cfg(target_os = "linux")]
+static PORTAL_REOPEN_QUEUED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// One background `shared_capturer()` call to reopen a dead portal session
+/// (queued from nonblocking UI paths; `shared_capturer` itself drops the dead
+/// cached capturer before opening). After a failed reopen the slot holds the
+/// open error instead, so this cannot requeue forever.
+#[cfg(target_os = "linux")]
+fn kick_portal_reopen() {
+    use std::sync::atomic::Ordering;
+    if PORTAL_REOPEN_QUEUED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let _ = std::thread::Builder::new()
+        .name("sqyre-portal-reopen".into())
+        .spawn(|| {
+            let _ = shared_capturer();
+            PORTAL_REOPEN_QUEUED.store(false, Ordering::SeqCst);
+        });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn kick_portal_reopen() {}
 
 /// Primary monitor DPI scale factor (`dpi / 96`).
 /// Returns `None` when no display is available (headless / CI).
@@ -982,9 +1041,12 @@ mod tests {
 
     #[test]
     fn focus_target_skips_overlay_and_unaddressable_windows() {
-        assert!(
-            crate::focus_target_of(&win(crate::OVERLAY_WM_TITLE, "sqyre", "/bin/sqyre")).is_none()
-        );
+        assert!(crate::focus_target_of(&win(
+            crate::OVERLAY_WM_TITLE,
+            sqyre_ports::APP_ID,
+            "/bin/sqyre"
+        ))
+        .is_none());
         assert!(crate::focus_target_of(&win("", "app", "/usr/bin/app")).is_none());
         assert!(crate::focus_target_of(&win("Doc", "", "")).is_none());
     }
@@ -1197,7 +1259,7 @@ mod tests {
 
         let overlay = WindowInfo {
             title: super::OVERLAY_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: String::new(),
             icon: None,
         };
@@ -1206,7 +1268,7 @@ mod tests {
 
         let tip = WindowInfo {
             title: super::OVERLAY_TIP_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: String::new(),
             icon: None,
         };

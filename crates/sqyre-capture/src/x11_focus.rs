@@ -201,6 +201,57 @@ unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo
     }
 }
 
+/// Raw `XGetWindowProperty` result; `ptr` is Xlib-allocated and must be
+/// `XFree`d exactly once by the caller.
+struct XProp {
+    ptr: *mut u8,
+    nitems: u64,
+}
+
+/// Fetch `atom` on `win` requiring format `want_format` (bits per item);
+/// `None` on failure, empty, or format mismatch.
+// SAFETY: caller guarantees a live `display` and valid `win`/`atom`; the
+// returned `ptr` is owned by Xlib storage freed by the caller via `XFree`.
+unsafe fn get_window_prop(
+    display: *mut Display,
+    win: Window,
+    atom: Atom,
+    long_length: std::os::raw::c_long,
+    req_type: Atom,
+    want_format: i32,
+) -> Option<XProp> {
+    let mut actual_type: Atom = 0;
+    let mut actual_format: i32 = 0;
+    let mut nitems: u64 = 0;
+    let mut bytes_after: u64 = 0;
+    let mut prop: *mut u8 = ptr::null_mut();
+    // SAFETY: out-params are valid locals; `prop` is Xlib-owned on success.
+    let status = unsafe {
+        XGetWindowProperty(
+            display,
+            win,
+            atom,
+            0,
+            long_length,
+            False,
+            req_type,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        )
+    };
+    if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != want_format {
+        if !prop.is_null() {
+            // SAFETY: `prop` is Xlib-allocated storage owned by this call.
+            unsafe { XFree(prop as *mut _) };
+        }
+        return None;
+    }
+    Some(XProp { ptr: prop, nitems })
+}
+
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `root` window; `prop`/`nitems` are status- and null-checked before the
 // `Window` read, and `XFree` is called on every path that allocates `prop`.
@@ -212,33 +263,11 @@ unsafe fn active_window_id(
     // status/null/nitems check and freed exactly once with `XFree` on every path.
     unsafe {
         let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
-        let mut actual_type: Atom = 0;
-        let mut actual_format: i32 = 0;
-        let mut nitems: u64 = 0;
-        let mut bytes_after: u64 = 0;
-        let mut prop: *mut u8 = ptr::null_mut();
-        let status = XGetWindowProperty(
-            display,
-            root,
-            atom,
-            0,
-            1,
-            False,
-            XA_WINDOW,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
-        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
-            if !prop.is_null() {
-                XFree(prop as *mut _);
-            }
+        let Some(p) = get_window_prop(display, root, atom, 1, XA_WINDOW, 32) else {
             return Ok(None);
-        }
-        let win = *(prop as *const Window);
-        XFree(prop as *mut _);
+        };
+        let win = *(p.ptr as *const Window);
+        XFree(p.ptr as *mut _);
         if win == 0 {
             Ok(None)
         } else {
@@ -347,35 +376,11 @@ unsafe fn window_icon(display: *mut Display, win: Window) -> Option<ProcessIcon>
     // format-32 longs Xlib returned, and `prop` is `XFree`d once after it is dropped.
     unsafe {
         let atom = intern(display, "_NET_WM_ICON").ok()?;
-        let mut actual_type: Atom = 0;
-        let mut actual_format: i32 = 0;
-        let mut nitems: u64 = 0;
-        let mut bytes_after: u64 = 0;
-        let mut prop: *mut u8 = ptr::null_mut();
         // Enough for several multi-resolution icons (CARDINALs as platform longs).
-        let status = XGetWindowProperty(
-            display,
-            win,
-            atom,
-            0,
-            1 << 18,
-            False,
-            XA_CARDINAL,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
-        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
-            if !prop.is_null() {
-                XFree(prop as *mut _);
-            }
-            return None;
-        }
-        let slice = std::slice::from_raw_parts(prop as *const c_ulong, nitems as usize);
+        let p = get_window_prop(display, win, atom, 1 << 18, XA_CARDINAL, 32)?;
+        let slice = std::slice::from_raw_parts(p.ptr as *const c_ulong, p.nitems as usize);
         let icon = pick_net_wm_icon(slice);
-        XFree(prop as *mut _);
+        XFree(p.ptr as *mut _);
         icon
     }
 }
@@ -472,36 +477,14 @@ unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>
     // before the slice is copied out, then `XFree`d once on every path.
     unsafe {
         let atom = intern(display, "_NET_CLIENT_LIST")?;
-        let mut actual_type: Atom = 0;
-        let mut actual_format: i32 = 0;
-        let mut nitems: u64 = 0;
-        let mut bytes_after: u64 = 0;
-        let mut prop: *mut u8 = ptr::null_mut();
-        let status = XGetWindowProperty(
-            display,
-            root,
-            atom,
-            0,
-            4096,
-            False,
-            XA_WINDOW,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
-        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
-            if !prop.is_null() {
-                XFree(prop as *mut _);
-            }
+        let Some(p) = get_window_prop(display, root, atom, 4096, XA_WINDOW, 32) else {
             return Err(CaptureError::Message(
                 "failed to read _NET_CLIENT_LIST".into(),
             ));
-        }
-        let slice = std::slice::from_raw_parts(prop as *const Window, nitems as usize);
+        };
+        let slice = std::slice::from_raw_parts(p.ptr as *const Window, p.nitems as usize);
         let out = slice.to_vec();
-        XFree(prop as *mut _);
+        XFree(p.ptr as *mut _);
         Ok(out)
     }
 }
@@ -541,36 +524,12 @@ unsafe fn get_string_prop(display: *mut Display, win: Window, atom: Atom) -> Opt
     // format-8 items returned by Xlib, and `prop` is `XFree`d once after copying.
     unsafe {
         let utf8 = intern(display, "UTF8_STRING").ok()?;
-        let mut actual_type: Atom = 0;
-        let mut actual_format: i32 = 0;
-        let mut nitems: u64 = 0;
-        let mut bytes_after: u64 = 0;
-        let mut prop: *mut u8 = ptr::null_mut();
-        let status = XGetWindowProperty(
-            display,
-            win,
-            atom,
-            0,
-            4096,
-            False,
-            utf8,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
-        if status != Success as i32 || prop.is_null() || nitems == 0 {
-            if !prop.is_null() {
-                XFree(prop as *mut _);
-            }
-            return None;
-        }
-        let bytes = std::slice::from_raw_parts(prop, nitems as usize);
+        let p = get_window_prop(display, win, atom, 4096, utf8, 8)?;
+        let bytes = std::slice::from_raw_parts(p.ptr, p.nitems as usize);
         let s = String::from_utf8_lossy(bytes)
             .trim_end_matches('\0')
             .to_string();
-        XFree(prop as *mut _);
+        XFree(p.ptr as *mut _);
         Some(s)
     }
 }
@@ -583,34 +542,10 @@ unsafe fn window_pid(display: *mut Display, win: Window) -> Option<u32> {
     // status/null/nitems check and freed exactly once with `XFree` on every path.
     unsafe {
         let atom = intern(display, "_NET_WM_PID").ok()?;
-        let mut actual_type: Atom = 0;
-        let mut actual_format: i32 = 0;
-        let mut nitems: u64 = 0;
-        let mut bytes_after: u64 = 0;
-        let mut prop: *mut u8 = ptr::null_mut();
-        let status = XGetWindowProperty(
-            display,
-            win,
-            atom,
-            0,
-            1,
-            False,
-            XA_CARDINAL,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
-        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
-            if !prop.is_null() {
-                XFree(prop as *mut _);
-            }
-            return None;
-        }
         // Format-32 property items are returned as C `long`s.
-        let pid = *(prop as *const c_ulong) as u32;
-        XFree(prop as *mut _);
+        let p = get_window_prop(display, win, atom, 1, XA_CARDINAL, 32)?;
+        let pid = *(p.ptr as *const c_ulong) as u32;
+        XFree(p.ptr as *mut _);
         if pid == 0 {
             None
         } else {

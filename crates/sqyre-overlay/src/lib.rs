@@ -13,6 +13,27 @@
 mod brand_s;
 pub mod icons;
 
+/// Positioned, styled overlay button face shared by the per-platform spec DTOs
+/// (physical pixels, host-window/desktop coordinates).
+///
+/// `bg` is the fill RGBA. On ARGB faces this is real translucency. On the
+/// 24-bit fallback alpha 0 = no fill (Shape punch-out from chrome ink only)
+/// and any alpha > 0 paints opaque.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ButtonFace {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+    pub bg: [u8; 4],
+    pub border: [u8; 4],
+    pub border_width: f32,
+    pub corner_radius: f32,
+    pub icon_glyph: char,
+    pub icon: [u8; 4],
+    pub icon_hover: [u8; 4],
+}
+
 #[cfg(feature = "runtime")]
 mod macro_overlay;
 

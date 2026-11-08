@@ -126,8 +126,11 @@ pub struct ProgramData {
     /// Window title captured with the process pick.
     /// With `process_path`, overlay + Focus Window require both (disambiguates shared exes).
     pub window_title: String,
-    /// Macro tags auto-selected for hotkeys when this program owns focus
+    /// Extra macro tags auto-selected for hotkeys when this program owns focus
     /// (same string space as [`sqyre_domain::Macro::tags`]).
+    ///
+    /// The program name is always included as well and is not stored here.
+    /// See [`ProgramCatalog::program_macro_tags`].
     pub tags: Vec<String>,
     /// resolution key → points
     pub points: BTreeMap<String, BTreeMap<String, ProgramPoint>>,

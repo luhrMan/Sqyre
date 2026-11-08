@@ -1,6 +1,6 @@
 use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
-use super::scroll::{dialog_scroll, maybe_scroll_to, popup_scroll_max_height};
+use super::scroll::{maybe_scroll_to, popup_scroll_max_height};
 use super::types::{CollectionCellPick, CoordKind};
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
@@ -59,13 +59,13 @@ pub fn paint_coord_ref_list(
     };
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
-    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_SAVE_CANCEL);
+    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_ACTION);
     let list_w = crate::widgets::visible_width(ui);
     let entity_plural = match kind {
         CoordKind::Point => "points",
         CoordKind::SearchArea => "search areas",
     };
-    dialog_scroll(list_w, list_h).show(ui, |ui| {
+    crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
         ui.set_max_width(list_w);
         let mut visible = 0usize;
         for prog in catalog.program_names() {
@@ -78,62 +78,38 @@ pub fn paint_coord_ref_list(
                 Collection(sqyre_persist::ProgramCollection),
             }
             let mut rows: Vec<(String, Row)> = Vec::new();
-            match kind {
-                CoordKind::Point => {
-                    if let Some(m) = pdata
-                        .points
-                        .get(&res)
-                        .or_else(|| pdata.points.values().next())
-                    {
-                        for (key, pt) in m {
-                            let display = if pt.name.trim().is_empty() {
-                                key.clone()
-                            } else {
-                                pt.name.clone()
-                            };
-                            if q.is_empty()
-                                || fuzzy_match_fold(&q, key)
-                                || fuzzy_match_fold(&q, &display)
-                                || fuzzy_match_fold(&q, prog)
-                            {
-                                rows.push((
-                                    display.clone(),
-                                    Row::Coord {
-                                        key: key.clone(),
-                                        display,
-                                    },
-                                ));
-                            }
-                        }
-                    }
-                }
-                CoordKind::SearchArea => {
-                    if let Some(m) = pdata
-                        .search_areas
-                        .get(&res)
-                        .or_else(|| pdata.search_areas.values().next())
-                    {
-                        for (key, sa) in m {
-                            let display = if sa.name.trim().is_empty() {
-                                key.clone()
-                            } else {
-                                sa.name.clone()
-                            };
-                            if q.is_empty()
-                                || fuzzy_match_fold(&q, key)
-                                || fuzzy_match_fold(&q, &display)
-                                || fuzzy_match_fold(&q, prog)
-                            {
-                                rows.push((
-                                    display.clone(),
-                                    Row::Coord {
-                                        key: key.clone(),
-                                        display,
-                                    },
-                                ));
-                            }
-                        }
-                    }
+            let entries: Vec<(&String, &str)> = match kind {
+                CoordKind::Point => pdata
+                    .points
+                    .get(&res)
+                    .or_else(|| pdata.points.values().next())
+                    .map(|m| m.iter().map(|(k, pt)| (k, pt.name.as_str())).collect())
+                    .unwrap_or_default(),
+                CoordKind::SearchArea => pdata
+                    .search_areas
+                    .get(&res)
+                    .or_else(|| pdata.search_areas.values().next())
+                    .map(|m| m.iter().map(|(k, sa)| (k, sa.name.as_str())).collect())
+                    .unwrap_or_default(),
+            };
+            for (key, name) in entries {
+                let display = if name.trim().is_empty() {
+                    key.clone()
+                } else {
+                    name.to_string()
+                };
+                if q.is_empty()
+                    || fuzzy_match_fold(&q, key)
+                    || fuzzy_match_fold(&q, &display)
+                    || fuzzy_match_fold(&q, prog)
+                {
+                    rows.push((
+                        display.clone(),
+                        Row::Coord {
+                            key: key.clone(),
+                            display,
+                        },
+                    ));
                 }
             }
             for col in pdata.collections.values() {
@@ -261,7 +237,6 @@ pub fn paint_coord_ref_list(
                         }
                     }
                 });
-            ui.add_space(crate::theme::SPACE_8);
         }
         crate::widgets::list_vacancy(ui, &q, visible, entity_plural);
     });

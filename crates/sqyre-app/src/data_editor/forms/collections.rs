@@ -10,7 +10,6 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint {
             catalog,
@@ -27,19 +26,7 @@ impl DataEditor {
         });
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-        ui.horizontal_wrapped(|ui| {
-            ui.heading("Collection");
-            if let Some(area) = collection_area {
-                ui.weak(collection_size_label(area, rows, cols));
-            }
-        });
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
-        paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Search area", help::DE_COLLECTION_AREA);
+        paint_name_field(ui, &mut self.form_name);
         {
             let areas: Vec<String> = self
                 .selected_program
@@ -68,31 +55,49 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
-            searchable_combo_with(
+            crate::widgets::pair_labeled(
                 ui,
-                "collection_sa",
-                &mut current,
-                &areas,
-                sqyre_domain::EMPTY_NONE,
-                None,
-                None,
-                Some(&mut on_hover),
-                None,
+                crate::model_icons::SEARCH_AREA,
+                "Search area",
+                |ui| {
+                    help::tip(
+                        searchable_combo(
+                            ui,
+                            "collection_sa",
+                            &mut current,
+                            SearchableComboOpts {
+                                options: &areas,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: None,
+                                width: None,
+                                on_option_hover: Some(&mut on_hover),
+                                option_icon: None,
+                                closed_icon: true,
+                                option_label: None,
+                            },
+                        ),
+                        help::DE_COLLECTION_AREA,
+                    );
+                },
             );
             if current != self.form_search_area {
                 self.form_search_area = current;
             }
         }
-        help::label(ui, "Rows", help::DE_COLLECTION_ROWS);
-        help::tip(
-            crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
-            help::DE_COLLECTION_ROWS,
-        );
-        help::label(ui, "Cols", help::DE_COLLECTION_COLS);
-        help::tip(
-            crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
-            help::DE_COLLECTION_COLS,
-        );
+        ui.horizontal_wrapped(|ui| {
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::ROWS, "Rows", |ui| {
+                help::tip(
+                    crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
+                    help::DE_COLLECTION_ROWS,
+                );
+            });
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::COLUMNS, "Cols", |ui| {
+                help::tip(
+                    crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
+                    help::DE_COLLECTION_COLS,
+                );
+            });
+        });
         if let (Some(prog), Some(col_name)) =
             (self.selected_program.clone(), self.selected_entity.clone())
         {
@@ -129,26 +134,14 @@ impl DataEditor {
         }
     }
 
-    pub(super) fn draw_atlases_form(
-        &mut self,
-        ui: &mut egui::Ui,
-        paint: &mut CatalogPaint<'_>,
-        settings: &mut UserSettings,
-    ) {
+    pub(super) fn draw_atlases_form(&mut self, ui: &mut egui::Ui, paint: &mut CatalogPaint<'_>) {
         let CatalogPaint {
             catalog,
             icons,
             previews,
             ..
         } = paint;
-        ui.heading("Atlas");
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
-        paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);
+        paint_name_field(ui, &mut self.form_name);
         let available: Vec<String> = self
             .selected_program
             .as_deref()
@@ -161,7 +154,7 @@ impl DataEditor {
                     .collect()
             })
             .unwrap_or_default();
-        ui.horizontal(|ui| {
+        crate::widgets::pair_labeled(ui, crate::model_icons::COLLECTION, "Collections", |ui| {
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
@@ -172,23 +165,30 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
-            searchable_combo_with(
-                ui,
-                "atlas_add_member",
-                &mut self.form_atlas_add,
-                &available,
-                "(add collection)",
-                None,
-                None,
-                Some(&mut on_hover),
-                None,
+            help::tip(
+                searchable_combo(
+                    ui,
+                    "atlas_add_member",
+                    &mut self.form_atlas_add,
+                    SearchableComboOpts {
+                        options: &available,
+                        empty_text: "(add collection)",
+                        none_label: None,
+                        width: None,
+                        on_option_hover: Some(&mut on_hover),
+                        option_icon: None,
+                        closed_icon: true,
+                        option_label: None,
+                    },
+                ),
+                help::DE_ATLAS_MEMBERS,
             );
-            if ui
-                .add_enabled(
-                    !self.form_atlas_add.trim().is_empty(),
-                    egui::Button::new("Add"),
-                )
-                .clicked()
+            if crate::widgets::add_button(
+                ui,
+                "Add collection",
+                !self.form_atlas_add.trim().is_empty(),
+            )
+            .clicked()
             {
                 let name = self.form_atlas_add.trim().to_string();
                 if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {

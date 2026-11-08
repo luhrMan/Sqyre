@@ -57,7 +57,9 @@ mod inner {
         pub score: f32,
     }
 
-    pub(crate) struct PixelCheckCache {
+    /// Shared match output carried by both the worker result and the
+    /// uploaded-texture cache.
+    pub(crate) struct PixelCheckData {
         pub fingerprint: String,
         pub match_map: MatchMap,
         pub image_w: usize,
@@ -68,20 +70,15 @@ mod inner {
         pub tolerance_matches: Vec<ToleranceMatch>,
         /// A mask was configured but unreadable — the preview ran unmasked.
         pub mask_missing: bool,
+    }
+
+    pub(crate) struct PixelCheckCache {
+        pub data: PixelCheckData,
         pub heatmap: TextureHandle,
     }
 
     pub(crate) struct PixelCheckResult {
-        pub fingerprint: String,
-        pub match_map: MatchMap,
-        pub image_w: usize,
-        pub image_h: usize,
-        pub tmpl_w: usize,
-        pub tmpl_h: usize,
-        pub summary: MatchSummary,
-        pub tolerance_matches: Vec<ToleranceMatch>,
-        /// A mask was configured but unreadable — the preview ran unmasked.
-        pub mask_missing: bool,
+        pub data: PixelCheckData,
         pub heatmap_rgba: Vec<u8>,
     }
 
@@ -684,15 +681,17 @@ mod inner {
                 let tolerance_matches =
                     collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
                 Ok(PixelCheckResult {
-                    fingerprint,
-                    match_map: map,
-                    image_w,
-                    image_h,
-                    tmpl_w,
-                    tmpl_h,
-                    summary,
-                    tolerance_matches,
-                    mask_missing,
+                    data: PixelCheckData {
+                        fingerprint,
+                        match_map: map,
+                        image_w,
+                        image_h,
+                        tmpl_w,
+                        tmpl_h,
+                        summary,
+                        tolerance_matches,
+                        mask_missing,
+                    },
                     heatmap_rgba,
                 })
             })();
@@ -702,24 +701,16 @@ mod inner {
     }
 
     pub(crate) fn finish_cache(ctx: &egui::Context, result: PixelCheckResult) -> PixelCheckCache {
-        let size = [result.image_w, result.image_h];
+        let size = [result.data.image_w, result.data.image_h];
         let color = ColorImage::from_rgba_unmultiplied(size, &result.heatmap_rgba);
         let opts = TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
         let heatmap = ctx.load_texture(
-            format!("pixel_check_heatmap_{}", result.fingerprint),
+            format!("pixel_check_heatmap_{}", result.data.fingerprint),
             color,
             opts,
         );
         PixelCheckCache {
-            fingerprint: result.fingerprint,
-            match_map: result.match_map,
-            image_w: result.image_w,
-            image_h: result.image_h,
-            tmpl_w: result.tmpl_w,
-            tmpl_h: result.tmpl_h,
-            summary: result.summary,
-            tolerance_matches: result.tolerance_matches,
-            mask_missing: result.mask_missing,
+            data: result.data,
             heatmap,
         }
     }
@@ -826,10 +817,10 @@ mod inner {
             &painter,
             content,
             image_size,
-            &cache.summary,
-            &cache.tolerance_matches,
-            cache.tmpl_w,
-            cache.tmpl_h,
+            &cache.data.summary,
+            &cache.data.tolerance_matches,
+            cache.data.tmpl_w,
+            cache.data.tmpl_h,
             method,
             tolerance,
             show_match_boxes,
@@ -854,12 +845,12 @@ mod inner {
             let ix = ((pos.x - content.min.x) * scale_x).floor() as i32;
             let iy = ((pos.y - content.min.y) * scale_y).floor() as i32;
             *hover = hover_at_image(
-                &cache.match_map,
-                &cache.summary,
+                &cache.data.match_map,
+                &cache.data.summary,
                 ix,
                 iy,
-                cache.tmpl_w,
-                cache.tmpl_h,
+                cache.data.tmpl_w,
+                cache.data.tmpl_h,
                 method,
                 tolerance,
             );
@@ -915,7 +906,7 @@ mod inner {
             .interactable(false)
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::symmetric(14, 12))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new(format!("{:.1}% match", h.closeness_pct))
@@ -1169,7 +1160,7 @@ mod inner {
             if self
                 .pixel_check_cache
                 .as_ref()
-                .is_some_and(|c| c.fingerprint == inputs)
+                .is_some_and(|c| c.data.fingerprint == inputs)
             {
                 return;
             }
@@ -1233,13 +1224,25 @@ mod tests {
     use sqyre_domain::MatchMethod;
     use sqyre_match::MatchMap;
 
+    fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {
+        MatchMap {
+            width: w,
+            height: h,
+            scores: scores.to_vec(),
+        }
+    }
+
+    fn summary(min: f32, max: f32) -> MatchSummary {
+        MatchSummary {
+            score_min: min,
+            score_max: max,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn heatmap_normed_higher_is_better() {
-        let map = MatchMap {
-            width: 2,
-            height: 1,
-            scores: vec![0.5, 1.0],
-        };
+        let map = map(2, 1, &[0.5, 1.0]);
         let (rgba, summary) =
             scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
         assert_eq!(rgba.len(), 8);
@@ -1251,11 +1254,7 @@ mod tests {
 
     #[test]
     fn heatmap_sqdiff_lower_is_better() {
-        let map = MatchMap {
-            width: 2,
-            height: 1,
-            scores: vec![0.1, 0.9],
-        };
+        let map = map(2, 1, &[0.1, 0.9]);
         let (rgba, summary) =
             scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
         assert!(summary.best_score < 0.2);
@@ -1265,11 +1264,7 @@ mod tests {
 
     #[test]
     fn heatmap_fades_weak_scores() {
-        let map = MatchMap {
-            width: 1,
-            height: 1,
-            scores: vec![0.1],
-        };
+        let map = map(1, 1, &[0.1]);
         let (rgba, _) = scores_to_heatmap_rgba(&map, 4, 4, 2, 2, MatchMethod::CcoeffNormed, 0.95);
         // Far below tolerance — should not paint any heat.
         let alphas: Vec<u8> = rgba.chunks(4).map(|p| p[3]).collect();
@@ -1282,11 +1277,7 @@ mod tests {
     #[test]
     fn heatmap_suppresses_clustered_weak_scores() {
         // Tight score range that used to normalize to full-span yellow streaks.
-        let map = MatchMap {
-            width: 4,
-            height: 1,
-            scores: vec![0.38, 0.39, 0.40, 0.41],
-        };
+        let map = map(4, 1, &[0.38, 0.39, 0.40, 0.41]);
         let (rgba, _) = scores_to_heatmap_rgba(&map, 8, 2, 2, 1, MatchMethod::CcoeffNormed, 0.95);
         let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
         assert_eq!(painted, 0, "clustered weak scores should not paint");
@@ -1302,16 +1293,8 @@ mod tests {
 
     #[test]
     fn hover_out_of_bounds() {
-        let map = MatchMap {
-            width: 2,
-            height: 2,
-            scores: vec![0.5, 0.6, 0.7, 0.8],
-        };
-        let summary = MatchSummary {
-            score_min: 0.5,
-            score_max: 0.8,
-            ..Default::default()
-        };
+        let map = map(2, 2, &[0.5, 0.6, 0.7, 0.8]);
+        let summary = summary(0.5, 0.8);
         assert!(
             hover_at_image(&map, &summary, -1, 0, 1, 1, MatchMethod::CcoeffNormed, 0.5).is_none()
         );
@@ -1330,16 +1313,8 @@ mod tests {
 
     #[test]
     fn hover_pooled_across_template_footprint() {
-        let map = MatchMap {
-            width: 2,
-            height: 1,
-            scores: vec![0.5, 0.95],
-        };
-        let summary = MatchSummary {
-            score_min: 0.5,
-            score_max: 0.95,
-            ..Default::default()
-        };
+        let map = map(2, 1, &[0.5, 0.95]);
+        let summary = summary(0.5, 0.95);
         // Pixel inside the high-score template block should inherit 0.95.
         let h = hover_at_image(&map, &summary, 1, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).unwrap();
         assert!((h.closeness_pct - 95.0).abs() < 0.1);
@@ -1347,16 +1322,8 @@ mod tests {
 
     #[test]
     fn hover_strict_skips_below_tolerance() {
-        let map = MatchMap {
-            width: 2,
-            height: 1,
-            scores: vec![0.5, 0.95],
-        };
-        let summary = MatchSummary {
-            score_min: 0.5,
-            score_max: 0.95,
-            ..Default::default()
-        };
+        let map = map(2, 1, &[0.5, 0.95]);
+        let summary = summary(0.5, 0.95);
         assert!(
             hover_at_image(&map, &summary, 0, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).is_none()
         );
@@ -1364,11 +1331,7 @@ mod tests {
 
     #[test]
     fn collect_tolerance_matches_filters_weak_peaks() {
-        let map = MatchMap {
-            width: 4,
-            height: 1,
-            scores: vec![0.38, 0.39, 0.96, 0.41],
-        };
+        let map = map(4, 1, &[0.38, 0.39, 0.96, 0.41]);
         let matches = collect_tolerance_matches(&map, 0.95, 0, MatchMethod::CcoeffNormed);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].x, 2);

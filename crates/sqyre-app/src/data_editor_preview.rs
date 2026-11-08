@@ -2,45 +2,122 @@ use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
-use eframe::egui::{self, WidgetInfo, WidgetType};
+use crate::widgets::elide::single_line_galley;
+use eframe::egui;
 use sqyre_domain::{KnownVariableNames, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
 
-pub(crate) fn paint_preview_toolbar(
+/// Screen-record arm drawn in the preview floater row. `enabled=false` while a
+/// recording is armed — the app is not the click target then; Esc cancels (see
+/// `ScreenClickBridge::status_label`).
+#[derive(Clone, Copy)]
+pub(crate) struct RecordFloater<'a> {
+    pub tip: &'a str,
+    pub enabled: bool,
+}
+
+/// Which floater buttons fired this frame.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FloaterClicks {
+    /// Refresh — reload the texture / re-capture.
+    pub refresh: bool,
+    /// Record — arm a screen-click recording.
+    pub record: bool,
+}
+
+/// Refresh / fit-view / zoom / record floats on one scrim chip at the image's
+/// top-left corner. `refresh` hides the button for previews with nothing to
+/// reload (atlas); `fit_tip` names the surface ("Fit image in viewport" /
+/// "Fit plane in viewport"); `record` appends the screen-record arm.
+pub(crate) fn paint_preview_floaters(
     ui: &mut egui::Ui,
+    rect: egui::Rect,
+    refresh: bool,
     view: Option<&mut ImageViewTransform>,
-) -> bool {
-    ui.add_space(crate::theme::SPACE_8);
-    crate::widgets::section_separator(ui);
-    let mut force = false;
-    let show_zoom_hint = view.is_some();
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Preview").strong());
-        if show_zoom_hint {
-            crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
-        }
-        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-            force = true;
+    fit_tip: &str,
+    record: Option<RecordFloater>,
+) -> FloaterClicks {
+    let side = crate::widgets::icon_btn_side(ui);
+    let gap = crate::theme::element_gap(ui);
+    let pad = crate::theme::SPACE_4;
+    let zoom_label = view
+        .as_deref()
+        .filter(|v| v.shows_zoom_label())
+        .map(|v| format!("{:.0}%", v.zoom * 100.0));
+    let mut row_w = 0.0;
+    let mut items: u32 = 0;
+    if refresh {
+        row_w += side;
+        items += 1;
+    }
+    if view.is_some() {
+        row_w += side;
+        items += 1;
+    }
+    if let Some(text) = &zoom_label {
+        row_w += ui.fonts_mut(|f| {
+            f.layout_no_wrap(
+                text.clone(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+        });
+        items += 1;
+    }
+    if record.is_some() {
+        row_w += side;
+        items += 1;
+    }
+    row_w += gap * items.saturating_sub(1) as f32;
+    // Scrim chip keeps the row readable over arbitrary imagery.
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(
+            rect.min + egui::vec2(pad * 0.5, pad * 0.5),
+            egui::vec2(row_w + pad, side + pad),
+        ),
+        egui::CornerRadius::same(4),
+        theme::preview_scrim(),
+    );
+    let mut floats = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(
+                rect.min + egui::vec2(pad, pad),
+                egui::vec2((rect.width() - pad * 2.0).max(side), side),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    floats.spacing_mut().item_spacing.x = gap;
+    let mut clicks = FloaterClicks::default();
+    floats.horizontal(|ui| {
+        if refresh
+            && crate::widgets::icon_button(ui, egui_phosphor::regular::ARROW_CLOCKWISE, "Refresh")
+                .clicked()
+        {
+            clicks.refresh = true;
         }
         if let Some(view) = view {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                const FIT_TIP: &str = "Fit image in viewport";
-                let enabled = view.needs_reset_button();
-                let resp = ui
-                    .add_enabled(enabled, egui::Button::new("Reset view"))
-                    .on_hover_text(FIT_TIP);
-                resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-                if resp.clicked() {
-                    view.reset();
-                }
-                if view.shows_zoom_label() {
-                    ui.weak(format!("{:.0}%", view.zoom * 100.0));
-                }
-            });
+            let enabled = view.needs_reset_button();
+            let resp = ui.add_enabled(
+                enabled,
+                crate::widgets::IconButton::new(egui_phosphor::regular::CORNERS_IN, fit_tip, None),
+            );
+            if resp.clicked() {
+                view.reset();
+            }
+            if let Some(text) = &zoom_label {
+                ui.weak(text);
+            }
+        }
+        if let Some(record) = record {
+            if crate::widgets::record_icon_button(ui, record.tip, record.enabled).clicked() {
+                clicks.record = true;
+            }
         }
     });
-    force
+    clicks
 }
 
 #[derive(Clone, Copy)]
@@ -52,8 +129,8 @@ pub(crate) enum CardinalEdge {
 }
 
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
-/// and when the value is a pure integer: drag-to-adjust + a stacked S-stroke
-/// stepper column on the right, same as [`crate::widgets::num_entry`].
+/// and in number mode a pure integer drags and steps like [`crate::widgets::num_entry`].
+/// Right-click switches to the variable text entry and stays there.
 #[expect(
     clippy::too_many_arguments,
     reason = "chip overlays one preview edge with edit + validation"
@@ -77,8 +154,10 @@ pub(crate) fn paint_preview_coord_chip(
     const EDGE_PAD: f32 = 6.0;
 
     let id = ui.id().with(("preview_coord", placeholder));
+    let mode_id = id.with("num_or_var_mode");
+    let use_var = crate::widgets::variable_entry(ui, mode_id, value);
     let focused = ui.memory(|m| m.has_focus(id));
-    let pure = crate::widgets::num_entry::pure_i32(value);
+    let pure = crate::widgets::num_entry::pure_i32(value).filter(|_| !use_var);
     let has_steppers = pure.is_some();
 
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -129,7 +208,7 @@ pub(crate) fn paint_preview_coord_chip(
     let radius = 4.0;
     ui.painter().rect_filled(edit_rect, radius, fill);
     let border = var_pills::entry_validation_stroke(validation)
-        .unwrap_or_else(|| egui::Stroke::new(1.5, theme::PRIMARY));
+        .unwrap_or_else(|| egui::Stroke::new(1.5, theme::accent()));
     ui.painter()
         .rect_stroke(edit_rect, radius, border, egui::StrokeKind::Outside);
 
@@ -159,16 +238,17 @@ pub(crate) fn paint_preview_coord_chip(
         ui.painter().rect_stroke(
             step,
             radius,
-            egui::Stroke::new(1.0, theme::PRIMARY),
+            egui::Stroke::new(1.0, theme::accent()),
             egui::StrokeKind::Inside,
         );
     }
 
     let show_overlay = !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
     let inner = edit_rect.shrink(3.0);
+    let focus_editor = crate::widgets::take_var_focus(ui, mode_id);
 
     let resp = if show_overlay {
-        let plain_fg = egui::Color32::from_gray(230);
+        let plain_fg = theme::preview_plain_fg();
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
         ));
@@ -182,6 +262,9 @@ pub(crate) fn paint_preview_coord_chip(
                 format!("{placeholder} — click to edit"),
             )
         });
+        if focus_editor {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
         resp
     } else if let Some(n) = pure.filter(|_| !focused) {
         // Unfocused pure number: drag to adjust, click to edit.
@@ -198,7 +281,7 @@ pub(crate) fn paint_preview_coord_chip(
             egui::Align2::CENTER_CENTER,
             n.to_string(),
             font,
-            egui::Color32::from_gray(230),
+            theme::preview_plain_fg(),
         );
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -224,23 +307,46 @@ pub(crate) fn paint_preview_coord_chip(
         }
         resp
     } else {
-        ui.place(
-            inner,
-            egui::TextEdit::singleline(value)
-                .id(id)
-                .frame(egui::Frame::NONE)
-                .hint_text(placeholder)
-                .desired_width(inner.width()),
-        )
+        // Manual child layout (same as `ui.place`) so `TextEditOutput` — and
+        // therefore `${` autocomplete — stays reachable.
+        let keys = var_pills::var_ref_autocomplete_keys(ui, id);
+        let mut edit = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+        ));
+        let output = egui::TextEdit::singleline(value)
+            .id(id)
+            .frame(egui::Frame::NONE)
+            .hint_text(placeholder)
+            .desired_width(inner.width())
+            .show(&mut edit);
+        let cursor_char = output.cursor_range.map(|r| r.primary.index.0);
+        var_pills::show_var_ref_autocomplete(
+            ui,
+            id,
+            &output.response,
+            value,
+            cursor_char,
+            known,
+            keys,
+        );
+        if focus_editor {
+            output.response.request_focus();
+        }
+        output.response.response
     };
 
     if show_overlay && resp.clicked() {
         ui.memory_mut(|m| m.request_focus(id));
     }
-    if let Some(tip) = var_pills::entry_validation_tip(validation) {
-        resp.on_hover_text(tip);
-    } else if !help.is_empty() {
-        resp.on_hover_text(help);
+    let base = var_pills::entry_validation_tip(validation).unwrap_or(help);
+    let resp = resp.on_hover_text(crate::widgets::num_or_var_hover(base));
+    if let Some(choice) =
+        crate::widgets::rect_context_menu(ui, mode_id.with("menu"), group, Some(&resp), |ui| {
+            crate::widgets::num_or_var_menu(ui, use_var, crate::widgets::non_literal(value))
+        })
+        .flatten()
+    {
+        crate::widgets::apply_num_or_var_choice(ui, mode_id, value, None, choice);
     }
 }
 
@@ -321,18 +427,6 @@ pub(crate) fn collection_cell_pixel_size(
     exclusive_pixel_size(lx, ty, rx, by)
 }
 
-pub(crate) fn collection_size_label(area: (i32, i32), rows: i32, cols: i32) -> String {
-    let (aw, ah) = area;
-    match collection_cell_pixel_size(aw, ah, rows, cols) {
-        Some((cw, ch)) => format!(
-            "total {} · cell {}",
-            pixel_size_text(aw, ah),
-            pixel_size_text(cw, ch)
-        ),
-        None => pixel_size_text(aw, ah),
-    }
-}
-
 pub(crate) fn area_size_from_opts(
     left: Option<i32>,
     top: Option<i32>,
@@ -390,7 +484,8 @@ pub(crate) fn paint_collection_preview_sizes(
     paint_preview_size_badge(ui, viewport, &lines);
 }
 
-/// Top-left size labels on a framed preview (avoids coord chips on the edges).
+/// Top-right size labels on a framed preview (top-left holds the floating
+/// refresh/fit buttons; edge centers hold the coord chips).
 fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String]) {
     if lines.is_empty() || viewport.width() <= 0.0 || viewport.height() <= 0.0 {
         return;
@@ -398,12 +493,12 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     let font = egui::TextStyle::Small.resolve(ui.style());
     let painter = ui.painter();
     let mut y = viewport.top() + 6.0;
-    let x = viewport.left() + 6.0;
     let fill = theme::preview_scrim();
     for line in lines {
         let galley = painter.layout_no_wrap(line.clone(), font.clone(), egui::Color32::WHITE);
         let pad = egui::vec2(4.0, 2.0);
-        let rect = egui::Rect::from_min_size(egui::pos2(x, y), galley.size() + pad * 2.0);
+        let size = galley.size() + pad * 2.0;
+        let rect = egui::Rect::from_min_size(egui::pos2(viewport.right() - 6.0 - size.x, y), size);
         if !viewport.intersects(rect) {
             continue;
         }
@@ -413,38 +508,44 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     }
 }
 
-/// Horizontal inset that keeps placeholder text clear of left/right coord chips.
-pub(crate) const PREVIEW_CHIP_INSET: f32 = 100.0;
-
-/// Centered status/error text inside a preview placeholder, word-wrapped to
-/// `rect` minus `side_inset` per side (never narrower than a readable minimum).
-pub(crate) fn paint_preview_message(
-    ui: &egui::Ui,
-    rect: egui::Rect,
-    text: &str,
-    color: egui::Color32,
-    side_inset: f32,
-) {
-    const MIN_WRAP_W: f32 = 120.0;
-    const EDGE_PAD: f32 = 8.0;
-    let max_w = (rect.width() - EDGE_PAD * 2.0).max(1.0);
-    let wrap_w = (rect.width() - side_inset * 2.0).max(MIN_WRAP_W).min(max_w);
-    let mut job = egui::text::LayoutJob::simple(
-        text.to_owned(),
-        egui::TextStyle::Small.resolve(ui.style()),
-        color,
-        wrap_w,
-    );
-    job.halign = egui::Align::Center;
-    let painter = ui.painter_at(rect);
-    let galley = painter.layout_job(job);
-    let pos = egui::pos2(rect.center().x, rect.center().y - galley.size().y * 0.5);
-    painter.galley(pos, galley, color);
-}
-
 /// 1px dim gold border around a Data Editor image preview.
 pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
     painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
+}
+
+/// Centered `⊗` for a failed preview, with `err` on hover, press, or tap.
+///
+/// The tip is anchored to the icon, not the whole preview. A tooltip hung off
+/// the panel is placed under it, which is off the bottom of a phone. The icon
+/// senses clicks so a finger press counts — a hover-only widget is not hovered
+/// while the finger is down, and the tip closes again on release.
+pub(crate) fn attach_preview_error_icon(ui: &mut egui::Ui, rect: egui::Rect, err: &str) {
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
+        egui_phosphor::regular::X_CIRCLE,
+        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
+        crate::theme::error_fg(),
+    );
+    // Row height (`interact_size.y`) is shorter than a finger. The icon sits in
+    // empty preview space, so the hit uses the wider interact axis.
+    let hit = ui
+        .style()
+        .spacing
+        .interact_size
+        .max_elem()
+        .min(rect.width())
+        .min(rect.height())
+        .max(1.0);
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(hit));
+    let resp = ui.interact(
+        icon_rect,
+        ui.id().with(("preview_error_icon", err)),
+        egui::Sense::CLICK,
+    );
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, err));
+    crate::widgets::controls::reveal_status_tip(ui, &resp, err);
 }
 
 pub(crate) fn paint_disk_preview(
@@ -456,17 +557,11 @@ pub(crate) fn paint_disk_preview(
     grid: Option<(i32, i32)>,
     replace_clicked: Option<&mut bool>,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
-        if let Some(path) = path {
-            if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-                icons.invalidate_path(path);
-            }
-        }
         if let Some(flag) = replace_clicked {
-            if ui.button("Replace Image").clicked() {
+            if ui.small_button("Replace Image").clicked() {
                 *flag = true;
             }
         }
@@ -476,10 +571,17 @@ pub(crate) fn paint_disk_preview(
         Some(tex) => {
             let [tw, th] = tex.size();
             let size = fit_panel(tw as f32, th as f32);
-            let resp = ui.add(egui::Image::new((tex.id(), size)));
+            let resp = image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
             paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
+            }
+            if let Some(path) = path {
+                if paint_preview_floaters(ui, resp.rect, true, None, "Fit image in viewport", None)
+                    .refresh
+                {
+                    icons.invalidate_path(path);
+                }
             }
             if let Some(path) = path {
                 if path.is_file() {
@@ -509,13 +611,14 @@ pub(crate) fn paint_zoomable_collection_preview(
     replace_clicked: &mut bool,
     capturing: bool,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Collection image").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
-        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-            icons.invalidate_path(path);
+        crate::action_tooltip::help::tip(
+            ui.label(egui::RichText::new("Collection image").strong()),
+            crate::action_tooltip::help::DE_PREVIEW_ZOOM,
+        );
+        if capturing {
+            crate::widgets::brand_spinner(ui);
         }
         if ui
             .add_enabled(
@@ -524,26 +627,13 @@ pub(crate) fn paint_zoomable_collection_preview(
                     "Capturing…"
                 } else {
                     "Replace Image"
-                }),
+                })
+                .small(),
             )
             .clicked()
         {
             *replace_clicked = true;
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            const FIT_TIP: &str = "Fit image in viewport";
-            let enabled = view.needs_reset_button();
-            let resp = ui
-                .add_enabled(enabled, egui::Button::new("Reset view"))
-                .on_hover_text(FIT_TIP);
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-            if resp.clicked() {
-                view.reset();
-            }
-            if view.shows_zoom_label() {
-                ui.weak(format!("{:.0}%", view.zoom * 100.0));
-            }
-        });
     });
 
     let tex = icons.for_path(ui.ctx(), path);
@@ -579,6 +669,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     {
         let painter = ui.painter_at(viewport);
         if let Some(tex) = &tex {
+            image_view::paint_checkerboard(&painter, content, 0.0);
             painter.image(
                 tex.id(),
                 content,
@@ -586,19 +677,31 @@ pub(crate) fn paint_zoomable_collection_preview(
                 egui::Color32::WHITE,
             );
         } else {
-            painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+            painter.rect_filled(viewport, 0.0, theme::preview_unavailable_fill());
             painter.text(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No image on disk",
                 body_font,
-                egui::Color32::LIGHT_GRAY,
+                theme::preview_unavailable_fg(),
             );
         }
         paint_grid_overlay_painter(&painter, content, rows, cols);
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    if paint_preview_floaters(
+        ui,
+        viewport,
+        true,
+        Some(view),
+        "Fit image in viewport",
+        None,
+    )
+    .refresh
+    {
+        icons.invalidate_path(path);
+    }
     let tex_size = tex.as_ref().map(|t| {
         let [tw, th] = t.size();
         egui::vec2(tw as f32, th as f32)
@@ -624,8 +727,15 @@ pub(crate) fn show_file_hover(
         Some(tex) => {
             response.clone().on_hover_ui(|ui| {
                 let [tw, th] = tex.size();
-                let size = fit_panel(tw as f32, th as f32);
-                ui.add(egui::Image::new((tex.id(), size)));
+                // Cap at the visible bound so the image never paints past the
+                // tooltip edge on narrow hosts (tooltips do not clip children).
+                let size = image_view::fit_in_box_no_upscale(
+                    tw as f32,
+                    th as f32,
+                    FIT_PANEL_MAX_W.min(crate::widgets::visible_content_width(ui)),
+                    FIT_PANEL_MAX_H,
+                );
+                image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
                 ui.label(label);
             });
         }
@@ -635,13 +745,11 @@ pub(crate) fn show_file_hover(
     }
 }
 
+const FIT_PANEL_MAX_W: f32 = 340.0;
+const FIT_PANEL_MAX_H: f32 = 240.0;
+
 pub(crate) fn fit_panel(w: f32, h: f32) -> egui::Vec2 {
-    const MAX_W: f32 = 340.0;
-    const MAX_H: f32 = 240.0;
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (MAX_W / w).min(MAX_H / h).min(1.0);
-    egui::vec2(w * scale, h * scale)
+    image_view::fit_in_box_no_upscale(w, h, FIT_PANEL_MAX_W, FIT_PANEL_MAX_H)
 }
 
 pub(crate) fn paint_grid_overlay(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i32) {
@@ -654,6 +762,14 @@ pub(crate) fn paint_grid_overlay_painter(
     rows: i32,
     cols: i32,
 ) {
+    if !rect.is_positive() {
+        return;
+    }
+    // Cell lines are the marker on a collection / disk preview. Blink them
+    // like a caret so the grid reads against a busy image.
+    if !image_view::preview_marker_blink_on(painter.ctx()) {
+        return;
+    }
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
     let stroke = egui::Stroke::new(1.0, theme::preview_grid_stroke());
@@ -768,26 +884,11 @@ pub(crate) fn paint_zoomable_atlas_preview(
 ) {
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Atlas plane").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            const FIT_TIP: &str = "Fit plane in viewport";
-            let enabled = view.needs_reset_button();
-            let resp = ui
-                .add_enabled(enabled, egui::Button::new("Reset view"))
-                .on_hover_text(FIT_TIP);
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-            if resp.clicked() {
-                view.reset();
-            }
-            if view.shows_zoom_label() {
-                ui.weak(format!("{:.0}%", view.zoom * 100.0));
-            }
-        });
-    });
+    crate::action_tooltip::help::tip(
+        ui.label(egui::RichText::new("Atlas plane").strong()),
+        crate::action_tooltip::help::DE_ATLAS_PLANE,
+    );
 
     let empty_macro = Macro::new("", 0, vec![]);
     let mut nodes = Vec::new();
@@ -818,10 +919,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
     }
 
     if !unresolved.is_empty() {
-        ui.colored_label(
-            theme::warn_fg(),
-            format!("Unresolved: {}", unresolved.join(", ")),
-        );
+        crate::widgets::warn_icon(ui, &format!("Unresolved: {}", unresolved.join(", ")));
     }
     if nodes.is_empty() {
         ui.weak("No resolvable Collections to preview.");
@@ -872,12 +970,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
     let small = egui::TextStyle::Small.resolve(ui.style());
     {
         let painter = ui.painter_at(viewport);
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
+        painter.rect_filled(viewport, 0.0, theme::preview_monitor_bg());
 
         // One rectangle per monitor with identity + size label.
-        let mon_fill = egui::Color32::from_gray(36);
-        let mon_stroke = egui::Stroke::new(1.5, egui::Color32::from_gray(90));
-        let label_color = egui::Color32::from_gray(200);
+        let mon_fill = theme::preview_monitor_fill();
+        let mon_stroke = theme::preview_monitor_stroke();
+        let label_color = theme::preview_monitor_label();
         for (i, &(mx, my, mw, mh)) in monitors.iter().enumerate() {
             let rect = egui::Rect::from_min_max(
                 to_screen(mx, my),
@@ -886,16 +984,30 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.rect_filled(rect, 0.0, mon_fill);
             painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
             let label = format!("Monitor {} — {mw}×{mh}", i + 1);
-            let galley = painter.layout_no_wrap(label, small.clone(), label_color);
+            let galley = single_line_galley(
+                ui,
+                &label,
+                small.clone(),
+                label_color,
+                (rect.width() - 10.0).max(0.0),
+            );
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
             painter.rect_filled(chip, 3.0, theme::preview_label_dim());
-            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
+            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley.clone(), label_color);
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("monitor_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
         }
 
         let fill = theme::preview_selection_fill();
         let stroke = egui::Stroke::new(1.5, theme::preview_selection_stroke());
-        let arrow = egui::Stroke::new(2.0, theme::PRIMARY);
+        let arrow = egui::Stroke::new(2.0, theme::accent());
 
         for (i, node) in layout.nodes().iter().enumerate() {
             let (lx, ty, rx, by) = node.bounds;
@@ -903,6 +1015,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let br = to_screen(rx, by);
             let rect = egui::Rect::from_min_max(tl, br);
             if let Some(Some(tex)) = textures.get(i) {
+                image_view::paint_checkerboard(&painter, rect, 0.0);
                 painter.image(
                     tex.id(),
                     rect,
@@ -916,18 +1029,29 @@ pub(crate) fn paint_zoomable_atlas_preview(
             paint_grid_overlay_painter(&painter, rect, node.rows, node.cols);
             // Label with a small dark chip so it stays readable over capture images.
             let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
-            let galley = painter.layout_no_wrap(
-                node.collection.clone(),
+            let label = node.collection.clone();
+            let galley = single_line_galley(
+                ui,
+                &label,
                 small.clone(),
-                egui::Color32::WHITE,
+                theme::preview_label_fg(),
+                (rect.width() - 6.0).max(0.0),
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
             painter.rect_filled(chip, 2.0, theme::preview_label_dim());
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
-                galley,
-                egui::Color32::WHITE,
+                galley.clone(),
+                theme::preview_label_fg(),
             );
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("collection_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
 
             for (dir, dest) in layout.neighbor_links(i) {
                 let Some(dest_node) = layout.nodes().get(dest) else {
@@ -956,6 +1080,14 @@ pub(crate) fn paint_zoomable_atlas_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    paint_preview_floaters(
+        ui,
+        viewport,
+        false,
+        Some(view),
+        "Fit plane in viewport",
+        None,
+    );
 }
 
 #[cfg(test)]
@@ -994,10 +1126,6 @@ mod tests {
     #[test]
     fn collection_cell_splits_area() {
         assert_eq!(collection_cell_pixel_size(100, 60, 2, 2), Some((50, 30)));
-        assert_eq!(
-            collection_size_label((100, 60), 2, 2),
-            "total 100×60 px · cell 50×30 px"
-        );
         assert_eq!(collection_cell_pixel_size(100, 60, 3, 2), Some((50, 20)));
     }
 
@@ -1045,5 +1173,114 @@ mod tests {
         h.get_by_label("Decrement").click();
         h.run_steps(2);
         assert_eq!(h.state().as_str(), "959");
+    }
+
+    /// Right-click Variable keeps the text entry after the chip loses focus,
+    /// instead of falling back to the integer drag.
+    #[test]
+    fn chip_right_click_sticks_on_variable_text() {
+        use egui_kittest::kittest::Queryable;
+
+        let preview = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(160.0, 60.0));
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 160.0])
+            .build_ui_state(
+                move |ui, v: &mut String| {
+                    paint_preview_coord_chip(
+                        ui,
+                        preview,
+                        CardinalEdge::Top,
+                        "left",
+                        v,
+                        &KnownVariableNames::default(),
+                        true,
+                        &EntryValidation::default(),
+                        "",
+                    );
+                },
+                "960".to_owned(),
+            );
+        h.run_steps(2);
+        let at = h
+            .get_by_label("left — drag to adjust, click to edit")
+            .rect()
+            .center();
+        h.hover_at(at);
+        h.run_steps(1);
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        h.get_by_label("Variable").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "960");
+        assert!(h.query_all_by_label("Increment").next().is_none());
+        h.hover_at(egui::pos2(200.0, 140.0));
+        h.run_steps(1);
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: egui::pos2(200.0, 140.0),
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "960");
+        assert!(
+            h.query_all_by_label("Increment").next().is_none(),
+            "variable mode sticks after the chip loses focus"
+        );
+        assert!(h
+            .query_all_by_role(egui::accesskit::Role::TextInput)
+            .next()
+            .is_some());
+    }
+
+    #[test]
+    fn collection_grid_blinks_off_like_a_cursor() {
+        let color = theme::preview_grid_stroke();
+        let count_at = |time: f64| {
+            let ctx = egui::Context::default();
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 160.0));
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    let rect =
+                        egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 80.0));
+                    paint_grid_overlay(ui, rect, 2, 2);
+                },
+            );
+            let n = marker_shapes(&out.shapes, color);
+            out.drop_without_applying_deltas();
+            n
+        };
+        // Border plus one row line and one column line.
+        assert_eq!(count_at(0.0), 3);
+        assert_eq!(count_at(0.6), 0);
+        assert_eq!(count_at(1.1), 3);
+    }
+
+    fn marker_shapes(shapes: &[egui::epaint::ClippedShape], color: egui::Color32) -> usize {
+        fn walk(shape: &egui::Shape, color: egui::Color32) -> usize {
+            match shape {
+                egui::Shape::Vec(v) => v.iter().map(|s| walk(s, color)).sum(),
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == color => 1,
+                egui::Shape::Rect(r) if r.stroke.color == color && r.stroke.width > 0.0 => 1,
+                _ => 0,
+            }
+        }
+        shapes.iter().map(|c| walk(&c.shape, color)).sum()
     }
 }

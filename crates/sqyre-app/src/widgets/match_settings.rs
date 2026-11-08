@@ -50,10 +50,22 @@ pub fn paint_match_settings(
     *tolerance = clamp_match_tolerance(*tolerance, *match_method);
 
     let tol_help = tolerance_help(*match_method);
-    drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
-        configure_match_tolerance_drag(d, *match_method)
-    });
-    drag_field(ui, "Blur", h::IS_BLUR, blur, configure_match_blur_drag);
+    drag_field(
+        ui,
+        egui_phosphor::regular::FADERS,
+        "Tolerance",
+        tol_help,
+        tolerance,
+        |d| configure_match_tolerance_drag(d, *match_method),
+    );
+    drag_field(
+        ui,
+        egui_phosphor::regular::DROP,
+        "Blur",
+        h::IS_BLUR,
+        blur,
+        configure_match_blur_drag,
+    );
     if show_method {
         paint_match_method(ui, match_method);
     }
@@ -63,7 +75,14 @@ pub fn paint_match_settings(
 pub fn paint_match_method(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     let mut method_label = match_method.ui_label().to_string();
     let method_opts: Vec<&str> = MatchMethod::UI_ORDER.iter().map(|m| m.ui_label()).collect();
-    combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
+    combo_str(
+        ui,
+        egui_phosphor::regular::FUNCTION,
+        "Method",
+        h::IS_METHOD,
+        &mut method_label,
+        &method_opts,
+    );
     if let Some(m) = MatchMethod::UI_ORDER
         .iter()
         .copied()

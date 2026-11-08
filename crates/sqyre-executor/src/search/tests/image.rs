@@ -15,68 +15,39 @@ fn image_search_expands_target_tags_at_runtime() {
         let mut search = RgbaImage::from_pixel(50, 50, Rgba([20, 20, 20, 255]));
         stamp_rgba(&mut search, &sword, 12, 14);
 
-        let icons = MapIcons {
-            paths: HashMap::from([
-                ("Game~Sword".into(), vec![sword_path]),
-                ("Game~Potion".into(), vec![potion_path]),
-            ]),
-            masks: HashMap::new(),
-            meta: HashMap::from([
-                (
-                    "Game~Sword".into(),
-                    ItemMeta {
-                        name: "Sword".into(),
-                        stack_max: 1,
-                        cols: 1,
-                        rows: 1,
-                        tags: vec!["weapon".into()],
-                    },
-                ),
-                (
-                    "Game~Potion".into(),
-                    ItemMeta {
-                        name: "Potion".into(),
-                        stack_max: 20,
-                        cols: 1,
-                        rows: 1,
-                        tags: vec!["heal".into()],
-                    },
-                ),
-            ]),
-        };
+        let icons = icons_for(vec![
+            (
+                "Game~Sword",
+                vec![sword_path],
+                Some(item_meta("Sword", 1, 1, 1, &["weapon"])),
+            ),
+            (
+                "Game~Potion",
+                vec![potion_path],
+                Some(item_meta("Potion", 20, 1, 1, &["heal"])),
+            ),
+        ]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "by-tag".into(),
-                targets: vec![],
                 target_tags: vec!["+weapon".into()],
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(3),
                     })],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -140,10 +111,7 @@ fn image_search_expands_target_tags_at_runtime() {
 #[test]
 fn set_coord_outputs_writes_variables() {
     let mut macro_ = Macro::new("t", 0, vec![]);
-    let coords = CoordinateOutputs {
-        output_x_variable: "fx".into(),
-        output_y_variable: "fy".into(),
-    };
+    let coords = coords_xy("fx", "fy");
     set_coord_outputs(&mut macro_, &coords, 11, 22);
     assert_eq!(
         macro_.variables.get("fx").map(|v| v.as_display()),
@@ -169,49 +137,31 @@ fn image_search_no_find_runs_branch() {
         }
         tmpl.save(&tmpl_path).unwrap();
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::from([(
-                "Prog~Item".into(),
-                ItemMeta {
-                    name: "Item".into(),
-                    stack_max: 99,
-                    cols: 2,
-                    rows: 2,
-                    tags: Vec::new(),
-                },
-            )]),
-        };
+        let icons = icons_for(vec![(
+            "Prog~Item",
+            vec![tmpl_path],
+            Some(item_meta("Item", 99, 2, 2, &[])),
+        )]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(img),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(img);
         let resolver = SEARCH_FIXED_AREA;
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
-        let mut macro_ = quiet_macro(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.99,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     else_actions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(13),
                     })],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -276,18 +226,12 @@ fn image_search_break_stops_match_loop() {
     macro_.mouse_delay = 0;
     let results = vec![named("a", 1, 1, 0, 0), named("b", 2, 2, 0, 0)];
     let subactions = vec![
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(4),
-            },
-        },
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::LoopJump {
-                mode: LoopJumpMode::Break,
-            },
-        },
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(4),
+        }),
+        Action::new(ActionKind::LoopJump {
+            mode: LoopJumpMode::Break,
+        }),
     ];
     let branch = sqyre_domain::DetectionBranch {
         subactions,
@@ -312,15 +256,7 @@ fn image_search_break_stops_match_loop() {
 #[test]
 fn find_template_matches_exact_peak() {
     // blur=0 means no blur (kernel 0); pattern must still be found unblurred.
-    let mut tmpl = ImageBuf::new(10, 10, 3, 40);
-    for y in 0..10 {
-        for x in 0..10 {
-            let o = tmpl.pixel_offset(x, y);
-            tmpl.data[o] = (x * 17 + y * 9) as u8;
-            tmpl.data[o + 1] = (x * 3 + y * 29) as u8;
-            tmpl.data[o + 2] = (255 - x * 11) as u8;
-        }
-    }
+    let tmpl = patterned_imagebuf(10, 10);
     let mut search = ImageBuf::new(50, 50, 3, 30);
     search.stamp(&tmpl, 15, 18);
     let kernel = search_blur_kernel(0);
@@ -344,15 +280,7 @@ fn find_template_matches_exact_peak() {
 
 #[test]
 fn find_template_matches_sqdiff_normed_peak() {
-    let mut tmpl = ImageBuf::new(10, 10, 3, 40);
-    for y in 0..10 {
-        for x in 0..10 {
-            let o = tmpl.pixel_offset(x, y);
-            tmpl.data[o] = (x * 17 + y * 9) as u8;
-            tmpl.data[o + 1] = (x * 3 + y * 29) as u8;
-            tmpl.data[o + 2] = (255 - x * 11) as u8;
-        }
-    }
+    let tmpl = patterned_imagebuf(10, 10);
     let mut search = ImageBuf::new(50, 50, 3, 30);
     search.stamp(&tmpl, 15, 18);
     let hits = sqyre_match::find_template_matches_preblurred(
@@ -384,49 +312,29 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         let mut hit = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
         stamp_rgba(&mut hit, &tmpl, 15, 18);
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![("Prog~Item", vec![tmpl_path], None)]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            queue: vec![miss],
-            next: Some(hit),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_frames(vec![miss], Some(hit));
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let search_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: wait_until_found(5, 1),
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(3),
                     })],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -475,34 +383,19 @@ fn image_search_wait_until_found_stops_when_flag_set() {
         patterned_rgba(10, 10, 11).save(&tmpl_path).unwrap();
         let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![("Prog~Item", vec![tmpl_path], None)]);
         let stop = Arc::new(AtomicBool::new(false));
         let stop_for_backend = Arc::clone(&stop);
 
         let mut backend = StopAfterSleeps::new(stop_for_backend, 1);
-        let mut capturer = RecordingCapturer {
-            next: Some(miss),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(miss);
         let resolver = SEARCH_FIXED_AREA;
-        let mut macro_ = quiet_macro(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: wait_until_found(30, 50),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
@@ -510,8 +403,9 @@ fn image_search_wait_until_found_stops_when_flag_set() {
                     })],
                     ..Default::default()
                 },
+                ..Default::default()
             },
-        }]);
+        )))]);
 
         execute_macro_with(
             &mut macro_,
@@ -546,49 +440,32 @@ fn image_search_wait_until_found_runs_final_search_on_timeout() {
         let mut hit = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
         stamp_rgba(&mut hit, &tmpl, 15, 18);
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![("Prog~Item", vec![tmpl_path], None)]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            queue: vec![miss.clone(), miss.clone(), miss.clone(), miss, hit],
-            next: None,
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_frames(
+            vec![miss.clone(), miss.clone(), miss.clone(), miss, hit],
+            None,
+        );
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let search_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: wait_until_found(0.15, 30),
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(3),
                     })],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -633,36 +510,17 @@ fn image_search_repeat_while_found_then_stops() {
         stamp_rgba(&mut hit, &tmpl, 12, 14);
         let miss = RgbaImage::from_pixel(50, 50, Rgba([10, 10, 10, 255]));
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![("Prog~Item", vec![tmpl_path], None)]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            queue: vec![hit],
-            next: Some(miss),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_frames(vec![hit], Some(miss));
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "loop".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: while_found(1, 5),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
@@ -670,8 +528,9 @@ fn image_search_repeat_while_found_then_stops() {
                     })],
                     ..Default::default()
                 },
+                ..Default::default()
             },
-        }]);
+        )))]);
 
         execute_macro_with(
             &mut macro_,
@@ -712,57 +571,33 @@ fn image_search_multi_variant_matches_either_template() {
         let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
         stamp_rgba(&mut search, &second, 15, 18);
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::from([(
-                "Prog~Item".into(),
-                ItemMeta {
-                    name: "Item".into(),
-                    stack_max: 3,
-                    cols: 1,
-                    rows: 1,
-                    tags: Vec::new(),
-                },
-            )]),
-        };
+        let icons = icons_for(vec![(
+            "Prog~Item",
+            vec![default_path, alt_path],
+            Some(item_meta("Item", 3, 1, 1, &[])),
+        )]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(2),
                     })],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -825,41 +660,25 @@ fn image_search_uses_mask_path_when_present() {
             meta: HashMap::new(),
         };
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "masked".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
                         time: ScalarValue::Int(5),
                     })],
                     ..Default::default()
                 },
+                ..Default::default()
             },
-        }]);
+        )))]);
 
         execute_macro_with(
             &mut macro_,
@@ -895,50 +714,29 @@ fn image_search_variant_early_exit_skips_later_variants_after_hit() {
         let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
         stamp_rgba(&mut search, &default_tmpl, 15, 18);
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::from([(
-                "Prog~Item".into(),
-                ItemMeta {
-                    name: "Item".into(),
-                    stack_max: 1,
-                    cols: 1,
-                    rows: 1,
-                    tags: Vec::new(),
-                },
-            )]),
-        };
+        let icons = icons_for(vec![(
+            "Prog~Item",
+            vec![default_path, alt_path],
+            Some(item_meta("Item", 1, 1, 1, &[])),
+        )]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
-        let mut macro_ = quiet_macro(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![wait_child(2)],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
         execute_macro_with(
             &mut macro_,
@@ -984,50 +782,29 @@ fn image_search_variant_exit_early_disabled_tries_all_variants() {
         let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
         stamp_rgba(&mut search, &default_tmpl, 15, 18);
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
-            masks: HashMap::new(),
-            meta: HashMap::from([(
-                "Prog~Item".into(),
-                ItemMeta {
-                    name: "Item".into(),
-                    stack_max: 1,
-                    cols: 1,
-                    rows: 1,
-                    tags: Vec::new(),
-                },
-            )]),
-        };
+        let icons = icons_for(vec![(
+            "Prog~Item",
+            vec![default_path, alt_path],
+            Some(item_meta("Item", 1, 1, 1, &[])),
+        )]);
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let logger = SharedActionLog::new();
         let search_id = ActionId::new();
-        let mut macro_ = quiet_macro(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
-                    coords: CoordinateOutputs {
-                        output_x_variable: "foundX".into(),
-                        output_y_variable: "foundY".into(),
-                    },
+                    coords: coords_xy("foundX", "foundY"),
                     subactions: vec![wait_child(2)],
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }]);
         execute_macro_with(
             &mut macro_,

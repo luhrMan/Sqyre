@@ -23,6 +23,8 @@ mod portal_session;
 #[cfg(feature = "portal-capture")]
 pub use portal_pipewire::PortalCapturer;
 #[cfg(feature = "portal-capture")]
+pub(crate) use portal_pipewire::{pipewire_stream_waking, set_pipewire_suspend_on_idle};
+#[cfg(feature = "portal-capture")]
 pub use portal_remote::PortalEisInput;
 #[cfg(feature = "portal-capture")]
 pub use portal_session::{

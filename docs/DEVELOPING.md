@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.96, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.96.1, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -123,7 +123,7 @@ On a bare host (no container), install once:
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install --locked trunk
+cargo install --locked trunk@0.22.1  # rust-version 1.96.1, matching rust-toolchain.toml
 ```
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
@@ -192,7 +192,7 @@ OCR models are embedded at compile time from `assets/ocr-models/`; `SQYRE_OCR_MO
 
 ## Manual setup (without dev container)
 
-Prefer the container when possible. Needs **Rust ≥ 1.96**, clang, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
+Prefer the container when possible. Needs **Rust ≥ 1.96.1**, clang, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
 
 ```bash
 make            # or: cargo build -p sqyre-app
@@ -249,6 +249,18 @@ make docs-media
 ```
 
 Needs wgpu (lavapipe in the dev container / CI image).
+
+### Layout sweep
+
+The `layout_sweep` integration test exercises docs-only UI scenes at `1920x1080`, `1280x720`, `1024x640`, `800x600`, `640x480`, `480x360`, and phone sizes `412x915` and `915x412`. Zoom cases model a 1280x720 physical window at 1.5× and 2×.
+It checks `word_split`, `clipped_h`/`clipped_screen_*`, `offscreen`, `overlap`, `window_overflow`, `ratchet`, and `no_settle`.
+
+```bash
+cargo nextest run -p sqyre-app -E 'binary(layout_sweep)'
+SQYRE_LAYOUT_AUDIT=1 cargo nextest run -p sqyre-app -E 'binary(layout_sweep)'
+```
+
+Audit mode writes scene PNGs, annotated PNGs, and `findings.jsonl` under `target/layout-audit/`. The known-findings list is `crates/sqyre-app/tests/layout_baseline.txt`; update it with `SQYRE_UPDATE_LAYOUT_BASELINE=1` before the same nextest command. The list should only shrink as findings are fixed.
 
 ---
 

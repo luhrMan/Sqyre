@@ -6,7 +6,7 @@ use super::common::{
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro};
+use sqyre_domain::{action_type_label, Action, ActionKind, FindPixelData, Macro};
 use sqyre_ports::{DesktopRect, FindContext, LogFind, LogImage};
 use sqyre_vision::find_pixels_clustered;
 use std::sync::Arc;
@@ -23,16 +23,16 @@ pub(crate) fn execute_find_pixel(
     action: &Action,
     macro_: &mut Macro,
 ) -> Result<()> {
-    let ActionKind::FindPixel {
+    let ActionKind::FindPixel(d) = &action.kind else {
+        return Err(ExecError::Message("not find pixel".into()));
+    };
+    let FindPixelData {
         search_area,
         target_color,
         color_tolerance,
         detection,
         ..
-    } = &action.kind
-    else {
-        return Err(ExecError::Message("not find pixel".into()));
-    };
+    } = d.as_ref();
 
     let action_id = action.id;
     let label = action_type_label(action.type_key());
@@ -105,6 +105,7 @@ pub(crate) fn execute_find_pixel(
                                     ),
                                     state.src_w,
                                     state.src_h,
+                                    exec.deps.log_image_max_edge,
                                 ),
                             }),
                         }

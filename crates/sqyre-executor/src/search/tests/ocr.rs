@@ -23,11 +23,7 @@ fn ocr_writes_text_and_target_coords() {
 
     let img = RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: full_desktop(),
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(img);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -61,29 +57,22 @@ fn ocr_writes_text_and_target_coords() {
     let log = SharedActionLog::new();
     let ocr_id = ActionId::new();
 
-    let mut macro_ = quiet_macro(vec![Action {
+    let mut macro_ = fast_macro_of(vec![Action {
         id: ocr_id,
-        kind: ActionKind::Ocr {
+        kind: ActionKind::Ocr(Box::new(sqyre_domain::OcrData {
             name: "read".into(),
             target: "Submit".into(),
             search_area: CoordinateRef("prog~box".into()),
             output_variable: "ocrText".into(),
-            match_mode: Default::default(),
-            case_sensitive: false,
             blur: 1,
-            min_threshold: 0,
             resize: 1.0,
             grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
             detection: sqyre_domain::DetectionBranch {
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
+                coords: coords_xy("foundX", "foundY"),
                 ..Default::default()
             },
-        },
+            ..Default::default()
+        })),
     }]);
 
     execute_macro_with(
@@ -203,7 +192,7 @@ fn ocr_runs_branch_when_target_found() {
         ..Default::default()
     };
 
-    let mut macro_ = quiet_macro(vec![ocr_action(
+    let mut macro_ = fast_macro_of(vec![ocr_action(
         ActionId::new(),
         "Submit",
         "ocrText",
@@ -283,7 +272,7 @@ fn ocr_skips_branch_when_target_missing() {
         ..Default::default()
     };
 
-    let mut macro_ = quiet_macro(vec![ocr_action(
+    let mut macro_ = fast_macro_of(vec![ocr_action(
         ActionId::new(),
         "Submit",
         "ocrText",
@@ -320,7 +309,7 @@ fn ocr_wait_until_found_retries_then_succeeds() {
         ..Default::default()
     };
 
-    let mut macro_ = quiet_macro(vec![ocr_action(
+    let mut macro_ = fast_macro_of(vec![ocr_action(
         ActionId::new(),
         "Submit",
         "ocrText",
@@ -371,7 +360,7 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
         ..Default::default()
     };
 
-    let mut macro_ = quiet_macro(vec![ocr_action(
+    let mut macro_ = fast_macro_of(vec![ocr_action(
         ActionId::new(),
         "Keep",
         "ocrText",
@@ -430,7 +419,7 @@ fn ocr_runs_children_per_occurrence() {
         ..Default::default()
     };
 
-    let mut macro_ = quiet_macro(vec![ocr_action(
+    let mut macro_ = fast_macro_of(vec![ocr_action(
         ActionId::new(),
         "Gold",
         "ocrText",

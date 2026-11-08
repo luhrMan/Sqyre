@@ -9,7 +9,7 @@ use reis::ei::{self, button::ButtonState, keyboard::KeyState};
 use reis::event::{Device, DeviceCapability, EiEvent, EiEventConverter, Region};
 use reis::handshake::EiHandshaker;
 use reis::PendingRequestResult;
-use sqyre_ports::{cosmic_desktop_session, AutomationError};
+use sqyre_ports::{cosmic_desktop_session, AutomationError, APP_ID};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
@@ -576,7 +576,7 @@ fn handshake_with_timeout(
     limit: Duration,
     stop: &AtomicBool,
 ) -> Result<reis::handshake::HandshakeResp, CaptureError> {
-    let mut handshaker = EiHandshaker::new("sqyre", ei::handshake::ContextType::Sender);
+    let mut handshaker = EiHandshaker::new(APP_ID, ei::handshake::ContextType::Sender);
     let deadline = Instant::now() + limit;
     loop {
         if stop.load(Ordering::SeqCst) {

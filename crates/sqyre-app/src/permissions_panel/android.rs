@@ -26,6 +26,14 @@ impl Status {
             Self::Unknown => crate::theme::error_fg(),
         }
     }
+
+    fn glyph(self) -> &'static str {
+        match self {
+            Self::Granted => egui_phosphor::regular::CHECK_CIRCLE,
+            Self::Needed => egui_phosphor::regular::WARNING,
+            Self::Unknown => egui_phosphor::regular::X_CIRCLE,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,21 +104,21 @@ impl PermissionsPanel {
         ui.label(
             RichText::new("Android permissions")
                 .strong()
-                .color(crate::theme::PRIMARY),
+                .color(crate::theme::accent()),
         );
         ui.label(
             RichText::new("Grant these so macros can see the screen, tap, type, and be stopped.")
                 .weak()
                 .small(),
         );
-        ui.add_space(crate::theme::SPACE_8);
+        crate::theme::add_section_gap(ui);
 
         let mut clicked = None;
         for row in std::iter::once(&recording).chain(&self.system_rows) {
             if let Some(fix) = paint_row(ui, row) {
                 clicked = Some(fix);
             }
-            ui.add_space(crate::theme::SPACE_12);
+            crate::theme::add_section_gap(ui);
         }
         if let Some(fix) = clicked {
             let result = match fix {
@@ -136,17 +144,17 @@ fn paint_row(ui: &mut egui::Ui, row: &Row) -> Option<Fix> {
             row.title,
             row.summary,
             row.status.label(),
+            row.status.glyph(),
             row.status.color(),
+            false,
         );
         ui.label(RichText::new(row.summary).weak().small());
         if let Some(detail) = &row.detail {
-            ui.add_space(crate::theme::SPACE_4);
-            ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
+            crate::widgets::warn_icon(ui, detail);
         }
-        ui.add_space(crate::theme::SPACE_8);
         let b = &row.button;
         if ui
-            .add_enabled(b.enabled, egui::Button::new(b.label))
+            .add_enabled(b.enabled, egui::Button::new(b.label).small())
             .on_hover_text(b.tip)
             .on_disabled_hover_text(b.tip)
             .clicked()

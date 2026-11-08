@@ -317,14 +317,10 @@ mod tests {
             other => panic!("expected move, got {other:?}"),
         }
         match &m.root.children()[2].kind {
-            sqyre_domain::ActionKind::ImageSearch {
-                search_area,
-                detection,
-                ..
-            } => {
-                assert_eq!(search_area.as_str(), "Arena Breakout Infinite~Mail Area");
+            sqyre_domain::ActionKind::ImageSearch(d) => {
+                assert_eq!(d.search_area.as_str(), "Arena Breakout Infinite~Mail Area");
                 assert_eq!(
-                    detection.wait.repeat_mode,
+                    d.detection.wait.repeat_mode,
                     sqyre_domain::RepeatMode::WaitUntilFound
                 );
             }

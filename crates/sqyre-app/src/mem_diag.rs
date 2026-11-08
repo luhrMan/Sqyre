@@ -24,6 +24,8 @@ const DEFAULT_INTERVAL_MS: u64 = 5000;
 const GROW_WARN_KIB: u64 = 16 * 1024;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// Settings → Diagnostics toggle; `SQYRE_MEM=1` (`ENABLED`) still forces on.
+static SETTINGS_ON: AtomicBool = AtomicBool::new(false);
 static LAST_TICK_MS: AtomicU64 = AtomicU64::new(0);
 static INTERVAL_MS: AtomicU64 = AtomicU64::new(DEFAULT_INTERVAL_MS);
 static STATE: Mutex<MemState> = Mutex::new(MemState::new());
@@ -49,9 +51,32 @@ impl MemState {
     }
 }
 
-/// True when `SQYRE_MEM` is `1` / `true` / `yes`.
+/// True when memory sampling is on (`SQYRE_MEM=1`/`true`/`yes` or Settings →
+/// Diagnostics → Memory logging).
 pub fn enabled() -> bool {
-    ENABLED.load(Ordering::Relaxed)
+    ENABLED.load(Ordering::Relaxed) || SETTINGS_ON.load(Ordering::Relaxed)
+}
+
+/// Apply the Settings → Diagnostics toggle. Turning on re-seeds the session so
+/// the first sample lands immediately; `SQYRE_MEM=1` still forces sampling on.
+pub fn set_enabled(on: bool, interval_ms: i32) {
+    INTERVAL_MS.store(interval_ms.max(500) as u64, Ordering::SeqCst);
+    let was_on = enabled();
+    SETTINGS_ON.store(on, Ordering::SeqCst);
+    if on && !was_on {
+        if let Ok(mut g) = STATE.lock() {
+            g.started = Some(Instant::now());
+            g.baseline_rss_kib = None;
+            g.last_rss_kib = None;
+            g.post_run_rss_kib = None;
+        }
+        LAST_TICK_MS.store(0, Ordering::SeqCst);
+        note(&format!(
+            "mem: sampling on via settings → {}",
+            log_dir().join(MEM_LOG_FILE).display()
+        ));
+        sample("settings_on");
+    }
 }
 
 /// Read env and announce. Call once from [`crate::diag::install`].

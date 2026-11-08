@@ -1,6 +1,7 @@
 //! First-start popup: explains each permission this platform needs, then requests them
 //! all once the user clicks Continue. Nothing prompts while it is showing.
 
+use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, RichText};
 
 /// Popup body width on wide windows; narrower windows use the dialog bounds instead.
@@ -84,20 +85,25 @@ impl PermissionsIntro {
             );
             crate::widgets::section_separator(ui);
             // Footer height (button row) stays outside the scroll so Continue is always visible.
-            let footer_h = ui.spacing().interact_size.y + crate::theme::SPACE_8 * 2.0;
+            let footer_h = ui.spacing().interact_size.y
+                + crate::theme::element_gap(ui)
+                + crate::theme::section_gap(ui);
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
-            egui::ScrollArea::vertical()
-                .id_salt("sqyre_permissions_intro_body")
-                .max_height(scroll_h)
-                .show(ui, |ui| {
+            crate::widgets::show_scroll_edge_fit(
+                ui,
+                crate::widgets::scroll_vertical()
+                    .id_salt("sqyre_permissions_intro_body")
+                    // Modal width is fixed; shrinking X would float the V-bar
+                    // off the frame edge. Y still hugs the content height.
+                    .auto_shrink([false, true])
+                    .max_height(scroll_h),
+                |ui| {
                     for item in &self.items {
                         paint_item(ui, ctx, item);
-                        ui.add_space(crate::theme::SPACE_8);
                     }
                     if let Some(note) = self.note {
                         ui.label(RichText::new(note).weak().small());
-                        ui.add_space(crate::theme::SPACE_8);
                     }
                     ui.label(
                         RichText::new("You can review these any time in Settings → Permissions.")
@@ -105,11 +111,10 @@ impl PermissionsIntro {
                             .small(),
                     );
                 });
-            ui.add_space(crate::theme::SPACE_8);
             if self.showing() {
                 let clicked = ui
                     .button("Continue")
-                    .on_hover_text("Show the system permission prompts now.")
+                    .on_hover_text(ht::PERM_SHOW_PROMPTS)
                     .clicked();
                 let enter = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                 confirmed = clicked || enter;
@@ -134,7 +139,7 @@ fn paint_item(ui: &mut egui::Ui, ctx: &egui::Context, item: &Item) {
     if let Some(cmd) = item.copy_command {
         ui.horizontal_wrapped(|ui| {
             ui.monospace(cmd);
-            if ui.button("Copy").clicked() {
+            if ui.small_button("Copy").clicked() {
                 ctx.copy_text(cmd.to_string());
             }
         });
@@ -350,6 +355,34 @@ mod tests {
         assert!(intro.showing());
         assert!(!intro.finished());
         assert!(!intro.items.is_empty());
+    }
+
+    /// The body scroll caps at `scroll_h` ≈ the window, but must claim only
+    /// what it paints — the pre-shrink `inner_rect` claim left the popup
+    /// filling the whole window even with a short permission list.
+    #[test]
+    fn hugs_content_instead_of_filling_window() {
+        let ctx = egui::Context::default();
+        let mut intro = PermissionsIntro::new();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                intro.show(ui.ctx());
+            })
+            .drop_without_applying_deltas();
+        }
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("sqyre_permissions_intro")))
+            .expect("intro area painted");
+        let bounds = crate::widgets::dialog_constrain_rect(&ctx);
+        assert!(
+            rect.height() < bounds.height() * 0.4,
+            "intro {rect:?} must hug content, not fill {bounds:?}"
+        );
     }
 
     #[test]

@@ -22,6 +22,11 @@ impl NullCapturer {
         Err(CaptureError::Message("NullCapturer: no display".into()))
     }
 
+    /// `open` always fails, so a dead-state reopen could never help — always false.
+    pub fn is_dead(&self) -> bool {
+        false
+    }
+
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         Ok(DesktopRect {
             x: 0,

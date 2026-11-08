@@ -17,7 +17,7 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
-    DetectionBranch, ItemSortBy, ItemSortThen, Macro, MatchMethod, OcrMatchMode,
+    DetectionBranch, FindPixelData, ImageSearchData, Macro, MatchMethod, OcrData, OcrMatchMode,
     MAX_COLOR_TOLERANCE, MAX_OCR_RESIZE, MAX_OCR_THRESHOLD, MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE,
     MIN_OCR_THRESHOLD,
 };
@@ -32,7 +32,7 @@ fn detection_primary_header(
     search_area: &mut CoordinateRef,
 ) {
     tip_wrapped_section(ui, |ui| {
-        text_field(ui, "Name", h::NAME, name);
+        text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
     });
     search_area_section(ui, paint, search_area, picker);
 }
@@ -53,65 +53,14 @@ fn match_method_editor(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     match_settings::paint_match_method(ui, match_method);
 }
 
-/// Borrowed [`ActionKind::ImageSearch`] fields, so the painter takes one
-/// argument for the action instead of one per field.
-///
-/// The caller still matches the variant, which keeps the field set statically
-/// checked; this only bundles the resulting `&mut` bindings.
-///
-/// [`ActionKind::ImageSearch`]: sqyre_domain::ActionKind::ImageSearch
-pub(super) struct ImageSearchFields<'a> {
-    pub name: &'a mut String,
-    pub targets: &'a mut Vec<String>,
-    pub target_tags: &'a mut Vec<String>,
-    pub search_area: &'a mut CoordinateRef,
-    pub tolerance: &'a mut f64,
-    pub blur: &'a mut i32,
-    pub match_method: &'a mut MatchMethod,
-    pub sort_by: &'a mut ItemSortBy,
-    pub sort_then: &'a mut ItemSortThen,
-    pub tag_priority: &'a mut Vec<String>,
-    pub detection: &'a mut DetectionBranch,
-}
-
-/// Borrowed [`ActionKind::Ocr`] fields. See [`ImageSearchFields`].
-///
-/// [`ActionKind::Ocr`]: sqyre_domain::ActionKind::Ocr
-pub(super) struct OcrFields<'a> {
-    pub name: &'a mut String,
-    pub target: &'a mut String,
-    pub search_area: &'a mut CoordinateRef,
-    pub output_variable: &'a mut String,
-    pub match_mode: &'a mut OcrMatchMode,
-    pub case_sensitive: &'a mut bool,
-    pub blur: &'a mut i32,
-    pub min_threshold: &'a mut i32,
-    pub resize: &'a mut f64,
-    pub grayscale: &'a mut bool,
-    pub threshold_otsu: &'a mut bool,
-    pub threshold_invert: &'a mut bool,
-    pub detection: &'a mut DetectionBranch,
-}
-
-/// Borrowed [`ActionKind::FindPixel`] fields. See [`ImageSearchFields`].
-///
-/// [`ActionKind::FindPixel`]: sqyre_domain::ActionKind::FindPixel
-pub(super) struct FindPixelFields<'a> {
-    pub name: &'a mut String,
-    pub search_area: &'a mut CoordinateRef,
-    pub target_color: &'a mut String,
-    pub color_tolerance: &'a mut i32,
-    pub detection: &'a mut DetectionBranch,
-}
-
 pub(super) fn paint_image_search_fields(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
-    fields: ImageSearchFields<'_>,
+    data: &mut ImageSearchData,
 ) {
-    let ImageSearchFields {
+    let ImageSearchData {
         name,
         targets,
         target_tags,
@@ -123,7 +72,7 @@ pub(super) fn paint_image_search_fields(
         sort_then,
         tag_priority,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_section(ui, |ui| {
         targets_editor(
@@ -157,9 +106,9 @@ pub(super) fn paint_ocr_fields(
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
-    fields: OcrFields<'_>,
+    data: &mut OcrData,
 ) {
-    let OcrFields {
+    let OcrData {
         name,
         target,
         search_area,
@@ -173,11 +122,12 @@ pub(super) fn paint_ocr_fields(
         threshold_otsu,
         threshold_invert,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
             ui,
+            egui_phosphor::regular::BRACKETS_CURLY,
             "Output variable",
             output_variable,
             theme.known_vars,
@@ -187,6 +137,7 @@ pub(super) fn paint_ocr_fields(
         );
         var_ref_field(
             ui,
+            egui_phosphor::regular::TEXT_T,
             "Target",
             target,
             theme,
@@ -196,6 +147,7 @@ pub(super) fn paint_ocr_fields(
         );
         combo_enum(
             ui,
+            egui_phosphor::regular::EQUALS,
             "Match",
             h::OCR_MATCH,
             match_mode,
@@ -209,10 +161,18 @@ pub(super) fn paint_ocr_fields(
     });
     tip_wrapped_section(ui, |ui| {
         *blur = sqyre_domain::clamp_match_blur(*blur);
-        drag_field(ui, "Blur", h::OCR_BLUR, blur, configure_match_blur_drag);
+        drag_field(
+            ui,
+            egui_phosphor::regular::DROP,
+            "Blur",
+            h::OCR_BLUR,
+            blur,
+            configure_match_blur_drag,
+        );
         *min_threshold = clamp_ocr_threshold(*min_threshold);
         drag_field(
             ui,
+            egui_phosphor::regular::FADERS,
             "Min threshold",
             h::OCR_MIN_THRESHOLD,
             min_threshold,
@@ -223,9 +183,14 @@ pub(super) fn paint_ocr_fields(
         detection_advanced_fields(ui, theme, detection);
         tip_wrapped_section(ui, |ui| {
             *resize = clamp_ocr_resize(*resize);
-            drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| {
-                d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE)
-            });
+            drag_field(
+                ui,
+                egui_phosphor::regular::ARROWS_OUT,
+                "Resize",
+                h::OCR_RESIZE,
+                resize,
+                |d| d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE),
+            );
             h::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
             h::tip(
                 ui.checkbox(threshold_otsu, "Auto black/white cutoff"),
@@ -246,20 +211,21 @@ pub(super) fn paint_find_pixel_fields(
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
     screen_click: &ScreenClickBridge,
-    fields: FindPixelFields<'_>,
+    data: &mut FindPixelData,
 ) {
-    let FindPixelFields {
+    let FindPixelData {
         name,
         search_area,
         target_color,
         color_tolerance,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         wrap_unit(ui, |ui| {
             var_ref_field(
                 ui,
+                egui_phosphor::regular::EYEDROPPER,
                 "Target color",
                 target_color,
                 theme,
@@ -274,7 +240,7 @@ pub(super) fn paint_find_pixel_fields(
                     rect,
                     3.0,
                     tree_chrome::rgba_pub(rgba),
-                    egui::Stroke::new(1.0, egui::Color32::from_gray(80)),
+                    crate::theme::inner_stroke(),
                     egui::StrokeKind::Outside,
                 );
             }
@@ -291,6 +257,7 @@ pub(super) fn paint_find_pixel_fields(
         *color_tolerance = clamp_color_tolerance(*color_tolerance);
         drag_field(
             ui,
+            egui_phosphor::regular::FADERS,
             "Color tolerance",
             h::PIXEL_TOLERANCE,
             color_tolerance,

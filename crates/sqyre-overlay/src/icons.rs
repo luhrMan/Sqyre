@@ -298,7 +298,7 @@ pub(crate) fn icon_glyph_button(
         rect,
         icon.glyph,
         glyph_font_id((size * 0.48).round()),
-        sqyre_ui_theme::PRIMARY,
+        sqyre_ui_theme::accent(),
     );
     response.on_hover_text(icon.label)
 }
@@ -355,7 +355,7 @@ fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hove
         sqyre_ui_theme::frame_fill()
     };
     let stroke = if selected || hovered {
-        egui::Stroke::new(1.5, sqyre_ui_theme::PRIMARY)
+        egui::Stroke::new(1.5, sqyre_ui_theme::accent())
     } else {
         sqyre_ui_theme::inner_stroke()
     };
@@ -403,7 +403,6 @@ pub fn show_icon_picker_grid(
             );
         });
     });
-    ui.add_space(4.0);
 
     let query = search.trim().to_ascii_lowercase();
     let icons: Vec<&OverlayIcon> = if query.is_empty() {
@@ -420,7 +419,6 @@ pub fn show_icon_picker_grid(
         ui.weak("No matching icons.");
         return None;
     }
-    ui.add_space(4.0);
 
     let mut picked = None;
     let rem = ui.available_size();

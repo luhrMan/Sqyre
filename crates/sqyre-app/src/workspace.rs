@@ -20,3 +20,10 @@ pub(crate) struct Workspace {
     /// Empty = hotkeys off. Persisted in [`sqyre_persist::UserSettings::hotkey_tag_filters`].
     pub(crate) hotkey_tag_filters: Vec<String>,
 }
+
+impl Workspace {
+    /// Clamped index of the selected macro, or `None` when the list is empty.
+    pub(crate) fn selected_macro_index(&self) -> Option<usize> {
+        (!self.macros.is_empty()).then(|| self.selected_macro.min(self.macros.len() - 1))
+    }
+}

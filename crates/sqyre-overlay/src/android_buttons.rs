@@ -201,8 +201,8 @@ fn install_input_handlers(
     overlay_input::set_overlay_move_handler(Arc::new(move |id, x, y| {
         let mut specs = specs.lock();
         if let Some(btn) = specs.iter_mut().find(|b| b.id == id) {
-            btn.x = x;
-            btn.y = y;
+            btn.face.x = x;
+            btn.face.y = y;
         }
         drop(specs);
         pending_moves.lock().push(OverlayButtonMove {
@@ -358,13 +358,20 @@ fn reconcile(
             phases.remove(&spec.id);
             0.0
         };
-        let (x, y) = clamp_origin(spec.x, spec.y, spec.w, spec.h, screen_w, screen_h);
+        let (x, y) = clamp_origin(
+            spec.face.x,
+            spec.face.y,
+            spec.face.w,
+            spec.face.h,
+            screen_w,
+            screen_h,
+        );
         let clickable = (!busy || press_stops) && !relocate && !spec.macro_name.trim().is_empty();
         let stamp = Applied {
             x,
             y,
-            w: spec.w,
-            h: spec.h,
+            w: spec.face.w,
+            h: spec.face.h,
             clickable,
             relocate,
             phase_step: busy.then_some((phase * 32.0) as u8),
@@ -372,26 +379,13 @@ fn reconcile(
         if applied.get(&spec.id) == Some(&stamp) {
             continue;
         }
-        let rgba = raster::rasterize_argb(&ButtonPaint {
-            w: spec.w.max(1),
-            h: spec.h.max(1),
-            bg: spec.bg,
-            border: spec.border,
-            border_width: spec.border_width,
-            corner_radius: spec.corner_radius,
-            icon_glyph: spec.icon_glyph,
-            icon: spec.icon,
-            icon_hover: spec.icon_hover,
-            hovered: false,
-            busy,
-            busy_phase: phase,
-        });
+        let rgba = raster::rasterize_argb(&ButtonPaint::from_face(&spec.face, false, busy, phase));
         match bridge::upsert_overlay(
             &spec.id,
             x,
             y,
-            spec.w as i32,
-            spec.h as i32,
+            spec.face.w as i32,
+            spec.face.h as i32,
             &rgba,
             clickable,
             relocate,

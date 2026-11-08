@@ -72,7 +72,7 @@ pub fn log_dir() -> PathBuf {
         std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(std::env::temp_dir)
-            .join(".sqyre")
+            .join(sqyre_ports::APP_DIR_NAME)
     }
 }
 

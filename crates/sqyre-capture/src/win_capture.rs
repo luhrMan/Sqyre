@@ -99,6 +99,11 @@ impl OsCapturer {
         0
     }
 
+    /// GDI capture has no ending stream — always false.
+    pub fn is_dead(&self) -> bool {
+        false
+    }
+
     /// Virtual desktop bounds (`&self`).
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();

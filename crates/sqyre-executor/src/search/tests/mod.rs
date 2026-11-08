@@ -2,8 +2,8 @@ use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, Det
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{
-    FixedCollection, FixedResolver, RecordingBackend, RecordingCapturer, StopAfterSleeps,
-    SEARCH_FIXED_AREA,
+    fast_macro_of, FixedCollection, FixedResolver, RecordingBackend, RecordingCapturer,
+    StopAfterSleeps, SEARCH_FIXED_AREA,
 };
 use crate::{lines_for, SharedActionLog};
 use ::image::{Rgba, RgbaImage};
@@ -32,14 +32,6 @@ fn full_desktop() -> DesktopRect {
         w: 2000,
         h: 2000,
     }
-}
-
-fn quiet_macro(actions: Vec<Action>) -> Macro {
-    let mut macro_ = Macro::new("t", 0, vec![]);
-    macro_.keyboard_delay = 0;
-    macro_.mouse_delay = 0;
-    macro_.root = root_loop(actions);
-    macro_
 }
 
 fn run_search(
@@ -92,6 +84,15 @@ fn run_search_ocr(
 fn capturer_next(img: RgbaImage) -> RecordingCapturer {
     RecordingCapturer {
         next: Some(img),
+        bounds: full_desktop(),
+        ..Default::default()
+    }
+}
+
+fn capturer_frames(queue: Vec<RgbaImage>, next: Option<RgbaImage>) -> RecordingCapturer {
+    RecordingCapturer {
+        queue,
+        next,
         bounds: full_desktop(),
         ..Default::default()
     }
@@ -176,13 +177,13 @@ fn find_pixel_action(
 ) -> Action {
     Action {
         id,
-        kind: ActionKind::FindPixel {
+        kind: ActionKind::FindPixel(Box::new(sqyre_domain::FindPixelData {
             name: "red".into(),
             search_area: CoordinateRef("Prog~Box".into()),
             target_color: color.into(),
-            color_tolerance: 0,
             detection,
-        },
+            ..Default::default()
+        })),
     }
 }
 
@@ -194,21 +195,17 @@ fn ocr_action(
 ) -> Action {
     Action {
         id,
-        kind: ActionKind::Ocr {
+        kind: ActionKind::Ocr(Box::new(sqyre_domain::OcrData {
             name: "read".into(),
             target: target.into(),
             search_area: CoordinateRef("prog~box".into()),
             output_variable: output_variable.into(),
-            match_mode: Default::default(),
-            case_sensitive: false,
             blur: 1,
-            min_threshold: 0,
             resize: 1.0,
             grayscale: true,
-            threshold_otsu: false,
-            threshold_invert: false,
             detection,
-        },
+            ..Default::default()
+        })),
     }
 }
 
@@ -235,6 +232,31 @@ struct MapIcons {
     paths: HashMap<String, Vec<PathBuf>>,
     masks: HashMap<String, PathBuf>,
     meta: HashMap<String, ItemMeta>,
+}
+
+fn item_meta(name: &str, stack_max: i32, cols: i32, rows: i32, tags: &[&str]) -> ItemMeta {
+    ItemMeta {
+        name: name.into(),
+        stack_max,
+        cols,
+        rows,
+        tags: tags.iter().map(ToString::to_string).collect(),
+    }
+}
+
+/// `MapIcons` with empty masks keyed by catalog key → (paths, optional meta).
+fn icons_for(items: Vec<(&str, Vec<PathBuf>, Option<ItemMeta>)>) -> MapIcons {
+    MapIcons {
+        paths: items
+            .iter()
+            .map(|(key, paths, _)| ((*key).to_string(), paths.clone()))
+            .collect(),
+        masks: HashMap::new(),
+        meta: items
+            .into_iter()
+            .filter_map(|(key, _, meta)| meta.map(|m| (key.to_string(), m)))
+            .collect(),
+    }
 }
 
 impl IconStore for MapIcons {
@@ -288,6 +310,20 @@ fn patterned_rgba(w: u32, h: u32, seed: u8) -> RgbaImage {
             (255u32.wrapping_sub(x * 11).wrapping_add(seed as u32)) as u8,
             255,
         ]);
+    }
+    img
+}
+
+/// 3-channel patterned template matching [`patterned_rgba`]'s seed-0 fill.
+fn patterned_imagebuf(w: usize, h: usize) -> ImageBuf {
+    let mut img = ImageBuf::new(w, h, 3, 40);
+    for y in 0..h {
+        for x in 0..w {
+            let o = img.pixel_offset(x, y);
+            img.data[o] = (x * 17 + y * 9) as u8;
+            img.data[o + 1] = (x * 3 + y * 29) as u8;
+            img.data[o + 2] = (255 - x * 11) as u8;
+        }
     }
     img
 }

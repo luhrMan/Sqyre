@@ -112,40 +112,27 @@ impl<'a> Scan<'a> {
         if rayon::current_thread_index().is_none() {
             return (0..height)
                 .into_par_iter()
-                .map(|y| {
-                    let mut runs: Vec<Run> = Vec::new();
-                    let mut start: Option<usize> = None;
-                    for x in 0..self.width {
-                        if self.matches(y, x) {
-                            start.get_or_insert(x);
-                        } else if let Some(s) = start.take() {
-                            runs.push((s, x));
-                        }
-                    }
-                    if let Some(s) = start {
-                        runs.push((s, self.width));
-                    }
-                    runs
-                })
+                .map(|y| self.row_runs(y))
                 .collect();
         }
-        (0..height)
-            .map(|y| {
-                let mut runs: Vec<Run> = Vec::new();
-                let mut start: Option<usize> = None;
-                for x in 0..self.width {
-                    if self.matches(y, x) {
-                        start.get_or_insert(x);
-                    } else if let Some(s) = start.take() {
-                        runs.push((s, x));
-                    }
-                }
-                if let Some(s) = start {
-                    runs.push((s, self.width));
-                }
-                runs
-            })
-            .collect()
+        (0..height).map(|y| self.row_runs(y)).collect()
+    }
+
+    /// Contiguous match runs `(start_x, end_x)` across row `y`.
+    fn row_runs(&self, y: usize) -> Vec<Run> {
+        let mut runs: Vec<Run> = Vec::new();
+        let mut start: Option<usize> = None;
+        for x in 0..self.width {
+            if self.matches(y, x) {
+                start.get_or_insert(x);
+            } else if let Some(s) = start.take() {
+                runs.push((s, x));
+            }
+        }
+        if let Some(s) = start {
+            runs.push((s, self.width));
+        }
+        runs
     }
 }
 

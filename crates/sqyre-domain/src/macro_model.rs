@@ -184,13 +184,11 @@ mod tests {
     fn find_pixel(name: &str) -> Action {
         Action {
             id: crate::ActionId::new(),
-            kind: ActionKind::FindPixel {
+            kind: ActionKind::FindPixel(Box::new(crate::FindPixelData {
                 name: name.into(),
-                search_area: Default::default(),
                 target_color: "#fff".into(),
-                color_tolerance: 0,
-                detection: Default::default(),
-            },
+                ..Default::default()
+            })),
         }
     }
 
@@ -244,11 +242,9 @@ mod tests {
     fn fast_pixel(interval_ms: i32, seconds: f64, mode: crate::RepeatMode) -> Action {
         Action {
             id: crate::ActionId::new(),
-            kind: ActionKind::FindPixel {
+            kind: ActionKind::FindPixel(Box::new(crate::FindPixelData {
                 name: "p".into(),
-                search_area: Default::default(),
                 target_color: "#fff".into(),
-                color_tolerance: 0,
                 detection: crate::DetectionBranch {
                     wait: crate::WaitTilFoundConfig {
                         repeat_mode: mode,
@@ -258,7 +254,8 @@ mod tests {
                     },
                     ..Default::default()
                 },
-            },
+                ..Default::default()
+            })),
         }
     }
 

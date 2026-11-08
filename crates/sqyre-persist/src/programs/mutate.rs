@@ -110,6 +110,12 @@ impl ProgramCatalog {
             .remove(old)
             .ok_or_else(|| PersistError::Message(format!("program {old:?} not found")))?;
         data.name = new.to_string();
+        sqyre_domain::rename_tags_for_program(&mut data.tags, old, new);
+        super::name_tag::strip(&mut data.tags, new);
+        for other in self.programs.values_mut() {
+            sqyre_domain::rename_tags_for_program(&mut other.tags, old, new);
+            super::name_tag::strip(&mut other.tags, &other.name);
+        }
         self.programs.insert(new.to_string(), data);
         // Move item icons / masks / collections with the program so nested assets stay reachable.
         let fs_warn = if is_safe_fs_entity_name(old) {
@@ -260,10 +266,15 @@ impl ProgramCatalog {
         let _ = std::fs::remove_file(&path);
     }
 
-    /// Set macro tags used for while-focused hotkey selection.
+    /// Set extra macro tags used for while-focused hotkey selection.
+    ///
+    /// A tag equal to the program name is dropped; that tag is derived.
     pub fn set_program_tags(&mut self, program: &str, tags: Vec<String>) -> Result<()> {
         let p = self.program_mut(program)?;
         p.tags = tags;
+        super::name_tag::strip(&mut p.tags, program);
+        let name = p.name.clone();
+        super::name_tag::strip(&mut p.tags, &name);
         Ok(())
     }
 
@@ -704,6 +715,7 @@ fn merge_program_data_prefer_imported(live: &mut ProgramData, imported: &Program
     live.process_path = imported.process_path.clone();
     live.window_title = imported.window_title.clone();
     live.tags = imported.tags.clone();
+    super::name_tag::strip(&mut live.tags, &live.name);
     merge_nested_maps_prefer_imported(&mut live.points, &imported.points);
     merge_nested_maps_prefer_imported(&mut live.search_areas, &imported.search_areas);
     merge_map_prefer_imported(&mut live.coord_scales, &imported.coord_scales);

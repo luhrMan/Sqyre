@@ -309,15 +309,11 @@ mod tests {
             vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
         );
         let opts = OcrPreprocessOptions {
-            grayscale: true,
             blur: false,
             blur_amount: 0,
             threshold: true,
             min_threshold: 128.0,
-            threshold_otsu: false,
-            threshold_invert: false,
-            resize: false,
-            resize_scale: 1.0,
+            ..Default::default()
         };
         let (out, scale) = preprocess_for_ocr(&img, opts).unwrap();
         assert_eq!(scale, 1.0);
@@ -332,12 +328,9 @@ mod tests {
             grayscale: false,
             blur: false,
             blur_amount: 0,
-            threshold: false,
-            min_threshold: 0.0,
-            threshold_otsu: false,
-            threshold_invert: false,
             resize: true,
             resize_scale: 2.0,
+            ..Default::default()
         };
         let (out, scale) = preprocess_for_ocr(&img, opts).unwrap();
         assert_eq!(scale, 2.0);
@@ -353,15 +346,11 @@ mod tests {
             vec![0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255],
         );
         let opts = OcrPreprocessOptions {
-            grayscale: true,
             blur: false,
             blur_amount: 0,
             threshold: true,
             min_threshold: 128.0,
-            threshold_otsu: false,
-            threshold_invert: false,
-            resize: false,
-            resize_scale: 1.0,
+            ..Default::default()
         };
         let (_, _, steps) = preprocess_for_ocr_with_steps(&img, opts, true).unwrap();
         assert!(steps.len() >= 3);

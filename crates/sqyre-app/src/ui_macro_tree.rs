@@ -22,10 +22,7 @@ const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
 const TREE_SCROLL_FRICTION: f32 = 1000.0;
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    let idx = app
-        .workspace
-        .selected_macro
-        .min(app.workspace.macros.len() - 1);
+    let idx = app.workspace.selected_macro_index().unwrap_or(0);
     app.workspace.selected_macro = idx;
 
     let mut open_logs: Option<ActionId> = None;
@@ -52,20 +49,19 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     let scroll_to = follow.filter(|id| app.tree.last_exec_follow != Some(*id));
     let mut scrolled_follow = false;
     let mut swipe_done: Option<(ActionId, SwipeAction)> = None;
-    // Floating bars allocate 0 by default and cover the row chrome; reserve
-    // bar_width so logs/delete stay clear when the scrollbar appears.
     let actions = ui
         .scope(|ui| {
-            ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
             // Custom drag-scroll below (DnD handle vs content); disable egui drag.
             // Vertical only: action rows clip to the visible pane width, so an H-bar
             // would only reflect egui_ltreeview's min_width ratchet (see new_child
             // below). auto_shrink false keeps the viewport filled when content is short.
-            let scroll_out = egui::ScrollArea::vertical()
-                .id_salt("macro_tree_scroll")
-                .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            let scroll_out = crate::widgets::show_scroll_edge(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("macro_tree_scroll")
+                    .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
+                    .auto_shrink([false, false]),
+                |ui| {
                     // Decide reorder vs drag-scroll before TreeView so
                     // allow_drag_and_drop can suppress a non-handle drag.
                     let (primary_down, primary_released, pointer_delta, pointer_vel_y, dt) = ui
@@ -299,18 +295,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                                             .drop_allowed(true)
                                             .default_open(true),
                                     );
+                                    let mut walk = TreeWalk {
+                                        open_logs: &mut open_logs,
+                                        delete_action: &mut delete_action,
+                                        row_events: &mut row_events,
+                                        tree: &mut tree_paint,
+                                        scroll_to,
+                                        scrolled_follow: &mut scrolled_follow,
+                                        interact_y,
+                                    };
                                     for child in root_children {
-                                        build_tree(
-                                            builder,
-                                            child,
-                                            &mut open_logs,
-                                            &mut delete_action,
-                                            &mut row_events,
-                                            &mut tree_paint,
-                                            scroll_to,
-                                            &mut scrolled_follow,
-                                            interact_y,
-                                        );
+                                        build_tree(builder, child, &mut walk);
                                     }
                                     builder.close_dir();
                                 },
@@ -338,7 +333,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         }
                     }
                     tree_actions
-                });
+                },
+            );
             // Match egui ScrollArea: kill kinetic coast when offset clamps.
             // Positive scroll_with_delta.y decreases offset (toward top).
             let max_offset_y =
@@ -397,29 +393,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         state.set_selected(vec![aid]);
         app.set_selected_actions(vec![aid]);
     }
-    state.store(ui, id);
     if let Some(aid) = delete_action {
-        if !aid.is_root()
-            && !matches!(
-                app.workspace.macros[idx].root.resolve_tree_id(aid),
-                Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
-            )
-        {
-            app.record_tree_mutation();
-            let cleared_sel = app.tree.selected_actions.contains(&aid);
-            let _ = app.workspace.macros[idx].root.remove_by_id(aid);
-            if cleared_sel {
-                app.remove_from_selection(aid);
-            }
-            if app.run_session.logs_window == Some(aid) {
-                app.run_session.logs_window = None;
-                app.run_session.logs_state.clear();
-            }
-            if app.tree.tooltip.action_id() == Some(aid) {
-                app.tree.tooltip.cancel();
-            }
-            app.persist_macro_at(idx);
-            app.play_ui_delete_sound();
+        if remove_actions(app, idx, &[aid]) {
+            state.set_selected(app.tree.selected_actions.clone());
         }
     }
 
@@ -621,6 +597,127 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             }
         }
     }
+
+    // Delete removes the current selection (same nodes the row menu deletes).
+    // Runs after TreeView selection changes so the key sees this frame's rows.
+    if tree_delete_key(app, ui, id) {
+        let ids = app.tree.selected_actions.clone();
+        if remove_actions(app, idx, &ids) {
+            state.set_selected(app.tree.selected_actions.clone());
+        }
+    }
+    state.store(ui, id);
+}
+
+/// True when `id` is a real action the row menu is allowed to delete.
+fn action_deletable(root: &Action, id: ActionId) -> bool {
+    !id.is_root()
+        && matches!(
+            root.resolve_tree_id(id),
+            Some(sqyre_domain::TreeNodeRef::Action(_))
+        )
+}
+
+/// Drop `ids` from the selected macro. One undo step. Returns whether anything
+/// was removed.
+fn remove_actions(app: &mut SqyreApp, idx: usize, ids: &[ActionId]) -> bool {
+    let doomed: Vec<ActionId> = {
+        let root = &app.workspace.macros[idx].root;
+        ids.iter()
+            .copied()
+            .filter(|id| action_deletable(root, *id))
+            .collect()
+    };
+    if doomed.is_empty() {
+        return false;
+    }
+    app.record_tree_mutation();
+    let mut removed = false;
+    for aid in doomed {
+        if app.workspace.macros[idx].root.remove_by_id(aid).is_some() {
+            removed = true;
+        }
+    }
+    if !removed {
+        let name = app.workspace.macros[idx].name.clone();
+        if let Some(hist) = app.tree.histories.get_mut(&name) {
+            hist.pop_last_undo();
+        }
+        return false;
+    }
+    let alive: Vec<ActionId> = app
+        .tree
+        .selected_actions
+        .iter()
+        .copied()
+        .filter(|id| {
+            app.workspace.macros[idx]
+                .root
+                .resolve_tree_id(*id)
+                .is_some()
+        })
+        .collect();
+    app.set_selected_actions(alive);
+    if let Some(logs) = app.run_session.logs_window {
+        if app.workspace.macros[idx].root.find_by_id(logs).is_none() {
+            app.run_session.logs_window = None;
+            app.run_session.logs_state.clear();
+        }
+    }
+    if app
+        .tree
+        .tooltip
+        .action_id()
+        .is_some_and(|id| app.workspace.macros[idx].root.find_by_id(id).is_none())
+    {
+        app.tree.tooltip.cancel();
+    }
+    app.persist_macro_at(idx);
+    app.play_ui_delete_sound();
+    true
+}
+
+/// Delete key removes the tree selection when this tree owns the keyboard.
+fn tree_delete_key(app: &SqyreApp, ui: &mut egui::Ui, tree_id: egui::Id) -> bool {
+    let Some(idx) = app.workspace.selected_macro_index() else {
+        return false;
+    };
+    let deletable = app
+        .tree
+        .selected_actions
+        .iter()
+        .any(|id| action_deletable(&app.workspace.macros[idx].root, *id));
+    if !deletable || !tree_owns_delete(app, ui, tree_id) {
+        return false;
+    }
+    ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+}
+
+fn tree_owns_delete(app: &SqyreApp, ui: &egui::Ui, tree_id: egui::Id) -> bool {
+    if app.run_session.state.running.load(Ordering::SeqCst)
+        || app.tree.tooltip.is_editing()
+        || app.hotkey_record.is_open()
+        || app.key_record.is_open()
+        || app.macro_record.is_open()
+        || app.command_palette.is_open()
+        || app.add_action_picker.open
+        || app.macro_yaml_builder.is_open()
+        || app.macro_prompt_builder.is_open()
+        || ui.ctx().text_edit_focused()
+        || ui.ctx().any_popup_open()
+    {
+        return false;
+    }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if app.permissions_intro.is_some() {
+        return false;
+    }
+    // Row click requests this id; arrow keys only move selection while it is focused.
+    if ui.memory(|m| m.has_focus(tree_id)) {
+        return true;
+    }
+    ui.memory(|m| m.focused().is_none())
+        && crate::focus_nav::is_top_layer(ui.ctx(), egui::LayerId::background())
 }
 
 /// Apply Ctrl/Cmd toggle, Shift range, or plain single-select for tip-covered rows.
@@ -802,31 +899,30 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
     found
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
-)]
+/// Mutable outputs + shared paint context threaded through the recursive
+/// action-tree walk.
+struct TreeWalk<'a> {
+    open_logs: &'a mut Option<ActionId>,
+    delete_action: &'a mut Option<ActionId>,
+    row_events: &'a mut Vec<(ActionId, RowInteraction)>,
+    tree: &'a mut TreePaint<'a>,
+    scroll_to: Option<ActionId>,
+    scrolled_follow: &'a mut bool,
+    interact_y: f32,
+}
+
 fn build_tree(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     action: &Action,
-    open_logs: &mut Option<ActionId>,
-    delete_action: &mut Option<ActionId>,
-    row_events: &mut Vec<(ActionId, RowInteraction)>,
-    tree: &mut TreePaint<'_>,
-    scroll_to: Option<ActionId>,
-    scrolled_follow: &mut bool,
-    interact_y: f32,
+    walk: &mut TreeWalk<'_>,
 ) {
     let action_id = action.id;
-    let highlight = row_highlight_for(tree, action);
-    let should_scroll = scroll_to == Some(action_id);
-    let row_h = tree_chrome::action_row_height(action, interact_y);
+    let highlight = row_highlight_for(walk.tree, action);
+    let should_scroll = walk.scroll_to == Some(action_id);
+    let row_h = tree_chrome::action_row_height(action, walk.interact_y);
 
-    let mut handle_row = |ui: &mut egui::Ui,
-                          open_logs: &mut Option<ActionId>,
-                          delete_action: &mut Option<ActionId>,
-                          row_events: &mut Vec<(ActionId, RowInteraction)>,
-                          scrolled_follow: &mut bool| {
+    let handle_row = |ui: &mut egui::Ui, walk: &mut TreeWalk<'_>| {
+        let tree = &mut *walk.tree;
         let validation_error = sqyre_validate::validate_action(action, Some(tree.active_macro))
             .err()
             .map(|e| e.to_string());
@@ -856,14 +952,14 @@ fn build_tree(
         });
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));
-            *scrolled_follow = true;
+            *walk.scrolled_follow = true;
         }
         match interaction.action {
-            RowAction::Logs => *open_logs = Some(action_id),
-            RowAction::Delete => *delete_action = Some(action_id),
+            RowAction::Logs => *walk.open_logs = Some(action_id),
+            RowAction::Delete => *walk.delete_action = Some(action_id),
             RowAction::Edit | RowAction::None => {}
         }
-        row_events.push((action_id, interaction));
+        walk.row_events.push((action_id, interaction));
     };
 
     if action.is_branch() {
@@ -872,67 +968,37 @@ fn build_tree(
                 .drop_allowed(true)
                 .height(row_h)
                 .label_ui(|ui| {
-                    handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+                    handle_row(ui, walk);
                 }),
         );
         if is_open {
             for child in action.children() {
-                build_tree(
-                    builder,
-                    child,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_tree(builder, child, walk);
             }
             if action.has_else_folder() {
-                build_else_dir(
-                    builder,
-                    action,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_else_dir(builder, action, walk);
             }
         }
         builder.close_dir();
     } else {
         builder.node(NodeBuilder::leaf(action_id).height(row_h).label_ui(|ui| {
-            handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+            handle_row(ui, walk);
         }));
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
-)]
 fn build_else_dir(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     detection: &Action,
-    open_logs: &mut Option<ActionId>,
-    delete_action: &mut Option<ActionId>,
-    row_events: &mut Vec<(ActionId, RowInteraction)>,
-    tree: &mut TreePaint<'_>,
-    scroll_to: Option<ActionId>,
-    scrolled_follow: &mut bool,
-    interact_y: f32,
+    walk: &mut TreeWalk<'_>,
 ) {
     let else_id = ActionId::else_folder(detection.id);
     let else_count = detection
         .else_children()
         .map(|kids| kids.len())
         .unwrap_or(0);
-    let row_h = tree_chrome::default_row_height(interact_y);
-    let should_scroll = scroll_to == Some(else_id);
+    let row_h = tree_chrome::default_row_height(walk.interact_y);
+    let should_scroll = walk.scroll_to == Some(else_id);
     let is_open = builder.node(
         NodeBuilder::dir(else_id)
             .drop_allowed(true)
@@ -952,19 +1018,20 @@ fn build_else_dir(
                 tree_chrome::paint_row_highlight(
                     ui,
                     row_rect,
-                    else_folder_highlight(detection.id, tree.selected.last().copied()),
+                    else_folder_highlight(detection.id, walk.tree.selected.last().copied()),
                 );
                 if should_scroll {
                     ui.scroll_to_rect(row_rect, Some(egui::Align::Center));
-                    *scrolled_follow = true;
+                    *walk.scrolled_follow = true;
                 }
-                row_events.push((
+                walk.row_events.push((
                     else_id,
                     RowInteraction {
                         action: RowAction::None,
                         hovered: resp.hovered(),
                         pointer_in_row: resp.hovered(),
                         double_clicked: false,
+                        middle_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,
                         // Else folders are fixed under their owner — drag scrolls.
@@ -976,17 +1043,7 @@ fn build_else_dir(
     if is_open {
         if let Some(else_kids) = detection.else_children() {
             for child in else_kids {
-                build_tree(
-                    builder,
-                    child,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_tree(builder, child, walk);
             }
         }
     }
@@ -1139,27 +1196,18 @@ mod highlight_ui_tests {
 
     #[test]
     fn press_pair_highlight_marks_opposite_same_key() {
-        let down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "ctrl".into(),
-                state: PressState::Down,
-            },
-        };
-        let up = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "ctrl".into(),
-                state: PressState::Up,
-            },
-        };
-        let other = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "alt".into(),
-                state: PressState::Up,
-            },
-        };
+        let down = Action::new(ActionKind::Key {
+            key: "ctrl".into(),
+            state: PressState::Down,
+        });
+        let up = Action::new(ActionKind::Key {
+            key: "ctrl".into(),
+            state: PressState::Up,
+        });
+        let other = Action::new(ActionKind::Key {
+            key: "alt".into(),
+            state: PressState::Up,
+        });
         assert_eq!(press_pair_highlight(&up, Some(&down)), RowHighlight::Owner);
         assert_eq!(press_pair_highlight(&down, Some(&up)), RowHighlight::Owner);
         assert_eq!(

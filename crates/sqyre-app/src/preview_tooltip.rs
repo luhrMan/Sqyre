@@ -2,11 +2,11 @@
 
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
-use image::{Rgba, RgbaImage};
+use image::RgbaImage;
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
-use sqyre_ports::{CaptureError, DesktopRect};
+use sqyre_ports::{clamp_search_rect, CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
@@ -20,7 +20,7 @@ const CAPTURE_PADDING: i32 = 48;
 const TOOLTIP_MAX_DIM: u32 = 640;
 /// Data-editor panel previews stretch with the window and support zoom.
 const PANEL_MAX_DIM: u32 = 1600;
-const DISPLAY_MAX_W: f32 = 260.0;
+pub(crate) const DISPLAY_MAX_W: f32 = 260.0;
 const DISPLAY_MAX_H: f32 = 195.0;
 const PANEL_MIN_W: f32 = 160.0;
 const PANEL_MIN_H: f32 = 120.0;
@@ -29,8 +29,22 @@ const PANEL_FILL_SLACK: f32 = 1.0;
 const CACHE_MAX: usize = 24;
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
 const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
-const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
+/// Transient `NotReady` errors (stream restarting, first frame pending) retry
+/// after this much shorter window — the shared capturer may already be back.
+const RETRY_FAIL_TTL: Duration = Duration::from_millis(500);
 const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
+/// Point-marker ring radius in capture pixels (the raster ring sat near r = 7–8).
+const POINT_RING_RADIUS: f32 = 7.5;
+/// Point-marker crosshair half-length in capture pixels.
+const POINT_ARM: f32 = 15.0;
+/// Crosshair thickness in capture pixels.
+const POINT_STROKE_PX: f32 = 2.0;
+/// Search-area outline and grid thickness in capture pixels.
+const AREA_STROKE_PX: f32 = 1.0;
+/// Screen-pixel floor so a fitted preview still shows a blinking mark.
+const MARKER_MIN_STROKE: f32 = 1.5;
+/// In-flight preview capture. A slept PipeWire stream shows a spinner instead.
+const CAPTURE_PENDING: &str = "Capturing…";
 /// Half-size of the desktop outline box drawn around a point (px).
 const POINT_OUTLINE_HALF: i32 = 10;
 
@@ -46,12 +60,22 @@ struct CacheEntry {
     caption: String,
     /// Absolute desktop region this texture was captured for (manual ↻ clears matches).
     coords: PreviewCoords,
+    /// Location mark in capture pixels. Painted each frame so it can blink.
+    marker: PreviewMarker,
     /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
     region: Option<Arc<RgbaImage>>,
 }
 
+struct ReadyPreview {
+    texture: TextureHandle,
+    caption: String,
+    marker: PreviewMarker,
+}
+
 struct FailureEntry {
     error: String,
+    /// [`CaptureError::NoSavedScreen`]: the preview offers an app dropdown instead.
+    no_saved_screen: bool,
     expires: Instant,
     coords: PreviewCoords,
 }
@@ -65,15 +89,16 @@ struct PendingCapture {
 
 struct CapturedPreview {
     display: RgbaImage,
-    /// Exclusive `[left,right)×[top,bottom)` pixels before overlay/downscale.
+    /// Exclusive `[left,right)×[top,bottom)` pixels before downscale.
     region: Option<RgbaImage>,
+    /// Mark in pre-downscale capture pixels. Not baked into `display`.
+    marker: PreviewMarker,
 }
 
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
 #[derive(Default)]
 pub struct PreviewTooltipCache {
     capturer: Option<Arc<OsCapturer>>,
-    capturer_failed: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
     /// In-flight captures keyed like cache entries; polled on the UI frame.
@@ -84,8 +109,14 @@ pub struct PreviewTooltipCache {
     desktop_outline: Option<(i32, i32, i32, i32)>,
     /// Desktop outline from a hovered list row / coord label; wins over embedded.
     desktop_outline_hover: Option<(i32, i32, i32, i32)>,
+    /// Settings → Appearance toggle: preview tooltips may request the gold
+    /// desktop outline. Logs window pin/hover requests bypass this flag.
+    desktop_outlines_enabled: bool,
     #[cfg(target_os = "android")]
     backdrop_generation: u64,
+    /// App dropdown shown when Android has no saved screen yet.
+    #[cfg(target_os = "android")]
+    shot: PreviewShot,
 }
 
 impl PreviewTooltipCache {
@@ -180,12 +211,26 @@ impl PreviewTooltipCache {
         }
     }
 
+    /// Sync from `UserSettings::preview_desktop_outline`; turning it off also
+    /// drops a tooltip request queued this frame so nothing stale paints.
+    pub fn set_desktop_outlines_enabled(&mut self, enabled: bool) {
+        self.desktop_outlines_enabled = enabled;
+        if !enabled {
+            self.desktop_outline = None;
+            self.desktop_outline_hover = None;
+        }
+    }
+
     fn request_desktop_outline_embedded(&mut self, coords: PreviewCoords) {
-        self.desktop_outline = Some(desktop_outline_rect(coords));
+        if self.desktop_outlines_enabled {
+            self.desktop_outline = Some(desktop_outline_rect(coords));
+        }
     }
 
     fn request_desktop_outline_hover(&mut self, coords: PreviewCoords) {
-        self.desktop_outline_hover = Some(desktop_outline_rect(coords));
+        if self.desktop_outlines_enabled {
+            self.desktop_outline_hover = Some(desktop_outline_rect(coords));
+        }
     }
 
     /// Whether hovered/pinned rects can be outlined on the real desktop.
@@ -227,12 +272,16 @@ impl PreviewTooltipCache {
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
-                log_hover_outline_transition(kind, program, name, coords);
+                if self.desktop_outlines_enabled {
+                    log_hover_outline_transition(kind, program, name, coords);
+                }
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
                 show_preview_hover_ui(response, |ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+                    Ok(ready) => {
+                        paint_preview(ui, &ready.texture, &ready.caption, show_size, ready.marker)
+                    }
                     Err(err) => paint_preview_status(ui, caption.as_str(), err),
                 });
             }
@@ -249,6 +298,9 @@ impl PreviewTooltipCache {
     }
 
     /// Screen capture preview for a macro coordinate ref (action tooltips).
+    /// `interactive` is whether the host surface accepts hover: the edit window
+    /// does, so errors collapse to an icon + tooltip; the view tip is a
+    /// non-interactive [`egui::Area`] where hover never fires, so it keeps text.
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
@@ -256,31 +308,44 @@ impl PreviewTooltipCache {
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         force: bool,
+        interactive: bool,
     ) {
         let macro_ = Macro::new("", 0, vec![]);
+        let mut choose_app = false;
         let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_embedded(coords);
-                self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
+                let preview =
+                    self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM);
+                choose_app =
+                    interactive && preview.is_err() && self.failure_is_no_saved_screen(&key);
+                preview
             }
             Err(err) => Err(err),
         };
         match preview {
             // Tip/edit surface is viewport-relative (see action_tooltip::tip_max_width);
             // keep the smaller display fit so preview doesn't force the tip wider.
-            Ok((tex, cap)) => paint_preview(
+            Ok(ready) => paint_preview(
                 ui,
-                &tex,
-                &cap,
+                &ready.texture,
+                &ready.caption,
                 matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
+                ready.marker,
             ),
+            Err(err) if choose_app => self.paint_no_saved_screen_inline(ui, &err),
             Err(err) => {
-                ui.colored_label(crate::theme::error_fg(), err);
+                if interactive {
+                    crate::widgets::error_icon(ui, err.as_str());
+                } else {
+                    ui.colored_label(crate::theme::error_fg(), err);
+                }
             }
         }
     }
 
-    /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`].
+    /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`]. `help` is the
+    /// labeled field's description, shown under the ref name in the tooltip.
     pub fn show_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
@@ -288,6 +353,7 @@ impl PreviewTooltipCache {
         catalog: &ProgramCatalog,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
+        help: &str,
     ) {
         if coord_ref.is_empty() {
             return;
@@ -302,16 +368,24 @@ impl PreviewTooltipCache {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
                 match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
-                    Ok((tex, cap)) => Ok((tex, cap)),
+                    Ok(ready) => Ok(ready),
                     Err(err) => Err((caption, err)),
                 }
             }
             Err(err) => Err((label.clone(), err)),
         };
         let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
-        show_preview_hover_ui(response, |ui| match &preview {
-            Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
-            Err((cap, err)) => paint_preview_status(ui, cap, err),
+        show_preview_hover_ui(response, |ui| {
+            ui.add(egui::Label::new(label.as_str()).wrap());
+            if !help.is_empty() {
+                ui.add(egui::Label::new(egui::RichText::new(help).weak()).wrap());
+            }
+            match &preview {
+                Ok(ready) => {
+                    paint_preview(ui, &ready.texture, &ready.caption, show_size, ready.marker)
+                }
+                Err((cap, err)) => paint_preview_status(ui, cap, err),
+            }
         });
     }
 
@@ -340,7 +414,10 @@ impl PreviewTooltipCache {
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Ok(ready) => paint_preview_panel_image(ui, &ready.texture, view, ready.marker),
+            Err(err) if self.failure_is_no_saved_screen(&key) => {
+                self.paint_no_saved_screen_panel(ui, &err, view)
+            }
             Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
@@ -372,7 +449,7 @@ impl PreviewTooltipCache {
         let caption =
             match crate::data_editor_preview::exclusive_pixel_size(left, top, right, bottom) {
                 Some((w, h)) => format!(
-                    "Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom} · area {}",
+                    "Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}\n· area {}",
                     crate::data_editor_preview::pixel_size_text(w, h)
                 ),
                 None => format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}"),
@@ -392,11 +469,15 @@ impl PreviewTooltipCache {
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => {
-                let [tw, th] = tex.size();
-                let rect = paint_preview_panel_image(ui, &tex, view);
+            Ok(ready) => {
+                let [tw, th] = ready.texture.size();
+                let rect = paint_preview_panel_image(ui, &ready.texture, view, ready.marker);
                 (rect, egui::vec2(tw as f32, th as f32))
             }
+            Err(err) if self.failure_is_no_saved_screen(&key) => (
+                self.paint_no_saved_screen_panel(ui, &err, view),
+                egui::Vec2::ZERO,
+            ),
             Err(err) => (
                 paint_preview_panel_placeholder(ui, &err, view),
                 egui::Vec2::ZERO,
@@ -412,7 +493,9 @@ impl PreviewTooltipCache {
         coords: PreviewCoords,
         force: bool,
         max_dim: u32,
-    ) -> Result<(TextureHandle, String), String> {
+    ) -> Result<ReadyPreview, String> {
+        #[cfg(target_os = "android")]
+        self.poll_app_shot(ctx);
         #[cfg(target_os = "android")]
         self.drop_stale_backdrop_previews();
         let keep_region = max_dim >= PANEL_MAX_DIM
@@ -421,16 +504,13 @@ impl PreviewTooltipCache {
             self.invalidate_coords(coords);
         }
         if let Some(entry) = self.entries.get(key) {
-            // Panel ScreenCap needs the exclusive crop; recapture if a stale entry lacks it.
-            if keep_region && entry.region.is_none() {
-                self.entries.remove(key);
-                self.order.retain(|k| k != key);
-            } else {
-                let tex = entry.texture.clone();
-                let caption = entry.caption.clone();
-                self.touch(key);
-                return Ok((tex, caption));
-            }
+            let ready = ReadyPreview {
+                texture: entry.texture.clone(),
+                caption: entry.caption.clone(),
+                marker: entry.marker,
+            };
+            self.touch(key);
+            return Ok(ready);
         }
 
         let now = Instant::now();
@@ -462,21 +542,27 @@ impl PreviewTooltipCache {
                 }
                 Ok(Err(e)) => {
                     let pending = self.pending.remove(key);
+                    let no_saved = matches!(e, CaptureError::NoSavedScreen);
+                    let ttl = if e.is_retryable() {
+                        RETRY_FAIL_TTL
+                    } else {
+                        FAIL_CACHE_TTL
+                    };
                     let e = e.to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords);
-                    return Err(e.to_string());
+                    self.remember_failure(key, e.clone(), no_saved, now, fail_coords, ttl);
+                    return Err(e);
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
-                    return Err("Capturing…".into());
+                    return Err(CAPTURE_PENDING.into());
                 }
                 Err(TryRecvError::Disconnected) => {
                     let pending = self.pending.remove(key);
                     let e = "capture failed".to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords);
-                    return Err(e.to_string());
+                    self.remember_failure(key, e.clone(), false, now, fail_coords, FAIL_CACHE_TTL);
+                    return Err(e);
                 }
             }
         }
@@ -496,8 +582,14 @@ impl PreviewTooltipCache {
                     self.finish_texture(ctx, key, caption, coords, captured, keep_region)
                 }
                 Err(e) => {
+                    let no_saved = matches!(e, CaptureError::NoSavedScreen);
+                    let ttl = if e.is_retryable() {
+                        RETRY_FAIL_TTL
+                    } else {
+                        FAIL_CACHE_TTL
+                    };
                     let e = e.to_string();
-                    self.remember_failure(key, e.clone(), Instant::now(), coords);
+                    self.remember_failure(key, e.clone(), no_saved, Instant::now(), coords, ttl);
                     Err(e)
                 }
             }
@@ -525,16 +617,31 @@ impl PreviewTooltipCache {
                 },
             );
             ctx.request_repaint();
-            Err("Capturing…".into())
+            Err(CAPTURE_PENDING.into())
         }
     }
 
-    fn remember_failure(&mut self, key: &str, error: String, now: Instant, coords: PreviewCoords) {
+    fn failure_is_no_saved_screen(&self, key: &str) -> bool {
+        self.failures
+            .get(key)
+            .is_some_and(|fail| fail.no_saved_screen)
+    }
+
+    fn remember_failure(
+        &mut self,
+        key: &str,
+        error: String,
+        no_saved_screen: bool,
+        now: Instant,
+        coords: PreviewCoords,
+        ttl: Duration,
+    ) {
         self.failures.insert(
             key.to_string(),
             FailureEntry {
                 error,
-                expires: now + FAIL_CACHE_TTL,
+                no_saved_screen,
+                expires: now + ttl,
                 coords,
             },
         );
@@ -548,7 +655,7 @@ impl PreviewTooltipCache {
         coords: PreviewCoords,
         captured: CapturedPreview,
         keep_region: bool,
-    ) -> Result<(TextureHandle, String), String> {
+    ) -> Result<ReadyPreview, String> {
         let img = captured.display;
         let size = [img.width() as usize, img.height() as usize];
         mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
@@ -565,41 +672,53 @@ impl PreviewTooltipCache {
         } else {
             None
         };
+        let marker = captured.marker;
         self.insert(
             key.to_string(),
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
                 coords,
+                marker,
                 region,
             },
         );
         mark_site("preview:finish_texture:done");
-        Ok((tex, caption.to_string()))
+        Ok(ReadyPreview {
+            texture: tex,
+            caption: caption.to_string(),
+            marker,
+        })
     }
 
     fn ensure_capturer(&mut self) -> Result<(), String> {
-        if self.capturer_failed && self.capturer.is_none() {
-            return Err("screen capture unavailable".into());
-        }
-        if self.capturer.is_some() {
-            return Ok(());
+        if let Some(c) = &self.capturer {
+            if !c.is_dead() {
+                return Ok(());
+            }
+            // Portal stream ended — take the reopened shared capturer if there is
+            // one. The last Arc's Drop joins the pw thread — keep that off the UI.
+            if let Some(c) = self.capturer.take() {
+                let _ = std::thread::Builder::new()
+                    .name("sqyre-cap-drop".into())
+                    .spawn(move || drop(c));
+            }
         }
         match shared_capturer_nonblocking() {
             Ok(c) => {
+                // A reopened session serves new frames (and maybe different
+                // monitor coverage) — previews and failures captured against
+                // the old capturer are stale.
+                self.entries.clear();
+                self.order.clear();
+                self.pending.clear();
+                self.failures.clear();
                 self.capturer = Some(c);
                 Ok(())
             }
-            Err(e) => {
-                // Portal open still in flight — retry on the next hover, do not latch failure.
-                if sqyre_capture::shared_capturer_open_may_block()
-                    && sqyre_capture::shared_capturer_if_ready().is_none()
-                {
-                    return Err(e.to_string());
-                }
-                self.capturer_failed = true;
-                Err(e.to_string())
-            }
+            // Open in flight / stream restarting / picker pending all resolve on
+            // a later frame — never latch a permanent failure on the cache.
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -621,6 +740,150 @@ impl PreviewTooltipCache {
             self.order.push(k);
         }
     }
+
+    #[cfg(target_os = "android")]
+    fn poll_app_shot(&mut self, ctx: &egui::Context) {
+        self.shot.list.poll(ctx);
+        let Some(rx) = self.shot.capture.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(_)) => {
+                self.shot.capture = None;
+                self.shot.status.clear();
+            }
+            Ok(Err(err)) => {
+                self.shot.status = err.to_string();
+                self.shot.capture = None;
+            }
+            Err(TryRecvError::Empty) => ctx.request_repaint(),
+            Err(TryRecvError::Disconnected) => {
+                self.shot.status = "Taking the picture failed.".into();
+                self.shot.capture = None;
+            }
+        }
+    }
+
+    fn paint_no_saved_screen_inline(&mut self, ui: &mut egui::Ui, err: &str) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = err;
+            self.paint_app_shot_inline(ui);
+        }
+        #[cfg(not(target_os = "android"))]
+        crate::widgets::error_icon(ui, err);
+    }
+
+    fn paint_no_saved_screen_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        err: &str,
+        view: &mut ImageViewTransform,
+    ) -> egui::Rect {
+        #[cfg(target_os = "android")]
+        {
+            let _ = err;
+            self.paint_app_shot_panel(ui, view)
+        }
+        #[cfg(not(target_os = "android"))]
+        paint_preview_panel_placeholder(ui, err, view)
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_inline(&mut self, ui: &mut egui::Ui) {
+        self.prepare_app_shot(ui.ctx());
+        self.paint_app_shot_status(ui);
+        self.start_app_shot_if_chosen(ui, "inline_app_shot", None);
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        _view: &mut ImageViewTransform,
+    ) -> egui::Rect {
+        let desired = panel_viewport_size(ui);
+        let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
+        let body = rect.shrink(12.0);
+        let combo_w = (body.width() - 8.0).clamp(120.0, 360.0);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+            ui.set_max_width(combo_w);
+            ui.add_space((body.height() * 0.3).min(72.0));
+            if self.shot.status.is_empty() && self.shot.capture.is_none() {
+                ui.label(crate::app_shot::CHOOSE_HEADING);
+            } else {
+                self.paint_app_shot_status(ui);
+            }
+            self.prepare_app_shot(ui.ctx());
+            self.start_app_shot_if_chosen(ui, "panel_app_shot", Some(combo_w));
+        });
+        crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
+        rect
+    }
+
+    #[cfg(target_os = "android")]
+    fn prepare_app_shot(&mut self, ctx: &egui::Context) {
+        self.shot.list.ensure_loading(ctx);
+        self.shot.list.poll(ctx);
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_status(&self, ui: &mut egui::Ui) {
+        if self.shot.capture.is_some() {
+            ui.label(self.shot.status.as_str());
+        } else if !self.shot.status.is_empty() {
+            ui.colored_label(crate::theme::error_fg(), self.shot.status.as_str());
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn start_app_shot_if_chosen(&mut self, ui: &mut egui::Ui, id_salt: &str, width: Option<f32>) {
+        let Some(app) = self.shot.list.show(ui, id_salt, width) else {
+            return;
+        };
+        if self.shot.capture.is_some() {
+            return;
+        }
+        self.shot.status = crate::app_shot::taking_picture_of(app.shown());
+        self.shot.capture = Some(crate::screen_pick::spawn_app_shot(
+            ui.ctx(),
+            app.package,
+            app.label,
+        ));
+    }
+}
+
+/// Android: app dropdown and the in-flight screenshot it starts.
+#[cfg(target_os = "android")]
+#[derive(Default)]
+struct PreviewShot {
+    list: crate::app_shot::AppList,
+    capture: Option<crate::screen_pick::ShotRx>,
+    status: String,
+}
+
+/// Location mark in pre-downscale capture pixels. Painted over the image so
+/// it can blink; the cached texture stays unmarked.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PreviewMarker {
+    Point {
+        x: f32,
+        y: f32,
+        src_w: u32,
+        src_h: u32,
+    },
+    Area {
+        /// Exclusive rect. The outline is stroked just outside it.
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        grid: Option<(i32, i32)>,
+        src_w: u32,
+        src_h: u32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -698,9 +961,15 @@ fn capture_preview(
                 )));
             }
             let bounds = preview_bounds_for_point(x, y, vb);
-            let mut img = capture_rect(bounds)?;
-            draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
+            let img = capture_rect(bounds)?;
+            let (src_w, src_h) = img.dimensions();
             Ok(CapturedPreview {
+                marker: PreviewMarker::Point {
+                    x: (x - bounds.x) as f32,
+                    y: (y - bounds.y) as f32,
+                    src_w,
+                    src_h,
+                },
                 display: downscale_max_dim(img, max_dim),
                 region: None,
             })
@@ -721,8 +990,13 @@ fn capture_preview(
                     bottom,
                 });
             }
+            // An area fully outside the shared virtual bounds can never produce
+            // pixels — surface it like a point outside the desktop instead of
+            // silently cropping the wrong monitor and churning recaptures.
+            clamp_search_rect(lx, ty, rx, by, Some(vb))?;
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-            let mut img = capture_rect(bounds)?;
+            let img = capture_rect(bounds)?;
+            let (src_w, src_h) = img.dimensions();
             let olx = lx - bounds.x;
             let oty = ty - bounds.y;
             let orx = rx - bounds.x;
@@ -732,11 +1006,16 @@ fn capture_preview(
             } else {
                 None
             };
-            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY);
-            if let Some((rows, cols)) = grid {
-                draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
-            }
             Ok(CapturedPreview {
+                marker: PreviewMarker::Area {
+                    x0: olx as f32,
+                    y0: oty as f32,
+                    x1: orx as f32,
+                    y1: oby as f32,
+                    grid,
+                    src_w,
+                    src_h,
+                },
                 display: downscale_max_dim(img, max_dim),
                 region,
             })
@@ -764,12 +1043,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         ActionKind::Move { point, .. } if !point.is_empty() => {
             Some((point.clone(), PreviewKind::Point))
         }
-        ActionKind::ImageSearch { search_area, .. }
-        | ActionKind::Ocr { search_area, .. }
-        | ActionKind::FindPixel { search_area, .. }
-            if !search_area.is_empty() =>
-        {
-            Some((search_area.clone(), PreviewKind::SearchArea))
+        ActionKind::ImageSearch(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::Ocr(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::FindPixel(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
         }
         ActionKind::ForEachCell { cells, .. } if !cells.is_empty() => {
             Some((cells.clone(), PreviewKind::SearchArea))
@@ -985,7 +1266,7 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
     );
     match crate::data_editor_preview::search_area_pixel_size(sa) {
         Some((w, h)) => format!(
-            "{bounds} · area {}",
+            "{bounds}\n· area {}",
             crate::data_editor_preview::pixel_size_text(w, h)
         ),
         None => bounds,
@@ -998,10 +1279,10 @@ fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
         .and_then(|(w, h)| crate::data_editor_preview::collection_cell_pixel_size(w, h, rows, cols))
     {
         Some((cw, ch)) => format!(
-            "{bounds} · cell {} · {rows} rows × {cols} cols",
+            "{bounds}\n· cell {}\n· {rows} rows × {cols} cols",
             crate::data_editor_preview::pixel_size_text(cw, ch)
         ),
-        None => format!("{bounds} · {rows} rows × {cols} cols"),
+        None => format!("{bounds}\n· {rows} rows × {cols} cols"),
     }
 }
 
@@ -1042,13 +1323,20 @@ fn show_preview_hover_ui(response: &egui::Response, add_contents: impl FnOnce(&m
     tip.show(add_contents);
 }
 
-fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_image_size: bool) {
+fn paint_preview(
+    ui: &mut egui::Ui,
+    tex: &TextureHandle,
+    caption: &str,
+    show_image_size: bool,
+    marker: PreviewMarker,
+) {
     let [tw, th] = tex.size();
-    let size = fit_display(tw as f32, th as f32);
+    let size = fit_display(ui, tw as f32, th as f32);
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
-    ui.add(egui::Image::new((tex.id(), size)).sense(egui::Sense::click()));
-    ui.label(caption);
+    let image = image_view::add_checkered_image(ui, tex, size, egui::Sense::click(), 0.0);
+    paint_blinking_marker(&ui.painter_at(image.rect), image.rect, marker);
+    ui.add(egui::Label::new(caption).wrap());
     if show_image_size {
         ui.label(
             egui::RichText::new(format!(
@@ -1063,15 +1351,81 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
 
 /// Status line while capture is pending/failed. Reserves the display footprint so
 /// the tip does not grow under the cursor when the texture arrives.
+///
+/// This lives inside a hover tip — a non-interactive surface where a nested
+/// hover tooltip can never fire — so the error stays as centered visible text
+/// rather than collapsing to an icon like interactive surfaces do.
 fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(DISPLAY_MAX_W, DISPLAY_MAX_H),
-        egui::Sense::click(),
+    paint_preview_status_waking(ui, caption, err, err == CAPTURE_PENDING);
+}
+
+fn paint_preview_status_waking(ui: &mut egui::Ui, caption: &str, err: &str, waking: bool) {
+    let box_size = image_view::fit_in_box_no_upscale(
+        DISPLAY_MAX_W,
+        DISPLAY_MAX_H,
+        crate::widgets::visible_content_width(ui),
+        DISPLAY_MAX_H,
     );
+    let (rect, _) = ui.allocate_exact_size(box_size, egui::Sense::click());
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    crate::data_editor_preview::paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
-    ui.label(caption);
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
+    if waking {
+        paint_wake_spinner(ui, rect);
+    } else {
+        paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
+    }
+    ui.add(egui::Label::new(caption).wrap());
+}
+
+fn paint_wake_spinner(ui: &mut egui::Ui, rect: egui::Rect) {
+    let side = ui.spacing().interact_size.y;
+    let at = egui::Rect::from_center_size(rect.center(), egui::vec2(side, side));
+    let resp = ui.interact(
+        at,
+        ui.id()
+            .with(("pw_wake", at.left().to_bits(), at.top().to_bits())),
+        egui::Sense::hover(),
+    );
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ProgressIndicator,
+            true,
+            crate::help_text::CAPTURE_WAKE,
+        )
+    });
+    resp.on_hover_text(crate::help_text::CAPTURE_WAKE);
+    if ui.is_rect_visible(at) {
+        let glyph = egui::Rect::from_center_size(at.center(), at.size() * 0.92);
+        sqyre_overlay::icons::paint_trace_spinner(ui, glyph, sqyre_ui_theme::accent());
+        ui.ctx()
+            .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
+    }
+}
+
+/// Centered status/error text inside a preview placeholder, word-wrapped to
+/// `rect` minus `side_inset` per side (never narrower than a readable minimum).
+fn paint_preview_message(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    text: &str,
+    color: egui::Color32,
+    side_inset: f32,
+) {
+    const MIN_WRAP_W: f32 = 120.0;
+    const EDGE_PAD: f32 = 8.0;
+    let max_w = (rect.width() - EDGE_PAD * 2.0).max(1.0);
+    let wrap_w = (rect.width() - side_inset * 2.0).max(MIN_WRAP_W).min(max_w);
+    let mut job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        color,
+        wrap_w,
+    );
+    job.halign = egui::Align::Center;
+    let painter = ui.painter_at(rect);
+    let galley = painter.layout_job(job);
+    let pos = egui::pos2(rect.center().x, rect.center().y - galley.size().y * 0.5);
+    painter.galley(pos, galley, color);
 }
 
 fn log_hover_outline_transition(
@@ -1126,6 +1480,7 @@ fn paint_preview_panel_image(
     ui: &mut egui::Ui,
     tex: &TextureHandle,
     view: &mut ImageViewTransform,
+    marker: PreviewMarker,
 ) -> egui::Rect {
     let [tw, th] = tex.size();
     let image_size = Vec2::new(tw as f32, th as f32);
@@ -1135,13 +1490,15 @@ fn paint_preview_panel_image(
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
     {
         let painter = ui.painter_at(viewport);
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(20));
+        painter.rect_filled(viewport, 0.0, crate::theme::preview_viewport_fill());
+        image_view::paint_checkerboard(&painter, content, 0.0);
         painter.image(
             tex.id(),
             content,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
+        paint_blinking_marker(&painter, content, marker);
         crate::data_editor_preview::paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
@@ -1154,24 +1511,28 @@ fn paint_preview_panel_placeholder(
     _view: &mut ImageViewTransform,
 ) -> egui::Rect {
     let desired = panel_viewport_size(ui);
+    // Hover-only on the panel so a drag still scrolls the form. The icon in
+    // the middle is what opens the error (see `attach_preview_error_icon`).
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    crate::data_editor_preview::paint_preview_message(
-        ui,
-        rect,
-        err,
-        crate::theme::error_fg(),
-        crate::data_editor_preview::PREVIEW_CHIP_INSET,
-    );
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
+    if err == CAPTURE_PENDING {
+        paint_wake_spinner(ui, rect);
+    } else {
+        crate::data_editor_preview::attach_preview_error_icon(ui, rect, err);
+    }
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect
 }
 
-fn fit_display(w: f32, h: f32) -> Vec2 {
+fn fit_display(ui: &egui::Ui, w: f32, h: f32) -> Vec2 {
     let w = w.max(1.0);
     let h = h.max(1.0);
-    let scale = (DISPLAY_MAX_W / w).min(DISPLAY_MAX_H / h).min(1.0);
+    // Cap at the visible bound: tip bodies live in vertical-only scroll areas
+    // that do not clip horizontally, so a fixed-size image would paint past
+    // the tip edge when the host is narrower than DISPLAY_MAX_W.
+    let max_w = DISPLAY_MAX_W.min(crate::widgets::visible_content_width(ui));
+    let scale = (max_w / w).min(DISPLAY_MAX_H / h).min(1.0);
     Vec2::new(w * scale, h * scale)
 }
 
@@ -1306,95 +1667,321 @@ fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
     image::imageops::resize(&img, nw, nh, filter)
 }
 
-fn put_pixel_safe(img: &mut RgbaImage, x: i32, y: i32, c: Rgba<u8>) {
-    if x < 0 || y < 0 {
+/// Paint `marker` over `content` (the image rect, including zoom/pan).
+///
+/// The mark is not in the texture: it toggles on and off like a text caret so
+/// it stays visible on a busy capture. `painter` should already be clipped to
+/// the viewport.
+fn paint_blinking_marker(painter: &egui::Painter, content: egui::Rect, marker: PreviewMarker) {
+    if !content.is_positive() || !marker_in_frame(marker) {
         return;
     }
-    let (w, h) = img.dimensions();
-    if (x as u32) < w && (y as u32) < h {
-        img.put_pixel(x as u32, y as u32, c);
+    if !crate::image_view::preview_marker_blink_on(painter.ctx()) {
+        return;
     }
-}
-
-fn draw_hline(img: &mut RgbaImage, y: i32, x0: i32, x1: i32, c: Rgba<u8>, thick: i32) {
-    let (x0, x1) = if x0 <= x1 { (x0, x1) } else { (x1, x0) };
-    for t in 0..thick {
-        for x in x0..=x1 {
-            put_pixel_safe(img, x, y + t, c);
+    let color = crate::theme::preview_grid_stroke();
+    let (sx, sy) = marker_scale(content, marker);
+    let scale = (sx + sy) * 0.5;
+    let stroke_px = match marker {
+        PreviewMarker::Point { .. } => POINT_STROKE_PX,
+        PreviewMarker::Area { .. } => AREA_STROKE_PX,
+    };
+    let stroke = egui::Stroke::new((stroke_px * scale).max(MARKER_MIN_STROKE), color);
+    match marker {
+        PreviewMarker::Point { x, y, .. } => {
+            let c = egui::pos2(content.left() + x * sx, content.top() + y * sy);
+            painter.circle_stroke(c, POINT_RING_RADIUS * scale, stroke);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - POINT_ARM * sx, c.y),
+                    egui::pos2(c.x + POINT_ARM * sx, c.y),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(c.x, c.y - POINT_ARM * sy),
+                    egui::pos2(c.x, c.y + POINT_ARM * sy),
+                ],
+                stroke,
+            );
         }
-    }
-}
-
-fn draw_vline(img: &mut RgbaImage, x: i32, y0: i32, y1: i32, c: Rgba<u8>, thick: i32) {
-    let (y0, y1) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
-    for t in 0..thick {
-        for y in y0..=y1 {
-            put_pixel_safe(img, x + t, y, c);
-        }
-    }
-}
-
-/// 1px stroke immediately outside exclusive `[lx, rx) × [ty, by)` so search
-/// pixels stay unpainted.
-fn draw_rect_outline(img: &mut RgbaImage, lx: i32, ty: i32, rx: i32, by: i32, c: Rgba<u8>) {
-    let (lx, ty, rx, by) = normalize_rect(lx, ty, rx, by);
-    if rx <= lx || by <= ty {
-        return;
-    }
-    let ox0 = lx - 1;
-    let oy0 = ty - 1;
-    let ox1 = rx;
-    let oy1 = by;
-    draw_hline(img, oy0, ox0, ox1, c, 1);
-    draw_hline(img, oy1, ox0, ox1, c, 1);
-    draw_vline(img, ox0, oy0, oy1, c, 1);
-    draw_vline(img, ox1, oy0, oy1, c, 1);
-}
-
-fn draw_grid_lines(
-    img: &mut RgbaImage,
-    rect: (i32, i32, i32, i32),
-    rows: i32,
-    cols: i32,
-    c: Rgba<u8>,
-    thick: i32,
-) {
-    let (lx, ty, rx, by) = normalize_rect(rect.0, rect.1, rect.2, rect.3);
-    if rx <= lx || by <= ty {
-        return;
-    }
-    let rows = rows.max(1);
-    let cols = cols.max(1);
-    let w = rx - lx;
-    let h = by - ty;
-    let x1 = rx - 1;
-    let y1 = by - 1;
-    for i in 1..rows {
-        let y = ty + i * h / rows;
-        draw_hline(img, y, lx, x1, c, thick);
-    }
-    for i in 1..cols {
-        let x = lx + i * w / cols;
-        draw_vline(img, x, ty, y1, c, thick);
-    }
-}
-
-fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: i32) {
-    // Circle radius 8 (approx) + crosshair arms ±15.
-    for dy in -8..=8 {
-        for dx in -8..=8 {
-            if dx * dx + dy * dy >= 49 && dx * dx + dy * dy <= 64 {
-                put_pixel_safe(img, cx + dx, cy + dy, c);
+        PreviewMarker::Area {
+            x0,
+            y0,
+            x1,
+            y1,
+            grid,
+            ..
+        } => {
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(content.left() + x0 * sx, content.top() + y0 * sy),
+                egui::pos2(content.left() + x1 * sx, content.top() + y1 * sy),
+            );
+            if !rect.is_positive() {
+                return;
+            }
+            // Outside the exclusive region so searched pixels stay unpainted.
+            painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Outside);
+            if let Some((rows, cols)) = grid {
+                let rows = rows.max(1);
+                let cols = cols.max(1);
+                for i in 1..rows {
+                    let y = rect.top() + rect.height() * (i as f32) / (rows as f32);
+                    painter.hline(rect.x_range(), y, stroke);
+                }
+                for i in 1..cols {
+                    let x = rect.left() + rect.width() * (i as f32) / (cols as f32);
+                    painter.vline(x, rect.y_range(), stroke);
+                }
             }
         }
     }
-    draw_hline(img, cy, cx - 15, cx + 15, c, thick);
-    draw_vline(img, cx, cy - 15, cy + 15, c, thick);
+}
+
+fn marker_in_frame(marker: PreviewMarker) -> bool {
+    match marker {
+        PreviewMarker::Point { src_w, src_h, .. } => src_w > 0 && src_h > 0,
+        PreviewMarker::Area {
+            x0,
+            y0,
+            x1,
+            y1,
+            src_w,
+            src_h,
+            ..
+        } => src_w > 0 && src_h > 0 && x1 > x0 && y1 > y0,
+    }
+}
+
+fn marker_scale(content: egui::Rect, marker: PreviewMarker) -> (f32, f32) {
+    let (src_w, src_h) = match marker {
+        PreviewMarker::Point { src_w, src_h, .. } | PreviewMarker::Area { src_w, src_h, .. } => {
+            (src_w, src_h)
+        }
+    };
+    (
+        content.width() / src_w.max(1) as f32,
+        content.height() / src_h.max(1) as f32,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::Rgba;
+
+    fn phone_screen() -> egui::Rect {
+        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0))
+    }
+
+    #[test]
+    fn pending_capture_shows_a_spinner_while_the_stream_wakes() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([320.0, 240.0])
+            .build_ui(|ui| {
+                paint_preview_status_waking(ui, "point", CAPTURE_PENDING, true);
+            });
+        h.run_steps(1);
+        h.get_by_label(crate::help_text::CAPTURE_WAKE);
+    }
+
+    fn input(screen: egui::Rect, time: f64, events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(time),
+            predicted_dt: 0.1,
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn text_on_screen(
+        shapes: &[egui::epaint::ClippedShape],
+        screen: egui::Rect,
+        needle: &str,
+    ) -> bool {
+        fn walk(shape: &egui::Shape, clip: egui::Rect, screen: egui::Rect, needle: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text().contains(needle) => {
+                    let painted =
+                        egui::Rect::from_min_size(text.pos, text.galley.size()).intersect(clip);
+                    let visible = painted.intersect(screen);
+                    visible.width() > 8.0 && visible.height() > 8.0
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().any(|s| walk(s, clip, screen, needle)),
+                _ => false,
+            }
+        }
+        shapes
+            .iter()
+            .any(|clipped| walk(&clipped.shape, clipped.clip_rect, screen, needle))
+    }
+
+    /// The preview fills a phone, so a tip hung off the panel itself sits under
+    /// the screen. Hovering the icon must paint the message inside the screen.
+    #[test]
+    fn preview_error_is_on_screen_when_the_icon_is_hovered() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.show_tooltips_only_when_still = false;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let mut shown = false;
+        for frame in 1..6 {
+            let events = if frame == 1 {
+                vec![egui::Event::PointerMoved(center)]
+            } else {
+                Vec::new()
+            };
+            let out = ctx.run_ui(input(screen, frame as f64 * 0.2, events), |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            });
+            shown = text_on_screen(&out.shapes, screen, LITERAL_COORDS_MSG);
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            shown,
+            "hovering the preview error icon did not paint the message on screen"
+        );
+    }
+
+    /// A tap is not a hover: the message has to show while the finger is down
+    /// and stay after it lifts, without waiting out the hover delay.
+    #[test]
+    fn preview_error_stays_on_screen_after_tap() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 30.0;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let press = pointer_button(center, true);
+        ctx.run_ui(
+            input(screen, 0.2, vec![egui::Event::PointerMoved(center), press]),
+            |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            },
+        )
+        .drop_without_applying_deltas();
+        // The opening frame is a sizing pass. The next frame, still held, paints.
+        let held = ctx.run_ui(input(screen, 0.4, vec![]), |ui| {
+            let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+        });
+        let held_ok = text_on_screen(&held.shapes, screen, LITERAL_COORDS_MSG);
+        held.drop_without_applying_deltas();
+        assert!(
+            held_ok,
+            "holding the preview error icon did not paint the message"
+        );
+
+        let release = ctx.run_ui(
+            input(
+                screen,
+                0.6,
+                vec![pointer_button(center, false), egui::Event::PointerGone],
+            ),
+            |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            },
+        );
+        let release_ok = text_on_screen(&release.shapes, screen, LITERAL_COORDS_MSG);
+        release.drop_without_applying_deltas();
+        assert!(
+            release_ok,
+            "lifting off the preview error icon hid the message"
+        );
+
+        let stay = ctx.run_ui(input(screen, 0.8, vec![]), |ui| {
+            let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+        });
+        let stay_ok = text_on_screen(&stay.shapes, screen, LITERAL_COORDS_MSG);
+        stay.drop_without_applying_deltas();
+        assert!(stay_ok, "the preview error disappeared after the tap");
+    }
+
+    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Tip bodies live in vertical-only scroll areas that never clip the X axis.
+    /// Fixed-size preview content must shrink to the host bound instead of
+    /// expanding the section frame — and the tip — past its right edge.
+    #[test]
+    fn preview_content_stays_within_narrow_tip_bound() {
+        let ctx = egui::Context::default();
+        let tex = ctx.load_texture(
+            "narrow-bound",
+            ColorImage::new([640, 360], vec![egui::Color32::RED; 640 * 360]),
+            TextureOptions::LINEAR,
+        );
+        // FLOATER_MIN_COMPACT is the narrowest tip bound a user can reach.
+        let bound = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(220.0, 600.0));
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(bound), |ui| {
+                crate::theme::framed_section(ui, |ui| {
+                    paint_preview(
+                        ui,
+                        &tex,
+                        "X: 1, Y: 2",
+                        true,
+                        PreviewMarker::Point {
+                            x: 320.0,
+                            y: 180.0,
+                            src_w: 640,
+                            src_h: 360,
+                        },
+                    );
+                });
+                crate::theme::framed_section(ui, |ui| {
+                    paint_preview_status(ui, "cap", "failed");
+                });
+            });
+        });
+        for clipped in &out.shapes {
+            let right = match &clipped.shape {
+                egui::Shape::Mesh(mesh) => mesh
+                    .vertices
+                    .iter()
+                    .map(|v| v.pos.x)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                egui::Shape::Rect(rect) => rect.rect.right(),
+                _ => continue,
+            };
+            assert!(
+                right <= bound.right() + 1.0,
+                "tooltip content paints past the tip bound: {right} > {}",
+                bound.right()
+            );
+        }
+        out.drop_without_applying_deltas();
+    }
 
     #[test]
     fn point_bounds_centered_and_clamped() {
@@ -1413,24 +2000,98 @@ mod tests {
     }
 
     #[test]
-    fn search_area_outline_is_one_px_outside() {
-        let black = Rgba([0, 0, 0, 255]);
-        let mut img = RgbaImage::from_pixel(10, 10, black);
-        // Exclusive search area [3, 7) × [3, 7).
-        draw_rect_outline(&mut img, 3, 3, 7, 7, OVERLAY);
-        for y in 3..7 {
-            for x in 3..7 {
-                assert_eq!(*img.get_pixel(x, y), black, "inner ({x},{y})");
+    fn search_area_outline_sits_outside_and_blinks_off() {
+        let marker = PreviewMarker::Area {
+            x0: 10.0,
+            y0: 20.0,
+            x1: 40.0,
+            y1: 50.0,
+            grid: Some((2, 2)),
+            src_w: 100,
+            src_h: 100,
+        };
+        let shapes = paint_marker_at(0.0, marker);
+        let color = crate::theme::preview_grid_stroke();
+        let outline = shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if r.stroke.color == color => Some(r),
+            _ => None,
+        });
+        let outline = outline.expect("search-area outline");
+        assert_eq!(outline.stroke_kind, egui::StrokeKind::Outside);
+        let expected = egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(40.0, 50.0));
+        assert!((outline.rect.min.x - expected.min.x).abs() < 0.01);
+        assert!((outline.rect.min.y - expected.min.y).abs() < 0.01);
+        assert!((outline.rect.max.x - expected.max.x).abs() < 0.01);
+        assert!((outline.rect.max.y - expected.max.y).abs() < 0.01);
+        // One outline plus the row and column lines.
+        assert_eq!(marker_ink(&shapes, color), 3);
+        let hidden = paint_marker_at(0.6, marker);
+        assert_eq!(marker_ink(&hidden, color), 0);
+    }
+
+    #[test]
+    fn point_marker_sits_on_the_point_and_blinks_off() {
+        let marker = PreviewMarker::Point {
+            x: 40.0,
+            y: 50.0,
+            src_w: 100,
+            src_h: 100,
+        };
+        let content = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(100.0, 100.0));
+        let shapes = paint_marker_in(0.0, content, marker);
+        let color = crate::theme::preview_grid_stroke();
+        let circle = shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Circle(circle) if circle.stroke.color == color => Some(circle),
+            _ => None,
+        });
+        let circle = circle.expect("point ring");
+        assert!((circle.center.x - 50.0).abs() < 0.01, "{:?}", circle.center);
+        assert!((circle.center.y - 70.0).abs() < 0.01, "{:?}", circle.center);
+        assert!((circle.radius - POINT_RING_RADIUS).abs() < 0.01);
+        // Ring plus the two crosshair arms.
+        assert_eq!(marker_ink(&shapes, color), 3);
+        let hidden = paint_marker_in(0.6, content, marker);
+        assert_eq!(marker_ink(&hidden, color), 0);
+    }
+
+    fn paint_marker_at(time: f64, marker: PreviewMarker) -> Vec<egui::epaint::ClippedShape> {
+        let content = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 100.0));
+        paint_marker_in(time, content, marker)
+    }
+
+    fn paint_marker_in(
+        time: f64,
+        content: egui::Rect,
+        marker: PreviewMarker,
+    ) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(240.0, 200.0));
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                ..Default::default()
+            },
+            |ui| {
+                paint_blinking_marker(&ui.painter_at(screen), content, marker);
+            },
+        );
+        let shapes = out.shapes.clone();
+        out.drop_without_applying_deltas();
+        shapes
+    }
+
+    fn marker_ink(shapes: &[egui::epaint::ClippedShape], color: egui::Color32) -> usize {
+        fn walk(shape: &egui::Shape, color: egui::Color32) -> usize {
+            match shape {
+                egui::Shape::Vec(v) => v.iter().map(|s| walk(s, color)).sum(),
+                egui::Shape::LineSegment { stroke, .. } if stroke.color == color => 1,
+                egui::Shape::Rect(r) if r.stroke.color == color && r.stroke.width > 0.0 => 1,
+                egui::Shape::Circle(c) if c.stroke.color == color && c.stroke.width > 0.0 => 1,
+                _ => 0,
             }
         }
-        for x in 2..=7 {
-            assert_eq!(*img.get_pixel(x, 2), OVERLAY);
-            assert_eq!(*img.get_pixel(x, 7), OVERLAY);
-        }
-        for y in 3..7 {
-            assert_eq!(*img.get_pixel(2, y), OVERLAY);
-            assert_eq!(*img.get_pixel(7, y), OVERLAY);
-        }
+        shapes.iter().map(|c| walk(&c.shape, color)).sum()
     }
 
     #[test]
@@ -1468,47 +2129,33 @@ mod tests {
 
     #[test]
     fn coordinate_ref_for_preview_matches_action_kinds() {
-        use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch};
+        use sqyre_domain::{ActionKind, CoordinateRef};
 
-        assert!(coordinate_ref_for_preview(&Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        })
+        assert!(coordinate_ref_for_preview(&Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        }))
         .is_none());
 
-        let mv = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef("P~Spot".into()),
-                smooth: false,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let mv = Action::new(ActionKind::Move {
+            point: CoordinateRef("P~Spot".into()),
+            smooth: false,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         assert_eq!(
             coordinate_ref_for_preview(&mv),
             Some((CoordinateRef("P~Spot".into()), PreviewKind::Point))
         );
 
-        let search = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let search = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
-                targets: vec![],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert_eq!(
             coordinate_ref_for_preview(&search),
             Some((CoordinateRef("P~Box".into()), PreviewKind::SearchArea))
@@ -1534,11 +2181,11 @@ mod tests {
         };
         assert_eq!(
             search_area_caption(&sa),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80\n· area 100×60 px"
         );
         assert_eq!(
             collection_caption(&sa, 2, 2),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px · cell 50×30 px · 2 rows × 2 cols"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80\n· area 100×60 px\n· cell 50×30 px\n· 2 rows × 2 cols"
         );
     }
 
@@ -1693,6 +2340,7 @@ mod tests {
             "panel:pt:10:20".into(),
             FailureEntry {
                 error: "a".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords,
             },
@@ -1701,6 +2349,7 @@ mod tests {
             "ref:pt:Game~Spot:10:20".into(),
             FailureEntry {
                 error: "b".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords,
             },
@@ -1709,6 +2358,7 @@ mod tests {
             "panel:pt:99:99".into(),
             FailureEntry {
                 error: "c".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords: other,
             },

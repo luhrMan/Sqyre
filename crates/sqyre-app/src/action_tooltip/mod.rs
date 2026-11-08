@@ -11,6 +11,7 @@ use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
+use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action_persist;
 
@@ -273,7 +274,7 @@ pub fn ingest_row(
 ) {
     let open_edit = match interaction.action {
         tree_chrome::RowAction::Edit => true,
-        tree_chrome::RowAction::None => interaction.double_clicked,
+        tree_chrome::RowAction::None => interaction.double_clicked || interaction.middle_clicked,
         tree_chrome::RowAction::Logs | tree_chrome::RowAction::Delete => return,
     };
 
@@ -383,6 +384,89 @@ fn tip_max_width(screen_w: f32) -> f32 {
     (screen_w * TIP_MAX_WIDTH_FRACTION).max(crate::widgets::FLOATER_MIN_COMPACT[0])
 }
 
+/// Comfortable prose column inside a view tip. Wrap-capable content
+/// (descriptions, captions, status text) claims at most this — letting it
+/// measure against `tip_max_width` made every tip balloon to half the window.
+const TIP_WRAP_W: f32 = 380.0;
+
+/// Floor for tips whose content is only a short line (avoids a sliver tip).
+const TIP_MIN_W: f32 = 200.0;
+
+/// Icon + chip padding allowance when measuring `extra` param rows as text.
+const PARAM_ICON_PAD: f32 = 36.0;
+
+/// Width the view-tip body wants: wrap-capable text capped at [`TIP_WRAP_W`],
+/// plus intrinsic room for content that cannot wrap (param rows, target grids,
+/// previews). Always ≤ `max_w`.
+fn tip_preferred_width(
+    ctx: &egui::Context,
+    action: &Action,
+    extra: &[&sqyre_ui_model::DisplayParam],
+    catalog: &ProgramCatalog,
+    max_w: f32,
+) -> f32 {
+    let type_key = action.type_key();
+    let font = egui::TextStyle::Small.resolve(ctx.global_style().as_ref());
+    let text_w = |s: String| {
+        ctx.fonts_mut(|f| f.layout_no_wrap(s, font.clone(), egui::Color32::WHITE))
+            .size()
+            .x
+    };
+    let mut w = text_w(action_type_description(type_key).to_owned())
+        .max(text_w(action_type_label(type_key).to_owned()) + 40.0)
+        .clamp(TIP_MIN_W, TIP_WRAP_W);
+    for p in extra {
+        w = w.max(text_w(format!("{}: {}", p.label, p.minimal())) + PARAM_ICON_PAD);
+    }
+    if crate::preview_tooltip::coordinate_ref_for_preview(action).is_some() {
+        w = w.max(crate::preview_tooltip::DISPLAY_MAX_W);
+    }
+    if let ActionKind::ImageSearch(d) = &action.kind {
+        if !d.targets.is_empty() || !d.target_tags.is_empty() {
+            let display = tree_chrome::cached_sorted_image_search_targets(
+                ctx,
+                catalog,
+                &d.targets,
+                &[],
+                d.sort_by,
+                d.sort_then,
+                &d.tag_priority,
+            );
+            // Widest grid the section paints: tag grids size as `display` when
+            // it exists, else as the largest tag group; the items grid uses
+            // `display.len()`. Mirror `paint_image_search_tooltip_thumbs_pub`.
+            let count = if display.is_empty() {
+                tree_chrome::image_search_tip_tag_groups(catalog, &d.target_tags)
+                    .iter()
+                    .map(|g| g.members.len())
+                    .max()
+                    .unwrap_or(0)
+            } else {
+                display.len()
+            };
+            if count > 0 {
+                let cell = crate::pickers::adaptive_icon_cell(
+                    count,
+                    max_w,
+                    crate::pickers::EDIT_CELL,
+                    crate::pickers::EDIT_CELL_MAX,
+                    crate::pickers::EDIT_GAP,
+                );
+                let cols = crate::pickers::grid_column_count_for_width(
+                    max_w,
+                    cell,
+                    crate::pickers::EDIT_GAP,
+                )
+                .min(count);
+                w = w.max(
+                    cols as f32 * cell + cols.saturating_sub(1) as f32 * crate::pickers::EDIT_GAP,
+                );
+            }
+        }
+    }
+    w.clamp(TIP_MIN_W, max_w)
+}
+
 /// True when the user is dragging any window edge/corner resize handle.
 fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     let dragged = |id: egui::Id| {
@@ -405,6 +489,46 @@ fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     }
     // Interior Resize corner widget used by `Window`.
     dragged(area_id.with("resize").with("__resize_corner"))
+}
+
+/// Primary click outside the edit window, once it has already been on screen.
+///
+/// `blocked` skips the check while a record modal or screen click owns the
+/// pointer. Layers above the window (combo menus, suggestion lists, pickers)
+/// and sublayers of the window itself are not outside.
+fn edit_tip_clicked_outside(ctx: &egui::Context, area_id: egui::Id, blocked: bool) -> bool {
+    if blocked {
+        return false;
+    }
+    let layer = egui::LayerId::new(Order::Middle, area_id);
+    let was_open = ctx.memory(|m| m.areas().visible_last_frame(&layer));
+    if !was_open {
+        return false;
+    }
+    let Some(pos) = ctx.input(|i| {
+        if i.pointer.button_clicked(egui::PointerButton::Primary) {
+            i.pointer.interact_pos()
+        } else {
+            None
+        }
+    }) else {
+        return false;
+    };
+    if ctx
+        .memory(|m| m.area_rect(area_id))
+        .is_some_and(|rect| rect.contains(pos))
+    {
+        return false;
+    }
+    if let Some(hit) = ctx.layer_id_at(pos) {
+        if hit.order > Order::Middle {
+            return false;
+        }
+        if hit == layer || ctx.memory(|m| m.areas().parent_layer(hit) == Some(layer)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Vertical popup chrome around the view tip body (inner margin + stroke).
@@ -478,6 +602,7 @@ pub(crate) fn show_action_view_tip(
     // to slide the tip over the hovered row (which would steal hover).
     let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(screen.width());
+    let preferred_w = tip_preferred_width(ctx, action, &extra, catalog, max_w);
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -501,24 +626,28 @@ pub(crate) fn show_action_view_tip(
         .constrain_to(screen)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .inner_margin(egui::Margin::symmetric(10, 8))
+                .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     // Area content is capped at last frame's size; lift both axes so
                     // the tip can grow up to the constrain rect before scrolling.
-                    ui.set_max_width(max_w);
+                    // Width uses the content-derived preferred width, not `max_w`,
+                    // so wrap-capable children (prose, captions, error labels)
+                    // cannot inflate the tip to the half-viewport cap.
+                    ui.set_max_width(preferred_w);
                     ui.set_max_height(max_body_h);
-                    // V-only: tip body wraps prose and icon grids to `max_w`.
+                    // V-only: tip body wraps prose and icon grids to the body width.
                     // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
-                    let out = crate::widgets::scroll_vertical()
-                        .id_salt("view_tip_body")
-                        .max_height(max_body_h)
-                        .vertical_scroll_offset(offset)
-                        .show(ui, |ui| {
-                            tree_chrome::paint_pill_pub(ui, label, pastel);
-                            ui.add_space(crate::theme::SPACE_4);
+                    let out = crate::widgets::show_scroll_edge_fit(
+                        ui,
+                        crate::widgets::scroll_vertical()
+                            .id_salt("view_tip_body")
+                            .max_height(max_body_h)
+                            .vertical_scroll_offset(offset),
+                        |ui| {
+                            tree_chrome::paint_pill_tip(ui, label, pastel);
                             ui.label(egui::RichText::new(description).small().weak());
                             if !summary_pills.is_empty() {
-                                ui.add_space(crate::theme::SPACE_4);
+                                crate::theme::add_section_gap(ui);
                                 sections::tip_wrapped_section(ui, |ui| {
                                     ui.spacing_mut().item_spacing =
                                         Vec2::splat(crate::theme::SPACE_2);
@@ -535,6 +664,7 @@ pub(crate) fn show_action_view_tip(
                                                 is_dark,
                                             },
                                             band_h,
+                                            true,
                                         );
                                     }
                                 });
@@ -542,17 +672,12 @@ pub(crate) fn show_action_view_tip(
                             if let Some((coord_ref, kind)) = coord_preview {
                                 sections::tip_section(ui, |ui| {
                                     previews.paint_for_coordinate_ref(
-                                        ui, catalog, &coord_ref, kind, false,
+                                        ui, catalog, &coord_ref, kind, false, false,
                                     );
                                 });
                             }
-                            if let ActionKind::ImageSearch {
-                                targets,
-                                target_tags,
-                                ..
-                            } = &action.kind
-                            {
-                                if !targets.is_empty() || !target_tags.is_empty() {
+                            if let ActionKind::ImageSearch(d) = &action.kind {
+                                if !d.targets.is_empty() || !d.target_tags.is_empty() {
                                     sections::tip_section(ui, |ui| {
                                         tree_chrome::paint_image_search_tooltip_thumbs_pub(
                                             ui, action, catalog, icons,
@@ -606,7 +731,8 @@ pub(crate) fn show_action_view_tip(
                                     }
                                 });
                             }
-                        });
+                        },
+                    );
                     let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(
@@ -720,10 +846,7 @@ fn show_edit_window(
             .min_size([crate::widgets::FLOATER_MIN_COMPACT[0], fit_min_h])
             .frame(
                 egui::Frame::popup(ctx.global_style().as_ref())
-                    .inner_margin(egui::Margin::symmetric(
-                        crate::theme::SPACE_12 as i8,
-                        crate::theme::SPACE_8 as i8,
-                    )),
+                    .inner_margin(egui::Margin::symmetric(10, 6)),
             ),
         ctx,
         area_id,
@@ -735,7 +858,7 @@ fn show_edit_window(
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
             };
-            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled) {
+            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled, true) {
                 SaveCancel::Cancel => cancel = true,
                 SaveCancel::Save => save = true,
                 SaveCancel::None => {}
@@ -758,12 +881,14 @@ fn show_edit_window(
                     active_macro: Some(&*macro_),
                 };
                 let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
-                let measured = crate::widgets::scroll_both()
-                    .id_salt("edit_fields")
-                    .auto_shrink([true, false])
-                    .max_width(ui.available_width())
-                    .max_height(scroll_h)
-                    .show(ui, |ui| {
+                // No x-shrink: the window is user-resized, not content-sized, so
+                // a shrunk viewport would float the V-bar left of the frame edge.
+                let measured = crate::widgets::show_dialog_scroll_mod(
+                    ui,
+                    ui.available_width(),
+                    scroll_h,
+                    |s| s.id_salt("edit_fields"),
+                    |ui| {
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
@@ -839,6 +964,18 @@ fn show_edit_window(
         }
     }
 
+    // Click outside the window cancels, same as the Close button and Escape.
+    // The click that opened the editor is still in this frame's input, and the
+    // window was not visible last frame, so that click does not dismiss it.
+    // Clicks on a popup, menu, or picker (layers above the window) stay with
+    // that surface. Record modals and an armed screen click own the pointer.
+    let record_busy = bridges.key_record.is_open()
+        || bridges.hotkey_record.is_open()
+        || bridges.screen_click.is_armed();
+    if !cancel && edit_tip_clicked_outside(ctx, area_id, record_busy) {
+        cancel = true;
+    }
+
     if !open || cancel {
         return state.cancel();
     }
@@ -868,15 +1005,10 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             targets,
             target_tags,
         } => {
-            if let ActionKind::ImageSearch {
-                targets: t,
-                target_tags: tags,
-                ..
-            } = &mut draft.kind
-            {
-                *t = targets;
+            if let ActionKind::ImageSearch(d) = &mut draft.kind {
+                d.targets = targets;
                 if let Some(next_tags) = target_tags {
-                    *tags = next_tags;
+                    d.target_tags = next_tags;
                 }
             }
         }
@@ -886,9 +1018,9 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             }
         }
         PickerResult::SearchArea(coord) => match &mut draft.kind {
-            ActionKind::ImageSearch { search_area, .. }
-            | ActionKind::Ocr { search_area, .. }
-            | ActionKind::FindPixel { search_area, .. } => *search_area = coord,
+            ActionKind::ImageSearch(d) => d.search_area = coord,
+            ActionKind::Ocr(d) => d.search_area = coord,
+            ActionKind::FindPixel(d) => d.search_area = coord,
             ActionKind::ForEachCell { cells, .. } => *cells = coord,
             _ => {}
         },
@@ -917,16 +1049,36 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
-    };
+    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, PressState, ScalarValue};
 
     fn wait_action(time: i64) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(time),
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(time),
+        })
+    }
+
+    #[test]
+    fn middle_click_opens_edit_from_view() {
+        let child = wait_action(100);
+        let id = child.id;
+        let mut state = TooltipState::Hidden;
+        state.open_view(id);
+        ingest_row(
+            &mut state,
+            &child,
+            RowInteraction {
+                middle_clicked: true,
+                pointer_in_row: true,
+                ..RowInteraction::default()
             },
+            Some(egui::pos2(12.0, 8.0)),
+        );
+        match &state {
+            TooltipState::Edit(edit) => {
+                assert_eq!(edit.action_id, id);
+                assert_eq!(edit.anchor, egui::pos2(12.0, 8.0));
+            }
+            other => panic!("expected Edit, got {other:?}"),
         }
     }
 
@@ -988,13 +1140,10 @@ mod tests {
 
     #[test]
     fn validate_failure_keeps_edit() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "a".into(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: "a".into(),
+            state: PressState::Down,
+        });
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
@@ -1019,36 +1168,29 @@ mod tests {
 
     #[test]
     fn image_search_saves_without_targets() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let child = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["Game~Item".into()],
-                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
         let mut state = TooltipState::Hidden;
         state.open_edit(&live, egui::pos2(0.0, 0.0));
         if let TooltipState::Edit(edit) = &mut state {
-            if let ActionKind::ImageSearch { targets, .. } = &mut edit.draft.kind {
-                targets.clear();
+            if let ActionKind::ImageSearch(d) = &mut edit.draft.kind {
+                d.targets.clear();
             }
         }
         assert!(state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => assert!(targets.is_empty()),
+            ActionKind::ImageSearch(d) => assert!(d.targets.is_empty()),
             other => panic!("unexpected {other:?}"),
         }
         assert!(sqyre_validate::validate_action(root.find_by_id(id).unwrap(), None).is_err());
@@ -1056,13 +1198,10 @@ mod tests {
 
     #[test]
     fn apply_recorded_key_updates_key_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: String::new(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: String::new(),
+            state: PressState::Down,
+        });
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_key("f5".into());
@@ -1078,23 +1217,19 @@ mod tests {
     #[test]
     #[cfg(feature = "native-runtime")]
     fn apply_recorded_color_updates_find_pixel_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: CoordinateRef::default(),
+        let child = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
                 target_color: "ffffff".into(),
-                color_tolerance: 0,
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_color("ab12cd".into());
         match &state {
             TooltipState::Edit(edit) => match &edit.draft.kind {
-                ActionKind::FindPixel { target_color, .. } => {
-                    assert_eq!(target_color, "ab12cd")
+                ActionKind::FindPixel(d) => {
+                    assert_eq!(d.target_color, "ab12cd")
                 }
                 other => panic!("unexpected {other:?}"),
             },
@@ -1145,29 +1280,23 @@ mod tests {
         let id = ActionId::new();
         let mut root = root_loop(vec![Action {
             id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
-            },
+                ..Default::default()
+            })),
         }]);
         let mut draft = root.find_by_id(id).unwrap().clone();
-        if let ActionKind::ImageSearch { targets, .. } = &mut draft.kind {
-            *targets = vec!["P~B".into(), "P~C".into()];
+        if let ActionKind::ImageSearch(d) = &mut draft.kind {
+            d.targets = vec!["P~B".into(), "P~C".into()];
         }
         apply_draft_preserving_children(root.find_by_id_mut(id).unwrap(), draft).unwrap();
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => {
+            ActionKind::ImageSearch(d) => {
                 assert_eq!(
-                    targets.as_slice(),
+                    d.targets.as_slice(),
                     ["P~B".to_string(), "P~C".to_string()].as_slice()
                 );
             }
@@ -1205,6 +1334,101 @@ mod tests {
         assert!((tip_max_width(4000.0) - 2000.0).abs() < 0.5);
     }
 
+    /// The fields scroll's floating V-bar must sit on the window's right edge.
+    /// Anything narrower (content edge, un-expanded bound) leaves a dead strip.
+    #[test]
+    fn edit_tip_scrollbar_stays_at_window_edge() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+
+        let mut macro_ = crate::docs_fixture::demo_macro();
+        let image_search = macro_
+            .root
+            .children()
+            .iter()
+            .find(|a| matches!(a.kind, ActionKind::ImageSearch(_)))
+            .cloned()
+            .expect("demo macro has an image search action");
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&image_search, egui::pos2(80.0, 60.0));
+
+        let catalog = sqyre_persist::ProgramCatalog::default();
+        let mut icons = crate::icon_cache::IconCache::new();
+        let mut previews = crate::preview_tooltip::PreviewTooltipCache::new();
+        let mut key_record = crate::key_record::KeyRecordUi::default();
+        let mut hotkey_record = crate::hotkey_record::HotkeyRecordUi::default();
+        let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
+        let screen_click = sqyre_hotkeys::ScreenClickBridge::new();
+        let known_vars = sqyre_domain::collect_known_variable_names(&macro_);
+        let macros = vec![(macro_.name.clone(), macro_.tags.clone())];
+
+        let mut gap = f32::NAN;
+        let mut bar_seen = false;
+        for frame in 0..12 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(640.0, 360.0),
+                )),
+                time: Some(frame as f64 * 0.1),
+                predicted_dt: 0.1,
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let mut tip = TipUiCtx {
+                    paint: CatalogPaint {
+                        catalog: &catalog,
+                        icons: &mut icons,
+                        previews: &mut previews,
+                    },
+                    theme: VarTheme {
+                        known_vars: &known_vars,
+                        is_dark: true,
+                    },
+                    bridges: RecordBridges {
+                        key_record: &mut key_record,
+                        hotkey_record: &mut hotkey_record,
+                        macro_hotkeys: &macro_hotkeys,
+                        screen_click: &screen_click,
+                    },
+                    compact_program_headers: false,
+                    pending_scale: None,
+                };
+                let _ = show(&mut state, ui.ctx(), &mut macro_, &macros, &mut tip, |_| {});
+            });
+            let win = ctx.memory(|m| m.area_rect(edit_tip_area_id(image_search.id)));
+            // The floating V-bar (background + handle) paints as tall thin
+            // rects; the theme leaves their fills transparent, so match on
+            // shape alone and take the rightmost one inside the window.
+            if let Some(win) = win {
+                let bar_right = out
+                    .shapes
+                    .iter()
+                    .filter_map(|c| match &c.shape {
+                        egui::Shape::Rect(r)
+                            if r.rect.width() <= 12.0
+                                && r.rect.height() > 120.0
+                                && r.rect.min.x >= win.left() =>
+                        {
+                            Some(r.rect.max.x)
+                        }
+                        _ => None,
+                    })
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if bar_right.is_finite() {
+                    bar_seen = true;
+                    gap = win.right() - bar_right;
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(bar_seen, "fields scroll never showed a vertical bar");
+        assert!(
+            gap <= 20.0,
+            "scrollbar floats {gap:.1}pt left of the window edge"
+        );
+    }
+
     #[test]
     fn move_field_apply() {
         let id = ActionId::new();
@@ -1231,5 +1455,280 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    /// Hosts one edit tooltip across frames so pointer events can dismiss it.
+    struct EditTipHost {
+        ctx: egui::Context,
+        state: TooltipState,
+        macro_: sqyre_domain::Macro,
+        catalog: sqyre_persist::ProgramCatalog,
+        icons: crate::icon_cache::IconCache,
+        previews: crate::preview_tooltip::PreviewTooltipCache,
+        key_record: crate::key_record::KeyRecordUi,
+        hotkey_record: crate::hotkey_record::HotkeyRecordUi,
+        macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
+        screen_click: sqyre_hotkeys::ScreenClickBridge,
+        known_vars: sqyre_domain::KnownVariableNames,
+        macros: Vec<(String, Vec<String>)>,
+        time: f64,
+        discarded: Vec<ActionId>,
+        /// Foreground shield at the origin, covering clicks that must not dismiss.
+        shield: bool,
+    }
+
+    impl EditTipHost {
+        fn open(action: &Action, anchor: egui::Pos2, provisional: bool) -> Self {
+            let macro_ = sqyre_domain::Macro {
+                name: "m".into(),
+                root: root_loop(vec![action.clone()]),
+                global_delay: 0,
+                keyboard_delay: 25,
+                mouse_delay: 25,
+                hotkey: Vec::new(),
+                hotkey_trigger: String::new(),
+                tags: Vec::new(),
+                variable_decls: Vec::new(),
+                variables: Default::default(),
+            };
+            let known_vars = sqyre_domain::collect_known_variable_names(&macro_);
+            let macros = vec![(macro_.name.clone(), macro_.tags.clone())];
+            let mut state = TooltipState::Hidden;
+            if provisional {
+                state.open_edit_new(action, anchor, Vec::new());
+            } else {
+                state.open_edit(action, anchor);
+            }
+            let ctx = egui::Context::default();
+            crate::theme::apply(&ctx);
+            Self {
+                ctx,
+                state,
+                macro_,
+                catalog: sqyre_persist::ProgramCatalog::default(),
+                icons: crate::icon_cache::IconCache::new(),
+                previews: crate::preview_tooltip::PreviewTooltipCache::new(),
+                key_record: crate::key_record::KeyRecordUi::default(),
+                hotkey_record: crate::hotkey_record::HotkeyRecordUi::default(),
+                macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge::new(),
+                screen_click: sqyre_hotkeys::ScreenClickBridge::new(),
+                known_vars,
+                macros,
+                time: 0.0,
+                discarded: Vec::new(),
+                shield: false,
+            }
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>) {
+            self.time += 0.1;
+            let ctx = self.ctx.clone();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 700.0),
+                )),
+                time: Some(self.time),
+                predicted_dt: 0.1,
+                events,
+                ..Default::default()
+            };
+            let shield = self.shield;
+            let out = ctx.run_ui(input, |ui| {
+                if shield {
+                    egui::Area::new(egui::Id::new("edit_tip_test_shield"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(egui::Pos2::ZERO)
+                        .interactable(true)
+                        .show(ui.ctx(), |ui| {
+                            ui.allocate_exact_size(egui::vec2(64.0, 64.0), egui::Sense::click());
+                        });
+                }
+                let mut tip = TipUiCtx {
+                    paint: CatalogPaint {
+                        catalog: &self.catalog,
+                        icons: &mut self.icons,
+                        previews: &mut self.previews,
+                    },
+                    theme: VarTheme {
+                        known_vars: &self.known_vars,
+                        is_dark: true,
+                    },
+                    bridges: RecordBridges {
+                        key_record: &mut self.key_record,
+                        hotkey_record: &mut self.hotkey_record,
+                        macro_hotkeys: &self.macro_hotkeys,
+                        screen_click: &self.screen_click,
+                    },
+                    compact_program_headers: false,
+                    pending_scale: None,
+                };
+                self.discarded = show(
+                    &mut self.state,
+                    ui.ctx(),
+                    &mut self.macro_,
+                    &self.macros,
+                    &mut tip,
+                    |_| {},
+                );
+            });
+            out.drop_without_applying_deltas();
+        }
+
+        fn pointer(pos: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        }
+
+        /// Press and release in one frame — the shape of the click that opens the editor.
+        fn click_same_frame(&mut self, pos: egui::Pos2) {
+            let mut events = Self::pointer(pos, true);
+            events.extend(Self::pointer(pos, false));
+            self.frame(events);
+        }
+
+        fn click(&mut self, pos: egui::Pos2) {
+            self.frame(Self::pointer(pos, true));
+            self.frame(Self::pointer(pos, false));
+        }
+
+        fn editing(&self) -> bool {
+            self.state.is_editing()
+        }
+
+        fn window_rect(&self) -> egui::Rect {
+            let id = self.state.action_id().expect("edit open");
+            self.ctx
+                .memory(|m| m.area_rect(edit_tip_area_id(id)))
+                .expect("edit window rect")
+        }
+
+        fn close_button_center(&self) -> egui::Pos2 {
+            let id = self.state.action_id().expect("edit open");
+            let layer = egui::LayerId::new(egui::Order::Middle, edit_tip_area_id(id));
+            let win = self.window_rect();
+            // Header band: the Close icon is the rightmost roughly-square button.
+            // Resize grips are thin strips and sit outside this filter.
+            let header_bottom = win.top() + 64.0;
+            self.ctx
+                .viewport(|v| {
+                    v.prev_pass
+                        .widgets
+                        .get_layer(layer)
+                        .filter(|w| {
+                            let size = w.rect.size();
+                            w.sense.senses_click()
+                                && w.enabled
+                                && w.rect.center().y <= header_bottom
+                                && size.x >= 12.0
+                                && size.y >= 12.0
+                                && (size.x - size.y).abs() < 16.0
+                        })
+                        .max_by(|a, b| a.rect.right().total_cmp(&b.rect.right()))
+                        .map(|w| w.rect.center())
+                })
+                .expect("close button in the edit header")
+        }
+    }
+
+    #[test]
+    fn edit_tip_close_button_discards_provisional_edit() {
+        let action = wait_action(40);
+        let id = action.id;
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), true);
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let at = host.close_button_center();
+        assert!(
+            host.window_rect().contains(at),
+            "close button sits inside the edit window"
+        );
+        host.click(at);
+        assert!(!host.editing(), "Close dismisses the editor");
+        assert_eq!(host.discarded, vec![id]);
+    }
+
+    #[test]
+    fn edit_tip_click_outside_closes_after_it_is_open() {
+        let action = wait_action(40);
+        let id = action.id;
+        let outside = egui::pos2(8.0, 8.0);
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), true);
+
+        // The opening click arrives on the first frame the window is shown.
+        host.click_same_frame(outside);
+        assert!(
+            host.editing(),
+            "the click that opens the editor must not close it"
+        );
+
+        host.frame(Vec::new());
+        let win = host.window_rect();
+        assert!(
+            !win.contains(outside),
+            "test click {outside:?} landed inside the window {win:?}"
+        );
+        // Same press+release shape as the opening click, now that the window
+        // was on screen last frame.
+        host.click_same_frame(outside);
+        assert!(!host.editing(), "a later click outside closes the editor");
+        assert_eq!(host.discarded, vec![id]);
+
+        host.state.open_edit(&action, egui::pos2(280.0, 160.0));
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let inside = host.window_rect().center();
+        host.click(inside);
+        assert!(host.editing(), "a click inside the editor leaves it open");
+    }
+
+    #[test]
+    fn edit_tip_click_on_foreground_popup_stays_open() {
+        let action = wait_action(40);
+        let mut host = EditTipHost::open(&action, egui::pos2(400.0, 240.0), false);
+        host.shield = true;
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let on_popup = egui::pos2(16.0, 16.0);
+        let win = host.window_rect();
+        assert!(
+            !win.contains(on_popup),
+            "popup click {on_popup:?} should be outside the editor {win:?}"
+        );
+        host.click(on_popup);
+        assert!(
+            host.editing(),
+            "a click on a popup above the editor does not close it"
+        );
+
+        let outside = egui::pos2(120.0, 16.0);
+        assert!(!host.window_rect().contains(outside));
+        host.click(outside);
+        assert!(
+            !host.editing(),
+            "a click outside both surfaces still closes"
+        );
+    }
+
+    #[test]
+    fn edit_tip_click_outside_ignored_while_recording_a_key() {
+        let action = wait_action(40);
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), false);
+        let hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
+        host.key_record.open(&hotkeys);
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        host.click(egui::pos2(8.0, 8.0));
+        assert!(
+            host.editing(),
+            "an outside click while a key is being recorded leaves the editor open"
+        );
     }
 }

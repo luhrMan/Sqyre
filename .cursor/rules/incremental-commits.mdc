@@ -1,0 +1,22 @@
+---
+description: Commit during the change — one bullet/surface/concern per commit, without waiting to be asked
+alwaysApply: true
+---
+
+# Incremental Commits
+
+Regressions hide inside megacommits: a single 60-file `+1880` commit that mixed scrollbars, spacing tokens, and a header rework shipped multiple bugs at once, none bisectable. Commit discipline is a regression-control tool, not just hygiene.
+
+## Rules
+
+- **Commit during the change, without a separate request.** Finishing a unit includes committing it. Do not hold a correct diff until the user says "commit".
+- **Commit after each independently-correct unit** — one bullet of a batch request, one surface, one concern. If the subject line needs "and", split it.
+- **Never accumulate a multi-topic uncommitted tree** across items of a list request, and never carry uncommitted work between items — commit or stop. The tree at `HEAD` should always be reviewable as a sequence of single-purpose diffs.
+- **Per commit:** `make fmt` plus a compile of what you touched (`cargo check -p <crate>` or the relevant `make` target). The full `make check && make test` gate still applies before declaring the batch done (verify-new-code) — but do not batch ten items to save one gate run.
+- **Message style:** match `git log` — `<crate-or-area>: <lowercase what it does>` (e.g. `app: keep parent popups open over nested menus`). One concern per message; no AI attribution or trailers (see AGENTS.md).
+- **Regression fixes get their own commit** even when tiny — a fix mixed into a feature commit can't be reverted or bisected independently.
+- **Rule/skill/doc changes commit separately** from code changes.
+
+## When asked to "commit in logical groupings"
+
+That request means the tree should already have been committed incrementally — treat it as a signal the rule above was skipped. Group what's there, then resume committing per unit.

@@ -71,14 +71,23 @@ impl Drop for MappedFd {
     }
 }
 
-fn mmap_spa_fd(data: &pw::spa::buffer::Data) -> Option<MappedFd> {
+/// Bytes to map. COSMIC's DMA-BUF path sets `maxsize` to 0 and puts the real
+/// length in the chunk (`height * stride`). Mapping that length is what makes
+/// the frame readable; a zero `maxsize` used to drop the buffer.
+fn spa_map_len(maxsize: u32, offset: usize, size: usize) -> usize {
+    let need = offset.saturating_add(size);
+    (maxsize as usize).max(need)
+}
+
+fn mmap_spa_fd(data: &pw::spa::buffer::Data, min_len: usize) -> Option<MappedFd> {
     let raw = data.as_raw();
-    let len = raw.maxsize as usize;
+    let len = (raw.maxsize as usize).max(min_len);
     let fd = data.fd();
     if len == 0 || fd < 0 {
         return None;
     }
-    // SAFETY: `fd` is PipeWire's buffer fd; `mapoffset`/`maxsize` are spa_data.
+    // SAFETY: `fd` is PipeWire's buffer fd; `mapoffset` is spa_data. `len` is
+    // `maxsize` or the chunk span, whichever is larger.
     let ptr = unsafe {
         libc::mmap(
             std::ptr::null_mut(),
@@ -114,10 +123,11 @@ pub(super) fn with_spa_chunk_bytes<T>(
     let fd = data.fd();
     let _sync = SpaBufSync::begin(ty, fd);
     if let Some(mapped) = data.data() {
-        let range = chunk_byte_range(mapped.len(), offset, size)?;
-        return Some(f(&mapped[range]));
+        if let Some(range) = chunk_byte_range(mapped.len(), offset, size) {
+            return Some(f(&mapped[range]));
+        }
     }
-    let map = mmap_spa_fd(data)?;
+    let map = mmap_spa_fd(data, spa_map_len(0, offset, size))?;
     let range = chunk_byte_range(map.as_slice().len(), offset, size)?;
     Some(f(&map.as_slice()[range]))
 }
@@ -279,6 +289,15 @@ mod tests {
         assert_eq!(out, [2, 1, 0, 9, 12, 11, 10, 8]);
         swizzle_row_to_rgba(&[1, 2, 3, 4, 5, 6, 7, 8], 2, RgbaSrcFormat::Rgba, &mut out);
         assert_eq!(out, [1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn spa_map_len_uses_chunk_when_maxsize_is_zero() {
+        // COSMIC DMA-BUF: maxsize 0, payload described only by the chunk.
+        assert_eq!(spa_map_len(0, 0, 64), 64);
+        assert_eq!(spa_map_len(0, 16, 64), 80);
+        // A real maxsize still wins when it already covers the chunk.
+        assert_eq!(spa_map_len(128, 0, 64), 128);
     }
 
     #[test]

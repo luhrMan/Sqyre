@@ -11,8 +11,8 @@ use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
     action_type_label, expand_image_search_targets, grid_item_placements, ordered_item_targets,
-    variant_name_from_path, Action, ActionKind, CatalogItemRef, GridPlacement, ItemSortBy,
-    ItemSortInfo, ItemSortThen, Macro, MatchMethod, PROGRAM_DELIMITER,
+    variant_name_from_path, Action, ActionKind, CatalogItemRef, GridPlacement, ImageSearchData,
+    ItemSortBy, ItemSortInfo, ItemSortThen, Macro, MatchMethod, PROGRAM_DELIMITER,
 };
 use sqyre_match::{
     blur_image_owned, cluster_points, find_peaks_for_method, match_template_with_prepared,
@@ -34,7 +34,10 @@ pub(crate) fn execute_image_search(
     action: &Action,
     macro_: &mut Macro,
 ) -> Result<()> {
-    let ActionKind::ImageSearch {
+    let ActionKind::ImageSearch(d) = &action.kind else {
+        return Err(ExecError::Message("not image search".into()));
+    };
+    let ImageSearchData {
         targets,
         target_tags,
         search_area,
@@ -46,10 +49,7 @@ pub(crate) fn execute_image_search(
         tag_priority,
         detection,
         ..
-    } = &action.kind
-    else {
-        return Err(ExecError::Message("not image search".into()));
-    };
+    } = d.as_ref();
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let label = action_type_label(action.type_key());
@@ -681,6 +681,7 @@ fn capture_and_match(
                             (tlx, tly, brx, bry),
                             search_raw.width,
                             search_raw.height,
+                            exec.deps.log_image_max_edge,
                         ),
                     }),
                 })

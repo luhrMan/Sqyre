@@ -112,6 +112,9 @@ mod native {
                 self.inner.move_to(x, y, opts);
             }
         }
+        fn cursor_position(&mut self) -> Option<(i32, i32)> {
+            self.inner.cursor_position()
+        }
         fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
             if down && self.stop.is_stopped() {
                 return Ok(());
