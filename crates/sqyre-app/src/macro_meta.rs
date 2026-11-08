@@ -447,6 +447,39 @@ mod tests {
     }
 
     #[test]
+    fn name_and_tag_fields_share_a_baseline() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 280.0));
+        let mut meta = MacroMetaUi::default();
+        let mut macro_ = m("new macro copy", &[]);
+        meta.sync_selection(0, &macro_);
+        for pass in 0..2 {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    let layout = meta.paint_name_and_tags(ui, &mut macro_, &[], &[], true);
+                    assert!(
+                        (layout.name_rect.top() - layout.tag_rect.top()).abs() < 1.0,
+                        "pass {pass} tops: name {:?} tag {:?}",
+                        layout.name_rect,
+                        layout.tag_rect
+                    );
+                    assert!(
+                        (layout.name_rect.bottom() - layout.tag_rect.bottom()).abs() < 1.0,
+                        "pass {pass} bottoms: name {:?} tag {:?}",
+                        layout.name_rect,
+                        layout.tag_rect
+                    );
+                },
+            );
+            output.drop_without_applying_deltas();
+        }
+    }
+
+    #[test]
     fn name_pushes_tags_until_the_edge_then_scrolls() {
         let pane_w = 480.0;
         let (short, pane_right, _) = paint_header(pane_w, "Alpha", &["demo", "desktop"], "Alpha");

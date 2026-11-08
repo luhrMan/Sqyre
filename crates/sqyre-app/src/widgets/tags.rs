@@ -371,8 +371,14 @@ fn tag_chip_editor_impl(
         }
         resp
     };
-    let tag_resp = if opts.single_row || !include_chips {
-        ui.horizontal(|ui| paint_row(ui)).inner
+    // A bare `ui.horizontal` is only `interact_size` tall. In a row that already
+    // holds a taller pair (the macro name beside this draft) that short box is
+    // centered, so the tag field starts lower. The draft is one pair already;
+    // a single-row editor is one `wrap_unit` so it asks for its real height.
+    let tag_resp = if !include_chips {
+        ui.scope(|ui| paint_row(ui)).inner
+    } else if opts.single_row {
+        super::wrap_unit(ui, |ui| paint_row(ui)).inner
     } else {
         ui.horizontal_wrapped(|ui| paint_row(ui)).inner
     };
