@@ -46,7 +46,7 @@ pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
     drag_field_enabled, fill_row, name_edit_width, num_text_edit, num_text_field_opts,
     reset_focus_search, search_field, searchable_combo, text_field, text_field_opts, NumFieldOpts,
-    SearchFieldOpts, SearchableComboOpts, TextFieldOpts, W_TEXT, W_VAR,
+    SearchFieldOpts, SearchTrailing, SearchableComboOpts, TextFieldOpts, W_TEXT, W_VAR,
 };
 pub use headers::{count_suffix, count_text, heading_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
@@ -57,6 +57,7 @@ pub(crate) use num_or_var::{
 };
 pub use num_or_var::{num_or_var_field, NumOrVarOpts};
 pub use overflow::{always_bar, text_width, OverflowItem};
+pub(crate) use pair::pair_slots;
 pub use pair::{pair_icon, pair_labeled, pair_leading, PAIR_SLOT_GAP};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{

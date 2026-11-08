@@ -575,29 +575,24 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            // Search takes the pane minus the new-macro button on its right.
-            let mut create_macro = false;
-            let search_resp = crate::widgets::fill_row(
+            // New macro sits inside the search pair, after the clear ✕.
+            let search = crate::widgets::search_field(
                 ui,
-                |ui| {
-                    create_macro = crate::widgets::add_button(ui, "New macro", true).clicked();
+                &mut app.macro_list_filter,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search macros or tags…",
+                    focus_id: None,
+                    clearable: true,
+                    stable_id: Some(egui::Id::new("macro_list_search")),
+                    trailing: Some(crate::widgets::SearchTrailing {
+                        glyph: egui_phosphor::regular::PLUS,
+                        tip: "New macro",
+                        color: Some(crate::theme::MACRO_START),
+                    }),
                 },
-                |ui| {
-                    crate::widgets::search_field(
-                        ui,
-                        &mut app.macro_list_filter,
-                        crate::widgets::SearchFieldOpts {
-                            hint: "Search macros or tags…",
-                            focus_id: None,
-                            clearable: true,
-                            stable_id: Some(egui::Id::new("macro_list_search")),
-                        },
-                    )
-                    .response
-                },
-            )
-            .on_hover_text(ht::MLIST_SEARCH_TIP);
-            if create_macro {
+            );
+            let search_resp = search.response.on_hover_text(ht::MLIST_SEARCH_TIP);
+            if search.trailing_clicked {
                 app.create_macro();
             }
             // True load failures only (corrupt db / undecodable macros). Per-macro

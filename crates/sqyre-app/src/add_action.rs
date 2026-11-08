@@ -284,6 +284,7 @@ impl AddActionPicker {
                     focus_id: Some(focus_id),
                     clearable: false,
                     stable_id: None,
+                    trailing: None,
                 },
             );
             if search_out.changed {

@@ -202,6 +202,15 @@ pub struct SearchFieldOpts<'a> {
     /// Pinned field id — needed when a sibling drawn before the field (e.g.
     /// the toggling ✕) would shift the auto id and drop keyboard focus.
     pub stable_id: Option<egui::Id>,
+    /// Icon button inside the pair, after the clear ✕.
+    pub trailing: Option<SearchTrailing<'a>>,
+}
+
+/// Trailing icon drawn inside a [`search_field`] pair.
+pub struct SearchTrailing<'a> {
+    pub glyph: &'a str,
+    pub tip: &'a str,
+    pub color: Option<egui::Color32>,
 }
 
 /// Outcome of [`search_field`].
@@ -211,14 +220,16 @@ pub struct SearchFieldResp {
     pub response: egui::Response,
     /// Query text changed this frame (edit or ✕ clear — `value` is already updated).
     pub changed: bool,
+    /// The [`SearchFieldOpts::trailing`] icon was clicked this frame.
+    pub trailing_clicked: bool,
 }
 
 /// Magnifier + fill-width filter field (+ optional trailing ✕) — the one
 /// search row for lists, pickers, dialogs, and panels.
 ///
-/// The magnifier, the edit, and the ✕ share one [`super::pair_icon`] frame.
-/// Wrap the row in [`super::show_overflow`] or a [`fill_row`] slot when
-/// siblings share the row.
+/// The magnifier, the edit, the ✕, and any [`SearchTrailing`] share one
+/// [`super::pair_icon`] frame. Wrap the row in [`super::show_overflow`] or a
+/// [`fill_row`] slot when siblings share the row.
 pub fn search_field(
     ui: &mut egui::Ui,
     value: &mut String,
@@ -229,40 +240,62 @@ pub fn search_field(
         focus_id,
         clearable,
         stable_id,
+        trailing,
     } = opts;
     // `body` holds the `&mut String`, so snapshot emptiness before it is built.
     let has_text = !value.is_empty();
+    let trailing = trailing.map(|action| (action.glyph, action.tip, action.color));
     // egui never allocates a TextEdit narrower than 24px (`MIN_WIDTH`), so
     // below that the field's rect underlaps what follows it. A sliver-wide
     // field is unusable anyway — drop it and keep the icon.
     if ui.available_width() < 24.0 {
         let response = search_icon(ui);
+        let trailing_clicked = trailing.is_some_and(|(glyph, tip, color)| {
+            ui.add(super::IconButton::new(glyph, tip, color)).clicked()
+        });
         return SearchFieldResp {
             changed: false,
             response,
+            trailing_clicked,
         };
     }
     let show_clear = clearable && has_text;
+    let has_trailing = trailing.is_some();
+    let slots = u32::from(show_clear) + u32::from(has_trailing);
     let mut cleared = false;
-    let response = if show_clear {
-        super::pair_icon(
-            ui,
-            |ui| {
-                search_icon(ui);
-            },
-            |ui| search_edit(ui, value, hint, stable_id, focus_id, true),
-            |ui| {
-                cleared = crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
-            },
-        )
-        .inner
-    } else {
+    let mut trailing_clicked = false;
+    let response = if slots == 0 {
         super::pair_leading(
             ui,
             |ui| {
                 search_icon(ui);
             },
-            |ui| search_edit(ui, value, hint, stable_id, focus_id, false),
+            |ui| search_edit(ui, value, hint, stable_id, focus_id, 0),
+        )
+        .inner
+    } else {
+        let mut clear_slot = |ui: &mut egui::Ui| {
+            cleared = crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
+        };
+        let mut extra_slot = |ui: &mut egui::Ui| {
+            if let Some((glyph, tip, color)) = trailing {
+                trailing_clicked = ui.add(super::IconButton::new(glyph, tip, color)).clicked();
+            }
+        };
+        let mut slot_refs: Vec<&mut dyn FnMut(&mut egui::Ui)> = Vec::with_capacity(2);
+        if show_clear {
+            slot_refs.push(&mut clear_slot);
+        }
+        if has_trailing {
+            slot_refs.push(&mut extra_slot);
+        }
+        super::pair_slots(
+            ui,
+            |ui| {
+                search_icon(ui);
+            },
+            |ui| search_edit(ui, value, hint, stable_id, focus_id, slots),
+            &mut slot_refs,
         )
         .inner
     };
@@ -272,6 +305,7 @@ pub fn search_field(
     SearchFieldResp {
         changed: cleared || response.changed(),
         response,
+        trailing_clicked,
     }
 }
 
@@ -308,18 +342,17 @@ fn search_edit(
     hint: &str,
     stable_id: Option<egui::Id>,
     focus_id: Option<egui::Id>,
-    reserve_clear: bool,
+    trailing_slots: u32,
 ) -> egui::Response {
     // A finite width, never `INFINITY`. Inside an overflow scroller
     // `available_width()` is infinite, and an infinite edit makes the row
     // wider than the pane so the scroller turns on and off every frame.
     // `stable_id` keeps focus when the trailing ✕ appears and disappears.
+    // Each trailing slot (✕, extra icon) keeps its own gap so it stays
+    // inside the pair instead of past the pane edge.
     let room = finite_room(ui);
-    let width = if reserve_clear {
-        (room - crate::widgets::icon_btn_side(ui) - super::PAIR_SLOT_GAP).max(24.0)
-    } else {
-        room.max(24.0)
-    };
+    let slot = crate::widgets::icon_btn_side(ui) + super::PAIR_SLOT_GAP;
+    let width = (room - trailing_slots as f32 * slot).max(24.0);
     let mut edit = egui::TextEdit::singleline(value).desired_width(width);
     if let Some(id) = stable_id {
         edit = edit.id(id);
@@ -882,6 +915,7 @@ mod tests {
                             focus_id: None,
                             clearable: true,
                             stable_id: Some(egui::Id::new("test_search")),
+                            trailing: None,
                         },
                     );
                 },
@@ -897,6 +931,142 @@ mod tests {
         clear.click();
         h.run_steps(2);
         assert_eq!(h.state().as_str(), "");
+    }
+
+    /// The extra icon is a slot inside the search pair, after the clear ✕,
+    /// not a sibling button past the frame. Empty query hides the ✕; the
+    /// trailing icon stays.
+    #[test]
+    fn search_trailing_icon_sits_inside_the_pair() {
+        let ctx = egui::Context::default();
+        let pane = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 64.0));
+        let plus = egui_phosphor::regular::PLUS;
+        let clear_glyph = egui_phosphor::regular::X;
+        for (start, field_text) in [("query", "query"), ("", "Filter…")] {
+            let mut value = start.to_owned();
+            for pass in 0..2 {
+                let out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(400.0, 120.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                        search_field(
+                            &mut pane_ui,
+                            &mut value,
+                            SearchFieldOpts {
+                                hint: "Filter…",
+                                focus_id: None,
+                                clearable: true,
+                                stable_id: Some(egui::Id::new("trail_search")),
+                                trailing: Some(SearchTrailing {
+                                    glyph: plus,
+                                    tip: "New macro",
+                                    color: Some(crate::theme::MACRO_START),
+                                }),
+                            },
+                        );
+                    },
+                );
+                let text_rect = |needle: &str| {
+                    out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                        egui::Shape::Text(text) if text.galley.job.text == needle => {
+                            Some(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                        }
+                        _ => None,
+                    })
+                };
+                let field = text_rect(field_text).unwrap_or_else(|| panic!("missing {field_text}"));
+                let add = text_rect(plus).expect("trailing glyph");
+                let frame = out
+                    .shapes
+                    .iter()
+                    .find_map(|clipped| match &clipped.shape {
+                        egui::Shape::Rect(rect)
+                            if rect.fill.a() > 0
+                                && rect.rect.contains(field.center())
+                                && rect.rect.contains(add.center()) =>
+                        {
+                            Some(rect.rect)
+                        }
+                        _ => None,
+                    })
+                    .expect("pair frame around the field and the trailing icon");
+                assert!(
+                    add.left() + 1.0 >= field.right(),
+                    "pass {pass} text {start:?} trailing icon overlaps the field: {field:?} {add:?}"
+                );
+                assert!(
+                    (add.center().y - field.center().y).abs() < 2.0,
+                    "pass {pass} text {start:?} trailing icon left the baseline: {field:?} {add:?}"
+                );
+                assert!(
+                    frame.right() <= pane.right() + 1.0,
+                    "pass {pass} text {start:?} pair past the pane: {frame:?}"
+                );
+                if start.is_empty() {
+                    assert!(
+                        text_rect(clear_glyph).is_none(),
+                        "clear glyph shown for an empty query"
+                    );
+                } else {
+                    let clear = text_rect(clear_glyph).expect("clear glyph");
+                    assert!(
+                        frame.contains(clear.center())
+                            && clear.left() + 1.0 >= field.right()
+                            && add.left() + 1.0 >= clear.right(),
+                        "pass {pass} order should be field, clear, trailing: {field:?} {clear:?} {add:?}"
+                    );
+                }
+                out.drop_without_applying_deltas();
+            }
+        }
+    }
+
+    #[test]
+    fn search_trailing_click_is_reported() {
+        use egui_kittest::kittest::Queryable;
+
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([300.0, 40.0])
+            .build_ui_state(
+                |ui, frames: &mut Vec<bool>| {
+                    let mut value = String::new();
+                    let out = search_field(
+                        ui,
+                        &mut value,
+                        SearchFieldOpts {
+                            hint: "Filter…",
+                            focus_id: None,
+                            clearable: true,
+                            stable_id: Some(egui::Id::new("trail_click")),
+                            trailing: Some(SearchTrailing {
+                                glyph: egui_phosphor::regular::PLUS,
+                                tip: "New macro",
+                                color: Some(crate::theme::MACRO_START),
+                            }),
+                        },
+                    );
+                    frames.push(out.trailing_clicked);
+                },
+                Vec::new(),
+            );
+        h.run_steps(2);
+        let before = h.state().len();
+        assert!(
+            h.state().iter().all(|clicked| !clicked),
+            "trailing icon clicked before the pointer press"
+        );
+        h.get_by_label("New macro").click();
+        h.run_steps(3);
+        assert!(
+            h.state()[before..].contains(&true),
+            "trailing icon click should be reported"
+        );
     }
 
     /// `${var}`/text content isn't steppable — no zones are registered.
@@ -956,6 +1126,7 @@ mod tests {
                                 focus_id: None,
                                 clearable: true,
                                 stable_id: Some(egui::Id::new("stable_search")),
+                                trailing: None,
                             },
                         );
                         widths.push(out.response.rect.width());

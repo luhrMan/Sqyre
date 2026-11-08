@@ -246,6 +246,7 @@ pub fn show_logs_window(
                 focus_id: None,
                 clearable: true,
                 stable_id: Some(egui::Id::new("action_logs_search")),
+                trailing: None,
             },
         );
         let search_resp = search_out.response;

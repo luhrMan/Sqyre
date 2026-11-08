@@ -239,6 +239,7 @@ impl VariablesPanelUi {
                 focus_id: None,
                 clearable: true,
                 stable_id: Some(egui::Id::new("runtime_vars_filter")),
+                trailing: None,
             },
         );
         let q = self.runtime_filter.trim().to_ascii_lowercase();
@@ -372,6 +373,7 @@ impl VariablesPanelUi {
                 focus_id: None,
                 clearable: true,
                 stable_id: Some(egui::Id::new("declared_vars_filter")),
+                trailing: None,
             },
         );
         crate::widgets::section_separator(ui);

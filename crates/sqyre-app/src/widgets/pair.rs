@@ -40,7 +40,8 @@ pub fn pair_leading<R>(
     mut widget: impl FnMut(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
     wrap_unit(ui, |ui| {
-        paint_pair(ui, Some(&mut leading), &mut widget, None)
+        let mut trailing: [&mut dyn FnMut(&mut egui::Ui); 0] = [];
+        paint_pair(ui, Some(&mut leading), &mut widget, &mut trailing)
     })
 }
 
@@ -58,7 +59,23 @@ pub fn pair_icon<R>(
     mut trailing: impl FnMut(&mut egui::Ui),
 ) -> egui::InnerResponse<R> {
     wrap_unit(ui, |ui| {
-        paint_pair(ui, Some(&mut leading), &mut widget, Some(&mut trailing))
+        let mut slots: [&mut dyn FnMut(&mut egui::Ui); 1] = [&mut trailing];
+        paint_pair(ui, Some(&mut leading), &mut widget, &mut slots)
+    })
+}
+
+/// Leading icon, widget, and any number of trailing icon slots in one frame.
+///
+/// Each trailing closure is its own slot: a hairline sits in the gap before it,
+/// same as [`pair_icon`]'s single trailing icon.
+pub(crate) fn pair_slots<R>(
+    ui: &mut egui::Ui,
+    mut leading: impl FnMut(&mut egui::Ui),
+    mut widget: impl FnMut(&mut egui::Ui) -> R,
+    trailing: &mut [&mut dyn FnMut(&mut egui::Ui)],
+) -> egui::InnerResponse<R> {
+    wrap_unit(ui, |ui| {
+        paint_pair(ui, Some(&mut leading), &mut widget, trailing)
     })
 }
 
@@ -66,7 +83,7 @@ fn paint_pair<R>(
     ui: &mut egui::Ui,
     mut leading: Option<&mut dyn FnMut(&mut egui::Ui)>,
     widget: &mut dyn FnMut(&mut egui::Ui) -> R,
-    mut trailing: Option<&mut dyn FnMut(&mut egui::Ui)>,
+    trailing: &mut [&mut dyn FnMut(&mut egui::Ui)],
 ) -> R {
     let mut prepared = egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(4, 2))
@@ -76,7 +93,7 @@ fn paint_pair<R>(
 
     let mut lead_rect = None;
     let mut widget_rect = egui::Rect::NOTHING;
-    let mut trail_rect = None;
+    let mut trail_rects = Vec::with_capacity(trailing.len());
     prepared.content_ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
     let result = prepared
         .content_ui
@@ -88,9 +105,9 @@ fn paint_pair<R>(
             let scoped = ui.scope(|ui| widget(ui));
             widget_rect = scoped.response.rect;
             let result = scoped.inner;
-            if let Some(trail) = trailing.as_mut() {
+            for slot in trailing.iter_mut() {
                 ui.add_space(PAIR_SLOT_GAP);
-                trail_rect = Some(ui.scope(|ui| trail(ui)).response.rect);
+                trail_rects.push(ui.scope(|ui| slot(ui)).response.rect);
             }
             result
         })
@@ -108,7 +125,7 @@ fn paint_pair<R>(
         &ui.visuals().widgets.inactive
     };
     let stroke = Stroke::new(PAIR_STROKE_W, visuals.bg_stroke.color);
-    paint_dividers(ui, lead_rect, widget_rect, trail_rect, stroke);
+    paint_dividers(ui, lead_rect, widget_rect, &trail_rects, stroke);
     prepared.frame = prepared
         .frame
         .corner_radius(visuals.corner_radius)
@@ -139,7 +156,7 @@ fn paint_dividers(
     ui: &egui::Ui,
     lead: Option<egui::Rect>,
     widget: egui::Rect,
-    trail: Option<egui::Rect>,
+    trail: &[egui::Rect],
     stroke: Stroke,
 ) {
     let mut stroke = stroke;
@@ -149,8 +166,10 @@ fn paint_dividers(
     if let Some(lead) = lead {
         vline_between(ui, lead, widget, stroke);
     }
-    if let Some(trail) = trail {
-        vline_between(ui, widget, trail, stroke);
+    let mut prev = widget;
+    for slot in trail {
+        vline_between(ui, prev, *slot, stroke);
+        prev = *slot;
     }
 }
 

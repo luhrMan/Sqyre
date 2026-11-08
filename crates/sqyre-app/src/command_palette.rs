@@ -185,6 +185,7 @@ impl CommandPaletteUi {
                     focus_id: None,
                     clearable: false,
                     stable_id: None,
+                    trailing: None,
                 },
             );
             if self.focus_search {

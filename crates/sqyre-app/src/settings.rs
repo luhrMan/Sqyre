@@ -546,6 +546,7 @@ impl SettingsUi {
                     focus_id: Some(settings_window_id()),
                     clearable: true,
                     stable_id: Some(settings_window_id().with("search")),
+                    trailing: None,
                 },
             );
             if out.changed && !self.search.trim().is_empty() {

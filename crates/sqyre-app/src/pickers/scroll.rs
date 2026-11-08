@@ -155,6 +155,7 @@ pub fn picker_searchable_scroll_ex(
                                 focus_id,
                                 clearable: false,
                                 stable_id: None,
+                                trailing: None,
                             },
                         );
                         if out.changed {
