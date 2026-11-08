@@ -303,12 +303,7 @@ fn paint_tag_node(
     path: &str,
     label: &str,
     node: &TagTreeNode,
-    is_first_root: bool,
 ) {
-    if !is_first_root {
-        crate::widgets::section_separator(ui);
-    }
-
     let id = ui.make_persistent_id(("macro_list_tag", path));
     let open =
         egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
@@ -416,7 +411,7 @@ fn paint_tag_group(
                 } else {
                     format!("{path}/{seg}")
                 };
-                // Nested headers: no root separators; slight indent without expand_to_include_x.
+                // Nested headers: slight indent without expand_to_include_x.
                 ui.horizontal(|ui| {
                     ui.add_space(NEST_INDENT);
                     // Item spacing sits between the indent and the column; leaving it
@@ -434,14 +429,7 @@ fn paint_tag_group(
                             tag_icons: ctx.tag_icons,
                             compact: ctx.compact,
                         };
-                        paint_tag_node(
-                            ui,
-                            &mut nested,
-                            &child_path,
-                            seg,
-                            child,
-                            true, // suppress root separators inside nest
-                        );
+                        paint_tag_node(ui, &mut nested, &child_path, seg, child);
                     });
                 });
             }
@@ -726,24 +714,15 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         tag_icons: &tag_icons,
                         compact,
                     };
-                    let mut first = true;
                     for (seg, child) in &tree.children {
-                        paint_tag_node(ui, &mut ctx, seg, seg, child, first);
-                        first = false;
+                        paint_tag_node(ui, &mut ctx, seg, seg, child);
                     }
                     if !untagged.is_empty() {
                         let untagged_node = TagTreeNode {
                             macros: untagged,
                             children: BTreeMap::new(),
                         };
-                        paint_tag_node(
-                            ui,
-                            &mut ctx,
-                            UNTAGGED_KEY,
-                            "Untagged",
-                            &untagged_node,
-                            first,
-                        );
+                        paint_tag_node(ui, &mut ctx, UNTAGGED_KEY, "Untagged", &untagged_node);
                     }
                 }
 
