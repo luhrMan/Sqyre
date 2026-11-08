@@ -548,6 +548,10 @@ impl SqyreApp {
 
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
+        #[cfg(feature = "native-runtime")]
+        macro_record_bridge.set_coordinate_source_logger(|source| {
+            sqyre_capture::event_log("SQYRE_RECORD", &[("coordinate_source", source)]);
+        });
         #[cfg(all(feature = "native-runtime", target_os = "linux"))]
         {
             screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);

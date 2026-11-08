@@ -564,11 +564,18 @@ impl RecordingOverlay {
         let text = macro_record
             .and_then(|b| b.status_label())
             .or_else(|| screen_click.status_label());
-        let Some(text) = text else {
+        let Some(mut text) = text else {
             return;
         };
+        let macro_armed = macro_record.is_some_and(|b| b.is_armed());
+        let measurement_text = if macro_armed {
+            format!("{text}\n{}", crate::macro_record::POSITION_WARNING)
+        } else {
+            text.clone()
+        };
+        append_position_warning(&mut text, macro_record);
         let (mx, my) = match macro_record {
-            Some(b) if b.is_armed() => b.last_pos(),
+            Some(b) if b.is_armed() => b.last_pos().unwrap_or((0, 0)),
             _ => screen_click.last_pos(),
         };
         if self.monitor_rects.is_empty() {
@@ -598,7 +605,7 @@ impl RecordingOverlay {
             let font = TextStyle::Body.resolve(&style);
             let color = theme::accent();
             let text_max_w = (max_w - HUD_PAD_X - HUD_STROKE * 2.0).max(1.0);
-            let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
+            let galley = ctx.fonts_mut(|f| f.layout(measurement_text, font, color, text_max_w));
             let panel_w = (galley.size().x + HUD_PAD_X)
                 .ceil()
                 .clamp(HUD_MIN_W, (max_w - HUD_STROKE * 2.0).max(HUD_MIN_W));
@@ -805,6 +812,16 @@ fn hud_frame() -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(10, 6))
 }
 
+fn append_position_warning(
+    text: &mut String,
+    macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
+) {
+    if macro_record.is_some_and(|b| b.is_armed() && b.position_unavailable()) {
+        text.push('\n');
+        text.push_str(crate::macro_record::POSITION_WARNING);
+    }
+}
+
 fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
     let anchor = if at_top {
         egui::Align2::CENTER_TOP
@@ -823,7 +840,7 @@ fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
         .anchor(anchor, offset)
         .frame(hud_frame())
         .show(ctx, |ui| {
-            ui.label(egui::RichText::new(text).color(theme::accent()).strong());
+            paint_hud_text(ui, text);
         });
 }
 
@@ -842,14 +859,63 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: 
             (panel.y - HUD_PAD_Y).max(1.0),
         ));
         ui.centered_and_justified(|ui| {
-            ui.label(egui::RichText::new(text).color(theme::accent()).strong());
+            paint_hud_text(ui, text);
         });
+    });
+}
+
+fn paint_hud_text(ui: &mut egui::Ui, text: &str) {
+    let (status, warning) = text
+        .split_once(crate::macro_record::POSITION_WARNING)
+        .map_or((text, false), |(status, _)| (status.trim_end(), true));
+    ui.vertical(|ui| {
+        ui.label(egui::RichText::new(status).color(theme::accent()).strong());
+        crate::macro_record::paint_position_warning(ui, warning);
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_hud_warns_during_cursor_loss_and_after_recovery() {
+        let bridge = sqyre_hotkeys::MacroRecordBridge::new();
+        bridge.set_hook_coordinates(sqyre_hotkeys::HookCoordinates::Relative);
+        bridge.set_absolute_pos(|| Some((100, 100)));
+        bridge.arm();
+        let ctx = egui::Context::default();
+        for unavailable in [false, true, true] {
+            if unavailable {
+                bridge.set_absolute_pos(|| None);
+                bridge.on_mouse_move(900, 900);
+                bridge.set_absolute_pos(|| Some((100, 100)));
+                bridge.on_mouse_move(900, 900);
+            }
+            let mut text = bridge.status_label().unwrap();
+            append_position_warning(&mut text, Some(&bridge));
+            assert_eq!(
+                text.contains(crate::macro_record::POSITION_WARNING),
+                unavailable
+            );
+            let mut warning_painted = false;
+            for _ in 0..3 {
+                let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    paint_hud_window(ui.ctx(), &text, true);
+                });
+                warning_painted |= out.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::epaint::Shape::Text(text)
+                        if text.galley.text() == crate::macro_record::POSITION_WARNING)
+                });
+                out.drop_without_applying_deltas();
+            }
+            assert_eq!(warning_painted, unavailable);
+        }
+        bridge.on_escape();
+        let mut text = String::new();
+        append_position_warning(&mut text, Some(&bridge));
+        assert!(text.is_empty());
+    }
 
     #[test]
     fn hud_position_converts_physical_to_points() {

@@ -32,6 +32,10 @@ impl RdevHotkeys {
         macro_record: MacroRecordBridge,
         macro_hotkeys: MacroHotkeyBridge,
     ) -> Self {
+        #[cfg(target_os = "linux")]
+        if linux_uses_evdev_grab() {
+            macro_record.set_hook_coordinates(crate::HookCoordinates::Relative);
+        }
         Self {
             stop: Arc::new(AtomicBool::new(false)),
             join: Mutex::new(None),

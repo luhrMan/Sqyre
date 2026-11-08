@@ -16,7 +16,7 @@ pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
-pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
+pub use macro_record::{HookCoordinates, MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
 pub use pointer_buttons::left_button_down;
 pub use popup_escape::{claim_popup_escape, take_popup_escape};
 pub use screen_click::ScreenClickBridge;
