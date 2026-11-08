@@ -855,6 +855,7 @@ fn targets_editor(
             ui.label(egui::RichText::new("Tag priority").strong()),
             h::IS_TAG_PRIORITY,
         );
+        let program_icons = icons.program_name_icons(ui.ctx(), catalog);
         let edit = crate::widgets::tag_chip_editor(
             ui,
             tag_priority,
@@ -870,6 +871,7 @@ fn targets_editor(
                 single_row: false,
                 locked: &[],
                 locked_hover: None,
+                program_icons: Some(&program_icons),
             },
         );
         let _ = edit;

@@ -244,11 +244,18 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
             .program_names()
             .map(|name| name.as_str()),
     );
+    let program_icons = app
+        .icon_cache
+        .program_name_icons(ui.ctx(), &app.workspace.catalog);
     let m = &mut app.workspace.macros[idx];
-    let laid =
-        app.workspace
-            .macro_meta
-            .paint_name_and_tags(ui, m, &other_names, &all_tags, meta_enabled);
+    let laid = app.workspace.macro_meta.paint_name_and_tags(
+        ui,
+        m,
+        &other_names,
+        &all_tags,
+        meta_enabled,
+        Some(&program_icons),
+    );
     if laid.mutations.persist {
         app.persist_macro_at(idx);
     }

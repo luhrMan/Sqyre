@@ -229,6 +229,24 @@ impl IconCache {
         self.for_path(ctx, &path)
     }
 
+    /// Process icon for each program that has one, keyed by the program's name.
+    ///
+    /// Programs with an empty process path, or no decodable icon, are omitted.
+    pub fn program_name_icons(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+    ) -> HashMap<String, TextureHandle> {
+        let names: Vec<String> = catalog.program_names().cloned().collect();
+        let mut out = HashMap::new();
+        for name in names {
+            if let Some(tex) = self.for_program(ctx, catalog, &name) {
+                out.insert(name, tex);
+            }
+        }
+        out
+    }
+
     /// Seed / refresh the process-icon cache from a listed window's icon bytes.
     pub fn seed_process_icon(
         &mut self,

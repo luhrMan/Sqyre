@@ -2,12 +2,16 @@
 
 use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, Sense};
+use std::collections::HashMap;
 
 /// Max height of the tag suggestion dropdown popup.
 const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
 
 /// Draft field width inside the tag pair (icon and Add sit outside this).
 pub(crate) const TAG_DRAFT_WIDTH: f32 = 140.0;
+
+/// Gap between a program icon and the tag text inside a pill or menu row.
+const TAG_ICON_GAP: f32 = 4.0;
 
 /// Collapse `/`-separated tag paths: trim, drop empty segments, rejoin.
 /// `" combat/pve/ "` → `"combat/pve"`; `"///"` → `""`.
@@ -17,6 +21,130 @@ pub fn normalize_tag_path(tag: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Process icon for a tag when the tag, or its first path segment, is a program name.
+///
+/// Signed filters (`+Game`, `−Game/raid`) use the bare name. Missing keys and an
+/// absent map paint the tag with no icon.
+pub(crate) fn program_icon_for_tag<'a, T>(
+    icons: Option<&'a HashMap<String, T>>,
+    tag: &str,
+) -> Option<&'a T> {
+    let icons = icons?;
+    let bare = sqyre_domain::tag_filter_name(tag).unwrap_or_default();
+    let bare = normalize_tag_path(&bare);
+    if bare.is_empty() {
+        return None;
+    }
+    if let Some(icon) = icons.get(&bare) {
+        return Some(icon);
+    }
+    let root = bare.split('/').next().unwrap_or("");
+    if root.is_empty() || root == bare {
+        None
+    } else {
+        icons.get(root)
+    }
+}
+
+/// Icon side inside a Small-text pill: tall enough to read, short enough that
+/// the pill stays the text line when the font is already that tall.
+fn tag_icon_side(text_h: f32) -> f32 {
+    text_h.clamp(12.0, crate::icon_cache::PROCESS_ICON_SIDE)
+}
+
+/// Extra pill width for a leading icon, and the icon's side length.
+fn tag_icon_extra(text_h: f32, has_icon: bool) -> (f32, f32) {
+    if has_icon {
+        let side = tag_icon_side(text_h);
+        (side + TAG_ICON_GAP, side)
+    } else {
+        (0.0, 0.0)
+    }
+}
+
+fn pill_outer_size(text: egui::Vec2, has_icon: bool) -> egui::Vec2 {
+    let (extra_w, side) = tag_icon_extra(text.y, has_icon);
+    let pad = crate::theme::SPACE_2 * 2.0;
+    egui::vec2(text.x + pad + extra_w, text.y.max(side) + pad)
+}
+
+/// Width of a tag pill, including a leading program icon when `has_icon`.
+pub(crate) fn tag_pill_width(ui: &egui::Ui, text: &str, has_icon: bool) -> f32 {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        egui::Color32::WHITE,
+    );
+    pill_outer_size(galley.size(), has_icon).x
+}
+
+/// Paint `tex` fitted inside a `side` square centered at `center`. Returns the
+/// fitted rect. Uses the texture id directly so the icon is not a loading slot.
+fn paint_tag_icon(
+    ui: &egui::Ui,
+    tex: &egui::TextureHandle,
+    center: egui::Pos2,
+    side: f32,
+) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let size = crate::image_view::fit_icon_thumb(tw as f32, th as f32, side, side);
+    let rect = egui::Rect::from_center_size(center, size);
+    ui.painter().image(
+        tex.id(),
+        rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+    rect
+}
+
+fn paint_tag_suggestion(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: bool,
+    icon: Option<&egui::TextureHandle>,
+) -> egui::Response {
+    let Some(tex) = icon else {
+        return ui.selectable_label(selected, label);
+    };
+    let side = crate::icon_cache::PROCESS_ICON_SIDE;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+        Sense::click(),
+    );
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact_selectable(&response, selected);
+        if selected || response.hovered() {
+            ui.painter()
+                .rect_filled(rect, visuals.corner_radius, visuals.bg_fill);
+        }
+        let pad = ui.spacing().button_padding.x;
+        let icon_rect = paint_tag_icon(
+            ui,
+            tex,
+            egui::pos2(rect.left() + pad + side * 0.5, rect.center().y),
+            side,
+        );
+        let galley = ui.painter().layout_no_wrap(
+            label.to_owned(),
+            egui::TextStyle::Button.resolve(ui.style()),
+            visuals.text_color(),
+        );
+        let text_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                icon_rect.right() + TAG_ICON_GAP,
+                rect.center().y - galley.size().y * 0.5,
+            ),
+            galley.size(),
+        );
+        crate::theme::paint_galley_centered(ui, text_rect, galley, visuals.text_color());
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::SelectableLabel, true, label.to_owned())
+    });
+    response
 }
 
 /// True when `tag` equals `prefix` or is a nested path under it (`prefix/...`).
@@ -280,6 +408,7 @@ pub fn tag_chip_list(
     enabled: bool,
     reorderable: bool,
     signed_filters: bool,
+    program_icons: Option<&HashMap<String, egui::TextureHandle>>,
 ) -> (bool, egui::Rect) {
     let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
     let mut changed = false;
@@ -289,10 +418,13 @@ pub fn tag_chip_list(
             paint_tag_chips(
                 ui,
                 tags,
-                enabled,
-                reorderable,
-                signed_filters,
-                false,
+                &TagChipOptions {
+                    enabled,
+                    reorderable,
+                    signed_filters,
+                    program_icons,
+                    ..TagChipOptions::default()
+                },
                 &mut changed,
             );
         })
@@ -360,15 +492,7 @@ fn tag_chip_editor_impl(
         };
         if include_chips {
             paint_locked_tags(ui, &opts, opts.single_row);
-            paint_tag_chips(
-                ui,
-                tags,
-                opts.enabled,
-                opts.reorderable,
-                opts.signed_filters,
-                opts.single_row,
-                &mut edit.changed,
-            );
+            paint_tag_chips(ui, tags, &opts, &mut edit.changed);
         }
         resp
     };
@@ -451,7 +575,15 @@ fn tag_chip_editor_impl(
         && !suggestions.is_empty()
         && (was_open || tag_resp.has_focus() || nav.selected.is_some());
     if show_popup {
-        let popup_width = tag_resp.rect.width().max(140.0);
+        let icon_pad = if suggestions
+            .iter()
+            .any(|sug| program_icon_for_tag(opts.program_icons, sug).is_some())
+        {
+            crate::icon_cache::PROCESS_ICON_SIDE + TAG_ICON_GAP
+        } else {
+            0.0
+        };
+        let popup_width = tag_resp.rect.width().max(140.0) + icon_pad;
         let shown = egui::Popup::from_response(&tag_resp)
             .id(nav_id.with("popup"))
             .open(true)
@@ -469,7 +601,12 @@ fn tag_chip_editor_impl(
                         ui.set_max_width(popup_width);
                         for (i, sug) in suggestions.iter().enumerate() {
                             let selected = nav.selected == Some(i);
-                            let resp = ui.selectable_label(selected, sug.as_str());
+                            let resp = paint_tag_suggestion(
+                                ui,
+                                sug.as_str(),
+                                selected,
+                                program_icon_for_tag(opts.program_icons, sug.as_str()),
+                            );
                             if resp.clicked() {
                                 pending = Some(if opts.signed_filters {
                                     signed_suggestion_raw(draft, sug)
@@ -539,7 +676,15 @@ fn tag_chip_editor_impl(
 /// line boxes sit high — centering the mesh like `paint_pill`/`paint_keycap`
 /// keeps the text visually centered). No `Frame`: frame children inherit the
 /// parent layout, which mis-centers inside `ui.horizontal`.
-fn paint_tag_pill_fill(ui: &mut egui::Ui, text: &str, fill: egui::Color32) -> egui::Response {
+///
+/// `icon` sits inside the pill, ahead of the text. The text stays optically
+/// centered in its own box so the icon does not pull it off the baseline.
+fn paint_tag_pill_fill(
+    ui: &mut egui::Ui,
+    text: &str,
+    fill: egui::Color32,
+    icon: Option<&egui::TextureHandle>,
+) -> egui::Response {
     let fg = crate::theme::contrast_fg(fill);
     let galley = ui.painter().layout_no_wrap(
         text.to_owned(),
@@ -547,32 +692,56 @@ fn paint_tag_pill_fill(ui: &mut egui::Ui, text: &str, fill: egui::Color32) -> eg
         fg,
     );
     let pad = crate::theme::SPACE_2 * 2.0;
-    let (rect, response) =
-        ui.allocate_exact_size(galley.size() + egui::vec2(pad, pad), Sense::hover());
+    let (_, side) = tag_icon_extra(galley.size().y, icon.is_some());
+    let (rect, response) = ui.allocate_exact_size(
+        pill_outer_size(galley.size(), icon.is_some()),
+        Sense::hover(),
+    );
     if ui.is_rect_visible(rect) {
         ui.painter().rect_filled(rect, 6.0, fill);
-        crate::theme::paint_galley_centered(ui, rect, galley, fg);
+        let text_rect = if let Some(tex) = icon {
+            let icon_rect = egui::Rect::from_center_size(
+                egui::pos2(rect.left() + pad * 0.5 + side * 0.5, rect.center().y),
+                egui::Vec2::splat(side),
+            );
+            paint_tag_icon(ui, tex, icon_rect.center(), side);
+            let left = icon_rect.right() + TAG_ICON_GAP;
+            egui::Rect::from_min_size(
+                egui::pos2(left, rect.center().y - galley.size().y * 0.5),
+                galley.size(),
+            )
+        } else {
+            rect
+        };
+        crate::theme::paint_galley_centered(ui, text_rect, galley, fg);
     }
     response
 }
 
 /// One read-only tag pill — same chrome as the editor chips ([`paint_tag_chips`]):
 /// PRIMARY fill, 6px radius, Small contrast text inside a SPACE_2 margin.
+/// `icon` is painted inside the pill ahead of the label when present.
 /// Interaction (hover text, context menu) is the caller's; the returned
 /// response covers the painted pill.
-pub fn tag_pill(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    paint_tag_pill_fill(ui, label, crate::theme::accent())
+pub fn tag_pill(
+    ui: &mut egui::Ui,
+    label: &str,
+    icon: Option<&egui::TextureHandle>,
+) -> egui::Response {
+    paint_tag_pill_fill(ui, label, crate::theme::accent(), icon)
 }
 
 fn paint_tag_chips(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
-    enabled: bool,
-    reorderable: bool,
-    signed_filters: bool,
-    single_row: bool,
+    opts: &TagChipOptions<'_>,
     changed: &mut bool,
 ) {
+    let enabled = opts.enabled;
+    let reorderable = opts.reorderable;
+    let signed_filters = opts.signed_filters;
+    let single_row = opts.single_row;
+    let program_icons = opts.program_icons;
     let mut remove: Option<String> = None;
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut toggle: Option<usize> = None;
@@ -597,16 +766,15 @@ fn paint_tag_chips(
         // which never triggers the parent's `main_wrap` — and `available_width`
         // reports the whole row width, not the remainder. A chip that doesn't
         // fit the remaining cursor span would sit past the row end and clip.
-        let chip_w = ui
-            .painter()
-            .layout_no_wrap(
-                format!("{polarity}{label}"),
-                egui::TextStyle::Small.resolve(ui.style()),
-                egui::Color32::WHITE,
-            )
-            .size()
-            .x
-            + crate::theme::SPACE_2 * 2.0;
+        let shown_text = format!("{polarity}{label}");
+        let label_galley = ui.painter().layout_no_wrap(
+            shown_text,
+            egui::TextStyle::Small.resolve(ui.style()),
+            egui::Color32::WHITE,
+        );
+        let icon = program_icon_for_tag(program_icons, &label).cloned();
+        let (icon_extra, _) = tag_icon_extra(label_galley.size().y, icon.is_some());
+        let chip_w = label_galley.size().x + crate::theme::SPACE_2 * 2.0 + icon_extra;
         // `Frame`/`dnd` children expand `region.max_rect` as they allocate, so
         // `available_rect_before_wrap` over-reports space near the pane edge.
         // Wrap when the chip would cross the painted clip instead.
@@ -632,11 +800,17 @@ fn paint_tag_chips(
             let budget = (row_right
                 - ui.cursor().left()
                 - crate::theme::SPACE_2 * 2.0
+                - icon_extra
                 - if signed_filters { 10.0 } else { 0.0 })
             .max(20.0);
             let shown =
                 crate::widgets::elide::elide_to_width(ui, label.as_str(), budget, chip_font);
-            let resp = paint_tag_pill_fill(ui, &format!("{polarity}{}", shown.text), fill);
+            let resp = paint_tag_pill_fill(
+                ui,
+                &format!("{polarity}{}", shown.text),
+                fill,
+                icon.as_ref(),
+            );
             if enabled && !signed_filters {
                 let tip = if shown.elided {
                     format!("{label} — right-click for options.")
@@ -727,7 +901,7 @@ fn paint_tag_chips(
             + crate::theme::SPACE_2 * 2.0;
         let row_right = ui.max_rect().right().min(ui.clip_rect().right());
         if ui.cursor().left() + chip_w <= row_right {
-            paint_tag_pill_fill(ui, &label, fill)
+            paint_tag_pill_fill(ui, &label, fill, None)
                 .on_hover_text(format!("{overflow} more: {hidden}"));
         }
     }
@@ -788,7 +962,7 @@ fn paint_tag_draft(
     tag_resp
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct TagChipOptions<'a> {
     pub enabled: bool,
     pub show_add_button: bool,
@@ -807,6 +981,9 @@ pub struct TagChipOptions<'a> {
     pub locked: &'a [String],
     /// Hover text for [`Self::locked`] chips.
     pub locked_hover: Option<&'a str>,
+    /// Program name → process icon. A chip or suggestion paints the icon when
+    /// its tag, or the tag's first path segment, is a key.
+    pub program_icons: Option<&'a HashMap<String, egui::TextureHandle>>,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -821,6 +998,7 @@ impl Default for TagChipOptions<'_> {
             single_row: false,
             locked: &[],
             locked_hover: None,
+            program_icons: None,
         }
     }
 }
@@ -868,16 +1046,13 @@ fn paint_locked_tags(ui: &mut egui::Ui, opts: &TagChipOptions<'_>, single_row: b
         if label.is_empty() {
             continue;
         }
-        let chip_w = ui
-            .painter()
-            .layout_no_wrap(
-                label.to_owned(),
-                egui::TextStyle::Small.resolve(ui.style()),
-                egui::Color32::WHITE,
-            )
-            .size()
-            .x
-            + crate::theme::SPACE_2 * 2.0;
+        let galley = ui.painter().layout_no_wrap(
+            label.to_owned(),
+            egui::TextStyle::Small.resolve(ui.style()),
+            egui::Color32::WHITE,
+        );
+        let icon = program_icon_for_tag(opts.program_icons, label).cloned();
+        let chip_w = pill_outer_size(galley.size(), icon.is_some()).x;
         let row_right = ui.max_rect().right().min(ui.clip_rect().right());
         let at_row_start = ui.cursor().left() <= ui.max_rect().left() + 0.5;
         if ui.cursor().left() + chip_w > row_right && (single_row || !at_row_start) {
@@ -886,7 +1061,7 @@ fn paint_locked_tags(ui: &mut egui::Ui, opts: &TagChipOptions<'_>, single_row: b
             }
             ui.end_row();
         }
-        let resp = paint_tag_pill_fill(ui, label, fill);
+        let resp = paint_tag_pill_fill(ui, label, fill, icon.as_ref());
         let resp = if let Some(tip) = opts.locked_hover {
             resp.on_hover_text(tip)
         } else {
@@ -1017,7 +1192,15 @@ mod tests {
                     ));
                     row.horizontal(|ui| {
                         let mut changed = false;
-                        paint_tag_chips(ui, tags, true, false, false, true, &mut changed);
+                        paint_tag_chips(
+                            ui,
+                            tags,
+                            &TagChipOptions {
+                                single_row: true,
+                                ..TagChipOptions::default()
+                            },
+                            &mut changed,
+                        );
                     });
                 },
                 vec!["backup".to_string()],
@@ -1136,5 +1319,160 @@ mod tests {
             (last - first).abs() <= 1.0,
             "name-tag tooltip width ratcheted: {first:.1} -> {last:.1} ({widths:?})"
         );
+    }
+
+    #[test]
+    fn program_icon_follows_name_nested_path_and_sign() {
+        let icons = HashMap::from([("Game".to_string(), 7u8)]);
+        assert_eq!(program_icon_for_tag(Some(&icons), "Game"), Some(&7));
+        assert_eq!(program_icon_for_tag(Some(&icons), " Game/raid "), Some(&7));
+        assert_eq!(program_icon_for_tag(Some(&icons), "+Game"), Some(&7));
+        assert_eq!(program_icon_for_tag(Some(&icons), "-Game/night"), Some(&7));
+        assert_eq!(program_icon_for_tag(Some(&icons), "Other"), None);
+        assert_eq!(program_icon_for_tag::<u8>(None, "Game"), None);
+    }
+
+    #[test]
+    fn program_icon_is_prepended_on_pill_and_suggestion() {
+        let ctx = egui::Context::default();
+        let tex = ctx.load_texture(
+            "game-icon",
+            egui::ColorImage::filled([4, 4], egui::Color32::RED),
+            egui::TextureOptions::LINEAR,
+        );
+        let tex_id = tex.id();
+        let mut program_icons = HashMap::new();
+        program_icons.insert("Game".to_string(), tex.clone());
+        let suggestions = vec!["Game".to_string()];
+        let mut tags = Vec::new();
+        let mut draft = String::new();
+        let mut click: Option<egui::Pos2> = None;
+        let mut pill_ok = false;
+        let mut menu_ok = false;
+        for frame in 0..8 {
+            let mut events = Vec::new();
+            if let Some(pos) = click {
+                if frame == 1 {
+                    events.push(egui::Event::PointerMoved(pos));
+                    events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                } else if frame == 2 {
+                    events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(480.0, 320.0),
+                    )),
+                    time: Some(frame as f64 * 0.1),
+                    predicted_dt: 0.1,
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    tag_pill(ui, "Game", Some(&tex));
+                    tag_chip_editor(
+                        ui,
+                        &mut tags,
+                        &mut draft,
+                        &suggestions,
+                        TagChipOptions {
+                            program_icons: Some(&program_icons),
+                            ..TagChipOptions::default()
+                        },
+                    );
+                },
+            );
+            if click.is_none() {
+                click = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.text().contains("Add tag") => {
+                        Some(text.pos + text.galley.size() * 0.5)
+                    }
+                    _ => None,
+                });
+            }
+            let games: Vec<egui::Rect> = out
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.text() == "Game" => {
+                        let visual = text.galley.mesh_bounds.translate(text.pos.to_vec2());
+                        Some(if visual.is_positive() {
+                            visual
+                        } else {
+                            egui::Rect::from_min_size(text.pos, text.galley.size())
+                        })
+                    }
+                    _ => None,
+                })
+                .collect();
+            let icons: Vec<egui::Rect> = out
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Mesh(mesh) if mesh.texture_id == tex_id => Some(mesh_bounds(mesh)),
+                    _ => None,
+                })
+                .collect();
+            let pills: Vec<egui::Rect> = out
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(rect) => Some(rect.rect),
+                    _ => None,
+                })
+                .collect();
+            let icon_left_of = |text: &egui::Rect| {
+                icons.iter().find(|icon| {
+                    icon.right() <= text.left() + 2.0
+                        && (icon.center().y - text.center().y).abs() < 14.0
+                })
+            };
+            if let Some(text) = games.first() {
+                if let Some(icon) = icon_left_of(text) {
+                    if pills
+                        .iter()
+                        .any(|pill| pill.contains_rect(*icon) && pill.contains_rect(*text))
+                    {
+                        pill_ok = true;
+                    }
+                }
+            }
+            if games
+                .iter()
+                .filter(|text| icon_left_of(text).is_some())
+                .count()
+                >= 2
+            {
+                menu_ok = true;
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(pill_ok, "program icon was not inside the Game pill");
+        assert!(
+            menu_ok,
+            "program icon was not prepended in the suggestion row"
+        );
+    }
+
+    fn mesh_bounds(mesh: &egui::Mesh) -> egui::Rect {
+        let mut min = egui::pos2(f32::MAX, f32::MAX);
+        let mut max = egui::pos2(f32::MIN, f32::MIN);
+        for v in &mesh.vertices {
+            min = min.min(v.pos);
+            max = max.max(v.pos);
+        }
+        egui::Rect::from_min_max(min, max)
     }
 }

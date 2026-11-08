@@ -175,6 +175,7 @@ pub fn show_active_picker(
                             ui.label(egui::RichText::new("Tag filters").strong()),
                             crate::action_tooltip::help::IS_TARGET_TAGS,
                         );
+                        let program_icons = paint.icons.program_name_icons(ui.ctx(), paint.catalog);
                         let _ = crate::widgets::tag_chip_editor(
                             ui,
                             tags,
@@ -190,6 +191,7 @@ pub fn show_active_picker(
                                 single_row: false,
                                 locked: &[],
                                 locked_hover: None,
+                                program_icons: Some(&program_icons),
                             },
                         );
                         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));

@@ -100,6 +100,30 @@ impl DataEditor {
         if !name_tag.is_empty() {
             self.form_tags.retain(|tag| tag.trim() != name_tag);
         }
+        let mut program_icons = icons.program_name_icons(ui.ctx(), catalog);
+        if !name_tag.is_empty() {
+            // The name chip follows the draft name. A picked window wins; the
+            // saved program icon covers a closed app and a rename in progress.
+            let draft_icon = if self.form_process_path.trim().is_empty() {
+                None
+            } else {
+                icons
+                    .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
+                    .or_else(|| {
+                        self.selected_program
+                            .as_deref()
+                            .and_then(|prog| icons.for_program(ui.ctx(), catalog, prog))
+                    })
+            };
+            match draft_icon {
+                Some(tex) => {
+                    program_icons.insert(name_tag.clone(), tex);
+                }
+                None => {
+                    program_icons.remove(&name_tag);
+                }
+            }
+        }
         let locked = if name_tag.is_empty() {
             Vec::new()
         } else {
@@ -115,6 +139,7 @@ impl DataEditor {
                 draft_hover: Some(help::DE_PROGRAM_MACRO_TAGS),
                 locked: &locked,
                 locked_hover: Some(help::DE_PROGRAM_NAME_TAG),
+                program_icons: Some(&program_icons),
                 ..Default::default()
             },
         )
@@ -150,6 +175,7 @@ impl DataEditor {
             .as_deref()
             .map(|prog| collect_program_item_tags(catalog, prog))
             .unwrap_or_default();
+        let program_icons = icons.program_name_icons(ui.ctx(), catalog);
         let tag_submit = crate::widgets::tag_chip_editor(
             ui,
             &mut self.form_tags,
@@ -158,6 +184,7 @@ impl DataEditor {
             crate::widgets::TagChipOptions {
                 label_name: Some("Tags"),
                 draft_hover: Some(help::DE_TAGS),
+                program_icons: Some(&program_icons),
                 ..Default::default()
             },
         )

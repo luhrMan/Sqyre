@@ -1,8 +1,9 @@
 //! Macro name, delay, and tags toolbar widgets.
 
 use crate::action_tooltip::help;
-use eframe::egui;
+use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
+use std::collections::HashMap;
 
 const DELAY_MIN: i32 = 0;
 const DELAY_MAX: i32 = 1000;
@@ -134,6 +135,7 @@ impl MacroMetaUi {
         other_macro_names: &[String],
         all_tags: &[String],
         enabled: bool,
+        program_icons: Option<&HashMap<String, TextureHandle>>,
     ) -> NameTagLayout {
         ui.vertical(|ui| {
             let (mut meta, name_rect, tag_rect, draft_changed) = ui
@@ -162,6 +164,7 @@ impl MacroMetaUi {
                             single_row: false,
                             locked: &[],
                             locked_hover: None,
+                            program_icons,
                         },
                     );
                     (meta, name_rect, tag_rect, tag_edit.changed)
@@ -170,8 +173,14 @@ impl MacroMetaUi {
             let (chips_changed, chips_rect) = if m.tags.is_empty() {
                 (false, None)
             } else {
-                let (changed, rect) =
-                    crate::widgets::tag_chip_list(ui, &mut m.tags, enabled, false, false);
+                let (changed, rect) = crate::widgets::tag_chip_list(
+                    ui,
+                    &mut m.tags,
+                    enabled,
+                    false,
+                    false,
+                    program_icons,
+                );
                 (changed, Some(rect))
             };
             if draft_changed || chips_changed {
@@ -460,8 +469,14 @@ mod tests {
                 let mut meta = MacroMetaUi::default();
                 let mut macro_ = m(name, tags);
                 meta.sync_selection(0, &macro_);
-                layout =
-                    Some(meta.paint_name_and_tags(&mut mid, &mut macro_, &[], &all_tags, true));
+                layout = Some(meta.paint_name_and_tags(
+                    &mut mid,
+                    &mut macro_,
+                    &[],
+                    &all_tags,
+                    true,
+                    None,
+                ));
             },
         );
         let galley = output
@@ -491,7 +506,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    let layout = meta.paint_name_and_tags(ui, &mut macro_, &[], &[], true);
+                    let layout = meta.paint_name_and_tags(ui, &mut macro_, &[], &[], true, None);
                     assert!(
                         (layout.name_rect.top() - layout.tag_rect.top()).abs() < 1.0,
                         "pass {pass} tops: name {:?} tag {:?}",

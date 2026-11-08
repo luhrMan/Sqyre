@@ -959,7 +959,7 @@ impl DataEditor {
             let just_opened = self.ui_search_toggle(ui);
             self.program_toggle(ui, env.catalog, env.icons, env.settings);
             if self.search_open {
-                self.ui_search_controls(ui, env.catalog, just_opened);
+                self.ui_search_controls(ui, env.catalog, env.icons, just_opened);
             }
             if self.program_open {
                 self.ui_program_combo(ui, env.catalog, env.icons, env.settings);
@@ -1001,6 +1001,7 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
+        icons: &mut IconCache,
         just_opened: bool,
     ) {
         let hint = format!("Search {}…", self.tab.label());
@@ -1095,6 +1096,7 @@ impl DataEditor {
                         ui.separator();
                         ui.label(egui::RichText::new("Tag priority").strong().small());
                         let suggestions = helpers::collect_all_item_tags(catalog);
+                        let program_icons = icons.program_name_icons(ui.ctx(), catalog);
                         let _ = crate::widgets::tag_chip_editor(
                             ui,
                             &mut self.items_tag_priority,
@@ -1112,6 +1114,7 @@ impl DataEditor {
                                 single_row: false,
                                 locked: &[],
                                 locked_hover: None,
+                                program_icons: Some(&program_icons),
                             },
                         );
                     }

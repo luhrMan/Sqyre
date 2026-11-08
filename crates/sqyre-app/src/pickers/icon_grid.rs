@@ -105,8 +105,24 @@ fn paint_item_icon_tooltip(
         return;
     }
     let color = ui.visuals().hyperlink_color;
+    let program_icons = icons.program_name_icons(ui.ctx(), catalog);
     for tag in tags {
-        ui.label(egui::RichText::new(tag).small().italics().color(color));
+        let icon = crate::widgets::tags::program_icon_for_tag(Some(&program_icons), tag);
+        if let Some(tex) = icon {
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::splat(VARIANT_TIP_THUMB), egui::Sense::hover());
+                ui.painter().image(
+                    tex.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+                ui.label(egui::RichText::new(tag).small().italics().color(color));
+            });
+        } else {
+            ui.label(egui::RichText::new(tag).small().italics().color(color));
+        }
     }
 }
 

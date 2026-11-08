@@ -6,7 +6,9 @@ use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
 use crate::theme::SPACE_12;
 use crate::widgets::elide::{elide_to_width, text_hover_if};
-use crate::widgets::tags::{filters_cover_path, normalize_tag_path, tag_pill};
+use crate::widgets::tags::{
+    filters_cover_path, normalize_tag_path, program_icon_for_tag, tag_pill, tag_pill_width,
+};
 use crate::SqyreApp;
 use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
@@ -436,18 +438,20 @@ fn paint_tag_group(
 /// fit whole collapse into a `+N` overflow pill (single-row chip rule); each
 /// pill carries the tag-chip affordance: right-click removes the tag.
 fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    let filters = &app.workspace.hotkey_tag_filters;
-    if filters.is_empty() {
+    if app.workspace.hotkey_tag_filters.is_empty() {
         ui.small("Hotkeys: off");
         return;
     }
-    let font = egui::TextStyle::Small.resolve(ui.style());
+    let program_icons = app
+        .icon_cache
+        .program_name_icons(ui.ctx(), &app.workspace.catalog);
+    let filters = &app.workspace.hotkey_tag_filters;
     let pill_w = |ui: &egui::Ui, text: &str| {
-        ui.painter()
-            .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
-            .size()
-            .x
-            + crate::theme::SPACE_2 * 2.0
+        tag_pill_width(
+            ui,
+            text,
+            program_icon_for_tag(Some(&program_icons), text).is_some(),
+        )
     };
     let mut remove: Option<String> = None;
     ui.horizontal(|ui| {
@@ -479,7 +483,9 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
             shown = fits(marker_w);
         }
         for (i, tag) in filters.iter().enumerate().take(shown) {
-            let resp = tag_pill(ui, tag_header_label(tag)).on_hover_text(ht::MLIST_ROW_OPTIONS);
+            let label = tag_header_label(tag);
+            let resp = tag_pill(ui, label, program_icon_for_tag(Some(&program_icons), label))
+                .on_hover_text(ht::MLIST_ROW_OPTIONS);
             if crate::widgets::rect_danger_menu(
                 ui,
                 ui.id().with(("hotkey_tag_pill", i, tag)),
@@ -500,8 +506,8 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 .collect::<Vec<_>>()
                 .join(", ");
             let tip = format!("{overflow} more: {hidden}");
-            if ui.cursor().left() + pill_w(ui, &count) <= row_right {
-                tag_pill(ui, &count).on_hover_text(tip);
+            if ui.cursor().left() + tag_pill_width(ui, &count, false) <= row_right {
+                tag_pill(ui, &count, None).on_hover_text(tip);
             } else {
                 header.on_hover_text(tip);
             }
