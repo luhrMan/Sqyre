@@ -85,6 +85,8 @@ pub struct RowInteraction {
     /// (view tip clickthrough) but not other windows covering the tree.
     pub pointer_in_row: bool,
     pub double_clicked: bool,
+    /// Middle button released over the row. Opens the edit tooltip.
+    pub middle_clicked: bool,
     pub primary_clicked: bool,
     /// Label content rect (for execution highlight follow / scroll).
     pub row_rect: egui::Rect,
@@ -101,6 +103,7 @@ impl Default for RowInteraction {
             hovered: false,
             pointer_in_row: false,
             double_clicked: false,
+            middle_clicked: false,
             primary_clicked: false,
             row_rect: egui::Rect::NOTHING,
             drag_handle_rect: egui::Rect::NOTHING,
@@ -856,8 +859,8 @@ pub fn paint_action_row(
     let sense_rect = row.response.rect;
 
     // Hover-only: a Sense::click overlay would steal TreeView selection clicks.
-    // Primary/secondary/double are read geometrically (with layer_id_at) so they
-    // still fire when a view tip covers the row — clickthrough for overlays.
+    // Primary/secondary/middle/double are read geometrically (with layer_id_at)
+    // so they still fire when a view tip covers the row — clickthrough for overlays.
     let sense = ui.interact(
         sense_rect,
         ui.id().with(("action_row_sense", action.id)),
@@ -891,6 +894,8 @@ pub fn paint_action_row(
 
     let over_row = pointer_in_row && action_click == RowAction::None;
     let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());
+    let middle_clicked =
+        over_row && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Middle));
     let double_clicked = over_row
         && ui.input(|i| {
             i.pointer
@@ -903,6 +908,7 @@ pub fn paint_action_row(
         hovered: hovered && action_click == RowAction::None,
         pointer_in_row: over_row,
         double_clicked,
+        middle_clicked,
         primary_clicked,
         row_rect: row.response.rect,
         drag_handle_rect,
@@ -1110,6 +1116,54 @@ mod tests {
                 cell
             );
         }
+    }
+
+    #[test]
+    fn middle_click_on_action_row_sets_middle_clicked() {
+        let ctx = egui::Context::default();
+        let action = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(100),
+        });
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0));
+        let mut at = egui::pos2(24.0, 12.0);
+        let mut saw_click = false;
+        // Frame 0 paints the row (hit-testing uses last frame). Later frames
+        // press and release the middle button over that rect.
+        for frame in 0..4 {
+            let pressed = frame == 2;
+            let release = frame == 3;
+            let mut events = vec![egui::Event::PointerMoved(at)];
+            if pressed || release {
+                events.push(egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Middle,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(frame as f64 * 0.05),
+                predicted_dt: 0.05,
+                events,
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let result = paint_test_row(ui, &action, false);
+                if frame == 0 {
+                    at = result.row_rect.center();
+                }
+                if release {
+                    assert!(result.middle_clicked);
+                    assert!(!result.primary_clicked);
+                    assert!(!result.double_clicked);
+                    assert_eq!(result.action, RowAction::None);
+                    saw_click = true;
+                }
+            });
+            out.drop_without_applying_deltas();
+        }
+        assert!(saw_click);
     }
 
     #[test]

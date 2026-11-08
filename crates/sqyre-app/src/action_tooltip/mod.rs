@@ -274,7 +274,7 @@ pub fn ingest_row(
 ) {
     let open_edit = match interaction.action {
         tree_chrome::RowAction::Edit => true,
-        tree_chrome::RowAction::None => interaction.double_clicked,
+        tree_chrome::RowAction::None => interaction.double_clicked || interaction.middle_clicked,
         tree_chrome::RowAction::Logs | tree_chrome::RowAction::Delete => return,
     };
 
@@ -1055,6 +1055,31 @@ mod tests {
         Action::new(ActionKind::Wait {
             time: ScalarValue::Int(time),
         })
+    }
+
+    #[test]
+    fn middle_click_opens_edit_from_view() {
+        let child = wait_action(100);
+        let id = child.id;
+        let mut state = TooltipState::Hidden;
+        state.open_view(id);
+        ingest_row(
+            &mut state,
+            &child,
+            RowInteraction {
+                middle_clicked: true,
+                pointer_in_row: true,
+                ..RowInteraction::default()
+            },
+            Some(egui::pos2(12.0, 8.0)),
+        );
+        match &state {
+            TooltipState::Edit(edit) => {
+                assert_eq!(edit.action_id, id);
+                assert_eq!(edit.anchor, egui::pos2(12.0, 8.0));
+            }
+            other => panic!("expected Edit, got {other:?}"),
+        }
     }
 
     #[test]

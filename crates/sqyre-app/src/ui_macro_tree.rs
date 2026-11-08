@@ -1031,6 +1031,7 @@ fn build_else_dir(
                         hovered: resp.hovered(),
                         pointer_in_row: resp.hovered(),
                         double_clicked: false,
+                        middle_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,
                         // Else folders are fixed under their owner — drag scrolls.
