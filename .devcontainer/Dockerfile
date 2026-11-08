@@ -19,8 +19,11 @@ FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.96.1
+<<<<<<< HEAD
 # Trunk 0.22.1 sets rust-version 1.96.1, matching RUST_VERSION.
 ARG TRUNK_VERSION=0.22.1
+=======
+>>>>>>> d41abc1984d66677e590a1a44ffccee7eb607ffd
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
