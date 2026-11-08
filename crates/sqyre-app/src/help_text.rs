@@ -56,10 +56,10 @@ pub const ED_REC_AREA: &str = "Two clicks: opposite corners of the area";
 /// Record floater on the capture-region preview — arm a two-click capture.
 pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture region";
 /// Record floater on the pixel-check preview — arm a two-click area capture.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub const ED_REC_SEARCH: &str = "Two clicks: opposite corners of the search area";
 /// "Add running programs" icon right of the programs search bar.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub const ED_ADD_ALL_PROGRAMS: &str =
     "Add every program with an open window that has an icon, named after its process. Programs already in the list are skipped.";
 
@@ -89,21 +89,37 @@ pub const YAML_IMPORT_REPLACE: &str = "Replace the selected macro with this YAML
 // --- Permissions ---
 
 /// "Show prompts" button in the intro panel.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub const PERM_SHOW_PROMPTS: &str = "Show the system permission prompts now.";
 /// Refresh button in the desktop panel.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "native-runtime"
+))]
 pub const PERM_REFRESH: &str = "Re-run capability checks (portal dialogs may appear on Wayland).";
 /// Open the OS shortcut settings for a hotkey conflict.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "native-runtime"
+))]
 pub const PERM_SHORTCUT_SETTINGS: &str =
     "Open your desktop's shortcut settings to choose the keys that run your macros.";
 /// Share-screen button under Wayland.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "native-runtime"
+))]
 pub const PERM_PORTAL_PICKER: &str =
     "Open the desktop portal picker to choose which screens Sqyre can capture.";
 /// Revoke the saved portal grant.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(target_os = "android"),
+    feature = "native-runtime"
+))]
 pub const PERM_FORGET_GRANT: &str =
     "Stop capturing and forget the saved portal grant. Sqyre will ask again the next time it needs screen access.";
 
@@ -115,19 +131,19 @@ pub const PICK_FIT_VIEW: &str = "Fit image in viewport";
 pub const PICK_SELECT_ALL: &str =
     "Select all visible items, or deselect all if all visible are selected";
 /// Screen-pick retry using the previous app.
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
 pub const PICK_RETAKE_APP: &str = "Switch to the previous app and take a new picture of it";
 /// App dropdown when no previous screen has been saved.
-#[cfg(any(target_os = "android", test))]
+#[cfg(any(all(target_os = "android", feature = "native-runtime"), test))]
 pub const PICK_CHOOSE_APP: &str = "Choose which app to take a screenshot of";
 
 // --- Overlay panel ---
 
 /// Android capture permission prompt buttons.
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
 pub const OVL_REC_PROMPT: &str = "Show Android's screen recording prompt.";
 /// Retry variant shown after a dismiss.
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
 pub const OVL_REC_PROMPT_AGAIN: &str = "Show Android's screen recording prompt again.";
 
 // --- Macro list ---

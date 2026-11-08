@@ -7,7 +7,7 @@ mod app_backends;
 mod app_docs;
 mod app_macro_ops;
 mod app_run;
-#[cfg(any(target_os = "android", test))]
+#[cfg(any(all(target_os = "android", feature = "native-runtime"), test))]
 mod app_shot;
 mod assets;
 mod catalog;

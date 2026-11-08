@@ -59,13 +59,16 @@ impl SystemTray {
     }
 
     /// True when a tray icon was installed (close-to-tray needs a way back).
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        any(not(target_os = "android"), feature = "native-runtime")
+    ))]
     pub fn is_active(&self) -> bool {
         self.cmd_rx.is_some()
     }
 
     /// Hide the app into the tray exactly like the Hide menu item.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     pub fn hide(&self, ctx: &Context, frame: &eframe::Frame) {
         let window = frame.winit_window().or(self.root_window.as_ref());
         set_application_visible(ctx, window, false);
@@ -75,7 +78,7 @@ impl SystemTray {
 
     /// Hide into the tray before the first frame (start-minimized preference);
     /// no-op when no tray icon was installed.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
     pub fn hide_at_start(&self, ctx: &Context) {
         if !self.is_active() {
             return;
