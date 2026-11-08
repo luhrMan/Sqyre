@@ -147,7 +147,7 @@ impl Macro {
             return false;
         }
 
-        let mut changed = false;
+        let mut changed = rename_tags_for_program(&mut self.tags, old_program, new_program);
         self.root.walk_mut(&mut |a| match &mut a.kind {
             ActionKind::Move { point, .. } => {
                 let next = rename_coordinate_program(point, old_program, new_program);
@@ -239,6 +239,47 @@ pub fn rename_coordinate_entity(
         return ref_.clone();
     }
     ref_.with_entity_name("", new_name)
+}
+
+/// Map one macro tag across a program rename.
+///
+/// The program's name tag and any nested path under it (`Old`, `Old/raid`)
+/// follow the new name. Other tags are left as stored.
+pub fn rename_tag_for_program(tag: &str, old_program: &str, new_program: &str) -> String {
+    let old_program = old_program.trim();
+    let new_program = new_program.trim();
+    let trimmed = tag.trim();
+    if old_program.is_empty() || new_program.is_empty() || old_program == new_program {
+        return tag.to_string();
+    }
+    if trimmed == old_program {
+        return new_program.to_string();
+    }
+    let prefix = format!("{old_program}/");
+    match trimmed.strip_prefix(&prefix) {
+        Some(rest) if !rest.is_empty() => format!("{new_program}/{rest}"),
+        _ => tag.to_string(),
+    }
+}
+
+/// Rewrite `tags` for a program rename and drop duplicates. Returns whether the list changed.
+pub fn rename_tags_for_program(
+    tags: &mut Vec<String>,
+    old_program: &str,
+    new_program: &str,
+) -> bool {
+    let before = tags.clone();
+    for tag in tags.iter_mut() {
+        *tag = rename_tag_for_program(tag, old_program, new_program);
+    }
+    let mut deduped = Vec::with_capacity(tags.len());
+    for tag in tags.drain(..) {
+        if !deduped.iter().any(|existing| existing == &tag) {
+            deduped.push(tag);
+        }
+    }
+    *tags = deduped;
+    *tags != before
 }
 
 /// Rewrite the program portion of a `program~entity` ref when the program is renamed.
@@ -372,7 +413,9 @@ mod tests {
             move_action("Old~Spot"),
             image_search(vec!["Old~Item~v1"], "Old~Box"),
         ]);
+        m.tags = vec!["Old".into(), "keep".into()];
         assert!(m.rename_program("Old", "New"));
+        assert_eq!(m.tags, vec!["New".to_string(), "keep".to_string()]);
         m.root.walk(&mut |a| match &a.kind {
             ActionKind::Move { point, .. } => assert_eq!(point.as_str(), "New~Spot"),
             ActionKind::ImageSearch(d) => {
@@ -381,5 +424,28 @@ mod tests {
             }
             _ => {}
         });
+    }
+
+    #[test]
+    fn rename_program_rewrites_nested_name_tag_and_dedupes() {
+        let mut tags = vec![
+            "Old".into(),
+            "Old/raid".into(),
+            "OldStuff".into(),
+            "New".into(),
+            "other".into(),
+        ];
+        assert!(rename_tags_for_program(&mut tags, "Old", "New"));
+        assert_eq!(
+            tags,
+            vec![
+                "New".to_string(),
+                "New/raid".to_string(),
+                "OldStuff".to_string(),
+                "other".to_string(),
+            ]
+        );
+        assert!(!rename_tags_for_program(&mut tags, "New", "New"));
+        assert!(!rename_tags_for_program(&mut tags, "Missing", "Other"));
     }
 }

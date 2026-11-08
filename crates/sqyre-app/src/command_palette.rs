@@ -921,6 +921,7 @@ impl SqyreApp {
                         icons: &mut self.icon_cache,
                         screen_click: &self.screen_click,
                         settings: self.settings_ui.settings_mut(),
+                        hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,
                         pending_scale: pending.as_ref(),
                     },
                 );

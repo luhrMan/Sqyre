@@ -359,6 +359,7 @@ fn tag_chip_editor_impl(
             row.inner
         };
         if include_chips {
+            paint_locked_tags(ui, &opts, opts.single_row);
             paint_tag_chips(
                 ui,
                 tags,
@@ -387,12 +388,13 @@ fn tag_chip_editor_impl(
     }
 
     // Focused empty field → full unused-tag list; typing filters it.
+    let already = tags_with_locked(tags, opts.locked);
     let suggestions = if opts.enabled && (draft_focused || was_open || !draft.trim().is_empty()) {
         if opts.signed_filters {
             let q = draft.trim().trim_start_matches(['+', '-']).trim();
-            tag_completion_options_signed(q, tags, all_suggestions)
+            tag_completion_options_signed(q, &already, all_suggestions)
         } else {
-            tag_completion_options(draft, tags, all_suggestions)
+            tag_completion_options(draft, &already, all_suggestions)
         }
     } else {
         Vec::new()
@@ -503,11 +505,7 @@ fn tag_chip_editor_impl(
 
     let had_pending = pending.is_some();
     if let Some(raw) = pending {
-        let added = if opts.signed_filters {
-            try_add_signed_tag_filter(tags, &raw)
-        } else {
-            try_add_tag(tags, &raw)
-        };
+        let added = commit_tag(tags, &raw, &opts);
         if added {
             edit.changed = true;
             edit.submitted = true;
@@ -779,11 +777,7 @@ fn paint_tag_draft(
     let add_clicked =
         opts.show_add_button && crate::widgets::add_button(ui, "Add tag", opts.enabled).clicked();
     if opts.enabled && add_clicked {
-        let added = if opts.signed_filters {
-            try_add_signed_tag_filter(tags, draft)
-        } else {
-            try_add_tag(tags, draft)
-        };
+        let added = commit_tag(tags, draft, opts);
         if added {
             edit.changed = true;
         }
@@ -809,6 +803,10 @@ pub struct TagChipOptions<'a> {
     /// When true, keep one horizontal row; chips past the pane edge collapse
     /// into a `+N` pill instead of wrapping.
     pub single_row: bool,
+    /// Chips painted ahead of `tags` that cannot be added again or removed.
+    pub locked: &'a [String],
+    /// Hover text for [`Self::locked`] chips.
+    pub locked_hover: Option<&'a str>,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -821,7 +819,83 @@ impl Default for TagChipOptions<'_> {
             reorderable: false,
             signed_filters: false,
             single_row: false,
+            locked: &[],
+            locked_hover: None,
         }
+    }
+}
+
+fn tags_with_locked(tags: &[String], locked: &[String]) -> Vec<String> {
+    let mut already = Vec::with_capacity(tags.len() + locked.len());
+    already.extend(tags.iter().cloned());
+    already.extend(locked.iter().cloned());
+    already
+}
+
+fn blocked_by_locked(raw: &str, locked: &[String], signed_filters: bool) -> bool {
+    let name = if signed_filters {
+        sqyre_domain::tag_filter_name(raw)
+            .unwrap_or_else(|| normalize_tag_path(raw.trim().trim_start_matches(['+', '-'])))
+    } else {
+        normalize_tag_path(raw)
+    };
+    !name.is_empty() && locked.iter().any(|tag| normalize_tag_path(tag) == name)
+}
+
+fn commit_tag(tags: &mut Vec<String>, raw: &str, opts: &TagChipOptions<'_>) -> bool {
+    if blocked_by_locked(raw, opts.locked, opts.signed_filters) {
+        return false;
+    }
+    if opts.signed_filters {
+        try_add_signed_tag_filter(tags, raw)
+    } else {
+        try_add_tag(tags, raw)
+    }
+}
+
+/// Name-synced chips. They use the same pill as editable tags and do not offer Remove.
+fn paint_locked_tags(ui: &mut egui::Ui, opts: &TagChipOptions<'_>, single_row: bool) {
+    if opts.locked.is_empty() {
+        return;
+    }
+    let fill = if opts.enabled {
+        crate::theme::accent()
+    } else {
+        crate::theme::accent().gamma_multiply(0.5)
+    };
+    for tag in opts.locked {
+        let label = tag.trim();
+        if label.is_empty() {
+            continue;
+        }
+        let chip_w = ui
+            .painter()
+            .layout_no_wrap(
+                label.to_owned(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0;
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        let at_row_start = ui.cursor().left() <= ui.max_rect().left() + 0.5;
+        if ui.cursor().left() + chip_w > row_right && (single_row || !at_row_start) {
+            if single_row {
+                continue;
+            }
+            ui.end_row();
+        }
+        let resp = paint_tag_pill_fill(ui, label, fill);
+        let resp = if let Some(tip) = opts.locked_hover {
+            resp.on_hover_text(tip)
+        } else {
+            resp
+        };
+        let access = format!("Tag {label}");
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, true, access.clone())
+        });
     }
 }
 
@@ -981,5 +1055,86 @@ mod tests {
         assert!(!tag_is_under_or_eq("combat", "combat/pve"));
         assert!(filters_cover_path(&["combat".into()], "combat/pve"));
         assert!(!filters_cover_path(&["combat/pve".into()], "combat"));
+    }
+
+    #[test]
+    fn locked_name_tag_is_not_added() {
+        let locked = vec!["Game".to_string()];
+        let opts = TagChipOptions {
+            locked: &locked,
+            ..TagChipOptions::default()
+        };
+        let mut tags = Vec::new();
+        assert!(!commit_tag(&mut tags, "Game", &opts));
+        assert!(!commit_tag(&mut tags, " Game ", &opts));
+        assert!(tags.is_empty());
+        assert!(commit_tag(&mut tags, "loot", &opts));
+        assert_eq!(tags, vec!["loot".to_string()]);
+    }
+
+    #[test]
+    fn locked_name_tag_tooltip_width_does_not_ratchet() {
+        let ctx = egui::Context::default();
+        let locked = vec!["Game".to_string()];
+        let mut tags = Vec::new();
+        let mut draft = String::new();
+        let mut hover: Option<egui::Pos2> = None;
+        let mut widths = Vec::new();
+        for frame in 0..10 {
+            let events = hover
+                .map(|pos| vec![egui::Event::PointerMoved(pos)])
+                .unwrap_or_default();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                events,
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                ui.ctx()
+                    .all_styles_mut(|style| style.interaction.tooltip_delay = 0.0);
+                tag_chip_editor(
+                    ui,
+                    &mut tags,
+                    &mut draft,
+                    &[],
+                    TagChipOptions {
+                        locked: &locked,
+                        locked_hover: Some(crate::action_tooltip::help::DE_PROGRAM_NAME_TAG),
+                        ..TagChipOptions::default()
+                    },
+                );
+            });
+            if hover.is_none() {
+                hover = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.text() == "Game" => {
+                        Some(text.pos + text.galley.size() * 0.5)
+                    }
+                    _ => None,
+                });
+            }
+            if let Some(width) = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text().contains("program's name") => {
+                    Some(text.galley.size().x)
+                }
+                _ => None,
+            }) {
+                widths.push(width);
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            widths.len() >= 2,
+            "name-tag tooltip never opened (hover={hover:?})"
+        );
+        let (first, last) = (widths[0], *widths.last().unwrap());
+        assert!(
+            (last - first).abs() <= 1.0,
+            "name-tag tooltip width ratcheted: {first:.1} -> {last:.1} ({widths:?})"
+        );
     }
 }

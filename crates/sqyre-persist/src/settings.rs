@@ -750,8 +750,9 @@ pub struct UserSettings {
     /// Active macro-list hotkey tag filters (empty = no hotkeys; `""` entry = untagged).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hotkey_tag_filters: Vec<String>,
-    /// When true, focusing a Program with macro tags sets `hotkey_tag_filters` to those tags
-    /// (cleared when no tagged Program owns focus). When false, filters are manual only.
+    /// When true, focusing a Program sets `hotkey_tag_filters` to that program's macro tags,
+    /// which always include its name (cleared when no Program owns focus). When false, filters
+    /// are manual only.
     #[serde(default)]
     pub hotkey_tags_while_focused: bool,
     /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
@@ -1230,6 +1231,15 @@ impl UserSettings {
             }
         }
         changed
+    }
+
+    /// Move hotkey tag filters that are a renamed program's name tag (or a path under it).
+    pub fn rename_hotkey_tag_program(&mut self, old_program: &str, new_program: &str) -> bool {
+        sqyre_domain::rename_tags_for_program(
+            &mut self.hotkey_tag_filters,
+            old_program,
+            new_program,
+        )
     }
 
     /// Propagate a program rename into overlay button point / gate search-area refs.
@@ -2007,6 +2017,24 @@ mod tests {
         assert_eq!(loaded.overlay_buttons.len(), 1);
         assert_eq!(loaded.overlay_buttons[0].id, "keep");
         assert_eq!(loaded.overlay_buttons[0].program, "Other");
+    }
+
+    #[test]
+    fn rename_hotkey_tag_program_follows_name_and_nested_paths() {
+        let mut s = UserSettings {
+            hotkey_tag_filters: vec!["Old".into(), "Old/raid".into(), "keep".into()],
+            ..UserSettings::default()
+        };
+        assert!(s.rename_hotkey_tag_program("Old", "New"));
+        assert_eq!(
+            s.hotkey_tag_filters,
+            vec![
+                "New".to_string(),
+                "New/raid".to_string(),
+                "keep".to_string()
+            ]
+        );
+        assert!(!s.rename_hotkey_tag_program("New", "New"));
     }
 
     #[test]

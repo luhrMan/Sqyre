@@ -2,6 +2,7 @@
 
 mod encode;
 mod mutate;
+mod name_tag;
 mod parse;
 mod resolve;
 mod seed_general;
@@ -110,6 +111,16 @@ impl ProgramCatalog {
 
     pub fn get(&self, name: &str) -> Option<&ProgramData> {
         self.programs.get(name)
+    }
+
+    /// Macro tags selected while this program owns focus.
+    ///
+    /// The catalog key is always first. Extra tags from [`ProgramData::tags`]
+    /// follow, without repeating the name.
+    pub fn program_macro_tags(&self, program: &str) -> Vec<String> {
+        self.get(program)
+            .map(|data| name_tag::with_name(program, &data.tags))
+            .unwrap_or_default()
     }
 
     pub fn program_names(&self) -> impl Iterator<Item = &String> {
@@ -1299,6 +1310,58 @@ Demo:
         assert_eq!(p2.process_path, "/usr/bin/other");
         assert_eq!(p2.window_title, "Other");
         assert_eq!(p2.tags, vec!["raid".to_string()]);
+        assert_eq!(
+            cat2.program_macro_tags("Demo"),
+            vec!["Demo".to_string(), "raid".to_string()]
+        );
+    }
+
+    #[test]
+    fn program_name_tag_is_derived_and_follows_rename() {
+        let yaml = r#"
+Demo:
+  name: Demo
+  tags: [Demo, loot]
+  items: {}
+  coordinates: {}
+  masks: {}
+  collections: {}
+Raid:
+  name: Raid
+  tags: [Demo, Demo/night]
+  items: {}
+  coordinates: {}
+  masks: {}
+  collections: {}
+"#;
+        let mut cat = catalog_yaml(yaml);
+        assert_eq!(cat.get("Demo").unwrap().tags, vec!["loot".to_string()]);
+        assert_eq!(
+            cat.program_macro_tags("Demo"),
+            vec!["Demo".to_string(), "loot".to_string()]
+        );
+        assert_eq!(
+            cat.get("Raid").unwrap().tags,
+            vec!["Demo".to_string(), "Demo/night".to_string()]
+        );
+
+        cat.rename_program("Demo", "Renamed").unwrap();
+        assert_eq!(
+            cat.program_macro_tags("Renamed"),
+            vec!["Renamed".to_string(), "loot".to_string()]
+        );
+        assert_eq!(
+            cat.get("Raid").unwrap().tags,
+            vec!["Renamed".to_string(), "Renamed/night".to_string()]
+        );
+
+        let encoded = cat.to_yaml_value(&Value::Null);
+        let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        assert_eq!(cat2.get("Renamed").unwrap().tags, vec!["loot".to_string()]);
+        assert_eq!(
+            cat2.program_macro_tags("Renamed"),
+            vec!["Renamed".to_string(), "loot".to_string()]
+        );
     }
 
     #[test]

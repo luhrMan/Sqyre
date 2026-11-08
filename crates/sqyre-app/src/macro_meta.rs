@@ -160,6 +160,8 @@ impl MacroMetaUi {
                             reorderable: false,
                             signed_filters: false,
                             single_row: false,
+                            locked: &[],
+                            locked_hover: None,
                         },
                     );
                     (meta, name_rect, tag_rect, tag_edit.changed)
@@ -341,6 +343,26 @@ pub fn collect_all_macro_tags(macros: &[Macro]) -> Vec<String> {
     unique_sorted(macros.iter().flat_map(|m| m.tags.iter().cloned()).collect())
 }
 
+/// Macro tags plus each program's name tag, for completion.
+///
+/// The recording scratch program is omitted; it is not a catalog the user tags against.
+pub fn collect_macro_tag_completions(
+    macros: &[Macro],
+    program_names: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Vec<String> {
+    let mut tags = collect_all_macro_tags(macros);
+    for name in program_names {
+        let name = name.as_ref().trim();
+        if name.is_empty() || name == sqyre_domain::TEMPORARY_PROGRAM {
+            continue;
+        }
+        if !tags.iter().any(|tag| tag == name) {
+            tags.push(name.to_string());
+        }
+    }
+    unique_sorted(tags)
+}
+
 pub(crate) fn unique_sorted(mut items: Vec<String>) -> Vec<String> {
     items.sort_by(|a, b| cmp_display_name(a, b));
     items.dedup();
@@ -367,6 +389,15 @@ mod tests {
         assert!(validate_rename("c", "a", &others).is_ok());
         assert!(validate_rename("a", "a", &others).is_ok());
         assert!(validate_rename("bad:name", "a", &others).is_err());
+    }
+
+    #[test]
+    fn completions_include_program_names_except_the_scratch_program() {
+        let tags = collect_macro_tag_completions(
+            &[m("fight", &["loot"])],
+            ["Game", "temporary", "  ", "Game"],
+        );
+        assert_eq!(tags, vec!["Game".to_string(), "loot".to_string()]);
     }
 
     #[test]

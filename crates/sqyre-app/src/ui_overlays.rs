@@ -164,11 +164,15 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             icons: &mut app.icon_cache,
             screen_click: &app.screen_click,
             settings: app.settings_ui.settings_mut(),
+            hotkey_tag_filters: &mut app.workspace.hotkey_tag_filters,
             pending_scale,
         },
         app.workspace.selected_macro,
         &mut app.preview_tooltips,
     );
+    if app.data_editor.take_hotkey_refresh() {
+        app.refresh_macro_hotkey_bindings();
+    }
     #[cfg(not(target_arch = "wasm32"))]
     {
         app.settings_ui.show(

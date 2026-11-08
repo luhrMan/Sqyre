@@ -868,6 +868,8 @@ fn targets_editor(
                 reorderable: true,
                 signed_filters: false,
                 single_row: false,
+                locked: &[],
+                locked_hover: None,
             },
         );
         let _ = edit;

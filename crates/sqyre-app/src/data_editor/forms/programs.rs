@@ -92,7 +92,19 @@ impl DataEditor {
                 );
             }
         });
-        let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
+        let program_names: Vec<String> = catalog.program_names().cloned().collect();
+        let macro_tag_completions =
+            crate::macro_meta::collect_macro_tag_completions(macros, &program_names);
+        let name_tag = self.form_name.trim().to_string();
+        // The name is a locked tag. Drop a typed duplicate so it is not saved again.
+        if !name_tag.is_empty() {
+            self.form_tags.retain(|tag| tag.trim() != name_tag);
+        }
+        let locked = if name_tag.is_empty() {
+            Vec::new()
+        } else {
+            vec![name_tag]
+        };
         crate::widgets::tag_chip_editor(
             ui,
             &mut self.form_tags,
@@ -101,6 +113,8 @@ impl DataEditor {
             crate::widgets::TagChipOptions {
                 label_name: Some("Macro tags"),
                 draft_hover: Some(help::DE_PROGRAM_MACRO_TAGS),
+                locked: &locked,
+                locked_hover: Some(help::DE_PROGRAM_NAME_TAG),
                 ..Default::default()
             },
         )

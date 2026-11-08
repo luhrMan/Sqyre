@@ -554,6 +554,7 @@ impl DataEditor {
             catalog,
             settings,
             icons,
+            hotkey_tag_filters,
             ..
         } = env;
         self.clear_status();
@@ -587,6 +588,12 @@ impl DataEditor {
                             let _ = catalog.delete_program(&new_name);
                         }
                         catalog.rename_program(&old, &new_name).and_then(|fs_warn| {
+                            sqyre_domain::rename_tags_for_program(
+                                &mut self.form_tags,
+                                &old,
+                                &new_name,
+                            );
+                            self.form_tags.retain(|tag| tag.trim() != new_name);
                             set_program_identity(
                                 catalog,
                                 icons,
@@ -604,7 +611,15 @@ impl DataEditor {
                                 }
                             }
                             let _ = settings.rename_overlay_point_program(&old, &new_name);
+                            // Destructuring `&mut DataEditorCtx` reborrows this field once more.
+                            let live_filters = &mut **hotkey_tag_filters;
+                            sqyre_domain::rename_tags_for_program(live_filters, &old, &new_name);
+                            let _ = settings.rename_hotkey_tag_program(&old, &new_name);
+                            if settings.hotkey_tag_filters != *live_filters {
+                                settings.hotkey_tag_filters.clone_from(live_filters);
+                            }
                             overlay_settings_dirty = true;
+                            self.hotkey_refresh = true;
                             self.selected_program = Some(new_name.clone());
                             Ok(fs_warn)
                         })

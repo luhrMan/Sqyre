@@ -234,7 +234,9 @@ pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must own focus for this program's overlay buttons to show.";
 pub const DE_MONITOR: &str = "Monitor slot the bounds read geometry from (1–8).";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
-    "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
+    "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. The program name is always included and updates when you rename the program. Same labels as macro tags.";
+pub const DE_PROGRAM_NAME_TAG: &str =
+    "Matches this program's name. Renaming the program updates the tag on macros and hotkey filters.";
 pub const DE_COLS: &str =
     "Grid columns this item occupies in a collection. Image Search uses this footprint (0 = 1).";
 pub const DE_ROWS: &str =

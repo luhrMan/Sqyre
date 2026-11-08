@@ -190,7 +190,7 @@ pub const SET_HIDE_ON_RECORD: &str =
     "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.";
 /// Sync hotkey tags to the focused program's macro tags.
 pub const SET_HOTKEY_TAGS: &str =
-    "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).";
+    "When enabled, focusing a Program sets the hotkey tag selection to that program's macro tags, including its name. Hotkeys turn off when no Program owns focus. When disabled, tag selection is manual only (macro list headers).";
 /// Stop variant matching on first hit.
 pub const SET_VARIANT_STOP: &str =
     "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.";

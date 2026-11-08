@@ -188,6 +188,8 @@ pub fn show_active_picker(
                                 reorderable: false,
                                 signed_filters: true,
                                 single_row: false,
+                                locked: &[],
+                                locked_hover: None,
                             },
                         );
                         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));

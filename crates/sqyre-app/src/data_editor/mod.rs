@@ -49,6 +49,8 @@ pub struct DataEditorCtx<'a> {
     pub icons: &'a mut IconCache,
     pub screen_click: &'a ScreenClickBridge,
     pub settings: &'a mut UserSettings,
+    /// Live hotkey tag selection. A program rename rewrites name tags here too.
+    pub hotkey_tag_filters: &'a mut Vec<String>,
     pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
@@ -338,6 +340,8 @@ pub struct DataEditor {
     confirm: Option<PendingConfirm>,
     /// After New Point/Search Area: auto-arm record and persist on capture.
     save_after_record: bool,
+    /// Program rename changed macro or hotkey tags; refresh bindings after paint.
+    hotkey_refresh: bool,
     /// Zoom/pan for the collections-tab image preview.
     collection_preview: ImageViewTransform,
     /// `(program, collection)` last shown; reset transform when this changes.
@@ -464,6 +468,7 @@ impl Default for DataEditor {
             status_banner: StatusBanner::default(),
             confirm: None,
             save_after_record: false,
+            hotkey_refresh: false,
             collection_preview: ImageViewTransform::default(),
             collection_preview_key: None,
             atlas_preview: ImageViewTransform::default(),
@@ -491,6 +496,11 @@ impl Default for DataEditor {
 }
 
 impl DataEditor {
+    /// Take the one-shot flag set when a program rename rewrote name tags.
+    pub(crate) fn take_hotkey_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.hotkey_refresh)
+    }
+
     /// Open the editor, expanding it if it was collapsed to the title bar.
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;
@@ -1100,6 +1110,8 @@ impl DataEditor {
                                 reorderable: true,
                                 signed_filters: false,
                                 single_row: false,
+                                locked: &[],
+                                locked_hover: None,
                             },
                         );
                     }

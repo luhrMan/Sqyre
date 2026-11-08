@@ -115,18 +115,14 @@ fn program_tag_icons(
     icons: &mut IconCache,
 ) -> HashMap<String, Vec<TextureHandle>> {
     let mut out: HashMap<String, Vec<TextureHandle>> = HashMap::new();
-    for prog in catalog.program_names() {
-        let Some(pdata) = catalog.get(prog) else {
+    let names: Vec<String> = catalog.program_names().cloned().collect();
+    for prog in names {
+        let tags = catalog.program_macro_tags(&prog);
+        let Some(tex) = icons.for_program(ctx, catalog, &prog) else {
             continue;
         };
-        if pdata.tags.is_empty() {
-            continue;
-        }
-        let Some(tex) = icons.for_program(ctx, catalog, prog) else {
-            continue;
-        };
-        for tag in &pdata.tags {
-            let path = normalize_tag_path(tag);
+        for tag in tags {
+            let path = normalize_tag_path(&tag);
             if !path.is_empty() {
                 out.entry(path).or_default().push(tex.clone());
             }

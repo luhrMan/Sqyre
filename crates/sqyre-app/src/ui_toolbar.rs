@@ -1,7 +1,7 @@
 //! Window top bar (brand / Data Editor / Settings), footer (delay / hotkey / builders), and action chrome.
 
 use crate::help_text as ht;
-use crate::macro_meta::collect_all_macro_tags;
+use crate::macro_meta::collect_macro_tag_completions;
 use crate::theme;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32};
@@ -237,7 +237,13 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
         .iter()
         .map(|m| m.name.clone())
         .collect();
-    let all_tags = collect_all_macro_tags(&app.workspace.macros);
+    let all_tags = collect_macro_tag_completions(
+        &app.workspace.macros,
+        app.workspace
+            .catalog
+            .program_names()
+            .map(|name| name.as_str()),
+    );
     let m = &mut app.workspace.macros[idx];
     let laid =
         app.workspace
