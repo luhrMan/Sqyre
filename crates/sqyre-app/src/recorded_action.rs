@@ -17,7 +17,7 @@ pub(crate) fn apply_recorded_chord(kind: &mut ActionKind, recorded: Vec<String>)
 
 #[cfg(feature = "native-runtime")]
 pub(crate) fn apply_recorded_color(kind: &mut ActionKind, recorded: String) {
-    if let ActionKind::FindPixel { target_color, .. } = kind {
-        *target_color = sqyre_domain::normalize_hex_rgb(&recorded);
+    if let ActionKind::FindPixel(d) = kind {
+        d.target_color = sqyre_domain::normalize_hex_rgb(&recorded);
     }
 }

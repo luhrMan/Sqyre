@@ -42,6 +42,7 @@ pub(crate) struct DamageKick {
     pending: Arc<AtomicUsize>,
     /// When set, the kick thread skips remaining Pulse work and exits on Shutdown.
     shutting_down: Arc<std::sync::atomic::AtomicBool>,
+    kind: KickKind,
 }
 
 enum KickCmd {
@@ -91,7 +92,16 @@ impl DamageKick {
             thread: Some(thread),
             pending,
             shutting_down,
+            kind,
         })
+    }
+
+    /// Layer-shell pulses are transparent overlay surfaces — they never take
+    /// keyboard focus or activation. The windowed-xdg kick maps a toplevel that
+    /// grabs activation on Mutter, so quiet cache crops may only kick when this
+    /// returns true.
+    pub(crate) fn is_focus_safe(&self) -> bool {
+        matches!(self.kind, KickKind::LayerShell)
     }
 
     pub(crate) fn pulse_rect(&mut self, rect: DesktopRect) {
@@ -338,15 +348,9 @@ impl KickConn {
                 o.output.clone(),
             )
         };
-        let kick = clamp_kick_rect(
-            rect,
-            DesktopRect {
-                x: out_x,
-                y: out_y,
-                w: out_w,
-                h: out_h,
-            },
-        );
+        let cosmic = sqyre_ports::cosmic_desktop_session();
+        let desktop = output_desktop_rect(out_x, out_y, out_w, out_h, scale, cosmic);
+        let kick = clamp_kick_rect(rect, desktop);
         if kick.w <= 1 || kick.h <= 1 {
             return;
         }
@@ -374,9 +378,11 @@ impl KickConn {
             &qh,
             (),
         );
-        layer.set_size(kick.w as u32, kick.h as u32);
+        let (margin_left, margin_top, logical_w, logical_h) =
+            layer_shell_logical(kick, desktop, scale, cosmic);
+        layer.set_size(logical_w, logical_h);
         layer.set_anchor(zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Left);
-        layer.set_margin((kick.y - out_y).max(0), 0, 0, (kick.x - out_x).max(0));
+        layer.set_margin(margin_top, 0, 0, margin_left);
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::None);
 
@@ -392,7 +398,15 @@ impl KickConn {
         let serial = self.state.configure_serial.take().expect("configure");
         layer.ack_configure(serial);
 
-        let mapped = attach_transparent(&surface, &shm, &qh, kick.w, kick.h, scale, 0);
+        let mapped = attach_transparent(
+            &surface,
+            &shm,
+            &qh,
+            logical_w as i32,
+            logical_h as i32,
+            scale,
+            0,
+        );
         let _ = self.queue.roundtrip(&mut self.state);
 
         surface.attach(None, 0, 0);
@@ -611,23 +625,94 @@ fn write_flip_pixel(file: &mut File, flip: u8) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Output rectangle in Sqyre desktop pixels.
+///
+/// COSMIC's portal places a stream at the logical `wl_output` position and
+/// fills a PipeWire frame at the physical mode size. Sqyre's desktop is that
+/// physical pixel space, so the output origin is `logical * scale`. Other
+/// compositors already use one space for both.
+fn output_desktop_rect(x: i32, y: i32, w: i32, h: i32, scale: i32, cosmic: bool) -> DesktopRect {
+    let scale = scale.max(1);
+    if cosmic && scale > 1 {
+        DesktopRect {
+            x: x.saturating_mul(scale),
+            y: y.saturating_mul(scale),
+            w,
+            h,
+        }
+    } else {
+        DesktopRect { x, y, w, h }
+    }
+}
+
+/// Layer-shell size and margins are logical pixels. `kick` is in desktop space.
+/// Returns `(margin_left, margin_top, width, height)`.
+fn layer_shell_logical(
+    kick: DesktopRect,
+    desktop: DesktopRect,
+    scale: i32,
+    cosmic: bool,
+) -> (i32, i32, u32, u32) {
+    let scale = scale.max(1);
+    if cosmic && scale > 1 {
+        let left = (kick.x - desktop.x).max(0) / scale;
+        let top = (kick.y - desktop.y).max(0) / scale;
+        let w = (kick.w / scale).max(1) as u32;
+        let h = (kick.h / scale).max(1) as u32;
+        (left, top, w, h)
+    } else {
+        (
+            (kick.x - desktop.x).max(0),
+            (kick.y - desktop.y).max(0),
+            kick.w.max(1) as u32,
+            kick.h.max(1) as u32,
+        )
+    }
+}
+
 fn overlapping_output_id(state: &KickState, rect: DesktopRect) -> Option<u32> {
+    let cosmic = sqyre_ports::cosmic_desktop_session();
     state.outputs.iter().find_map(|(id, o)| {
         if o.width <= 0 || o.height <= 0 {
             return None;
         }
-        let dest = DesktopRect {
-            x: o.x,
-            y: o.y,
-            w: o.width,
-            h: o.height,
-        };
+        let dest = output_desktop_rect(o.x, o.y, o.width, o.height, o.scale, cosmic);
         if rects_overlap(dest, rect) {
             Some(*id)
         } else {
             None
         }
     })
+}
+
+/// `wl_output` geometry captured for COSMIC stream placement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct WlOutputGeom {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub scale: i32,
+}
+
+/// Session outputs from a short Wayland connection. Empty when there is no
+/// display (headless tests) or the compositor has not sent a mode yet.
+pub(super) fn snapshot_output_geoms() -> Vec<WlOutputGeom> {
+    let Ok(conn) = KickConn::connect() else {
+        return Vec::new();
+    };
+    conn.state
+        .outputs
+        .values()
+        .filter(|o| o.width > 0 && o.height > 0)
+        .map(|o| WlOutputGeom {
+            x: o.x,
+            y: o.y,
+            width: o.width,
+            height: o.height,
+            scale: o.scale.max(1),
+        })
+        .collect()
 }
 
 fn clamp_kick_rect(rect: DesktopRect, dest: DesktopRect) -> DesktopRect {
@@ -1035,5 +1120,48 @@ mod tests {
         let kick = clamp_kick_rect(search, dest);
         assert_eq!(kick.w, 2);
         assert_eq!(kick.h, 2);
+    }
+
+    #[test]
+    fn cosmic_output_origin_is_logical_times_scale() {
+        let desktop = output_desktop_rect(0, 1080, 3840, 2160, 2, true);
+        assert_eq!(
+            desktop,
+            DesktopRect {
+                x: 0,
+                y: 2160,
+                w: 3840,
+                h: 2160,
+            }
+        );
+        // Same numbers on a non-COSMIC session stay in the portal's own space.
+        assert_eq!(
+            output_desktop_rect(0, 1080, 1920, 1080, 2, false),
+            DesktopRect {
+                x: 0,
+                y: 1080,
+                w: 1920,
+                h: 1080,
+            }
+        );
+    }
+
+    #[test]
+    fn cosmic_layer_kick_margins_are_logical() {
+        let desktop = output_desktop_rect(0, 0, 3840, 2160, 2, true);
+        let kick = DesktopRect {
+            x: 100,
+            y: 80,
+            w: 64,
+            h: 32,
+        };
+        assert_eq!(
+            layer_shell_logical(kick, desktop, 2, true),
+            (50, 40, 32, 16)
+        );
+        assert_eq!(
+            layer_shell_logical(kick, desktop, 2, false),
+            (100, 80, 64, 32)
+        );
     }
 }

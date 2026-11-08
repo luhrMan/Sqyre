@@ -13,17 +13,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 
 use thiserror::Error;
+use zip::read::ZipReadOptions;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::import::{merge_databases_prefer_imported, ImportMode};
-use crate::{db_path, sqyre_dir, Database, UserSettings};
+use crate::{db_path, sqyre_dir, Database, UserSettings, DB_FILE, SETTINGS_FILE};
 
 const BACKUPS_SUBDIR: &str = "backups";
 const BACKUP_PREFIX: &str = "sqyre-backup-";
 const BACKUP_SUFFIX: &str = ".zip";
-const SETTINGS_FILE: &str = "settings.yaml";
-const DB_FILE: &str = "db.yaml";
 
 /// Max on-disk size of a backup `.zip` before restore refuses to open it.
 const MAX_ARCHIVE_FILE_BYTES: usize = 256 * 1024 * 1024;
@@ -53,8 +52,11 @@ pub enum BackupError {
 
 pub type Result<T> = std::result::Result<T, BackupError>;
 
-/// `{sqyre_dir}/backups`.
+/// `{sqyre_dir}/backups`, or the user's custom backups folder.
 pub fn backups_dir() -> PathBuf {
+    if let Some(p) = crate::backup_dir_override() {
+        return p;
+    }
     sqyre_dir().join(BACKUPS_SUBDIR)
 }
 
@@ -326,9 +328,19 @@ fn extract_backup_to_staging(zip_path: &Path, staging: &Path) -> Result<()> {
     let file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
     reject_if_too_many_entries(archive.len())?;
+    // Declared-size pre-check; copy_with_expanded_limit still bounds the actual
+    // bytes written in case entries under-declare.
+    if let Some(size) = archive.decompressed_size() {
+        if size > MAX_EXPANDED_BYTES as u128 {
+            return Err(BackupError::Message(format!(
+                "backup expanded size exceeds limit ({size} bytes; max {MAX_EXPANDED_BYTES})"
+            )));
+        }
+    }
     let mut expanded_total = 0usize;
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)?;
+        let mut entry = archive
+            .by_index_with_options(i, ZipReadOptions::new().enforce_header_consistency(true))?;
         let name = entry.name()?.into_owned();
         if name.ends_with('/') {
             let dir = safe_extract_path(staging, name.trim_end_matches('/'))?;
@@ -594,10 +606,10 @@ mod tests {
     #[test]
     fn create_list_prune_restore_roundtrip() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images/icons"))?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
         fs::write(data.join("images/icons/a.png"), b"png")?;
         fs::write(data.join("crash.log"), "ignore")?;
 
@@ -620,11 +632,11 @@ mod tests {
             assert!(!backups.join("sqyre-backup-20000101-000000.zip").exists());
 
             // Wipe user data and restore the real archive.
-            fs::remove_file(data.join("db.yaml"))?;
+            fs::remove_file(data.join(DB_FILE))?;
             fs::remove_file(data.join("images/icons/a.png"))?;
             restore_backup(&path)?;
             assert_eq!(
-                fs::read_to_string(data.join("db.yaml")).unwrap(),
+                fs::read_to_string(data.join(DB_FILE)).unwrap(),
                 "macros: {}\nprograms: {}\n"
             );
             assert_eq!(fs::read(data.join("images/icons/a.png")).unwrap(), b"png");
@@ -639,17 +651,17 @@ mod tests {
     #[test]
     fn restore_rejects_archive_without_db_yaml_and_keeps_live_data() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join(DB_FILE)).unwrap();
 
         let bad_zip = tmp.path().join("bad.zip");
         {
             let file = File::create(&bad_zip)?;
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file("settings.yaml", opts)?;
+            zip.start_file(SETTINGS_FILE, opts)?;
             zip.write_all(b"backup_enabled: false\n")?;
             zip.finish()?;
         }
@@ -657,7 +669,7 @@ mod tests {
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("missing db.yaml"), "got {err}");
-            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
             Ok(())
         })?;
         Ok(())
@@ -686,10 +698,10 @@ mod tests {
     #[test]
     fn restore_rejects_oversized_archive_and_keeps_live_data() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join(DB_FILE)).unwrap();
 
         let big_zip = tmp.path().join("big.zip");
         fs::write(&big_zip, vec![0u8; MAX_ARCHIVE_FILE_BYTES + 1])?;
@@ -697,7 +709,7 @@ mod tests {
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&big_zip).unwrap_err();
             assert!(err.to_string().contains("too large"), "got {err}");
-            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
             Ok(())
         })?;
         Ok(())
@@ -706,17 +718,17 @@ mod tests {
     #[test]
     fn restore_rejects_invalid_db_yaml_and_keeps_live_data() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        let original = fs::read_to_string(data.join("db.yaml")).unwrap();
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        let original = fs::read_to_string(data.join(DB_FILE)).unwrap();
 
         let bad_zip = tmp.path().join("bad-db.zip");
         {
             let file = File::create(&bad_zip)?;
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file("db.yaml", opts)?;
+            zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: [unterminated")?;
             zip.finish()?;
         }
@@ -724,7 +736,7 @@ mod tests {
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("invalid"), "got {err}");
-            assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
             Ok(())
         })?;
         Ok(())
@@ -733,30 +745,27 @@ mod tests {
     #[test]
     fn restore_replaces_sqyre_dir_with_live_value() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
         // A legitimately relocated data dir must survive restore.
-        fs::write(
-            data.join("settings.yaml"),
-            "sqyre_dir: /tmp/live-sqyre-dir\n",
-        )?;
+        fs::write(data.join(SETTINGS_FILE), "sqyre_dir: /tmp/live-sqyre-dir\n")?;
 
         let zip_path = tmp.path().join("redirect.zip");
         {
             let file = File::create(&zip_path)?;
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file("db.yaml", opts)?;
+            zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: {}\nprograms: {}\n")?;
-            zip.start_file("settings.yaml", opts)?;
+            zip.start_file(SETTINGS_FILE, opts)?;
             zip.write_all(b"sqyre_dir: /tmp/evil-sqyre-dir\nbackup_enabled: true\n")?;
             zip.finish()?;
         }
 
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             restore_backup(&zip_path)?;
-            let restored = UserSettings::load_from_path(data.join("settings.yaml"))
+            let restored = UserSettings::load_from_path(data.join(SETTINGS_FILE))
                 .map_err(|e| BackupError::Message(e.to_string()))?;
             assert_eq!(restored.sqyre_dir, "/tmp/live-sqyre-dir");
             Ok(())
@@ -767,20 +776,20 @@ mod tests {
     #[test]
     fn restore_rejects_alias_bomb_settings() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
-        let original = fs::read_to_string(data.join("settings.yaml")).unwrap();
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
+        let original = fs::read_to_string(data.join(SETTINGS_FILE)).unwrap();
 
         let zip_path = tmp.path().join("bomb.zip");
         {
             let file = File::create(&zip_path)?;
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file("db.yaml", opts)?;
+            zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: {}\nprograms: {}\n")?;
-            zip.start_file("settings.yaml", opts)?;
+            zip.start_file(SETTINGS_FILE, opts)?;
             zip.write_all(b"a: &x [1, 2, 3]\nb: *x\n")?;
             zip.finish()?;
         }
@@ -792,7 +801,7 @@ mod tests {
                 "got {err}"
             );
             assert_eq!(
-                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                fs::read_to_string(data.join(SETTINGS_FILE)).unwrap(),
                 original
             );
             Ok(())
@@ -803,11 +812,11 @@ mod tests {
     #[test]
     fn import_merge_prefers_imported_keeps_live_only_assets() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images/icons"))?;
         fs::create_dir_all(data.join("variables"))?;
         fs::write(
-            data.join("db.yaml"),
+            data.join(DB_FILE),
             r#"
 macros:
   A:
@@ -822,7 +831,7 @@ macros:
 programs: {}
 "#,
         )?;
-        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
         fs::write(data.join("images/icons/shared.png"), b"live-shared")?;
         fs::write(data.join("images/icons/live-only.png"), b"live-only")?;
         fs::write(data.join("variables/keep.txt"), b"keep")?;
@@ -831,7 +840,7 @@ programs: {}
         let backup_root = tmp.path().join("backup-src");
         fs::create_dir_all(backup_root.join("images/icons"))?;
         fs::write(
-            backup_root.join("db.yaml"),
+            backup_root.join(DB_FILE),
             r#"
 macros:
   A:
@@ -855,7 +864,7 @@ macros:
 programs: {}
 "#,
         )?;
-        fs::write(backup_root.join("settings.yaml"), "backup_enabled: true\n")?;
+        fs::write(backup_root.join(SETTINGS_FILE), "backup_enabled: true\n")?;
         fs::write(
             backup_root.join("images/icons/shared.png"),
             b"imported-shared",
@@ -871,8 +880,8 @@ programs: {}
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             for rel in [
-                "db.yaml",
-                "settings.yaml",
+                DB_FILE,
+                SETTINGS_FILE,
                 "images/icons/shared.png",
                 "images/icons/imported-only.png",
             ] {
@@ -889,7 +898,7 @@ programs: {}
             assert_eq!(db.macros["A"].global_delay, 99);
             assert!(db.macros.contains_key("B"));
             assert_eq!(
-                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                fs::read_to_string(data.join(SETTINGS_FILE)).unwrap(),
                 "backup_enabled: true\n"
             );
             assert_eq!(
@@ -913,10 +922,10 @@ programs: {}
     #[test]
     fn import_overwrite_replaces_live_only_assets() -> Result<()> {
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images/icons"))?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
         fs::write(data.join("images/icons/live-only.png"), b"gone")?;
 
         let zip_path = tmp.path().join("overwrite.zip");
@@ -924,9 +933,9 @@ programs: {}
             let file = File::create(&zip_path)?;
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file("db.yaml", opts)?;
+            zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: {}\nprograms: {}\n")?;
-            zip.start_file("settings.yaml", opts)?;
+            zip.start_file(SETTINGS_FILE, opts)?;
             zip.write_all(b"backup_enabled: true\n")?;
             zip.start_file("images/icons/from-backup.png", opts)?;
             zip.write_all(b"new")?;
@@ -941,7 +950,7 @@ programs: {}
                 b"new"
             );
             assert_eq!(
-                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                fs::read_to_string(data.join(SETTINGS_FILE)).unwrap(),
                 "backup_enabled: true\n"
             );
             Ok(())
@@ -955,9 +964,9 @@ programs: {}
         use std::os::unix::fs::symlink;
 
         let tmp = tempfile::tempdir().map_err(BackupError::from)?;
-        let data = tmp.path().join(".sqyre");
+        let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images"))?;
-        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
         fs::write(data.join("images/real.png"), b"png")?;
         symlink(data.join("images/real.png"), data.join("images/link.png"))?;
 

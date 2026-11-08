@@ -75,19 +75,13 @@ mod tests {
     fn roundtrip_wait_and_click() {
         let mut m = Macro::new("demo", 10, vec!["f1".into()]);
         m.root = sqyre_domain::root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(5),
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: MouseButton::Left,
-                    state: PressState::Down,
-                },
-            },
+            Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(5),
+            }),
+            Action::new(ActionKind::Click {
+                button: MouseButton::Left,
+                state: PressState::Down,
+            }),
         ]);
         let map = encode_macro_to_map(&m).unwrap();
         let restored = decode_macro_from_map(&Value::Mapping(map)).unwrap();
@@ -235,25 +229,16 @@ root:
             let mut m = Macro::new(name.trim(), 0, vec![]);
             prop_assume!(!m.name.is_empty());
             m.root = sqyre_domain::root_loop(vec![
-                Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
+                Action::new( ActionKind::Wait {
                         time: ScalarValue::Int(wait_ms),
-                    },
-                },
-                Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Loop {
+                    }),
+                Action::new( ActionKind::Loop {
                         name: "inner".into(),
                         count: ScalarValue::Int(loop_count),
-                        subactions: vec![Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::Wait {
+                        subactions: vec![Action::new(ActionKind::Wait {
                                 time: ScalarValue::Int(1),
-                            },
-                        }],
-                    },
-                },
+                            })],
+                    }),
             ]);
             let yaml = encode_macro_to_yaml(&m).expect("encode yaml");
             let restored = decode_macro_from_yaml(&yaml).expect("decode yaml");

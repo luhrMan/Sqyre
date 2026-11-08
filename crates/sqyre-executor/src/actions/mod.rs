@@ -15,7 +15,7 @@ pub(crate) use window::execute_focus_window;
 #[cfg(test)]
 mod tests {
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
-    use crate::test_support::RecordingBackend;
+    use crate::test_support::{macro_of, RecordingBackend};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionClause, ConditionOperator, ListColumn,
         LoopJumpMode, Macro, ScalarValue, VariableAssignment,
@@ -33,15 +33,12 @@ mod tests {
             initial_value: "10".into(),
             description: String::new(),
         });
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(
-                    "out",
-                    ScalarValue::String("${n}*2+1".into()),
-                )],
-            },
-        }]);
+        macro_.root = root_loop(vec![Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(
+                "out",
+                ScalarValue::String("${n}*2+1".into()),
+            )],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
             macro_.variables.get("out").map(|v| v.as_display()),
@@ -61,47 +58,22 @@ mod tests {
             description: String::new(),
         });
         macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::SaveVariable {
-                    variable_name: "msg".into(),
-                    destination: "clipboard".into(),
-                    append: false,
-                    append_newline: false,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::SaveVariable {
-                    variable_name: "msg".into(),
-                    destination: "out.txt".into(),
-                    append: false,
-                    append_newline: true,
-                },
-            },
+            Action::new(ActionKind::SaveVariable {
+                variable_name: "msg".into(),
+                destination: "clipboard".into(),
+                append: false,
+                append_newline: false,
+            }),
+            Action::new(ActionKind::SaveVariable {
+                variable_name: "msg".into(),
+                destination: "out.txt".into(),
+                append: false,
+                append_newline: true,
+            }),
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: Some(dir.path()),
-            },
+            ExecDeps::new(&mut backend).variables_dir(dir.path()),
         )
         .unwrap();
         backend.assert_logged("clipboard:hello");
@@ -121,38 +93,29 @@ mod tests {
             initial_value: "0".into(),
             description: String::new(),
         });
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::While {
-                condition: sqyre_domain::ConditionBlock {
-                    name: "inc".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![ConditionClause {
-                        left: ScalarValue::String("${i}".into()),
-                        operator: ConditionOperator::NotEquals,
-                        right: ScalarValue::String("3".into()),
-                    }],
-                },
-                max_iterations: 10,
-                subactions: vec![
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(1),
-                        },
-                    },
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::SetVariable {
-                            assignments: vec![VariableAssignment::new(
-                                "i",
-                                ScalarValue::String("${i}+1".into()),
-                            )],
-                        },
-                    },
-                ],
+        macro_.root = root_loop(vec![Action::new(ActionKind::While {
+            condition: sqyre_domain::ConditionBlock {
+                name: "inc".into(),
+                match_mode: "all".into(),
+                clauses: vec![ConditionClause {
+                    left: ScalarValue::String("${i}".into()),
+                    operator: ConditionOperator::NotEquals,
+                    right: ScalarValue::String("3".into()),
+                }],
             },
-        }]);
+            max_iterations: 10,
+            subactions: vec![
+                Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(1),
+                }),
+                Action::new(ActionKind::SetVariable {
+                    assignments: vec![VariableAssignment::new(
+                        "i",
+                        ScalarValue::String("${i}+1".into()),
+                    )],
+                }),
+            ],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
             backend
@@ -171,35 +134,28 @@ mod tests {
     #[test]
     fn for_each_row_sets_vars_and_respects_range() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachRow {
-                name: "rows".into(),
-                sources: vec![
-                    ListColumn {
-                        source: "a\nb\nc\nd".into(),
-                        output_var: "letter".into(),
-                        is_file: false,
-                        skip_blank_lines: false,
-                    },
-                    ListColumn {
-                        source: "1\n2\n3\n4".into(),
-                        output_var: "digit".into(),
-                        is_file: false,
-                        skip_blank_lines: false,
-                    },
-                ],
-                start_row: ScalarValue::Int(2),
-                end_row: ScalarValue::Int(3),
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
-            },
-        }]);
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::ForEachRow {
+            name: "rows".into(),
+            sources: vec![
+                ListColumn {
+                    source: "a\nb\nc\nd".into(),
+                    output_var: "letter".into(),
+                    is_file: false,
+                    skip_blank_lines: false,
+                },
+                ListColumn {
+                    source: "1\n2\n3\n4".into(),
+                    output_var: "digit".into(),
+                    is_file: false,
+                    skip_blank_lines: false,
+                },
+            ],
+            start_row: ScalarValue::Int(2),
+            end_row: ScalarValue::Int(3),
+            subactions: vec![Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            })],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
             backend
@@ -230,94 +186,44 @@ mod tests {
     #[test]
     fn for_each_row_continue_skips_rest() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachRow {
-                name: "rows".into(),
-                sources: vec![ListColumn {
-                    source: "a\nb".into(),
-                    output_var: "letter".into(),
-                    is_file: false,
-                    skip_blank_lines: false,
-                }],
-                start_row: ScalarValue::Null,
-                end_row: ScalarValue::Null,
-                subactions: vec![
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::LoopJump {
-                            mode: LoopJumpMode::Continue,
-                        },
-                    },
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(50),
-                        },
-                    },
-                ],
-            },
-        }]);
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::ForEachRow {
+            name: "rows".into(),
+            sources: vec![ListColumn {
+                source: "a\nb".into(),
+                output_var: "letter".into(),
+                is_file: false,
+                skip_blank_lines: false,
+            }],
+            start_row: ScalarValue::Null,
+            end_row: ScalarValue::Null,
+            subactions: vec![
+                Action::new(ActionKind::LoopJump {
+                    mode: LoopJumpMode::Continue,
+                }),
+                Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(50),
+                }),
+            ],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         backend.assert_not_logged("sleep:50");
     }
 
     #[test]
     fn for_each_cell_sets_vars_row_major() {
-        use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+        use crate::test_support::one_atlas;
         use sqyre_domain::CoordinateRef;
 
         let mut backend = RecordingBackend::default();
-        let resolver = FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "bag".into(),
-                collection: FixedCollection {
-                    rows: 2,
-                    cols: 2,
-                    bounds: (0, 0, 100, 100),
-                },
-            }],
-            vec!["bag".into()],
-        );
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachCell {
-                name: "cells".into(),
-                cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap();
+        let resolver = one_atlas("bag", 2, 2, (0, 0, 100, 100));
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::ForEachCell {
+            name: "cells".into(),
+            cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
+            subactions: vec![Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            })],
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).resolver(&resolver)).unwrap();
         assert_eq!(
             backend
                 .log
@@ -367,67 +273,24 @@ mod tests {
 
     #[test]
     fn for_each_cell_break_stops_early() {
-        use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+        use crate::test_support::one_atlas;
         use sqyre_domain::CoordinateRef;
 
         let mut backend = RecordingBackend::default();
-        let resolver = FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "bag".into(),
-                collection: FixedCollection {
-                    rows: 2,
-                    cols: 2,
-                    bounds: (0, 0, 100, 100),
-                },
-            }],
-            vec!["bag".into()],
-        );
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachCell {
-                name: "cells".into(),
-                cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
-                subactions: vec![
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(1),
-                        },
-                    },
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::LoopJump {
-                            mode: LoopJumpMode::Break,
-                        },
-                    },
-                ],
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap();
+        let resolver = one_atlas("bag", 2, 2, (0, 0, 100, 100));
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::ForEachCell {
+            name: "cells".into(),
+            cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
+            subactions: vec![
+                Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(1),
+                }),
+                Action::new(ActionKind::LoopJump {
+                    mode: LoopJumpMode::Break,
+                }),
+            ],
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).resolver(&resolver)).unwrap();
         assert_eq!(
             backend
                 .log
@@ -452,47 +315,18 @@ mod tests {
         let stop = AtomicBool::new(true);
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.variables.set("i", ScalarValue::Int(0));
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::While {
-                condition: sqyre_domain::ConditionBlock {
-                    name: "forever".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![],
-                },
-                max_iterations: 100,
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
+        macro_.root = root_loop(vec![Action::new(ActionKind::While {
+            condition: sqyre_domain::ConditionBlock {
+                name: "forever".into(),
+                match_mode: "all".into(),
+                clauses: vec![],
             },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: Some(&stop),
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap();
+            max_iterations: 100,
+            subactions: vec![Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            })],
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).stop_flag(&stop)).unwrap();
         assert!(
             backend
                 .log
@@ -510,48 +344,19 @@ mod tests {
         use std::sync::Arc;
 
         let mut helper = Macro::new("helper", 0, vec![]);
-        helper.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(7),
-            },
-        }]);
+        helper.root = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(7),
+        })]);
         let lookup = MapMacroLookup {
             macros: BTreeMap::from([("helper".into(), Arc::new(helper))]),
         };
 
         let mut backend = RecordingBackend::default();
         let mut macro_ = Macro::new("caller", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "helper".into(),
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: Some(&lookup),
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap();
+        macro_.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "helper".into(),
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).macros(&lookup)).unwrap();
         backend.assert_logged("sleep:7");
     }
 
@@ -562,19 +367,13 @@ mod tests {
         use std::sync::Arc;
 
         let mut inner = Macro::new("inner", 0, vec![]);
-        inner.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        }]);
+        inner.root = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        })]);
         let mut outer = Macro::new("outer", 0, vec![]);
-        outer.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "inner".into(),
-            },
-        }]);
+        outer.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "inner".into(),
+        })]);
         let lookup = MapMacroLookup {
             macros: BTreeMap::from([
                 ("outer".into(), Arc::new(outer.clone())),
@@ -583,36 +382,16 @@ mod tests {
         };
 
         let mut caller = Macro::new("caller", 0, vec![]);
-        caller.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "outer".into(),
-            },
-        }]);
+        caller.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "outer".into(),
+        })]);
 
         let mut backend = RecordingBackend::default();
         let err = execute_macro_with(
             &mut caller,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: 1,
-                resolver: None,
-                icons: None,
-                macros: Some(&lookup),
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend)
+                .run_macro_max_depth(1)
+                .macros(&lookup),
         )
         .unwrap_err();
         assert!(
@@ -625,46 +404,20 @@ mod tests {
     fn while_with_zero_max_iterations_uses_exec_deps_budget() {
         let mut backend = RecordingBackend::default();
         let budget = 3;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::While {
-                condition: sqyre_domain::ConditionBlock {
-                    name: "forever".into(),
-                    match_mode: "all".into(),
-                    clauses: vec![],
-                },
-                max_iterations: 0,
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::While {
+            condition: sqyre_domain::ConditionBlock {
+                name: "forever".into(),
+                match_mode: "all".into(),
+                clauses: vec![],
             },
-        }]);
+            max_iterations: 0,
+            subactions: vec![Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            })],
+        })]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: budget,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend).while_max_iterations(budget),
         )
         .unwrap();
         assert_eq!(
@@ -684,48 +437,20 @@ mod tests {
         use std::sync::Arc;
 
         let mut a = Macro::new("A", 0, vec![]);
-        a.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "B".into(),
-            },
-        }]);
+        a.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "B".into(),
+        })]);
         let mut b = Macro::new("B", 0, vec![]);
-        b.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "A".into(),
-            },
-        }]);
+        b.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "A".into(),
+        })]);
         let lookup = MapMacroLookup {
             macros: BTreeMap::from([("A".into(), Arc::new(a.clone())), ("B".into(), Arc::new(b))]),
         };
 
         let mut backend = RecordingBackend::default();
-        let err = execute_macro_with(
-            &mut a,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: Some(&lookup),
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap_err();
+        let err =
+            execute_macro_with(&mut a, ExecDeps::new(&mut backend).macros(&lookup)).unwrap_err();
         assert!(
             err.to_string().contains("cycle"),
             "expected cycle error, got {err}"
@@ -745,12 +470,9 @@ mod tests {
             kind: ActionKind::Loop {
                 name: "root".into(),
                 count: ScalarValue::Int(3),
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
+                subactions: vec![Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(1),
+                })],
             },
         };
         let lookup = MapMacroLookup {
@@ -759,36 +481,10 @@ mod tests {
 
         let mut backend = RecordingBackend::default();
         let mut macro_ = Macro::new("caller", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: "helper".into(),
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: Some(&lookup),
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
-        )
-        .unwrap();
+        macro_.root = root_loop(vec![Action::new(ActionKind::RunMacro {
+            macro_name: "helper".into(),
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).macros(&lookup)).unwrap();
         assert_eq!(
             backend
                 .log
@@ -805,37 +501,14 @@ mod tests {
 
         let waiter = ImmediateContinueWaiter::default();
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Pause {
-                message: "hold".into(),
-                continue_key: vec!["f9".into()],
-                pass_through: false,
-            },
-        }]);
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::Pause {
+            message: "hold".into(),
+            continue_key: vec!["f9".into()],
+            pass_through: false,
+        })]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: Some(&waiter),
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend).continue_waiter(&waiter),
         )
         .unwrap();
         let log = waiter.log.lock().unwrap();
@@ -843,25 +516,19 @@ mod tests {
     }
 
     fn focus(path: &str, title: &str) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::FocusWindow {
-                process_path: path.into(),
-                window_title: title.into(),
-                previous: false,
-            },
-        }
+        Action::new(ActionKind::FocusWindow {
+            process_path: path.into(),
+            window_title: title.into(),
+            previous: false,
+        })
     }
 
     fn focus_previous() -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::FocusWindow {
-                process_path: String::new(),
-                window_title: String::new(),
-                previous: true,
-            },
-        }
+        Action::new(ActionKind::FocusWindow {
+            process_path: String::new(),
+            window_title: String::new(),
+            previous: true,
+        })
     }
 
     fn run_focus(
@@ -869,8 +536,7 @@ mod tests {
         actions: Vec<Action>,
     ) -> crate::error::Result<()> {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(actions);
+        let mut macro_ = macro_of(actions);
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend).window_focuser(focuser),

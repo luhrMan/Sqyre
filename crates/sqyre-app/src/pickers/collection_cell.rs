@@ -1,5 +1,6 @@
 use super::types::CollectionCellPick;
 use crate::data_editor_preview::paint_grid_overlay_painter;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::image_view::{self};
 use crate::theme::{cell_selection_fill, cell_selection_stroke};
@@ -11,30 +12,39 @@ fn fit_panel(w: f32, h: f32) -> Vec2 {
 }
 
 /// Interactive collection image + rows×cols overlay; click/drag selects cells.
-/// Wheel zooms at cursor; when zoomed, drag pans.
+/// Wheel zooms at cursor; when zoomed, drag pans. `back` is set by ◂ Back.
 pub fn paint_collection_cell_picker(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     pick: &mut CollectionCellPick,
+    back: &mut bool,
 ) {
     ui.horizontal(|ui| {
+        if ui.small_button("◂ Back").clicked() {
+            *back = true;
+        }
         crate::icon_cache::paint_program_icon(ui, catalog, icons, &pick.program);
-        ui.label(
-            egui::RichText::new(format!(
-                "Select cells — {}~{}",
-                pick.program, pick.collection
-            ))
-            .strong(),
+        crate::action_tooltip::help::tip(
+            ui.label(
+                egui::RichText::new(format!(
+                    "Select cells — {}~{}",
+                    pick.program, pick.collection
+                ))
+                .strong(),
+            ),
+            crate::action_tooltip::help::DE_COLLECTION_CELL_ZOOM,
         );
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_COLLECTION_CELL_ZOOM);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(
                     pick.view.needs_reset_button(),
-                    egui::Button::new("Reset view"),
+                    crate::widgets::IconButton::new(
+                        egui_phosphor::regular::CORNERS_IN,
+                        ht::PICK_FIT_VIEW,
+                        None,
+                    ),
                 )
-                .on_hover_text("Fit image in viewport")
                 .clicked()
             {
                 pick.reset_view();
@@ -69,6 +79,7 @@ pub fn paint_collection_cell_picker(
     {
         let painter = ui.painter_at(viewport);
         if let Some(tex) = &tex {
+            image_view::paint_checkerboard(&painter, content, 0.0);
             painter.image(
                 tex.id(),
                 content,
@@ -76,13 +87,13 @@ pub fn paint_collection_cell_picker(
                 Color32::WHITE,
             );
         } else {
-            painter.rect_filled(viewport, 0.0, Color32::from_gray(40));
+            painter.rect_filled(viewport, 0.0, crate::theme::preview_unavailable_fill());
             painter.text(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No collection image",
                 body_font,
-                Color32::LIGHT_GRAY,
+                crate::theme::preview_unavailable_fg(),
             );
         }
         paint_grid_overlay_painter(&painter, content, pick.rows, pick.cols);

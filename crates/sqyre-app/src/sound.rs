@@ -10,7 +10,21 @@ const ADD_SOUND_MP3: &[u8] = include_bytes!("../assets/sounds/shhh-ho.mp3");
 /// Cue when the user deletes a macro, action, or catalog entity.
 const DELETE_SOUND_MP3: &[u8] = include_bytes!("../assets/sounds/death.mp3");
 
-fn play_mp3(bytes: &'static [u8], thread_name: &str, volume: f32) {
+/// Custom cue bytes from `path`, else the embedded `builtin`. Unreadable or
+/// empty custom files fall back to the built-in cue so a bad path is silent
+/// instead of breaking sound entirely.
+fn cue_bytes(path: &str, builtin: &'static [u8]) -> std::borrow::Cow<'static, [u8]> {
+    let path = path.trim();
+    if path.is_empty() {
+        return std::borrow::Cow::Borrowed(builtin);
+    }
+    match std::fs::read(path) {
+        Ok(bytes) if !bytes.is_empty() => std::borrow::Cow::Owned(bytes),
+        _ => std::borrow::Cow::Borrowed(builtin),
+    }
+}
+
+fn play_mp3(bytes: std::borrow::Cow<'static, [u8]>, thread_name: &str, volume: f32) {
     let volume = volume.clamp(0.0, 1.0);
     if volume <= 0.0 {
         return;
@@ -21,12 +35,12 @@ fn play_mp3(bytes: &'static [u8], thread_name: &str, volume: f32) {
 }
 
 #[cfg(target_os = "linux")]
-fn play_mp3_blocking(bytes: &'static [u8], volume: f32) {
+fn play_mp3_blocking(bytes: std::borrow::Cow<'static, [u8]>, volume: f32) {
     linux_pulse::play(bytes, volume);
 }
 
 #[cfg(not(target_os = "linux"))]
-fn play_mp3_blocking(bytes: &'static [u8], volume: f32) {
+fn play_mp3_blocking(bytes: std::borrow::Cow<'static, [u8]>, volume: f32) {
     let Ok(mut handle) = rodio::DeviceSinkBuilder::open_default_sink() else {
         return;
     };
@@ -40,34 +54,47 @@ fn play_mp3_blocking(bytes: &'static [u8], volume: f32) {
 }
 
 /// Fire-and-forget playback of the macro finish sound on a background thread.
+/// `custom_file` overrides the built-in cue when non-empty (MP3).
 ///
 /// Failures (no audio device, decode errors) are ignored so run completion is never blocked.
 #[cfg(feature = "native-runtime")]
-pub fn play_finish_sound(volume: f32) {
-    play_mp3(FINISH_SOUND_MP3, "sqyre-finish-sound", volume);
+pub fn play_finish_sound(volume: f32, custom_file: &str) {
+    play_mp3(
+        cue_bytes(custom_file, FINISH_SOUND_MP3),
+        "sqyre-finish-sound",
+        volume,
+    );
 }
 
 /// Fire-and-forget playback of the UI “added” cue.
-pub fn play_add_sound(volume: f32) {
-    play_mp3(ADD_SOUND_MP3, "sqyre-add-sound", volume);
+pub fn play_add_sound(volume: f32, custom_file: &str) {
+    play_mp3(
+        cue_bytes(custom_file, ADD_SOUND_MP3),
+        "sqyre-add-sound",
+        volume,
+    );
 }
 
 /// Fire-and-forget playback of the UI “deleted” cue.
-pub fn play_delete_sound(volume: f32) {
-    play_mp3(DELETE_SOUND_MP3, "sqyre-delete-sound", volume);
+pub fn play_delete_sound(volume: f32, custom_file: &str) {
+    play_mp3(
+        cue_bytes(custom_file, DELETE_SOUND_MP3),
+        "sqyre-delete-sound",
+        volume,
+    );
 }
 
-/// Play the add cue when UI sounds are enabled in settings.
-pub fn play_add_sound_if(enabled: bool, volume: f32) {
+/// Play the add cue when enabled in settings.
+pub fn play_add_sound_if(enabled: bool, volume: f32, custom_file: &str) {
     if enabled {
-        play_add_sound(volume);
+        play_add_sound(volume, custom_file);
     }
 }
 
-/// Play the delete cue when UI sounds are enabled in settings.
-pub fn play_delete_sound_if(enabled: bool, volume: f32) {
+/// Play the delete cue when enabled in settings.
+pub fn play_delete_sound_if(enabled: bool, volume: f32, custom_file: &str) {
     if enabled {
-        play_delete_sound(volume);
+        play_delete_sound(volume, custom_file);
     }
 }
 
@@ -113,14 +140,14 @@ mod linux_pulse {
     static MIXER: Mutex<Option<Mixer>> = Mutex::new(None);
     static NEXT_GEN: AtomicU64 = AtomicU64::new(1);
 
-    pub(super) fn play(bytes: &'static [u8], volume: f32) {
+    pub(super) fn play(bytes: std::borrow::Cow<'static, [u8]>, volume: f32) {
         if let Err(stage) = play_inner(bytes, volume) {
             cap_log("SOUND", "fail", &format!("stage={stage}"));
             crate::log::warn(format!("cue sound skipped ({stage})"));
         }
     }
 
-    fn play_inner(bytes: &'static [u8], volume: f32) -> Result<(), &'static str> {
+    fn play_inner(bytes: std::borrow::Cow<'static, [u8]>, volume: f32) -> Result<(), &'static str> {
         let mixer = mixer()?;
         mark_site("sound:play:before_decode");
         let decoder = rodio::Decoder::new(std::io::Cursor::new(bytes)).map_err(|_| "decode")?;

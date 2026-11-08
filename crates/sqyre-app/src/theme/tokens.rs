@@ -6,10 +6,12 @@
 use eframe::egui::{Color32, Stroke};
 
 pub use sqyre_ui_theme::{
-    accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
-    overlay_panel_fill, paint_galley_centered, paint_text_centered, panel_split_stroke, rgba,
-    warn_fg, window_border_stroke, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY, SPACE_12,
-    SPACE_2, SPACE_4, SPACE_8, WINDOW_BORDER_RADIUS,
+    accent, accent_dim, add_section_gap, chip_fill, contrast_fg, density, element_gap, error_fg,
+    frame_fill, inner_stroke, ok_fg, overlay_panel_fill, paint_galley_centered,
+    paint_text_centered, panel_split_stroke, rgba, section_gap, set_density, warn_fg,
+    window_border_stroke, DensityGaps, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY,
+    SPACE_12, SPACE_2, SPACE_4, SPACE_8, WINDOW_BORDER_RADIUS, WINDOW_RESIZE_CORNER_SIZE,
+    WINDOW_RESIZE_GRAB_RADIUS,
 };
 
 /// Dark scrim behind preview overlay chips / editors.
@@ -72,14 +74,89 @@ pub fn match_within_fg() -> Color32 {
     Color32::from_rgb(120, 230, 180)
 }
 
-/// Selected card / list stroke (Sqyre primary).
-pub fn selection_stroke() -> Stroke {
-    Stroke::new(2.0, PRIMARY)
+// --- Preview viewport / monitor-map fills ---
+// Dark neutrals backing rendered captures; distinct from panel chrome fills so
+// imagery reads as canvas, not UI surface.
+
+/// Backing painted under a shown capture inside an image viewport.
+pub fn preview_viewport_fill() -> Color32 {
+    Color32::from_gray(20)
 }
 
-/// Soft primary tint for related-row owner highlight.
+/// Viewport fill when no image is available (behind the caption text).
+pub fn preview_unavailable_fill() -> Color32 {
+    Color32::from_gray(40)
+}
+
+/// Caption text on [`preview_unavailable_fill`].
+pub fn preview_unavailable_fg() -> Color32 {
+    Color32::LIGHT_GRAY
+}
+
+/// Status/error placeholder frame fill inside preview tips.
+pub fn preview_status_fill() -> Color32 {
+    Color32::from_gray(28)
+}
+
+/// Light square of the checkerboard under image previews (transparency cue).
+pub fn preview_checker_light() -> Color32 {
+    Color32::from_gray(200)
+}
+
+/// Dark square of the checkerboard under image previews (transparency cue).
+pub fn preview_checker_dark() -> Color32 {
+    Color32::from_gray(120)
+}
+
+/// Monitor-map desktop background.
+pub fn preview_monitor_bg() -> Color32 {
+    Color32::from_gray(22)
+}
+
+/// Monitor-map monitor fill.
+pub fn preview_monitor_fill() -> Color32 {
+    Color32::from_gray(36)
+}
+
+/// Monitor-map monitor outline.
+pub fn preview_monitor_stroke() -> Stroke {
+    Stroke::new(1.5, Color32::from_gray(90))
+}
+
+/// Monitor-map monitor label.
+pub fn preview_monitor_label() -> Color32 {
+    Color32::from_gray(200)
+}
+
+/// Label text painted over [`preview_label_dim`] chips.
+pub fn preview_label_fg() -> Color32 {
+    Color32::WHITE
+}
+
+/// Plain text painted inside the dark var-overlay edit field.
+pub fn preview_plain_fg() -> Color32 {
+    Color32::from_gray(230)
+}
+
+/// Underlay behind screen captures and capture outlines (must read over any image).
+pub fn capture_underlay() -> Color32 {
+    Color32::BLACK
+}
+
+/// Main-window clear color behind the egui surface.
+pub fn window_clear_color() -> Color32 {
+    Color32::from_rgb(0x1a, 0x1a, 0x1a)
+}
+
+/// Selected card / list stroke (active accent).
+pub fn selection_stroke() -> Stroke {
+    Stroke::new(2.0, accent())
+}
+
+/// Soft accent tint for related-row owner highlight.
 pub fn highlight_owner_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x28])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 0x28])
 }
 
 /// Soft error tint behind invalid tree rows (from [`error_fg`]).

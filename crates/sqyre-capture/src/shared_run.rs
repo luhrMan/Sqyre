@@ -37,6 +37,18 @@ macro_rules! define_shared_run_capturer {
             use ::std::sync::atomic::Ordering;
             loop {
                 let mut slot = SHARED_UI_CAPTURER.lock();
+                // A cached capturer whose backend died (portal PipeWire stream
+                // ended) can never produce another frame — drop it and reopen
+                // below instead of serving a permanently failing Arc.
+                if matches!(slot.as_ref(), Some(Ok(c)) if c.is_dead()) {
+                    $crate::cap_log("PORTAL", "pw", "capturer dead; reopening shared session");
+                    let stale = slot.take();
+                    // Dropping the last Arc joins the pw thread (~session teardown);
+                    // never do that under the slot lock.
+                    drop(slot);
+                    drop(stale);
+                    continue;
+                }
                 if let Some(r) = slot.as_ref() {
                     return match r {
                         Ok(c) => Ok(::std::sync::Arc::clone(c)),

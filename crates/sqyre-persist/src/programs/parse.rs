@@ -120,6 +120,10 @@ pub(super) fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
         }
     }
 
+    // The catalog key (and the stored name, when it matches) is an implicit tag.
+    super::name_tag::strip(&mut data.tags, name);
+    super::name_tag::strip(&mut data.tags, &data.name);
+
     Ok(data)
 }
 

@@ -24,14 +24,14 @@ use x11::xlib::{
     CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect,
     CurrentTime, Display, Expose, ExposureMask, False, InputOutput, KeyPress, KeyPressMask,
     LSBFirst, MotionNotify, PointerMotionMask, PropModeReplace, RevertToParent, True, TrueColor,
-    WhenMapped, Window, XAllocColor, XChangeProperty, XClearArea, XClearWindow, XCloseDisplay,
-    XColor, XCopyArea, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreatePixmap,
-    XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen,
-    XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent, XFillRectangle, XFlush,
-    XFreeColormap, XFreeCursor, XFreeGC, XFreePixmap, XInternAtom, XKeycodeToKeysym, XMapRaised,
-    XMatchVisualInfo, XNextEvent, XOpenDisplay, XPending, XPutImage, XSelectInput, XSetForeground,
-    XSetInputFocus, XSetWindowAttributes, XSetWindowBackground, XSetWindowBackgroundPixmap,
-    XUnmapWindow, XVisualInfo, ZPixmap, XA_CARDINAL,
+    Visual, WhenMapped, Window, XAllocColor, XChangeProperty, XClearArea, XClearWindow,
+    XCloseDisplay, XColor, XCopyArea, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage,
+    XCreatePixmap, XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow,
+    XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent,
+    XFillRectangle, XFlush, XFreeColormap, XFreeCursor, XFreeGC, XFreePixmap, XInternAtom,
+    XKeycodeToKeysym, XMapRaised, XMatchVisualInfo, XNextEvent, XOpenDisplay, XPending, XPutImage,
+    XSelectInput, XSetForeground, XSetInputFocus, XSetWindowAttributes, XSetWindowBackground,
+    XSetWindowBackgroundPixmap, XUnmapWindow, XVisualInfo, ZPixmap, XA_CARDINAL,
 };
 
 /// X11 cursorfont crosshair (`X11/cursorfont.h`).
@@ -427,6 +427,51 @@ unsafe fn open_input_overlay(bounds: DesktopRect) -> Result<FrozenSelectionOverl
     }
 }
 
+/// Create an override-redirect cover window over `bounds`. `what` names the
+/// overlay kind for the failure message.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "XCreateWindow needs display/geometry/visual/valuemask/attrs"
+)]
+// SAFETY: caller guarantees `display` is a live Xlib connection and `attrs`
+// points at a valid `XSetWindowAttributes` populated to match `valuemask`.
+unsafe fn create_cover_window(
+    display: *mut Display,
+    bounds: DesktopRect,
+    width: c_uint,
+    height: c_uint,
+    visual: *mut Visual,
+    depth: c_int,
+    valuemask: c_ulong,
+    attrs: *mut XSetWindowAttributes,
+    what: &str,
+) -> Result<Window, CaptureError> {
+    // SAFETY: `display`/`attrs` invariants come from the caller; valuemask
+    // covers every field set in `attrs`.
+    let window = unsafe {
+        XCreateWindow(
+            display,
+            XDefaultRootWindow(display),
+            bounds.x,
+            bounds.y,
+            width,
+            height,
+            0,
+            depth,
+            InputOutput as c_uint,
+            visual,
+            valuemask,
+            attrs,
+        )
+    };
+    if window == 0 {
+        return Err(CaptureError::Message(format!(
+            "XCreateWindow failed for {what}"
+        )));
+    }
+    Ok(window)
+}
+
 unsafe fn map_input_overlay(
     display: *mut Display,
     bounds: DesktopRect,
@@ -457,17 +502,13 @@ unsafe fn map_input_overlay(
                 | PointerMotionMask
                 | KeyPressMask
                 | ExposureMask;
-            let window = XCreateWindow(
+            let window = create_cover_window(
                 display,
-                root,
-                bounds.x,
-                bounds.y,
+                bounds,
                 width,
                 height,
-                0,
-                depth,
-                InputOutput as c_uint,
                 visual,
+                depth,
                 CWOverrideRedirect
                     | CWColormap
                     | CWBorderPixel
@@ -475,13 +516,11 @@ unsafe fn map_input_overlay(
                     | CWBackingStore
                     | CWEventMask,
                 &mut attrs,
-            );
-            if window == 0 {
+                "ARGB selection cover",
+            )
+            .inspect_err(|_| {
                 XFreeColormap(display, colormap);
-                return Err(CaptureError::Message(
-                    "XCreateWindow failed for ARGB selection cover".into(),
-                ));
-            }
+            })?;
             let gold = alloc_argb_stroke_pixel(visual);
             (window, colormap, visual, depth, gold)
         } else {
@@ -496,25 +535,17 @@ unsafe fn map_input_overlay(
                 | PointerMotionMask
                 | KeyPressMask
                 | ExposureMask;
-            let window = XCreateWindow(
+            let window = create_cover_window(
                 display,
-                root,
-                bounds.x,
-                bounds.y,
+                bounds,
                 width,
                 height,
-                0,
-                depth,
-                InputOutput as c_uint,
                 visual,
+                depth,
                 CWOverrideRedirect | CWBorderPixel | CWBackingStore | CWEventMask,
                 &mut attrs,
-            );
-            if window == 0 {
-                return Err(CaptureError::Message(
-                    "XCreateWindow failed for selection cover".into(),
-                ));
-            }
+                "selection cover",
+            )?;
             XSetWindowBackground(display, window, 0);
             set_window_opacity(display, window, INPUT_COVER_OPACITY_FALLBACK);
             let gold = alloc_stroke_pixel(display, screen, visual);
@@ -644,7 +675,6 @@ unsafe fn map_overlay(
     // matching the XImage layout and is detached before `XDestroyImage` frees it.
     unsafe {
         let screen = XDefaultScreen(display);
-        let root = XDefaultRootWindow(display);
         let visual = XDefaultVisual(display, screen);
         let depth = XDefaultDepth(display, screen);
         let width = image.width();
@@ -656,25 +686,17 @@ unsafe fn map_overlay(
         attrs.backing_store = WhenMapped;
         attrs.event_mask =
             ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask;
-        let window = XCreateWindow(
+        let window = create_cover_window(
             display,
-            root,
-            bounds.x,
-            bounds.y,
+            bounds,
             width,
             height,
-            0,
-            depth,
-            InputOutput as c_uint,
             visual,
+            depth,
             CWOverrideRedirect | CWBorderPixel | CWBackingStore | CWEventMask,
             &mut attrs,
-        );
-        if window == 0 {
-            return Err(CaptureError::Message(
-                "XCreateWindow failed for snapshot overlay".into(),
-            ));
-        }
+            "snapshot overlay",
+        )?;
 
         let pixmap = XCreatePixmap(display, window, width, height, depth as c_uint);
         if pixmap == 0 {

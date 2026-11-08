@@ -16,6 +16,8 @@
 
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
 use crate::icons::{self as overlay_icons};
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+use crate::ButtonFace;
 use egui::{self};
 use parking_lot::Mutex;
 use sqyre_capture::{
@@ -942,21 +944,6 @@ fn button_is_busy(btn: &OverlayButtonConfig, running_macro: Option<&str>) -> boo
 }
 
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
-struct ButtonFace {
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-    bg: [u8; 4],
-    border: [u8; 4],
-    border_width: f32,
-    corner_radius: f32,
-    icon_glyph: char,
-    icon: [u8; 4],
-    icon_hover: [u8; 4],
-}
-
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
 fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
     let size = if btn.size > 0.0 {
         btn.size
@@ -1005,17 +992,7 @@ fn win_spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> WinB
     WinButtonSpec {
         id: btn.id.clone(),
         macro_name: btn.macro_name.clone(),
-        x: face.x,
-        y: face.y,
-        w: face.w,
-        h: face.h,
-        bg: face.bg,
-        border: face.border,
-        border_width: face.border_width,
-        corner_radius: face.corner_radius,
-        icon_glyph: face.icon_glyph,
-        icon: face.icon,
-        icon_hover: face.icon_hover,
+        face,
         tip: btn.macro_name.trim().to_string(),
         busy,
         visibility_gated: btn.visibility_gate.is_active(),
@@ -1028,17 +1005,7 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
     NativeButtonSpec {
         id: btn.id.clone(),
         macro_name: btn.macro_name.clone(),
-        x: face.x,
-        y: face.y,
-        w: face.w,
-        h: face.h,
-        bg: face.bg,
-        border: face.border,
-        border_width: face.border_width,
-        corner_radius: face.corner_radius,
-        icon_glyph: face.icon_glyph,
-        icon: face.icon,
-        icon_hover: face.icon_hover,
+        face,
         tip: btn.macro_name.trim().to_string(),
         busy,
         visibility_gated: btn.visibility_gate.is_active(),
@@ -1064,17 +1031,7 @@ fn android_spec(
         program: btn.program.clone(),
         process_path,
         window_title,
-        x: face.x,
-        y: face.y,
-        w: face.w,
-        h: face.h,
-        bg: face.bg,
-        border: face.border,
-        border_width: face.border_width,
-        corner_radius: face.corner_radius,
-        icon_glyph: face.icon_glyph,
-        icon: face.icon,
-        icon_hover: face.icon_hover,
+        face,
         focus_gated: !ungate && button_is_focus_gated(btn),
         visibility_gated: !ungate && btn.visibility_gate.is_active(),
         editor_pinned: false,
@@ -1147,7 +1104,7 @@ mod tests {
         apply_active_focus(&mut g, &mist);
         let chrome = WindowInfo {
             title: OVERLAY_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: "/bin/sqyre".into(),
             icon: None,
         };
@@ -1185,8 +1142,8 @@ mod tests {
         let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         let main = WindowInfo {
-            title: "Sqyre".into(),
-            process_name: "sqyre".into(),
+            title: sqyre_ports::APP_NAME.into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: exe.to_string_lossy().into_owned(),
             icon: None,
         };
@@ -1209,8 +1166,8 @@ mod tests {
         let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         let main = WindowInfo {
-            title: "Sqyre".into(),
-            process_name: "sqyre".into(),
+            title: sqyre_ports::APP_NAME.into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: exe.to_string_lossy().into_owned(),
             icon: None,
         };
@@ -1246,8 +1203,8 @@ mod tests {
         let exe = std::env::current_exe().expect("test exe");
         let mut g = FocusSlot::idle();
         let main = WindowInfo {
-            title: "Sqyre".into(),
-            process_name: "sqyre".into(),
+            title: sqyre_ports::APP_NAME.into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: exe.to_string_lossy().into_owned(),
             icon: None,
         };

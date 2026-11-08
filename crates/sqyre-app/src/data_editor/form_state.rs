@@ -94,6 +94,8 @@ impl FormState for ProgramsForm {
             ed.form_process_path = p.process_path.clone();
             ed.form_window_title = p.window_title.clone();
             ed.form_tags = p.tags.clone();
+            let name = ed.form_name.trim().to_string();
+            ed.form_tags.retain(|tag| tag.trim() != name);
         } else {
             ed.form_process_path.clear();
             ed.form_window_title.clear();

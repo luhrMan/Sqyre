@@ -22,11 +22,11 @@ use pw::spa::buffer::{
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
-use sqyre_ports::{DesktopRect, RgbCapture};
+use sqyre_ports::{DesktopRect, RgbCapture, APP_ID};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -40,6 +40,10 @@ const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(200);
 const SPONTANEOUS_WAIT: Duration = Duration::from_millis(16);
 /// Overlay visibility polls: wait this long for a spontaneous frame, never kick.
 const QUIET_CAPTURE_WAIT: Duration = Duration::from_millis(150);
+/// Post-pulse wait when a cache crop had to induce damage itself — emit-on-damage
+/// streams (COSMIC; Mutter on a fully idle output) send nothing spontaneously.
+/// The layer-shell pulse roundtrips Wayland concurrently, so keep it short.
+const QUIET_KICK_WAIT: Duration = Duration::from_millis(200);
 /// Region copy older than this → treat as stale and kick without spontaneous wait.
 const STALE_REGION_AGE: Duration = Duration::from_millis(40);
 /// Post-kick wait slices (short first; kick runs concurrently so we poll soon).
@@ -53,11 +57,86 @@ const SLOW_FRESH_LOG: Duration = Duration::from_millis(80);
 /// Minimum damage pulses before giving up when other monitors advance but the
 /// search region stays stuck.
 const EARLY_BAIL_MIN_PULSES: u32 = 1;
+/// Damage pulse max edge — emit-on-damage portals send a whole-output frame for
+/// any damage on the output, so a small rect suffices; a monitor-sized layer
+/// surface allocates a huge shm per pulse and can stall mapping it.
+const KICK_RECT_MAX: i32 = 64;
+/// Consecutive armed waits (damage pulsed, still no copy) on one stream dest
+/// before the capturer counts as dead — PipeWire can keep reporting Streaming
+/// while the producer silently stopped emitting.
+const STARVED_KICKS_DEAD: u32 = 3;
+
+/// One "no frame" log per drought — reset whenever a frame copies into cache so
+/// a stuck emit-on-damage stream does not spam stderr on every crop retry.
+static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
+
+/// `node.suspend-on-idle` for portal streams. On by default: an idle node
+/// suspends, and the next capture waits out the driver restart.
+static SUSPEND_ON_IDLE: AtomicBool = AtomicBool::new(true);
+/// Streams currently in [`pw::stream::StreamState::Streaming`].
+static STREAMING: AtomicU32 = AtomicU32::new(0);
+/// In-flight captures that started while no stream was streaming.
+static WAKE_REQUESTS: AtomicU32 = AtomicU32::new(0);
+
+/// True while idle-suspend is on and a capture is waiting for a stream
+/// that is not streaming yet.
+pub(crate) fn pipewire_stream_waking() -> bool {
+    wake_visible(
+        SUSPEND_ON_IDLE.load(Ordering::SeqCst),
+        WAKE_REQUESTS.load(Ordering::SeqCst),
+        STREAMING.load(Ordering::SeqCst),
+    )
+}
+
+fn wake_visible(suspend_on_idle: bool, wake_requests: u32, streaming: u32) -> bool {
+    suspend_on_idle && wake_requests > 0 && streaming == 0
+}
+
+/// Apply the settings toggle. An open session is updated on the PipeWire thread.
+pub(crate) fn set_pipewire_suspend_on_idle(suspend: bool) {
+    SUSPEND_ON_IDLE.store(suspend, Ordering::SeqCst);
+    if let Some(Ok(capturer)) = crate::shared_capturer_if_ready() {
+        capturer.apply_pipewire_suspend_on_idle(suspend);
+    }
+}
+
+fn account_stream_state(old: &pw::stream::StreamState, new: &pw::stream::StreamState) {
+    let was = matches!(old, pw::stream::StreamState::Streaming);
+    let now = matches!(new, pw::stream::StreamState::Streaming);
+    if now && !was {
+        STREAMING.fetch_add(1, Ordering::SeqCst);
+    } else if was && !now {
+        let _ = STREAMING.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+    }
+}
+
+/// Held for one capture wait that began with every stream asleep.
+struct WakeTicket(bool);
+
+fn arm_wake_if_asleep() -> WakeTicket {
+    if !SUSPEND_ON_IDLE.load(Ordering::SeqCst) || STREAMING.load(Ordering::SeqCst) > 0 {
+        return WakeTicket(false);
+    }
+    WAKE_REQUESTS.fetch_add(1, Ordering::SeqCst);
+    WakeTicket(true)
+}
+
+impl Drop for WakeTicket {
+    fn drop(&mut self) {
+        if self.0 {
+            WAKE_REQUESTS.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
     shutdown: Arc<AtomicBool>,
+    /// PipeWire stream/loop ended (Error, Unconnected after Streaming, iterate
+    /// failure, or the pw thread exited) — captures fail fast instead of
+    /// starving on a stream that can never deliver again.
+    stream_dead: Arc<AtomicBool>,
     quit_tx: Mutex<Option<Sender<PwThreadMsg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
     /// `None` = not tried yet; `Some(None)` = unavailable; `Some(Some(_))` = ready.
@@ -73,6 +152,9 @@ struct FrameSlot {
     region_gen: Vec<(DesktopRect, u64)>,
     /// Last copy time per stream dest (stale region → kick immediately).
     region_copy_at: Vec<(DesktopRect, Instant)>,
+    /// Consecutive armed waits that produced no copy, per stream dest.
+    /// [`STARVED_KICKS_DEAD`] on any dest → capturer dead → session reopens.
+    starved_kicks: Vec<(DesktopRect, u32)>,
     /// When false, PipeWire callbacks dequeue but skip copying into `cache.pixels`.
     /// Cleared after a macro so the full-desktop RGBA buffer can be released;
     /// re-enabled when a capture waits for a frame.
@@ -103,9 +185,14 @@ fn shrink_cpu_frame_cache(cache: &mut FrameCache) {
 fn release_slot_cache(slot: &mut FrameSlot) {
     slot.buffering = false;
     let before = slot.cache.pixels.len();
+    let gen = slot.generation;
     shrink_cpu_frame_cache(&mut slot.cache);
     if before > 0 {
-        cap_log("PORTAL", "cache", &format!("release_kib={}", before / 1024));
+        cap_log(
+            "PORTAL",
+            "cache",
+            &format!("release_kib={} gen={gen}", before / 1024),
+        );
     }
 }
 
@@ -117,6 +204,7 @@ fn idle_release_remaining(slot: &FrameSlot, idle: Duration, now: Instant) -> Opt
 
 enum PwThreadMsg {
     Quit,
+    SetSuspendOnIdle(bool),
 }
 
 impl PortalCapturer {
@@ -147,23 +235,33 @@ impl PortalCapturer {
                 generation: 0,
                 region_gen: Vec::new(),
                 region_copy_at: Vec::new(),
+                starved_kicks: Vec::new(),
                 buffering: true,
                 last_demand: Instant::now(),
             }),
             Condvar::new(),
         ));
         let shutdown = Arc::new(AtomicBool::new(false));
+        let stream_dead = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), CaptureError>>(1);
         let (msg_tx, msg_rx) = mpsc::channel::<PwThreadMsg>();
 
         let frame_thread = Arc::clone(&frame);
         let shutdown_thread = Arc::clone(&shutdown);
+        let dead_thread = Arc::clone(&stream_dead);
         let handle = thread::Builder::new()
             .name("sqyre-portal-pw".into())
             .spawn(move || {
-                if let Err(e) = portal_pw_thread(frame_thread, shutdown_thread, ready_tx, msg_rx) {
+                if let Err(e) = portal_pw_thread(
+                    frame_thread,
+                    shutdown_thread,
+                    dead_thread.clone(),
+                    ready_tx,
+                    msg_rx,
+                ) {
                     cap_log("PORTAL", "fail", &format!("thread={e}"));
                 }
+                dead_thread.store(true, Ordering::SeqCst);
             })
             .map_err(|e| CaptureError::Message(format!("portal thread spawn: {e}")))?;
 
@@ -205,6 +303,7 @@ impl PortalCapturer {
         let capturer = Self {
             frame,
             shutdown,
+            stream_dead,
             quit_tx: Mutex::new(Some(msg_tx)),
             thread: Mutex::new(Some(handle)),
             kick: Mutex::new(None),
@@ -214,6 +313,13 @@ impl PortalCapturer {
         Ok(capturer)
     }
 
+    pub(crate) fn apply_pipewire_suspend_on_idle(&self, suspend: bool) {
+        if let Some(tx) = self.quit_tx.lock().as_ref() {
+            // The thread may already have exited; the next open reads the flag.
+            let _ = tx.send(PwThreadMsg::SetSuspendOnIdle(suspend));
+        }
+    }
+
     /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
     /// the cache at the start of this call. Prefers a spontaneous frame (no kick);
     /// then pulses layer-shell or windowed-xdg damage when available.
@@ -221,6 +327,7 @@ impl PortalCapturer {
     /// If other streams advance while the search region stays stuck, bail early
     /// (same cache as a full timeout).
     fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
+        let _wake = arm_wake_if_asleep();
         // Unmap staged xdg kick and restore the window that had focus before the
         // pulse — GNOME activates the kick toplevel and EIS clicks otherwise miss.
         struct KickFocusRestore {
@@ -263,6 +370,9 @@ impl PortalCapturer {
                 self.capturer.release_compositor_kick_stage();
                 self.focus.restore_after_unmap();
             }
+        }
+        if self.is_dead() {
+            return;
         }
         let focus = KickFocusRestore {
             pre: Mutex::new(None),
@@ -362,6 +472,11 @@ impl PortalCapturer {
                 region_after,
                 min_gen,
             ) {
+                {
+                    let mut slot = self.frame.0.lock();
+                    let dest = overlapping_stream_dest(&slot, rect);
+                    note_starved_kick(&mut slot, dest);
+                }
                 cap_log(
                     "PORTAL",
                     "wait",
@@ -375,7 +490,9 @@ impl PortalCapturer {
         }
 
         let (now, region) = {
-            let slot = self.frame.0.lock();
+            let mut slot = self.frame.0.lock();
+            let dest = overlapping_stream_dest(&slot, rect);
+            note_starved_kick(&mut slot, dest);
             (slot.generation, region_generation(&slot, rect))
         };
         cap_log(
@@ -390,6 +507,7 @@ impl PortalCapturer {
 
     /// Wait for a newer overlapping PipeWire frame without mapping a kick surface.
     fn wait_for_spontaneous_stream_frame(&self, rect: DesktopRect) -> bool {
+        let _wake = arm_wake_if_asleep();
         self.enable_cpu_frame_buffering();
         let min_gen = {
             let slot = self.frame.0.lock();
@@ -428,17 +546,49 @@ impl PortalCapturer {
         }
     }
 
+    /// The PipeWire side ended (stream Error/Unconnected, loop failure, or the
+    /// pw thread exited) — or damage pulses repeatedly drew no copy on a stream
+    /// dest, meaning the producer is wedged even though PipeWire still reports
+    /// Streaming. No frame can arrive on this capturer → reopen the session.
+    pub fn is_dead(&self) -> bool {
+        if self.stream_dead.load(Ordering::SeqCst)
+            || self.thread.lock().as_ref().is_some_and(|t| t.is_finished())
+        {
+            return true;
+        }
+        self.frame
+            .0
+            .lock()
+            .starved_kicks
+            .iter()
+            .any(|(_, n)| *n >= STARVED_KICKS_DEAD)
+    }
+
+    fn dead_err(&self) -> Option<CaptureError> {
+        self.is_dead()
+            .then(|| sqyre_ports::NotReady::StreamRestarting.into())
+    }
+
     /// Capture after waiting for a new PipeWire frame on the overlapping stream.
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.wait_for_overlapping_stream_frame(rect);
         self.crop_cached_rgba_ready(rect)
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.crop_cached_rgba(rect)
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.crop_cached_rgb(rect)
     }
 
@@ -446,6 +596,9 @@ impl PortalCapturer {
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.wait_for_overlapping_stream_frame(rect);
         self.crop_cached_rgb_ready(rect)
     }
@@ -456,6 +609,9 @@ impl PortalCapturer {
         &self,
         rect: DesktopRect,
     ) -> Result<(RgbCapture, bool), CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         let fresh = self.wait_for_spontaneous_stream_frame(rect);
         // Direct crop — do not re-enter quiet wait via [`Self::ensure_frame_for_crop`].
         Ok((self.crop_cached_rgb_ready(rect)?, fresh))
@@ -468,9 +624,16 @@ impl PortalCapturer {
     /// wait quietly (no compositor kick) so search keeps working. Hot path: if the
     /// cache is already `ready`, this is a single lock check.
     ///
-    /// Does not kick — fresh image-search / wait-retry paths already wait with kick;
-    /// overlay quiet polls must never steal focus.
+    /// Emit-on-damage streams (COSMIC; Mutter on a fully idle output) emit no
+    /// spontaneous frames, so an empty cache would starve forever: fall back to
+    /// one layer-shell pulse at the crop region. The windowed-xdg kick can steal
+    /// activation, so non-fresh crops only kick when
+    /// [`super::compositor_kick::DamageKick::is_focus_safe`] — overlay quiet polls
+    /// bypass this and stay silent on the cache.
     fn ensure_frame_for_crop(&self, rect: DesktopRect) -> Result<(), CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         let min_gen = {
             let mut slot = self.frame.0.lock();
             slot.last_demand = Instant::now();
@@ -482,6 +645,7 @@ impl PortalCapturer {
             slot.buffering = true;
             min
         };
+        let _wake = arm_wake_if_asleep();
         let _ = wait_until_region_after(
             &self.frame.0,
             &self.frame.1,
@@ -490,10 +654,52 @@ impl PortalCapturer {
             QUIET_CAPTURE_WAIT,
         );
         if self.frame.0.lock().cache.ready {
-            Ok(())
-        } else {
-            Err(sqyre_ports::NotReady::NoFrameYet.into())
+            return Ok(());
         }
+
+        if self.focus_safe_kick() {
+            let kick_rect = {
+                let slot = self.frame.0.lock();
+                kick_damage_rect(&slot, rect)
+            };
+            self.pulse_compositor_kick(kick_rect);
+            let after = wait_until_region_after(
+                &self.frame.0,
+                &self.frame.1,
+                rect,
+                min_gen,
+                QUIET_KICK_WAIT,
+            );
+            cap_log(
+                "PORTAL",
+                "wait",
+                &format!("result=quiet-kick gen={min_gen}->{after}"),
+            );
+            let mut slot = self.frame.0.lock();
+            if slot.cache.ready {
+                return Ok(());
+            }
+            // Damage was pulsed on a focus-safe surface and nothing copied —
+            // the producer may be wedged while PipeWire still reports Streaming.
+            let dest = overlapping_stream_dest(&slot, rect);
+            note_starved_kick(&mut slot, dest);
+        }
+        if self.frame.0.lock().cache.ready {
+            return Ok(());
+        }
+        if !LOGGED_FRAME_DROUGHT.swap(true, Ordering::SeqCst) {
+            cap_log("PORTAL", "wait", &format!("result=no-frame gen={min_gen}"));
+        }
+        Err(sqyre_ports::NotReady::NoFrameYet.into())
+    }
+
+    /// Kick only when it cannot steal activation (layer-shell). The windowed-xdg
+    /// kick maps a toplevel that grabs focus on Mutter, so non-fresh crops skip it.
+    fn focus_safe_kick(&self) -> bool {
+        if !self.ensure_compositor_kick() {
+            return false;
+        }
+        matches!(self.kick.lock().as_ref(), Some(Some(k)) if k.is_focus_safe())
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
@@ -624,9 +830,12 @@ impl Drop for PortalCapturer {
 fn portal_pw_thread(
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
     shutdown: Arc<AtomicBool>,
+    stream_dead: Arc<AtomicBool>,
     ready: SyncSender<Result<(), CaptureError>>,
     msg_rx: Receiver<PwThreadMsg>,
 ) -> Result<(), CaptureError> {
+    STREAMING.store(0, Ordering::SeqCst);
+    let _clear_streaming = ClearStreaming;
     let ready = Arc::new(ready);
     let (portal_hold, setup) = propagate_ready(&ready, pollster::block_on(open_portal_session()))?;
     let eis_fd = PENDING_EIS_FD.lock().take();
@@ -682,10 +891,14 @@ fn portal_pw_thread(
 
     let frame_cb = Arc::clone(&frame);
     let shutdown_cb = Arc::clone(&shutdown);
+    let dead_cb = Arc::clone(&stream_dead);
     let first_ready = Arc::new(AtomicBool::new(false));
     let logged_unmap = Arc::new(AtomicBool::new(false));
     let logged_copy = Arc::new(AtomicBool::new(false));
     let logged_type = Arc::new(AtomicBool::new(false));
+    // One bit per silent frame-drop reason so each logs exactly once — a benign
+    // early dequeue-empty must not mask a later corrupted/size-0 drop.
+    let logged_skip = Arc::new(AtomicU32::new(0));
     let ready_cb = Arc::clone(&ready);
 
     let values: Vec<u8> = propagate_ready(&ready, pw_video_enum_format_bytes())?;
@@ -704,14 +917,8 @@ fn portal_pw_thread(
             ),
         );
 
-        let mut props = properties! {
-            *pw::keys::MEDIA_TYPE => "Video",
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_ROLE => "Screen",
-        };
-        if let Some(serial) = serial.as_deref() {
-            props.insert("target.object", serial);
-        }
+        let props =
+            screencast_stream_props(serial.as_deref(), SUSPEND_ON_IDLE.load(Ordering::SeqCst));
 
         let stream = propagate_ready(
             &ready,
@@ -721,10 +928,15 @@ fn portal_pw_thread(
 
         let frame_stream = Arc::clone(&frame_cb);
         let shutdown_stream = Arc::clone(&shutdown_cb);
+        let dead_state = Arc::clone(&dead_cb);
+        let saw_streaming = Arc::new(AtomicBool::new(false));
+        let saw_streaming_state = Arc::clone(&saw_streaming);
+        let ready_state = Arc::clone(&ready_cb);
         let first_ready_stream = Arc::clone(&first_ready);
         let logged_unmap_stream = Arc::clone(&logged_unmap);
         let logged_copy_stream = Arc::clone(&logged_copy);
         let logged_type_stream = Arc::clone(&logged_type);
+        let logged_skip_stream = Arc::clone(&logged_skip);
         let ready_stream = Arc::clone(&ready_cb);
         let listener = propagate_ready(
             &ready,
@@ -733,12 +945,46 @@ fn portal_pw_thread(
                     format: VideoInfoRaw::default(),
                     monitor_rect: stream_setup.rect,
                 })
-                .state_changed(move |_, _, old, new| {
+                .state_changed(move |stream, _, old, new| {
                     cap_log(
                         "PORTAL",
                         "pw",
                         &format!("stream {index} {old:?} -> {new:?}"),
                     );
+                    account_stream_state(&old, &new);
+                    match &new {
+                        // Pause-on-idle stops the node. Reactivate so the next frame
+                        // is delivered. With suspend disabled this is a state flip;
+                        // with it enabled the node may still be restarting its driver.
+                        pw::stream::StreamState::Paused => {
+                            if let Err(e) = stream.set_active(true) {
+                                cap_log(
+                                    "PORTAL",
+                                    "pw",
+                                    &format!("stream {index} resume failed: {e}"),
+                                );
+                            }
+                        }
+                        pw::stream::StreamState::Streaming => {
+                            saw_streaming_state.store(true, Ordering::SeqCst);
+                        }
+                        pw::stream::StreamState::Error(e) => {
+                            dead_state.store(true, Ordering::SeqCst);
+                            let _ = ready_state.try_send(Err(CaptureError::Portal(format!(
+                                "PipeWire stream {index} failed: {e}"
+                            ))));
+                        }
+                        pw::stream::StreamState::Unconnected
+                            if saw_streaming_state.load(Ordering::SeqCst) =>
+                        {
+                            // Producer dropped the stream after it streamed.
+                            dead_state.store(true, Ordering::SeqCst);
+                            let _ = ready_state.try_send(Err(CaptureError::Portal(format!(
+                                "PipeWire stream {index} disconnected"
+                            ))));
+                        }
+                        _ => {}
+                    }
                 })
                 .param_changed(move |stream, user_data, id, param| {
                     let Some(param) = param else { return };
@@ -763,18 +1009,26 @@ fn portal_pw_thread(
                         "PORTAL",
                         "pw",
                         &format!(
-                            "format={:?} {}x{} fps={}/{} max={}/{}",
+                            "format={:?} {}x{} fps={}/{} max={}/{} modifier={:#x}",
                             user_data.format.format(),
                             size.width,
                             size.height,
                             fps.num,
                             fps.denom,
                             max_fps.num,
-                            max_fps.denom
+                            max_fps.denom,
+                            user_data.format.modifier()
                         ),
                     );
-                    let width = size.width.max(1) as i32;
-                    let height = size.height.max(1) as i32;
+                    // An empty size is an intermediate pod. Advertising a 1×1
+                    // buffer fails to intersect COSMIC's real frame size and
+                    // errors that stream while a sibling stream stays up.
+                    if size.width == 0 || size.height == 0 {
+                        cap_log("PORTAL", "pw", &format!("stream {index} size empty"));
+                        return;
+                    }
+                    let width = size.width as i32;
+                    let height = size.height as i32;
                     let stride = width.saturating_mul(4);
                     let bytes = stride.saturating_mul(height);
                     match apply_stream_buffer_params(stream, bytes, stride) {
@@ -794,9 +1048,15 @@ fn portal_pw_thread(
                     if shutdown_stream.load(Ordering::SeqCst) {
                         return;
                     }
+                    let skip_once = |bit: u32, reason: &'static str| {
+                        if logged_skip_stream.fetch_or(bit, Ordering::SeqCst) & bit == 0 {
+                            cap_log("PORTAL", "pw", &format!("skip={reason}"));
+                        }
+                    };
                     let dest = user_data.monitor_rect;
                     let stream_size = user_data.format.size();
                     let Some(mut buffer) = stream.dequeue_buffer() else {
+                        skip_once(1, "dequeue-empty");
                         return;
                     };
                     let cursor_info = buffer.find_meta::<MetaCursor>().map(|c| {
@@ -829,10 +1089,12 @@ fn portal_pw_thread(
                     }
                     let datas = buffer.datas_mut();
                     if datas.is_empty() {
+                        skip_once(2, "datas-empty");
                         return;
                     }
                     let data = &mut datas[0];
                     if data.chunk().flags().contains(ChunkFlags::CORRUPTED) {
+                        skip_once(4, "corrupted");
                         return;
                     }
                     let offset = data.chunk().offset() as usize;
@@ -843,6 +1105,7 @@ fn portal_pw_thread(
                         0
                     };
                     if size == 0 {
+                        skip_once(8, "size-0");
                         return;
                     }
                     let ty = data.type_();
@@ -967,10 +1230,21 @@ fn portal_pw_thread(
     while !shutdown.load(Ordering::SeqCst) {
         match msg_rx.try_recv() {
             Ok(PwThreadMsg::Quit) => break,
+            Ok(PwThreadMsg::SetSuspendOnIdle(suspend)) => {
+                apply_suspend_property(&stream_holds, suspend);
+            }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
         }
-        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(20)));
+        // pw_loop_iterate returns <0 on error (-errno); without this a hard
+        // failure would spin forever while captures starve.
+        let res = loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(20)));
+        if res < 0 && res != -libc::EINTR {
+            stream_dead.store(true, Ordering::SeqCst);
+            return Err(CaptureError::Portal(format!(
+                "PipeWire main loop iterate failed ({res})"
+            )));
+        }
     }
 
     drop(listeners);
@@ -1059,6 +1333,78 @@ fn pw_collect_node_serials(
     }
     let map = serials.borrow().clone();
     Ok(map)
+}
+
+struct ClearStreaming;
+
+impl Drop for ClearStreaming {
+    fn drop(&mut self) {
+        STREAMING.store(0, Ordering::SeqCst);
+    }
+}
+
+extern "C" {
+    fn pw_stream_update_properties(
+        stream: *mut pw::sys::pw_stream,
+        dict: *const pw::spa::sys::spa_dict,
+    ) -> i32;
+}
+
+fn apply_suspend_property(streams: &[StreamRc], suspend: bool) {
+    let value = if suspend { "true" } else { "false" };
+    let props = properties! {
+        "node.suspend-on-idle" => value,
+    };
+    for stream in streams {
+        // SAFETY: `props` owns the dict for this call. Each stream was created
+        // on this PipeWire thread and is still held. The C function copies the
+        // dict items before it returns.
+        let rc =
+            unsafe { pw_stream_update_properties(stream.as_raw_ptr(), props.dict().as_raw_ptr()) };
+        if rc < 0 {
+            cap_log(
+                "PORTAL",
+                "pw",
+                &format!("suspend-on-idle={value} update failed ({rc})"),
+            );
+        }
+        if !suspend {
+            if let Err(e) = stream.set_active(true) {
+                cap_log(
+                    "PORTAL",
+                    "pw",
+                    &format!("resume after suspend off failed: {e}"),
+                );
+            }
+        }
+    }
+    cap_log(
+        "PORTAL",
+        "pw",
+        &format!("suspend-on-idle={value} streams={}", streams.len()),
+    );
+}
+
+/// Stream properties for a portal ScreenCast consumer.
+///
+/// `suspend_on_idle`: after the desktop sits still, PipeWire suspends an idle
+/// node. The next capture then waits out driver restart before the first
+/// buffer arrives. Off keeps the node paused so `set_active` resumes in one cycle.
+fn screencast_stream_props(
+    target_serial: Option<&str>,
+    suspend_on_idle: bool,
+) -> pw::properties::PropertiesBox {
+    let suspend = if suspend_on_idle { "true" } else { "false" };
+    let mut props = properties! {
+        *pw::keys::MEDIA_TYPE => "Video",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Screen",
+        "node.suspend-on-idle" => suspend,
+    };
+    if let Some(serial) = target_serial {
+        props.insert("target.object", serial);
+    }
+    props
 }
 
 fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
@@ -1214,10 +1560,16 @@ fn pw_header_meta_bytes() -> Result<Vec<u8>, CaptureError> {
     serialize_spa_object(obj)
 }
 
+/// CPU-readable buffer types. COSMIC's DMA-BUF frames set `maxsize` to 0 and
+/// are not mapped; requesting `SPA_DATA_DmaBuf` makes that path win on some
+/// streams so those frames never copy, while a MemFd stream in the same
+/// session still works. Mutter and wlroots deliver MemFd when DMA-BUF is absent.
+fn cpu_buffer_type_mask() -> i32 {
+    (1 << DataType::MemPtr.as_raw()) | (1 << DataType::MemFd.as_raw())
+}
+
 fn pw_buffers_param_bytes(size: i32, stride: i32) -> Result<Vec<u8>, CaptureError> {
-    let data_mask = (1 << DataType::MemPtr.as_raw())
-        | (1 << DataType::MemFd.as_raw())
-        | (1 << DataType::DmaBuf.as_raw());
+    let data_mask = cpu_buffer_type_mask();
     let obj = pw::spa::pod::Object {
         type_: pw::spa::utils::SpaTypes::ObjectParamBuffers.as_raw(),
         id: pw::spa::param::ParamType::Buffers.as_raw(),
@@ -1331,10 +1683,11 @@ fn is_sqyre_managed_window(w: &crate::WindowInfo) -> bool {
     }
     // Kick toplevel uses empty title / app_id sqyre-kick; process name may be sqyre.
     let name = w.process_name.to_ascii_lowercase();
-    name.contains("sqyre")
+    name.contains(APP_ID)
 }
 
 fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
+    LOGGED_FRAME_DROUGHT.store(false, Ordering::Relaxed);
     slot.generation = slot.generation.saturating_add(1);
     let gen = slot.generation;
     let now = Instant::now();
@@ -1348,6 +1701,35 @@ fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
     } else {
         slot.region_copy_at.push((dest, now));
     }
+    if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
+        *n = 0;
+    }
+}
+
+/// A damage pulse on `dest`'s monitor produced no copy — bump its starved
+/// count. At [`STARVED_KICKS_DEAD`] the capturer reports dead so the shared
+/// portal session reopens instead of failing crops on a wedged stream forever.
+fn note_starved_kick(slot: &mut FrameSlot, dest: DesktopRect) {
+    let n = if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
+        *n = n.saturating_add(1);
+        *n
+    } else {
+        // `overlapping_stream_dest` falls back to the crop rect when no monitor
+        // overlaps, so tracked dests can be unbounded — cap the set.
+        if slot.starved_kicks.len() >= 16 {
+            slot.starved_kicks.remove(0);
+        }
+        slot.starved_kicks.push((dest, 1));
+        1
+    };
+    cap_log(
+        "PORTAL",
+        "wait",
+        &format!(
+            "result=starved-kick n={n} dest={}x{}+{}+{}",
+            dest.w, dest.h, dest.x, dest.y
+        ),
+    );
 }
 
 fn region_copy_is_stale(slot: &FrameSlot, rect: DesktopRect) -> bool {
@@ -1382,22 +1764,26 @@ fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
 }
 
 /// Damage region for a compositor kick: the search crop, clamped into the
-/// overlapping monitor (full-monitor overlays were slow and covered the wait).
+/// overlapping monitor and capped small. Emit-on-damage portals emit a
+/// whole-output frame for any damage on the output, so a big overlay only
+/// makes the pulse expensive (large layer-shell shm, slow map) without
+/// improving the chance a frame arrives.
 fn kick_damage_rect(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
     let dest = overlapping_stream_dest(slot, rect);
     let left = rect.x.max(dest.x);
     let top = rect.y.max(dest.y);
     let right = (rect.x + rect.w).min(dest.x + dest.w);
     let bottom = (rect.y + rect.h).min(dest.y + dest.h);
-    if right - left < 2 || bottom - top < 2 {
-        dest
+    let (x, y, w, h) = if right - left < 2 || bottom - top < 2 {
+        (dest.x, dest.y, dest.w, dest.h)
     } else {
-        DesktopRect {
-            x: left,
-            y: top,
-            w: right - left,
-            h: bottom - top,
-        }
+        (left, top, right - left, bottom - top)
+    };
+    DesktopRect {
+        x,
+        y,
+        w: w.min(KICK_RECT_MAX),
+        h: h.min(KICK_RECT_MAX),
     }
 }
 
@@ -1579,6 +1965,7 @@ mod tests {
             generation,
             region_gen: Vec::new(),
             region_copy_at: Vec::new(),
+            starved_kicks: Vec::new(),
             buffering: true,
             last_demand: Instant::now(),
         }
@@ -1586,6 +1973,33 @@ mod tests {
 
     fn monitor_rect(x: i32, w: i32, h: i32) -> DesktopRect {
         DesktopRect { x, y: 0, w, h }
+    }
+
+    #[test]
+    fn screencast_stream_suspend_follows_the_setting() {
+        let asleep = screencast_stream_props(Some("42"), true);
+        assert_eq!(asleep.get("node.suspend-on-idle"), Some("true"));
+        assert_eq!(asleep.get("target.object"), Some("42"));
+        assert_eq!(asleep.get(*pw::keys::MEDIA_ROLE), Some("Screen"));
+        let awake = screencast_stream_props(None, false);
+        assert_eq!(awake.get("node.suspend-on-idle"), Some("false"));
+        assert_eq!(awake.get("target.object"), None);
+    }
+
+    #[test]
+    fn wake_icon_only_while_suspend_is_on_and_no_stream_is_up() {
+        assert!(wake_visible(true, 1, 0));
+        assert!(!wake_visible(false, 1, 0));
+        assert!(!wake_visible(true, 0, 0));
+        assert!(!wake_visible(true, 1, 1));
+    }
+
+    #[test]
+    fn cpu_buffer_types_exclude_dmabuf() {
+        let mask = cpu_buffer_type_mask();
+        assert_eq!(mask & (1 << DataType::DmaBuf.as_raw()), 0);
+        assert_ne!(mask & (1 << DataType::MemFd.as_raw()), 0);
+        assert_ne!(mask & (1 << DataType::MemPtr.as_raw()), 0);
     }
 
     #[test]
@@ -1662,10 +2076,34 @@ mod tests {
             h: 50,
         };
         let kick = kick_damage_rect(&slot, search);
+        // Damage only needs to touch the output — the pulse stays small even
+        // for a wide search area (large layer surfaces stall emit-on-damage).
         assert_eq!(kick.x, 2000);
         assert_eq!(kick.y, 100);
-        assert_eq!(kick.w, 400);
+        assert_eq!(kick.w, KICK_RECT_MAX);
         assert_eq!(kick.h, 50);
+    }
+
+    #[test]
+    fn starved_kicks_reset_when_stream_copies() {
+        let mut slot = empty_slot(1);
+        let mon = monitor_rect(0, 1920, 1080);
+        slot.cache.monitor_rects = vec![mon];
+        for _ in 0..STARVED_KICKS_DEAD - 1 {
+            note_starved_kick(&mut slot, mon);
+        }
+        assert!(slot
+            .starved_kicks
+            .iter()
+            .all(|(_, n)| *n < STARVED_KICKS_DEAD));
+        note_starved_kick(&mut slot, mon);
+        assert!(slot
+            .starved_kicks
+            .iter()
+            .any(|(_, n)| *n >= STARVED_KICKS_DEAD));
+        // A copy on that dest proves the stream still emits — restart counting.
+        note_region_copy(&mut slot, mon);
+        assert!(slot.starved_kicks.iter().all(|(_, n)| *n == 0));
     }
 
     #[test]

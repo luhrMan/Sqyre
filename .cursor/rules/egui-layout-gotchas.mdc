@@ -1,0 +1,123 @@
+---
+description: egui immediate-mode layout, popup, focus, scroll, and stroke pitfalls that repeatedly caused regressions
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
+alwaysApply: false
+---
+
+# egui layout gotchas
+
+Immediate-mode pitfalls that have each already caused a user-reported regression. Check this list before changing sizing, popups, focus, scroll, or strokes — the failures are silent at compile time and invisible to `make check`.
+
+## Window/self-sizing Area ratchet
+
+egui [`Window`]s **auto-expand to content `min_size` and never shrink**. Sqyre dialogs use `fit_dialog_window` / `fit_dialog_popup`, which set `max_size` to the screen constrain rect. Content that treats `available_width()` / `available_height()` as a **minimum** therefore grows the window every frame until it hits the screen edge.
+
+The **same ratchet runs in reverse** on `UiKind::Tooltip` / `Popup` / `Menu`: those are self-sizing `Area`s whose `max_rect` is *last frame's own painted size*. A bound computed from `clip_rect ∩ max_rect` (or the tip's painted size) shrinks a little every frame until wrapped text collapses to one-character rows. `widgets::visible_size` already detects these `UiKind`s and returns the constrain-rect bound — use it, never roll your own `clip ∩ max` math inside hover tips, popups, or menus.
+
+### Do not
+
+```rust
+// ❌ claims available as min_size → window grows toward max_size
+ui.set_width(ui.available_width());
+ui.set_min_width(ui.available_width());
+ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| { ... });
+
+ui.add(egui::TextEdit::singleline(s).desired_width(ui.available_width())); // + siblings
+
+let cols = (ui.available_width() / cell).floor() as usize; // before ScrollArea
+egui::ScrollArea::vertical()
+    .auto_shrink([false, false]) // claims full available as min without max_*
+    .show(ui, |ui| { grid with cols });
+
+// ❌ inside a tooltip/popup/menu: bound derived from own painted size
+//    ratchets narrower every frame → text wraps to 1-char rows
+let w = ui.max_rect().width().min(ui.clip_rect().width());
+```
+
+### Do
+
+```rust
+// ✅ Window: bounds only when the body owns its ScrollArea
+crate::widgets::fit_dialog_popup(window.resizable(true).default_size([420.0, 480.0]), ctx, id, pending_scale)
+    // optional: tighter than full screen so a layout bug cannot fill the monitor
+    .max_size(crate::widgets::dialog_constrain_rect(ctx).size().min(egui::vec2(720.0, 900.0)));
+// fill_resize_body pairs with fit_dialog_popup only; fit_dialog_window's outer scroll defeats it.
+
+// ✅ Pin content without letting child min_size advance the parent
+crate::widgets::fill_resize_body(ui, |ui| { /* … */ });
+// (uses allocate_exact_size + new_child — not scope_builder)
+
+// ✅ Fill leftover width without an absolute min_width
+ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY));
+
+// ✅ Fill field + trailing buttons on one row: trailing first (right-to-left)
+crate::widgets::fill_row(
+    ui,
+    |ui| { ui.button("Refresh"); },       // first added = rightmost
+    |ui| { ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY)); },
+);
+// ❌ ui.horizontal(|ui| { fill TextEdit; ui.button("Refresh"); })
+//    → button pushed past the pane; parent region widens, so right-aligned
+//      footers (Save/Cancel) and later full-width content stay off-screen.
+
+// ✅ Both-axis scroll, viewport-capped (vertical-only + auto_shrink false expands width)
+crate::pickers::dialog_scroll(crate::widgets::visible_width(ui), max_h)
+    .show(ui, |ui| {
+        ui.set_max_width(w);
+        /* … */
+    });
+```
+
+Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and `desired_width(INFINITY)`.
+
+## Nested popups, menus, and the single popup slot
+
+Each `egui::Popup`/menu/context menu is its own `Area` on its own layer.
+
+- `PopupCloseBehavior::CloseOnClickOutside` uses `clicked_elsewhere`, which counts a click on **any other layer** as outside — so a click inside a child suggestion list or a right-click that opens a chip context menu dismisses the parent popup. `Memory::popups` holds **one popup per viewport**; a nested menu's `open_memory` evicts the parent entirely.
+- A parent popup that must survive children: `widgets::parent_popup(egui::Popup::new(..)…, &mut open, |ui| …)` with the open flag in temp data (`id.with("open")`), plus `widgets::register_nested_popup(ctx, rect)` inside each nested menu so the parent knows it is still open. See the sort-menu implementation in `data_editor/mod.rs`.
+- Leaf suggestion popups (autocomplete dropdowns, `PopupKind::Menu` with no children) may use `egui::Popup::new` directly — `parent_popup` exists for parents with nested layers, not for leaf lists.
+- Foreground-order surfaces (palette, confirm, modal pickers) **keep their `Area` in egui's layer order after closing**. A gate like `top_layer_id(Foreground).is_none()` stays false forever after the first dialog — use `focus_nav::is_top_layer(ctx, layer)` for "may this surface take keys" checks.
+
+## Focus is opt-in
+
+- In egui 0.36, `ui.interact` does **not** request keyboard focus — only `TextEdit`/`DragValue` opt in. A draggable separator, slider-like widget, or custom control that should take arrow keys needs `resp.request_focus()` on `is_pointer_button_down_on() || clicked()` (precedent: `widgets::num_entry`, data-editor split divider).
+- Every focusable custom widget needs a **visible focus state** (e.g. paint `theme::PRIMARY` when `resp.has_focus()`) — Tab nav that lands on an unstyled widget looks dead.
+
+## Right-aligned rows claim the full row width
+
+`ui.with_layout(Layout::right_to_left(..))` reports a `min_rect` spanning the **entire offered width** — inside an auto-sized window/popup the row inflates the surface to the full constrain width. Right-anchored button rows must paint into a floating child strip anchored at `min(max_rect.right, clip_rect.right)` that advances the parent cursor only by the row height — the pattern `confirm_cancel_row`/`confirm_choice_row`/`dismiss_row` use via `right_button_row` in `dialogs.rs`, same trick as `float_bottom_right`.
+
+## Strokes and fixed-size content near edges
+
+- `StrokeKind::Outside` extends past the widget rect into grid gaps, margins, and pane padding — selection/focus rings on cells inside grids, lists, or panes must use `StrokeKind::Inside` (the unselected-cell stroke already is).
+- A **vertical-only** `ScrollArea` never clips the X axis, and `expand_to_include_rect` lets oversized children grow the parent's `min_rect` past its bound — fixed-size content (preview images, canvases) inside tips/popups must size itself to `visible_size`/`visible_content_width`, never to a hardcoded display cap.
+- Scroll helpers must claim `min(content_size, viewport)`, not full `content_size` — a capped `ScrollArea` whose claimed height ignores the cap balloons its self-sizing parent window (`show_scroll_edge_fit`, not the legacy claim behavior).
+- egui anchors a **floating bar at the shrunk `inner_rect` edge**, not the offered bound — `auto_shrink[0] = true` inside a fixed-width surface (resizable `Window`, fixed-width `Modal`) parks the V-bar at the content edge with a dead strip to the frame. Fixed surfaces use `auto_shrink([false, …])` (`dialog_scroll` already does); x-shrink is only for self-sizing tips that hug content anyway.
+
+## Helpers
+
+| Helper | Use |
+|--------|-----|
+| `fill_resize_body` | Window body that must fill but stay resizable |
+| `fill_row` | Fill-width field with trailing buttons on the same row |
+| `visible_size` / `visible_width` / `visible_height` | Layout budget — `UiKind`-aware (tooltip/popup/menu get the constrain bound, panes get clip ∩ max_rect) |
+| `visible_content_width` | Width minus floating scrollbar overlay (size grids after this, not before) |
+| `parent_popup` / `register_nested_popup` | Parent popup that stays open over nested menus/suggestion lists |
+| `confirm_cancel_row` / `confirm_choice_row` / `dismiss_row` | Right-aligned dialog buttons via `right_button_row` — never `with_layout(right_to_left)` in auto-sized surfaces |
+| `show_scroll_edge_fit` | Scroll viewport expanded to the frame edge claiming only what it paints |
+| `popup_scroll_max_height` | Scroll pane height that will not ratchet |
+| `show_overflow` | Paint chrome directly when it fits; scroll only after a measured overflow |
+| `focus_nav::is_top_layer` | "May this surface take keys" — immune to lingering closed Areas |
+
+`sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).
+
+## Why window growth feels like “forever”
+
+1. Child min_size ≥ available (fill widgets, grid columns, TextEdit + siblings).
+2. Window expands to that min_size (Resize never auto-shrinks).
+3. Next frame available is larger → repeat until `max_size` (almost full screen).
+4. A vertical scrollbar that appears after layout also steals width; a grid sized *before* the scrollbar then overflows and grows again.
+5. Once content min_size equals the current window size, **Resize cannot shrink** — it feels “stuck”.
+
+When changing dialog layout, prefer `fill_resize_body` + `set_max_*` over `set_min_width(available)` / `set_width(available)`.

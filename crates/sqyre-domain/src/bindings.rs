@@ -111,18 +111,13 @@ impl ActionKind {
                     role: BindingRole::Value,
                 })
                 .collect(),
-            Self::ImageSearch { detection, .. } | Self::FindPixel { detection, .. } => {
-                detection.coords.variable_bindings()
-            }
-            Self::Ocr {
-                detection,
-                output_variable,
-                ..
-            } => {
-                let mut out = detection.coords.variable_bindings();
-                if !output_variable.is_empty() {
+            Self::ImageSearch(d) => d.detection.coords.variable_bindings(),
+            Self::FindPixel(d) => d.detection.coords.variable_bindings(),
+            Self::Ocr(d) => {
+                let mut out = d.detection.coords.variable_bindings();
+                if !d.output_variable.is_empty() {
                     out.push(VariableBinding {
-                        name: output_variable.clone(),
+                        name: d.output_variable.clone(),
                         role: BindingRole::Output,
                     });
                 }
@@ -250,19 +245,12 @@ mod tests {
         let mut detection = DetectionBranch::default();
         detection.coords.output_x_variable = "x".into();
         detection.coords.output_y_variable = "y".into();
-        let search = ActionKind::ImageSearch {
-            name: String::new(),
-            targets: Vec::new(),
-            target_tags: Vec::new(),
-            search_area: crate::CoordinateRef::default(),
+        let search = ActionKind::ImageSearch(Box::new(crate::ImageSearchData {
             tolerance: 0.95,
-            blur: 0,
             match_method: crate::MatchMethod::CcoeffNormed,
-            sort_by: Default::default(),
-            sort_then: Default::default(),
-            tag_priority: Vec::new(),
             detection,
-        };
+            ..Default::default()
+        }));
         assert_eq!(
             search.variable_bindings(),
             vec![

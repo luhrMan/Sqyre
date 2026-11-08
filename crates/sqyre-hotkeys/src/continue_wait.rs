@@ -461,6 +461,20 @@ mod tests {
     use super::*;
     use std::thread;
 
+    /// Spawn a thread that sets the stop flag once the bridge starts waiting.
+    fn spawn_stop_on_waiting(b: &ContinueWaitBridge) -> (Arc<AtomicBool>, thread::JoinHandle<()>) {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let s = Arc::clone(&stop_flag);
+        let bridge = b.clone();
+        let handle = thread::spawn(move || {
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
+            s.store(true, Ordering::SeqCst);
+        });
+        (stop_flag, handle)
+    }
+
     #[test]
     fn wait_errors_without_hooks() {
         let b = ContinueWaitBridge::new(ContinueSource::Unavailable);
@@ -508,15 +522,7 @@ mod tests {
     #[test]
     fn signal_mode_wait_stops_on_flag() {
         let b = ContinueWaitBridge::new(ContinueSource::Signal);
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let s = Arc::clone(&stop_flag);
-        let bridge = b.clone();
-        let handle = thread::spawn(move || {
-            while !bridge.inner.state.lock().waiting {
-                thread::yield_now();
-            }
-            s.store(true, Ordering::SeqCst);
-        });
+        let (stop_flag, handle) = spawn_stop_on_waiting(&b);
         let err = b
             .wait_for_continue(&["f9".into()], false, stop_flag.as_ref())
             .unwrap_err();
@@ -570,15 +576,7 @@ mod tests {
     #[test]
     fn wait_stops_on_flag() {
         let b = ContinueWaitBridge::new(ContinueSource::Keys);
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let s = Arc::clone(&stop_flag);
-        let bridge = b.clone();
-        let handle = thread::spawn(move || {
-            while !bridge.inner.state.lock().waiting {
-                thread::yield_now();
-            }
-            s.store(true, Ordering::SeqCst);
-        });
+        let (stop_flag, handle) = spawn_stop_on_waiting(&b);
         let err = b
             .wait_for_continue(&["f9".into()], false, stop_flag.as_ref())
             .unwrap_err();

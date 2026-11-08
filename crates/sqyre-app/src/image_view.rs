@@ -2,6 +2,42 @@
 
 use eframe::egui::{self, Pos2, Vec2};
 
+/// How long a marker drawn on a preview stays visible before it hides.
+/// A text caret is on for about half a second, then off for the same.
+const PREVIEW_MARKER_BLINK_ON: f64 = 0.53;
+const PREVIEW_MARKER_BLINK_PERIOD: f64 = PREVIEW_MARKER_BLINK_ON * 2.0;
+
+/// Whether `time_secs` (egui input time) falls in the visible half of the blink.
+pub(crate) fn preview_marker_visible_at(time_secs: f64) -> bool {
+    let t = if time_secs.is_finite() {
+        time_secs.max(0.0)
+    } else {
+        0.0
+    };
+    t.rem_euclid(PREVIEW_MARKER_BLINK_PERIOD) < PREVIEW_MARKER_BLINK_ON
+}
+
+/// Square-wave visibility for markers drawn on preview images.
+///
+/// Schedules a repaint at the next on/off edge so the mark keeps blinking
+/// while the preview is on screen, without a continuous repaint.
+pub(crate) fn preview_marker_blink_on(ctx: &egui::Context) -> bool {
+    let time = ctx.input(|i| i.time);
+    let t = if time.is_finite() { time.max(0.0) } else { 0.0 };
+    let into = t.rem_euclid(PREVIEW_MARKER_BLINK_PERIOD);
+    let until = if into < PREVIEW_MARKER_BLINK_ON {
+        PREVIEW_MARKER_BLINK_ON - into
+    } else {
+        PREVIEW_MARKER_BLINK_PERIOD - into
+    };
+    // One frame minimum so a pass that lands on the edge does not spin.
+    let until = until.clamp(0.016, PREVIEW_MARKER_BLINK_ON);
+    if let Ok(duration) = core::time::Duration::try_from_secs_f64(until) {
+        ctx.request_repaint_after(duration);
+    }
+    preview_marker_visible_at(time)
+}
+
 const IMAGE_ZOOM_MIN: f32 = 0.5;
 const IMAGE_ZOOM_MAX: f32 = 16.0;
 /// Fit-relative zoom at reset / first open: slightly under 1 so images aren't flush
@@ -145,6 +181,76 @@ pub fn zoom_image_at_cursor(
     pan.y += (cursor.y - v * after.height()) - after.top();
     let pan = clamp_image_pan(viewport, image_size, new_zoom, pan);
     (new_zoom, pan)
+}
+
+/// Screen-space edge of one checkerboard square, in points.
+const TRANSPARENCY_TILE: f32 = 8.0;
+const TRANSPARENCY_TEX_NAME: &str = "sqyre_transparency_grid";
+
+/// Lazily uploaded 2×2 checkerboard (power-of-two so `Repeat` wrap works on
+/// WebGL). Cached in [`egui::Context`] data so every preview shares one texture.
+fn transparency_texture(ctx: &egui::Context) -> egui::TextureHandle {
+    let key = egui::Id::new(TRANSPARENCY_TEX_NAME);
+    // `load_texture` itself locks the Context — never call it inside `data_mut`.
+    if let Some(tex) = ctx.data_mut(|d| d.get_persisted::<egui::TextureHandle>(key)) {
+        return tex;
+    }
+    let (light, dark) = (
+        crate::theme::preview_checker_light(),
+        crate::theme::preview_checker_dark(),
+    );
+    let tex = ctx.load_texture(
+        TRANSPARENCY_TEX_NAME,
+        egui::ColorImage::new([2, 2], vec![light, dark, dark, light]),
+        egui::TextureOptions {
+            magnification: egui::TextureFilter::Nearest,
+            minification: egui::TextureFilter::Nearest,
+            wrap_mode: egui::TextureWrapMode::Repeat,
+            mipmap_mode: None,
+        },
+    );
+    ctx.data_mut(|d| d.insert_persisted(key, tex.clone()));
+    tex
+}
+
+/// Checkerboard painted under image content so transparent pixels — and hence
+/// the real image edges — are visible. Paint before the image; `corner_radius`
+/// matches whatever rounding the image on top applies.
+///
+/// The board pads one pixel past each edge of `rect` so the boundary between
+/// image and surrounding UI is also marked, not just the transparent pixels.
+pub fn paint_checkerboard(painter: &egui::Painter, rect: egui::Rect, corner_radius: f32) {
+    if !rect.is_positive() {
+        return;
+    }
+    let board = rect.expand(1.0);
+    let tex = transparency_texture(painter.ctx());
+    // One texture repeat covers two squares in each axis.
+    let uv = egui::Rect::from_min_size(egui::Pos2::ZERO, board.size() / (2.0 * TRANSPARENCY_TILE));
+    painter.add(
+        egui::epaint::RectShape::filled(board, corner_radius, egui::Color32::WHITE)
+            .with_texture(tex.id(), uv),
+    );
+}
+
+/// Widget form of [`paint_checkerboard`]: allocate `size`, draw the board under
+/// it, then `ui.put` an `egui::Image` on top. Used by previews outside the
+/// zoomable viewports, which paint `Painter::image` directly.
+pub fn add_checkered_image(
+    ui: &mut egui::Ui,
+    tex: &egui::TextureHandle,
+    size: Vec2,
+    sense: egui::Sense,
+    corner_radius: f32,
+) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(size, sense);
+    paint_checkerboard(ui.painter(), rect, corner_radius);
+    ui.put(
+        rect,
+        egui::Image::new((tex.id(), size))
+            .sense(sense)
+            .corner_radius(corner_radius),
+    )
 }
 
 /// Aspect-preserving scale that fits `w`×`h` inside a `max_w`×`max_h` box.
@@ -308,6 +414,29 @@ mod tests {
     }
 
     #[test]
+    fn checkerboard_tiles_the_preview_rect() {
+        let ctx = egui::Context::default();
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 8.0), egui::vec2(40.0, 24.0));
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_checkerboard(ui.painter(), rect, 0.0);
+        });
+        let board = rect.expand(1.0);
+        let expected_uv =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, board.size() / (2.0 * TRANSPARENCY_TILE));
+        let painted = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r) => {
+                r.rect == board && r.brush.as_ref().is_some_and(|b| b.uv == expected_uv)
+            }
+            _ => false,
+        });
+        assert!(
+            painted,
+            "checkerboard did not paint a padded textured rect over {rect:?}"
+        );
+        out.drop_without_applying_deltas();
+    }
+
+    #[test]
     fn content_rect_centers_at_zoom_one() {
         let vp = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(200.0, 100.0));
         let img = Vec2::new(100.0, 100.0);
@@ -317,5 +446,35 @@ mod tests {
         let padded = image_content_rect(vp, img, IMAGE_ZOOM_DEFAULT, Vec2::ZERO);
         assert!(padded.height() < r.height());
         assert!((padded.center().y - r.center().y).abs() < 0.01);
+    }
+
+    #[test]
+    fn preview_marker_blink_matches_a_caret() {
+        assert!(preview_marker_visible_at(0.0));
+        assert!(preview_marker_visible_at(0.4));
+        assert!(!preview_marker_visible_at(0.6));
+        assert!(!preview_marker_visible_at(1.0));
+        assert!(preview_marker_visible_at(1.1));
+
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(80.0, 40.0));
+        let phase = |time: f64| {
+            let on = std::cell::Cell::new(false);
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    on.set(preview_marker_blink_on(ui.ctx()));
+                },
+            );
+            out.drop_without_applying_deltas();
+            on.get()
+        };
+        assert!(phase(0.0));
+        assert!(!phase(0.6));
+        assert!(phase(1.1));
     }
 }

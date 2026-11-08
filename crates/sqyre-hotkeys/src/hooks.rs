@@ -166,6 +166,11 @@ impl HookCtx {
 
                 let ctrl = self.pressed.contains("ctrl");
                 let shift = self.pressed.contains("shift") || self.pressed.contains("rshift");
+                let panic_key = self.callbacks.panic_key.read().clone();
+                let is_panic = !panic_key.is_empty()
+                    && !ctrl
+                    && !shift
+                    && rdev_key_name(*key) == Some(panic_key.as_str());
                 if matches!(key, Key::Escape) {
                     if self.macro_record.on_escape() {
                         // Macro recording takes Esc.
@@ -175,9 +180,11 @@ impl HookCtx {
                         // Open popup (hotkey chooser) takes Esc.
                     } else if crate::failsafe_modifiers_held(&self.pressed) {
                         (self.callbacks.on_failsafe)();
-                    } else if !ctrl && !shift && !self.continue_wait.continue_is_escape() {
+                    } else if is_panic && !self.continue_wait.continue_is_escape() {
                         (self.callbacks.on_escape_stop)();
                     }
+                } else if is_panic {
+                    (self.callbacks.on_escape_stop)();
                 }
             }
             EventType::KeyRelease(key) => {

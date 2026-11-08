@@ -88,6 +88,11 @@ impl OsCapturer {
         frames().release();
     }
 
+    /// The frame store reloads on demand — always false.
+    pub fn is_dead(&self) -> bool {
+        false
+    }
+
     pub fn cpu_frame_cache_bytes(&self) -> usize {
         frames().cached_bytes()
     }
@@ -301,8 +306,8 @@ pub fn process_icon(process_path: &str) -> Option<ProcessIcon> {
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     if frames().shell_visible() {
         return Ok(Some(WindowInfo {
-            title: "Sqyre".into(),
-            process_name: "Sqyre".into(),
+            title: sqyre_ports::APP_NAME.into(),
+            process_name: sqyre_ports::APP_NAME.into(),
             process_path: crate::ANDROID_APP_PACKAGE.into(),
             icon: None,
         }));

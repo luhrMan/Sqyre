@@ -3,7 +3,7 @@
 //! Run: `cargo bench -p sqyre-serialize` or `make bench`.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use sqyre_domain::{Action, ActionId, ActionKind, Macro, MouseButton, PressState, ScalarValue};
+use sqyre_domain::{Action, ActionKind, Macro, MouseButton, PressState, ScalarValue};
 use sqyre_serialize::{decode_macro_from_yaml, encode_macro_to_yaml};
 use std::hint::black_box;
 use std::time::Duration;
@@ -11,26 +11,17 @@ use std::time::Duration;
 fn sample_macro() -> Macro {
     let mut m = Macro::new("bench", 0, vec![]);
     m.root = sqyre_domain::root_loop(vec![
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(25),
-            },
-        },
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "inner".into(),
-                count: ScalarValue::Int(3),
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Click {
-                        button: MouseButton::Left,
-                        state: PressState::Tap,
-                    },
-                }],
-            },
-        },
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(25),
+        }),
+        Action::new(ActionKind::Loop {
+            name: "inner".into(),
+            count: ScalarValue::Int(3),
+            subactions: vec![Action::new(ActionKind::Click {
+                button: MouseButton::Left,
+                state: PressState::Tap,
+            })],
+        }),
     ]);
     m
 }

@@ -29,29 +29,22 @@ fn find_pixel_uses_collection_cell_search_area() {
     }
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: full_desktop(),
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(img);
     let resolver = CollectionOnly;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = quiet_macro(vec![Action {
+    let mut macro_ = fast_macro_of(vec![Action {
         id: find_id,
-        kind: ActionKind::FindPixel {
+        kind: ActionKind::FindPixel(Box::new(sqyre_domain::FindPixelData {
             name: "green".into(),
             search_area: CoordinateRef::collection("Demo", "bag", 1, 2, 1, 2),
             target_color: "#00ff00".into(),
-            color_tolerance: 0,
             detection: sqyre_domain::DetectionBranch {
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
+                coords: coords_xy("foundX", "foundY"),
                 ..Default::default()
             },
-        },
+            ..Default::default()
+        })),
     }]);
 
     run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
@@ -81,29 +74,22 @@ fn find_pixel_sets_coords_and_logs() {
     img.put_pixel(3, 5, Rgba([255, 0, 0, 255]));
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: full_desktop(),
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(img);
     let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = quiet_macro(vec![Action {
+    let mut macro_ = fast_macro_of(vec![Action {
         id: find_id,
-        kind: ActionKind::FindPixel {
+        kind: ActionKind::FindPixel(Box::new(sqyre_domain::FindPixelData {
             name: "red".into(),
             search_area: CoordinateRef("Prog~Box".into()),
             target_color: "#ff0000".into(),
-            color_tolerance: 0,
             detection: sqyre_domain::DetectionBranch {
-                coords: CoordinateOutputs {
-                    output_x_variable: "foundX".into(),
-                    output_y_variable: "foundY".into(),
-                },
+                coords: coords_xy("foundX", "foundY"),
                 ..Default::default()
             },
-        },
+            ..Default::default()
+        })),
     }]);
 
     run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
@@ -144,23 +130,18 @@ fn find_pixel_sets_coords_and_logs() {
 fn find_pixel_not_found_logs() {
     let img = RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255]));
     let mut backend = RecordingBackend::default();
-    let mut capturer = RecordingCapturer {
-        next: Some(img),
-        bounds: full_desktop(),
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(img);
     let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = quiet_macro(vec![Action {
+    let mut macro_ = fast_macro_of(vec![Action {
         id: find_id,
-        kind: ActionKind::FindPixel {
+        kind: ActionKind::FindPixel(Box::new(sqyre_domain::FindPixelData {
             name: "red".into(),
             search_area: CoordinateRef("Prog~Box".into()),
             target_color: "#ff0000".into(),
-            color_tolerance: 0,
-            detection: Default::default(),
-        },
+            ..Default::default()
+        })),
     }]);
     run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
     let lines = lines_for(&logger.entries_for(find_id));
@@ -181,7 +162,7 @@ fn find_pixel_runs_branch_when_found() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(img);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
         detection_branch(Some(21), None, Default::default(), Default::default()),
@@ -223,7 +204,7 @@ fn find_pixel_skips_branch_when_missing() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 255, 255])));
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#ff0000",
         detection_branch(Some(21), None, Default::default(), Default::default()),
@@ -244,7 +225,7 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
     let resolver = SEARCH_FIXED_AREA;
     let logger = SharedActionLog::new();
     let find_id = ActionId::new();
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         find_id,
         "#ff0000",
         detection_branch(
@@ -294,25 +275,21 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
     let stop_for_backend = Arc::clone(&stop);
 
     let mut backend = StopAfterSleeps::new(stop_for_backend, 1);
-    let mut capturer = RecordingCapturer {
-        next: Some(miss),
-        bounds: full_desktop(),
-        ..Default::default()
-    };
+    let mut capturer = capturer_next(miss);
     let resolver = SEARCH_FIXED_AREA;
     let find_id = ActionId::new();
-    let mut macro_ = quiet_macro(vec![Action {
+    let mut macro_ = fast_macro_of(vec![Action {
         id: find_id,
-        kind: ActionKind::FindPixel {
+        kind: ActionKind::FindPixel(Box::new(sqyre_domain::FindPixelData {
             name: "red".into(),
             search_area: CoordinateRef("area".into()),
             target_color: "#ff0000".into(),
-            color_tolerance: 0,
             detection: sqyre_domain::DetectionBranch {
                 wait: wait_until_found(30, 50),
                 ..Default::default()
             },
-        },
+            ..Default::default()
+        })),
     }]);
 
     execute_macro_with(
@@ -337,7 +314,7 @@ fn find_pixel_repeat_while_found_runs_then_stops_on_miss() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![hit, miss]);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
         detection_branch(Some(7), None, while_found(1, 5), Default::default()),
@@ -363,7 +340,7 @@ fn find_pixel_wait_while_found_waits_then_runs_no_find() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![hit, miss]);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
         detection_branch(None, Some(11), wait_while_found(5, 1), Default::default()),
@@ -394,7 +371,7 @@ fn find_pixel_repeat_until_found_runs_no_find_then_hit() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![miss, hit]);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
         detection_branch(Some(9), Some(9), until_found(1, 5), Default::default()),
@@ -425,7 +402,7 @@ fn find_pixel_repeat_until_found_skips_no_find_without_flag() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_queue(vec![miss, hit]);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
         detection_branch(Some(9), None, until_found(1, 5), Default::default()),
@@ -454,7 +431,7 @@ fn find_pixel_runs_children_per_cluster() {
     let mut backend = RecordingBackend::default();
     let mut capturer = capturer_next(img);
     let resolver = SEARCH_FIXED_AREA;
-    let mut macro_ = quiet_macro(vec![find_pixel_action(
+    let mut macro_ = fast_macro_of(vec![find_pixel_action(
         ActionId::new(),
         "#00ff00",
         detection_branch(Some(6), None, Default::default(), Default::default()),

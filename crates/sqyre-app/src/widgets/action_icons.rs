@@ -287,16 +287,13 @@ fn paint_keycap(painter: &Painter, rect: Rect, color: Color32, label: &str, pres
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{blank_action, ActionId};
+    use sqyre_domain::blank_action;
 
     fn key(key: &str, state: PressState) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: key.into(),
-                state,
-            },
-        }
+        Action::new(ActionKind::Key {
+            key: key.into(),
+            state,
+        })
     }
 
     #[test]
@@ -314,13 +311,10 @@ mod tests {
     #[test]
     fn click_icon_shows_its_button() {
         for button in MouseButton::ALL {
-            let action = Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: *button,
-                    state: PressState::Tap,
-                },
-            };
+            let action = Action::new(ActionKind::Click {
+                button: *button,
+                state: PressState::Tap,
+            });
             assert_eq!(
                 VectorIcon::for_action(&action),
                 Some(VectorIcon::Mouse(*button))

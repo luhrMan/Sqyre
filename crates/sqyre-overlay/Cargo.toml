@@ -28,6 +28,7 @@ sqyre-ui-theme = { path = "../sqyre-ui-theme" }
 sqyre-domain = { path = "../sqyre-domain" }
 thiserror = { workspace = true }
 sqyre-persist = { path = "../sqyre-persist" }
+sqyre-ports = { path = "../sqyre-ports" }
 web-time = { workspace = true }
 fontdue = "0.9"
 epaint_default_fonts = "0.36"
@@ -37,7 +38,7 @@ eframe = { workspace = true, optional = true, features = ["glow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sqyre-android = { path = "../sqyre-android" }

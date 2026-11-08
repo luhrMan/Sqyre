@@ -1,6 +1,7 @@
 //! Local AI Macro Builder: NL editor with `@` autocomplete, prompt copy, YAML import.
 
 use crate::data_editor::helpers::is_editor_listed_program;
+use crate::help_text as ht;
 use eframe::egui::{
     self, text::CCursor, text_edit::TextEditState, Key, Modifiers, PopupCloseBehavior, RectAlign,
 };
@@ -123,42 +124,54 @@ impl MacroPromptBuilderUi {
         suggestions: &[Suggestion],
         outcome: &mut PromptBuilderOutcome,
     ) {
-        let avail_h = ui.available_height();
-        let row = ui.spacing().interact_size.y;
-        let gap = ui.spacing().item_spacing.y;
-        // Headings, hints, two button rows, separators, and a status line sit
-        // outside the three editors. Reserve them so the buttons stay on screen.
-        let chrome = row * 10.0 + gap * 10.0 + 24.0;
-        let third = ((avail_h - chrome) / 3.0).max(40.0);
+        // One bounded scroll for the whole body: a multiline TextEdit claims
+        // `desired_rows * line_height` (plus its hint galley) regardless of any
+        // viewport cap, so capped per-editor scrolls pushed editor rects under
+        // the button rows. Inside a single scroll every widget is sequential —
+        // nothing can overlap, and short windows scroll instead of clipping.
+        let w = crate::widgets::visible_width(ui);
+        let h = ui.available_height();
+        crate::widgets::show_dialog_scroll_mod(
+            ui,
+            w,
+            h,
+            |s| s.id_salt("prompt_body"),
+            |ui| {
+                self.body_inner(ui, macros, catalog, suggestions, outcome);
+            },
+        );
+    }
 
+    fn body_inner(
+        &mut self,
+        ui: &mut egui::Ui,
+        macros: &[Macro],
+        catalog: &ProgramCatalog,
+        suggestions: &[Suggestion],
+        outcome: &mut PromptBuilderOutcome,
+    ) {
         ui.label(
             egui::RichText::new("Describe the macro")
                 .strong()
                 .size(ui.style().text_styles[&egui::TextStyle::Heading].size * 0.85),
         );
         ui.small("Type @ for actions, macros, and catalog entities (Program~Name).");
-        let nl_h = third;
-        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), nl_h)
-            .id_salt("nl_scroll")
-            .show(ui, |ui| {
-                at_ref_text_edit(
-                    ui,
-                    egui::Id::new(WINDOW_ID).with("nl"),
-                    &mut self.nl_draft,
-                    suggestions,
-                    NL_ROWS,
-                );
-            });
+        at_ref_text_edit(
+            ui,
+            egui::Id::new(WINDOW_ID).with("nl"),
+            &mut self.nl_draft,
+            suggestions,
+            NL_ROWS,
+        );
 
-        ui.add_space(4.0);
         crate::widgets::show_overflow(ui, "prompt_generate", 1.0, |ui| {
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(
                         !self.nl_draft.trim().is_empty(),
-                        egui::Button::new("Generate prompt"),
+                        egui::Button::new("Generate prompt").small(),
                     )
-                    .on_hover_text("Build a schema-aware prompt for an external AI tool")
+                    .on_hover_text(ht::PROMPT_GENERATE)
                     .clicked()
                 {
                     self.generated_prompt = build_prompt(&self.nl_draft, macros, catalog);
@@ -167,7 +180,7 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.generated_prompt.is_empty(),
-                        egui::Button::new("Copy prompt"),
+                        egui::Button::new("Copy prompt").small(),
                     )
                     .clicked()
                 {
@@ -179,44 +192,34 @@ impl MacroPromptBuilderUi {
 
         crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Generated prompt").strong());
-        let prompt_h = third;
-        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), prompt_h)
-            .id_salt("prompt_scroll")
-            .show(ui, |ui| {
-                let mut prompt = self.generated_prompt.clone();
-                ui.add(
-                    egui::TextEdit::multiline(&mut prompt)
-                        .id(egui::Id::new(WINDOW_ID).with("prompt"))
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(PROMPT_ROWS)
-                        .interactive(false)
-                        .font(egui::TextStyle::Monospace),
-                );
-            });
+        let mut prompt = self.generated_prompt.clone();
+        ui.add(
+            egui::TextEdit::multiline(&mut prompt)
+                .id(egui::Id::new(WINDOW_ID).with("prompt"))
+                .desired_width(f32::INFINITY)
+                .desired_rows(PROMPT_ROWS)
+                .interactive(false)
+                .font(egui::TextStyle::Monospace),
+        );
 
         crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Import AI response").strong());
         ui.small("Paste the YAML macro returned by the AI (no markdown fences).");
-        let yaml_h = third;
-        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), yaml_h)
-            .id_salt("yaml_scroll")
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.import_yaml)
-                        .id(egui::Id::new(WINDOW_ID).with("yaml"))
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(YAML_ROWS)
-                        .hint_text("name: …\nroot:\n  type: loop\n  …")
-                        .font(egui::TextStyle::Monospace),
-                );
-            });
+        ui.add(
+            egui::TextEdit::multiline(&mut self.import_yaml)
+                .id(egui::Id::new(WINDOW_ID).with("yaml"))
+                .desired_width(f32::INFINITY)
+                .desired_rows(YAML_ROWS)
+                .hint_text("name: …\nroot:\n  type: loop\n  …")
+                .font(egui::TextStyle::Monospace),
+        );
 
         crate::widgets::show_overflow(ui, "prompt_import", 1.0, |ui| {
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Validate"),
+                        egui::Button::new("Validate").small(),
                     )
                     .clicked()
                 {
@@ -232,9 +235,9 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Import macro"),
+                        egui::Button::new("Import macro").small(),
                     )
-                    .on_hover_text("Decode, validate, and add as a new macro")
+                    .on_hover_text(ht::PROMPT_IMPORT)
                     .clicked()
                 {
                     match prepare_import_macro(&self.import_yaml, &existing) {
@@ -250,12 +253,11 @@ impl MacroPromptBuilderUi {
         });
 
         if let Some(msg) = &self.status {
-            let color = if self.status_error {
-                crate::theme::error_fg()
+            if self.status_error {
+                crate::widgets::error_icon(ui, msg);
             } else {
-                crate::theme::ok_fg()
-            };
-            ui.colored_label(color, msg);
+                ui.colored_label(crate::theme::ok_fg(), msg);
+            }
         }
     }
 
@@ -421,7 +423,7 @@ fn show_at_autocomplete(
         .show(|ui| {
             ui.set_min_width(popup_width);
             ui.set_max_height(200.0);
-            crate::pickers::dialog_scroll(popup_width, 200.0).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, popup_width, 200.0, |ui| {
                 ui.set_max_width(popup_width);
                 for (i, sug) in filtered.iter().enumerate() {
                     let selected = i == nav.selected;
@@ -948,7 +950,7 @@ pub(crate) fn unique_macro_name(base: &str, existing: &[String]) -> String {
 mod tests {
     use super::*;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
+        root_loop, Action, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
     };
     use sqyre_persist::{ensure_general_program, ProgramItem, ProgramPoint, ProgramSearchArea};
 
@@ -992,12 +994,9 @@ mod tests {
 
     fn sample_macro(name: &str) -> Macro {
         let mut m = Macro::new(name, 0, vec![]);
-        m.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        }]);
+        m.root = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        })]);
         m
     }
 

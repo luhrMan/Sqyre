@@ -2,6 +2,7 @@
 
 mod encode;
 mod mutate;
+mod name_tag;
 mod parse;
 mod resolve;
 mod seed_general;
@@ -112,6 +113,16 @@ impl ProgramCatalog {
         self.programs.get(name)
     }
 
+    /// Macro tags selected while this program owns focus.
+    ///
+    /// The catalog key is always first. Extra tags from [`ProgramData::tags`]
+    /// follow, without repeating the name.
+    pub fn program_macro_tags(&self, program: &str) -> Vec<String> {
+        self.get(program)
+            .map(|data| name_tag::with_name(program, &data.tags))
+            .unwrap_or_default()
+    }
+
     pub fn program_names(&self) -> impl Iterator<Item = &String> {
         self.programs.keys()
     }
@@ -183,6 +194,31 @@ mod tests {
     use serde_yaml::Mapping;
     use sqyre_domain::{CoordinateRef, Macro, ScalarValue, TEMPORARY_PROGRAM};
 
+    /// Tempdir-backed catalog with program "Alpha" and one item.
+    fn alpha_catalog_with_item(
+        item_name: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, ProgramCatalog) {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: item_name.into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        (root, images, cat)
+    }
+
+    fn catalog_yaml(yaml: &str) -> ProgramCatalog {
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        ProgramCatalog::from_yaml_value(&v).unwrap()
+    }
+
     #[test]
     fn parses_points_and_resolves() {
         let yaml = r#"
@@ -209,8 +245,7 @@ Schedule 1:
           rightx: 30
           bottomy: 40
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let cat = catalog_yaml(yaml);
         let m = Macro::new("t", 0, vec![]);
         let (x, y) = cat
             .resolve_point(&CoordinateRef("Schedule 1~Spot".into()), &m)
@@ -235,8 +270,7 @@ general:
           x: "2560+(1920/2)"
           y: "0+(10)"
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let cat = catalog_yaml(yaml);
         let m = Macro::new("t", 0, vec![]);
         let (x, y) = cat
             .resolve_point(
@@ -358,8 +392,7 @@ Demo:
       rows: 2
       cols: 2
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let cat = catalog_yaml(yaml);
         let m = Macro::new("t", 0, vec![]);
         let rect = cat
             .resolve_search_area(&CoordinateRef("Demo~grid@1,1-1,1".into()), &m)
@@ -412,8 +445,7 @@ Game:
         - Bag
         - Equip
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         let atlas = cat.lookup_atlas("Game", "Inventory").unwrap();
         assert_eq!(atlas.collections, vec!["Bag", "Equip"]);
 
@@ -468,8 +500,7 @@ Game:
           rightx: 192
           bottomy: 108
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         cat.set_resolution_key("2560x1440");
         cat.set_runtime_scale(1.0);
         let m = Macro::new("t", 0, vec![]);
@@ -498,8 +529,7 @@ Game:
           x: 100
           y: 200
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         cat.set_resolution_key("1920x1080");
         cat.set_runtime_scale(1.5);
         let m = Macro::new("t", 0, vec![]);
@@ -524,8 +554,7 @@ General:
           x: ${foundX}
           y: ${foundY}
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         cat.set_resolution_key("1920x1080");
         cat.set_runtime_scale(1.5);
         let mut m = Macro::new("t", 0, vec![]);
@@ -551,8 +580,7 @@ Game:
           x: 100
           y: 50
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         cat.set_resolution_key("2560x1440");
         cat.set_runtime_scale(1.5);
         let m = Macro::new("t", 0, vec![]);
@@ -577,8 +605,7 @@ Game:
           x: 100
           y: 200
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         cat.set_resolution_key("1920x1080");
         cat.set_runtime_scale(1.0);
         let m = Macro::new("t", 0, vec![]);
@@ -627,23 +654,11 @@ Game:
 
     #[test]
     fn rename_program_moves_asset_dirs() {
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Potion".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Potion");
 
-        let icons_old = images.join("icons").join("Alpha");
-        let masks_old = images.join("masks").join("Alpha");
-        let cols_old = images.join("Collections").join("Alpha");
+        let icons_old = cat.icons_dir("Alpha");
+        let masks_old = cat.masks_dir("Alpha");
+        let cols_old = cat.collections_dir("Alpha");
         std::fs::create_dir_all(&icons_old).unwrap();
         std::fs::create_dir_all(&masks_old).unwrap();
         std::fs::create_dir_all(&cols_old).unwrap();
@@ -657,7 +672,7 @@ Game:
         assert!(!icons_old.exists());
         assert!(!masks_old.exists());
         assert!(!cols_old.exists());
-        let icons_new = images.join("icons").join("Beta");
+        let icons_new = cat.icons_dir("Beta");
         assert_eq!(
             std::fs::read(icons_new.join("Potion.png")).unwrap(),
             b"icon"
@@ -667,11 +682,11 @@ Game:
             b"alt"
         );
         assert_eq!(
-            std::fs::read(images.join("masks").join("Beta").join("circle.png")).unwrap(),
+            std::fs::read(cat.masks_dir("Beta").join("circle.png")).unwrap(),
             b"mask"
         );
         assert_eq!(
-            std::fs::read(images.join("Collections").join("Beta").join("Bag.png")).unwrap(),
+            std::fs::read(cat.collections_dir("Beta").join("Bag.png")).unwrap(),
             b"col"
         );
         // Items stay under the renamed program entry (names unchanged).
@@ -680,21 +695,9 @@ Game:
 
     #[test]
     fn delete_item_moves_icons_to_screencap_trash() {
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Potion".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Potion");
 
-        let icons = images.join("icons").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         std::fs::write(icons.join("Potion.png"), b"legacy").unwrap();
         std::fs::write(icons.join("Potion~Original.png"), b"orig").unwrap();
@@ -711,7 +714,7 @@ Game:
             std::fs::read(icons.join("Other~Original.png")).unwrap(),
             b"keep"
         );
-        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        let trash = cat.screen_cap_trash_dir("Alpha");
         assert_eq!(std::fs::read(trash.join("Potion.png")).unwrap(), b"legacy");
         assert_eq!(
             std::fs::read(trash.join("Potion~Original.png")).unwrap(),
@@ -722,22 +725,10 @@ Game:
 
     #[test]
     fn delete_item_trashed_icons_do_not_overwrite() {
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Potion".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Potion");
 
-        let icons = images.join("icons").join("Alpha");
-        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
+        let trash = cat.screen_cap_trash_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         std::fs::create_dir_all(&trash).unwrap();
         std::fs::write(icons.join("Potion~Original.png"), b"new").unwrap();
@@ -773,21 +764,9 @@ Game:
 
     #[test]
     fn rename_item_moves_icon_files() {
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Potion".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Potion");
 
-        let icons = images.join("icons").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         std::fs::write(icons.join("Potion.png"), b"legacy").unwrap();
         std::fs::write(icons.join("Potion~Original.png"), b"orig").unwrap();
@@ -832,7 +811,7 @@ Game:
             .unwrap();
         }
 
-        let icons = images.join("icons").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         std::fs::write(icons.join("Source.png"), b"src-legacy").unwrap();
         std::fs::write(icons.join("Source~Original.png"), b"src-orig").unwrap();
@@ -860,7 +839,7 @@ Game:
             std::fs::read(icons.join("Other~Keep.png")).unwrap(),
             b"keep"
         );
-        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        let trash = cat.screen_cap_trash_dir("Alpha");
         assert_eq!(
             std::fs::read(trash.join("Target.png")).unwrap(),
             b"tgt-legacy"
@@ -875,21 +854,9 @@ Game:
     fn rename_item_icon_files_replace_existing_dest() {
         // Dest PNGs without a map entry (or leftover after a failed clear) must
         // not block rename — overwrite always leaves the source bytes.
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Source".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Source");
 
-        let icons = images.join("icons").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         std::fs::write(icons.join("Source~Original.png"), b"from-source").unwrap();
         std::fs::write(icons.join("Target~Original.png"), b"orphan-dest").unwrap();
@@ -1079,7 +1046,7 @@ Game:
         )
         .unwrap();
 
-        let masks = images.join("masks").join("Alpha");
+        let masks = cat.masks_dir("Alpha");
         std::fs::create_dir_all(&masks).unwrap();
         std::fs::write(masks.join("circle.png"), b"mask-bytes").unwrap();
         std::fs::write(masks.join("keep.png"), b"keep-bytes").unwrap();
@@ -1138,7 +1105,7 @@ Game:
         )
         .unwrap();
 
-        let cols = images.join("Collections").join("Alpha");
+        let cols = cat.collections_dir("Alpha");
         std::fs::create_dir_all(&cols).unwrap();
         std::fs::write(cols.join("Bag.png"), b"bag-bytes").unwrap();
         std::fs::write(cols.join("Keep.png"), b"keep-bytes").unwrap();
@@ -1176,14 +1143,14 @@ Game:
         cat.set_images_root(Some(images.clone()));
         cat.create_program("Alpha").unwrap();
 
-        let icons_old = images.join("icons").join("Alpha");
+        let icons_old = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons_old).unwrap();
         std::fs::write(icons_old.join("keep.png"), b"icon").unwrap();
         // A file where the destination dir should be blocks clear via remove_dir_all;
         // rename is skipped when clear fails (needed on Windows, where MoveFileEx
         // REPLACE can otherwise replace that file with the source directory).
         std::fs::create_dir_all(images.join("icons")).unwrap();
-        std::fs::write(images.join("icons").join("Beta"), b"not-a-dir").unwrap();
+        std::fs::write(cat.icons_dir("Beta"), b"not-a-dir").unwrap();
 
         let warn = cat.rename_program("Alpha", "Beta").unwrap();
         assert!(cat.get("Beta").is_some(), "map rename still succeeds");
@@ -1199,21 +1166,9 @@ Game:
 
     #[test]
     fn rename_item_reports_fs_warning_when_icon_rename_fails() {
-        let root = tempfile::tempdir().unwrap();
-        let images = root.path().join("images");
-        let mut cat = ProgramCatalog::default();
-        cat.set_images_root(Some(images.clone()));
-        cat.create_program("Alpha").unwrap();
-        cat.upsert_item(
-            "Alpha",
-            ProgramItem {
-                name: "Potion".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let (_root, _images, mut cat) = alpha_catalog_with_item("Potion");
 
-        let icons = images.join("icons").join("Alpha");
+        let icons = cat.icons_dir("Alpha");
         std::fs::create_dir_all(&icons).unwrap();
         let src = icons.join("Potion.png");
         std::fs::write(&src, b"icon").unwrap();
@@ -1247,7 +1202,7 @@ Game:
         )
         .unwrap();
 
-        let masks = images.join("masks").join("Alpha");
+        let masks = cat.masks_dir("Alpha");
         std::fs::create_dir_all(&masks).unwrap();
         let path = masks.join("circle.png");
         std::fs::write(&path, b"mask").unwrap();
@@ -1341,8 +1296,7 @@ Demo:
   masks: {}
   collections: {}
 "#;
-        let v: Value = serde_yaml::from_str(yaml).unwrap();
-        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let mut cat = catalog_yaml(yaml);
         let p = cat.get("Demo").unwrap();
         assert_eq!(p.process_path, "/opt/demo/bin/DemoGame");
         assert_eq!(p.window_title, "Demo Game");
@@ -1356,6 +1310,58 @@ Demo:
         assert_eq!(p2.process_path, "/usr/bin/other");
         assert_eq!(p2.window_title, "Other");
         assert_eq!(p2.tags, vec!["raid".to_string()]);
+        assert_eq!(
+            cat2.program_macro_tags("Demo"),
+            vec!["Demo".to_string(), "raid".to_string()]
+        );
+    }
+
+    #[test]
+    fn program_name_tag_is_derived_and_follows_rename() {
+        let yaml = r#"
+Demo:
+  name: Demo
+  tags: [Demo, loot]
+  items: {}
+  coordinates: {}
+  masks: {}
+  collections: {}
+Raid:
+  name: Raid
+  tags: [Demo, Demo/night]
+  items: {}
+  coordinates: {}
+  masks: {}
+  collections: {}
+"#;
+        let mut cat = catalog_yaml(yaml);
+        assert_eq!(cat.get("Demo").unwrap().tags, vec!["loot".to_string()]);
+        assert_eq!(
+            cat.program_macro_tags("Demo"),
+            vec!["Demo".to_string(), "loot".to_string()]
+        );
+        assert_eq!(
+            cat.get("Raid").unwrap().tags,
+            vec!["Demo".to_string(), "Demo/night".to_string()]
+        );
+
+        cat.rename_program("Demo", "Renamed").unwrap();
+        assert_eq!(
+            cat.program_macro_tags("Renamed"),
+            vec!["Renamed".to_string(), "loot".to_string()]
+        );
+        assert_eq!(
+            cat.get("Raid").unwrap().tags,
+            vec!["Renamed".to_string(), "Renamed/night".to_string()]
+        );
+
+        let encoded = cat.to_yaml_value(&Value::Null);
+        let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        assert_eq!(cat2.get("Renamed").unwrap().tags, vec!["loot".to_string()]);
+        assert_eq!(
+            cat2.program_macro_tags("Renamed"),
+            vec!["Renamed".to_string(), "loot".to_string()]
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use super::types::{
 use crate::icon_cache::IconCache;
 use crate::image_view;
 use crate::theme::{picker_drop_stroke, picker_selected_fill, picker_selected_stroke};
-use eframe::egui::{self, Color32, Sense, Vec2};
+use eframe::egui::{self, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 
@@ -53,7 +53,7 @@ fn paint_item_icon_tooltip(
     name: &str,
     tags: &[String],
 ) {
-    ui.set_max_width(280.0);
+    ui.set_max_width(280.0_f32.min(crate::widgets::visible_content_width(ui)));
     ui.label(egui::RichText::new(name).strong().small());
 
     let paths = crate::demo_icons::merged_variant_paths(catalog, target);
@@ -66,7 +66,6 @@ fn paint_item_icon_tooltip(
                     .unwrap_or(rest)
             })
             .unwrap_or(target);
-        ui.add_space(crate::theme::SPACE_4);
         for path in &paths {
             let Some(tex) = icons.for_path(ui.ctx(), path) else {
                 continue;
@@ -105,10 +104,25 @@ fn paint_item_icon_tooltip(
     if tags.is_empty() {
         return;
     }
-    ui.add_space(crate::theme::SPACE_4);
     let color = ui.visuals().hyperlink_color;
+    let program_icons = icons.program_name_icons(ui.ctx(), catalog);
     for tag in tags {
-        ui.label(egui::RichText::new(tag).small().italics().color(color));
+        let icon = crate::widgets::tags::program_icon_for_tag(Some(&program_icons), tag);
+        if let Some(tex) = icon {
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::splat(VARIANT_TIP_THUMB), egui::Sense::hover());
+                ui.painter().image(
+                    tex.id(),
+                    rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+                ui.label(egui::RichText::new(tag).small().italics().color(color));
+            });
+        } else {
+            ui.label(egui::RichText::new(tag).small().italics().color(color));
+        }
     }
 }
 
@@ -258,7 +272,7 @@ fn icon_grid_cell(
     } else if resp.hovered() {
         ui.visuals().widgets.hovered.bg_fill
     } else {
-        Color32::TRANSPARENT
+        ui.visuals().widgets.inactive.weak_bg_fill
     };
     let body = rect;
     ui.painter().rect_filled(body, rounding, fill);
@@ -267,7 +281,15 @@ fn icon_grid_cell(
             body,
             rounding,
             egui::Stroke::new(2.0, picker_selected_stroke()),
-            egui::StrokeKind::Outside,
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        // Slight button look: the cell is a control, not a static thumbnail.
+        ui.painter().rect_stroke(
+            body,
+            rounding,
+            ui.visuals().widgets.inactive.bg_stroke,
+            egui::StrokeKind::Inside,
         );
     }
     crate::widgets::controls::paint_keyboard_focus_ring(ui, body, &resp);
@@ -440,4 +462,92 @@ pub fn paint_even_icon_grid(
     }
 
     ui.spacing_mut().item_spacing = old_spacing;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The selection ring must not spill past the cell into the grid gap or the
+    /// enclosing pane's padding — paint it inside the cell bounds.
+    #[test]
+    fn selected_cell_stroke_stays_inside_cell() {
+        let ctx = egui::Context::default();
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let targets = vec!["p~item".to_string()];
+        for _ in 0..3 {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint_even_icon_grid(
+                    ui,
+                    &catalog,
+                    &mut icons,
+                    &targets,
+                    |_| true,
+                    IconGridKind::Picker,
+                    IconGridOps::default(),
+                    None,
+                );
+            });
+            let outside = out.shapes.iter().any(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect) => {
+                    rect.stroke == egui::Stroke::new(2.0, picker_selected_stroke())
+                        && rect.stroke_kind == egui::StrokeKind::Outside
+                }
+                _ => false,
+            });
+            assert!(!outside, "selection stroke painted outside the cell");
+            out.drop_without_applying_deltas();
+        }
+    }
+
+    /// Hover tips are self-sizing egui `Area`s: a width bound derived from the
+    /// tip's own painted size ratchets narrower every frame until text wraps
+    /// into single-character rows. The name galley must keep the width it
+    /// measured on the first open frame.
+    #[test]
+    fn item_tooltip_width_does_not_ratchet() {
+        let ctx = egui::Context::default();
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let target = "prog~a_fairly_long_item_name_to_wrap";
+        let cell = egui::Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(24.0, 24.0));
+        let mut widths = Vec::new();
+        for frame in 0..10 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                events: if frame == 0 {
+                    vec![egui::Event::PointerMoved(cell.center())]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let resp = ui.put(cell, egui::Button::new(""));
+                attach_item_icon_tooltip(&resp, &catalog, &mut icons, target);
+            });
+            let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.text().contains("a_fairly") => {
+                    Some(t.galley.size().x)
+                }
+                _ => None,
+            });
+            if let Some(w) = tip_w {
+                widths.push(w);
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(widths.len() >= 2, "item tooltip never opened");
+        let (first, last) = (widths[0], *widths.last().unwrap());
+        assert!(
+            (last - first).abs() <= 1.0,
+            "item tooltip width ratcheted across frames: {first:.1} -> {last:.1} ({widths:?})"
+        );
+    }
 }

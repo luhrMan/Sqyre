@@ -19,6 +19,8 @@ FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.96.1
+# Trunk 0.22.1 sets rust-version 1.96.1, matching RUST_VERSION.
+ARG TRUNK_VERSION=0.22.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
@@ -58,7 +60,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && rustup target add wasm32-unknown-unknown \
     && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
     && rustc --version && cargo --version \
-    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete trunk --locked \
+    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete "trunk@${TRUNK_VERSION}" --locked \
     && chmod -R a+rX /usr/local/cargo \
     && cargo nextest --version && cargo deny --version && cargo llvm-cov --version \
     && cargo machete --version && trunk --version \

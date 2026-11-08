@@ -9,39 +9,23 @@ fn image_search_caches_blurred_templates() {
         let tmpl = RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]));
         tmpl.save(&tmpl_path).unwrap();
 
-        let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path.clone()])]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![("Prog~Item", vec![tmpl_path.clone()], None)]);
         let search = RgbaImage::from_pixel(16, 16, Rgba([0, 255, 0, 255]));
         let mut backend = RecordingBackend::default();
-        let mut capturer = RecordingCapturer {
-            next: Some(search),
-            bounds: full_desktop(),
-            ..Default::default()
-        };
+        let mut capturer = capturer_next(search);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 17;
         let search_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
+        let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.99,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: Default::default(),
-            },
+                ..Default::default()
+            })),
         }]);
 
         execute_macro_with(
@@ -78,71 +62,46 @@ fn nested_image_search_after_click_captures_fresh_screen() {
         let mut nested_visible = parent_only.clone();
         stamp_rgba(&mut nested_visible, &nested_tmpl, 25, 28);
 
-        let icons = MapIcons {
-            paths: HashMap::from([
-                ("Prog~Parent".into(), vec![parent_tmpl_path]),
-                ("Prog~Nested".into(), vec![nested_tmpl_path]),
-            ]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![
+            ("Prog~Parent", vec![parent_tmpl_path], None),
+            ("Prog~Nested", vec![nested_tmpl_path], None),
+        ]);
         let mut backend = RecordingBackend::default();
         let mut capturer = capturer_queue(vec![parent_only, nested_visible]);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     subactions: vec![
-                        Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::Click {
-                                button: MouseButton::Left,
-                                state: PressState::Tap,
-                            },
-                        },
-                        Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::ImageSearch {
+                        Action::new(ActionKind::Click {
+                            button: MouseButton::Left,
+                            state: PressState::Tap,
+                        }),
+                        Action::new(ActionKind::ImageSearch(Box::new(
+                            sqyre_domain::ImageSearchData {
                                 name: "nested".into(),
                                 targets: vec!["Prog~Nested".into()],
-                                target_tags: Vec::new(),
                                 search_area: CoordinateRef("Prog~Box".into()),
                                 tolerance: 0.7,
-                                blur: 0,
-                                match_method: Default::default(),
-                                sort_by: Default::default(),
-                                sort_then: Default::default(),
-                                tag_priority: Vec::new(),
                                 detection: sqyre_domain::DetectionBranch {
-                                    coords: CoordinateOutputs {
-                                        output_x_variable: "nestedX".into(),
-                                        output_y_variable: "nestedY".into(),
-                                    },
+                                    coords: coords_xy("nestedX", "nestedY"),
                                     subactions: vec![wait_child(7)],
                                     ..Default::default()
                                 },
+                                ..Default::default()
                             },
-                        },
+                        ))),
                     ],
                     ..Default::default()
                 },
+                ..Default::default()
             },
-        }]);
+        )))]);
 
         execute_macro_with(
             &mut macro_,
@@ -190,64 +149,42 @@ fn nested_image_search_without_input_reuses_cache() {
         stamp_rgba(&mut both, &parent_tmpl, 15, 18);
         stamp_rgba(&mut both, &nested_tmpl, 25, 28);
 
-        let icons = MapIcons {
-            paths: HashMap::from([
-                ("Prog~Parent".into(), vec![parent_tmpl_path]),
-                ("Prog~Nested".into(), vec![nested_tmpl_path]),
-            ]),
-            masks: HashMap::new(),
-            meta: HashMap::new(),
-        };
+        let icons = icons_for(vec![
+            ("Prog~Parent", vec![parent_tmpl_path], None),
+            ("Prog~Nested", vec![nested_tmpl_path], None),
+        ]);
         let mut backend = RecordingBackend::default();
         // Same frame for every capture — nested must crop cache, not require a
         // second queued buffer (portal would reuse the last PipeWire crop).
         let mut capturer = capturer_next(both);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
-                    subactions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::ImageSearch {
+                    subactions: vec![Action::new(ActionKind::ImageSearch(Box::new(
+                        sqyre_domain::ImageSearchData {
                             name: "nested".into(),
                             targets: vec!["Prog~Nested".into()],
-                            target_tags: Vec::new(),
                             search_area: CoordinateRef("Prog~Box".into()),
                             tolerance: 0.7,
-                            blur: 0,
-                            match_method: Default::default(),
-                            sort_by: Default::default(),
-                            sort_then: Default::default(),
-                            tag_priority: Vec::new(),
                             detection: sqyre_domain::DetectionBranch {
-                                coords: CoordinateOutputs {
-                                    output_x_variable: "nestedX".into(),
-                                    output_y_variable: "nestedY".into(),
-                                },
+                                coords: coords_xy("nestedX", "nestedY"),
                                 subactions: vec![wait_child(7)],
                                 ..Default::default()
                             },
+                            ..Default::default()
                         },
-                    }],
+                    )))],
                     ..Default::default()
                 },
+                ..Default::default()
             },
-        }]);
+        )))]);
 
         execute_macro_with(
             &mut macro_,

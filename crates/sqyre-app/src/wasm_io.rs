@@ -85,7 +85,7 @@ impl SqyreApp {
                 wasm_bindgen_futures::spawn_local(async move {
                     if let Some(file) = rfd::AsyncFileDialog::new()
                         .add_filter("YAML", &["yaml", "yml"])
-                        .set_file_name("db.yaml")
+                        .set_file_name(sqyre_persist::DB_FILE)
                         .save_file()
                         .await
                     {

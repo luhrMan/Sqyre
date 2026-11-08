@@ -3,28 +3,33 @@
 use sqyre_match::ImageBuf;
 use sqyre_ports::LogImage;
 
-/// Cap long edge when storing log images (keeps UI memory bounded).
-const LOG_IMAGE_MAX_EDGE: usize = 640;
+/// Default cap on the long edge when storing log images (keeps UI memory bounded).
+pub(crate) const DEFAULT_LOG_IMAGE_MAX_EDGE: usize = 640;
 
 /// Convert a match buffer to RGBA log pixels (downscaled if needed).
-pub(crate) fn image_buf_to_log_image(label: String, image: &ImageBuf) -> Option<LogImage> {
+pub(crate) fn image_buf_to_log_image(
+    label: String,
+    image: &ImageBuf,
+    max_edge: usize,
+) -> Option<LogImage> {
     if image.width == 0 || image.height == 0 {
         return None;
     }
-    let scaled = downscale_for_log(image);
+    let scaled = downscale_for_log(image, max_edge);
     let rgba = image_buf_to_rgba(&scaled);
     LogImage::from_rgba(label, scaled.width as u32, scaled.height as u32, rgba)
 }
 
 /// Scale applied by [`image_buf_to_log_image`]: `1.0` when the image fits under
-/// the log cap, else `LOG_IMAGE_MAX_EDGE / long_edge`. Multiply source-space
+/// the log cap, else `max_edge / long_edge`. Multiply source-space
 /// rects by this to address pixels inside the stored [`LogImage`].
-pub(crate) fn log_image_scale(width: usize, height: usize) -> f64 {
+pub(crate) fn log_image_scale(width: usize, height: usize, max_edge: usize) -> f64 {
     let long = width.max(height).max(1);
-    if long <= LOG_IMAGE_MAX_EDGE {
+    let cap = max_edge.max(1);
+    if long <= cap {
         1.0
     } else {
-        LOG_IMAGE_MAX_EDGE as f64 / long as f64
+        cap as f64 / long as f64
     }
 }
 
@@ -34,8 +39,9 @@ pub(crate) fn scale_rect_for_log(
     rect: (i32, i32, i32, i32),
     src_w: usize,
     src_h: usize,
+    max_edge: usize,
 ) -> (i32, i32, i32, i32) {
-    let s = log_image_scale(src_w, src_h);
+    let s = log_image_scale(src_w, src_h, max_edge);
     let (l, t, r, b) = rect;
     let scaled = if (s - 1.0).abs() < f64::EPSILON {
         (l, t, r, b)
@@ -58,12 +64,13 @@ pub(crate) fn scale_rect_for_log(
     )
 }
 
-fn downscale_for_log(img: &ImageBuf) -> ImageBuf {
+fn downscale_for_log(img: &ImageBuf, max_edge: usize) -> ImageBuf {
     let long = img.width.max(img.height);
-    if long <= LOG_IMAGE_MAX_EDGE {
+    let cap = max_edge.max(1);
+    if long <= cap {
         return img.clone();
     }
-    let scale = LOG_IMAGE_MAX_EDGE as f64 / long as f64;
+    let scale = cap as f64 / long as f64;
     let nw = ((img.width as f64) * scale).round().max(1.0) as usize;
     let nh = ((img.height as f64) * scale).round().max(1.0) as usize;
     nearest_resize(img, nw, nh)

@@ -18,17 +18,7 @@ pub struct AndroidButtonSpec {
     /// Catalog process path. Empty → match [`Self::program`] as a process name.
     pub process_path: String,
     pub window_title: String,
-    pub x: i32,
-    pub y: i32,
-    pub w: u32,
-    pub h: u32,
-    pub bg: [u8; 4],
-    pub border: [u8; 4],
-    pub border_width: f32,
-    pub corner_radius: f32,
-    pub icon_glyph: char,
-    pub icon: [u8; 4],
-    pub icon_hover: [u8; 4],
+    pub face: crate::ButtonFace,
     /// Hide unless the bound program is in front (General buttons are not gated).
     pub focus_gated: bool,
     /// Hide unless the image-search found-map says this id is on screen.
@@ -117,17 +107,19 @@ mod tests {
             program: "Game".into(),
             process_path: "com.example.game".into(),
             window_title: String::new(),
-            x: 10,
-            y: 20,
-            w: 40,
-            h: 40,
-            bg: [0, 0, 0, 0],
-            border: [0, 0, 0, 255],
-            border_width: 1.0,
-            corner_radius: 4.0,
-            icon_glyph: '▶',
-            icon: [255, 255, 255, 255],
-            icon_hover: [255, 200, 0, 255],
+            face: crate::ButtonFace {
+                x: 10,
+                y: 20,
+                w: 40,
+                h: 40,
+                bg: [0, 0, 0, 0],
+                border: [0, 0, 0, 255],
+                border_width: 1.0,
+                corner_radius: 4.0,
+                icon_glyph: '▶',
+                icon: [255, 255, 255, 255],
+                icon_hover: [255, 200, 0, 255],
+            },
             focus_gated: gated,
             visibility_gated: false,
             editor_pinned: false,
@@ -209,7 +201,7 @@ mod tests {
     fn sqyre_in_front_hides_program_buttons() {
         let btn = spec("g", true);
         let found = HashMap::new();
-        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
+        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, sqyre_ports::APP_NAME);
         assert!(shown_buttons(&[btn], Some(&ours), false, true, &found).is_empty());
     }
 
@@ -219,7 +211,7 @@ mod tests {
         btn.program.clear();
         btn.process_path.clear();
         let found = HashMap::new();
-        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
+        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, sqyre_ports::APP_NAME);
         assert!(shown_buttons(
             std::slice::from_ref(&btn),
             Some(&ours),
@@ -274,7 +266,7 @@ mod tests {
             ["g"]
         );
         found.insert("g".into(), false);
-        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
+        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, sqyre_ports::APP_NAME);
         assert_eq!(
             ids(&shown_buttons(&[btn], Some(&ours), true, false, &found)),
             ["g"]

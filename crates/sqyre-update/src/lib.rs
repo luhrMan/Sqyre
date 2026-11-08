@@ -27,6 +27,7 @@ use version::{is_dev_sentinel, parse_release_version, version_newer};
 
 const USER_AGENT: &str = "Sqyre-Updater";
 const API_LATEST: &str = "https://api.github.com/repos/luhrMan/Squire/releases/latest";
+const API_RELEASES: &str = "https://api.github.com/repos/luhrMan/Squire/releases?per_page=10";
 const CHECKSUMS_NAME: &str = "SHA256SUMS";
 const CHECKSUMS_SIG_NAME: &str = "SHA256SUMS.sig";
 /// Canonical Windows install name (release zips ship a versioned `.exe`).
@@ -97,6 +98,8 @@ pub enum UpdateError {
     Json(#[from] serde_json::Error),
     #[error("no matching release asset for this install")]
     NoMatchingAsset,
+    #[error("no published release found")]
+    NoRelease,
     #[error("release is missing SHA256SUMS checksums")]
     MissingChecksums,
     #[error("release is missing SHA256SUMS.sig")]
@@ -130,6 +133,8 @@ pub enum UpdateError {
 #[derive(Debug, Deserialize)]
 struct GhRelease {
     tag_name: String,
+    #[serde(default)]
+    draft: bool,
     assets: Vec<GhAsset>,
 }
 
@@ -353,8 +358,23 @@ fn sha256_hex_file(path: &Path) -> Result<String, UpdateError> {
         .collect())
 }
 
+/// The release an update check should offer: newest non-draft when
+/// `include_prerelease`, else the latest stable per GitHub.
+fn fetch_candidate_release(include_prerelease: bool) -> Result<GhRelease, UpdateError> {
+    if !include_prerelease {
+        let body = http_get_string(API_LATEST, MAX_API_BYTES)?;
+        return Ok(serde_json::from_str(&body)?);
+    }
+    let body = http_get_string(API_RELEASES, MAX_API_BYTES)?;
+    let releases: Vec<GhRelease> = serde_json::from_str(&body)?;
+    releases
+        .into_iter()
+        .find(|r| !r.draft)
+        .ok_or(UpdateError::NoRelease)
+}
+
 /// Query GitHub for the latest release and compare against `current` (embedded `SQYRE_VERSION`).
-pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
+pub fn check_latest(current: &str, include_prerelease: bool) -> Result<UpdateStatus, UpdateError> {
     if is_dev_sentinel(current) {
         return Err(UpdateError::DevBuild(current.to_string()));
     }
@@ -364,8 +384,7 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     let current_v =
         parse_release_version(current).ok_or_else(|| UpdateError::BadVersion(current.into()))?;
 
-    let body = http_get_string(API_LATEST, MAX_API_BYTES)?;
-    let release: GhRelease = serde_json::from_str(&body)?;
+    let release = fetch_candidate_release(include_prerelease)?;
     let remote_v = parse_release_version(&release.tag_name)
         .ok_or_else(|| UpdateError::BadVersion(release.tag_name.clone()))?;
 
@@ -509,7 +528,7 @@ pub fn cleanup_stale_update() {
                         let Some(s) = name.to_str() else {
                             continue;
                         };
-                        if s.starts_with("sqyre") && s.ends_with(".old") {
+                        if s.starts_with(sqyre_ports::APP_ID) && s.ends_with(".old") {
                             let _ = fs::remove_file(entry.path());
                         }
                     }
@@ -621,7 +640,10 @@ fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, Updat
     let mut chosen = None;
     for i in 0..archive.len() {
         let entry = archive
-            .by_index(i)
+            .by_index_with_options(
+                i,
+                zip::read::ZipReadOptions::new().enforce_header_consistency(true),
+            )
             .map_err(|e| UpdateError::Zip(e.to_string()))?;
         if entry.is_dir() {
             continue;
@@ -644,7 +666,10 @@ fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, Updat
     let out_path = out_dir.join(out_name);
     {
         let mut entry = archive
-            .by_index(idx)
+            .by_index_with_options(
+                idx,
+                zip::read::ZipReadOptions::new().enforce_header_consistency(true),
+            )
             .map_err(|e| UpdateError::Zip(e.to_string()))?;
         let mut out = File::create(&out_path)?;
         io::copy(&mut entry, &mut out)?;
@@ -665,7 +690,7 @@ fn apply_unix(staged: &Path, target: &Path) -> Result<(), UpdateError> {
         target
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("sqyre")
+            .unwrap_or(sqyre_ports::APP_ID)
     ));
     fs::copy(staged, &new_path)?;
     let mut perms = fs::metadata(&new_path)?.permissions();
@@ -812,12 +837,12 @@ fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage
     #[test]
     fn apply_rejects_staged_payload_swapped_after_download() {
         let staging = tempfile::tempdir().unwrap();
-        let payload = staging.path().join("sqyre");
+        let payload = staging.path().join(sqyre_ports::APP_ID);
         fs::write(&payload, b"good").unwrap();
         let staged_sha256 = sha256_hex_file(&payload).unwrap();
 
         let target_dir = tempfile::tempdir().unwrap();
-        let target = target_dir.path().join("sqyre");
+        let target = target_dir.path().join(sqyre_ports::APP_ID);
         fs::write(&target, b"original").unwrap();
 
         // Attacker replaces the staged file between staging and apply.
@@ -842,12 +867,12 @@ fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage
     #[test]
     fn apply_installs_untampered_payload() {
         let staging = tempfile::tempdir().unwrap();
-        let payload = staging.path().join("sqyre");
+        let payload = staging.path().join(sqyre_ports::APP_ID);
         fs::write(&payload, b"new-build").unwrap();
         let staged_sha256 = sha256_hex_file(&payload).unwrap();
 
         let target_dir = tempfile::tempdir().unwrap();
-        let target = target_dir.path().join("sqyre");
+        let target = target_dir.path().join(sqyre_ports::APP_ID);
         fs::write(&target, b"original").unwrap();
 
         apply(StagedUpdate {

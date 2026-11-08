@@ -1,8 +1,8 @@
 //! Action kind enum and tree-shape helpers.
 
 use super::{
-    Action, ConditionBlock, CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn,
-    LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue,
+    Action, ConditionBlock, CoordinateRef, DetectionBranch, FindPixelData, ImageSearchData,
+    ListColumn, LoopJumpMode, MouseButton, NavigateSelectData, OcrData, PressState, ScalarValue,
     VariableAssignment,
 };
 
@@ -23,48 +23,9 @@ pub enum ActionKind {
         subactions: Vec<Action>,
         else_actions: Vec<Action>,
     },
-    ImageSearch {
-        name: String,
-        targets: Vec<String>,
-        /// Catalog item tags: every item with any of these tags is searched
-        /// (union with [`targets`](Self::ImageSearch::targets), resolved at run time).
-        target_tags: Vec<String>,
-        search_area: CoordinateRef,
-        tolerance: f64,
-        blur: i32,
-        match_method: MatchMethod,
-        /// Primary order for matching items and for the Items grid display.
-        sort_by: ItemSortBy,
-        /// Within-group order after [`sort_by`](Self::ImageSearch::sort_by).
-        sort_then: ItemSortThen,
-        /// Tag priority when sort_by is Tags.
-        tag_priority: Vec<String>,
-        detection: DetectionBranch,
-    },
-    Ocr {
-        name: String,
-        target: String,
-        search_area: CoordinateRef,
-        output_variable: String,
-        /// How recognized text must relate to [`target`](Self::Ocr::target).
-        match_mode: crate::OcrMatchMode,
-        /// Match letter-for-letter casing instead of folding to lowercase.
-        case_sensitive: bool,
-        blur: i32,
-        min_threshold: i32,
-        resize: f64,
-        grayscale: bool,
-        threshold_otsu: bool,
-        threshold_invert: bool,
-        detection: DetectionBranch,
-    },
-    FindPixel {
-        name: String,
-        search_area: CoordinateRef,
-        target_color: String,
-        color_tolerance: i32,
-        detection: DetectionBranch,
-    },
+    ImageSearch(Box<ImageSearchData>),
+    Ocr(Box<OcrData>),
+    FindPixel(Box<FindPixelData>),
     ForEachRow {
         name: String,
         sources: Vec<ListColumn>,
@@ -155,9 +116,9 @@ impl ActionKind {
             Self::Loop { .. }
                 | Self::While { .. }
                 | Self::Conditional { .. }
-                | Self::ImageSearch { .. }
-                | Self::Ocr { .. }
-                | Self::FindPixel { .. }
+                | Self::ImageSearch(_)
+                | Self::Ocr(_)
+                | Self::FindPixel(_)
                 | Self::ForEachRow { .. }
                 | Self::ForEachCell { .. }
                 | Self::NavigateSelect(_)
@@ -168,26 +129,23 @@ impl ActionKind {
     pub fn is_detection(&self) -> bool {
         matches!(
             self,
-            Self::ImageSearch { .. } | Self::Ocr { .. } | Self::FindPixel { .. }
+            Self::ImageSearch(_) | Self::Ocr(_) | Self::FindPixel(_)
         )
     }
 
     pub fn has_else_folder(&self) -> bool {
         matches!(
             self,
-            Self::Conditional { .. }
-                | Self::ImageSearch { .. }
-                | Self::Ocr { .. }
-                | Self::FindPixel { .. }
+            Self::Conditional { .. } | Self::ImageSearch(_) | Self::Ocr(_) | Self::FindPixel(_)
         )
     }
 
     pub fn else_actions(&self) -> Option<&[Action]> {
         match self {
             Self::Conditional { else_actions, .. } => Some(else_actions),
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => Some(&detection.else_actions),
+            Self::ImageSearch(d) => Some(&d.detection.else_actions),
+            Self::Ocr(d) => Some(&d.detection.else_actions),
+            Self::FindPixel(d) => Some(&d.detection.else_actions),
             _ => None,
         }
     }
@@ -195,27 +153,27 @@ impl ActionKind {
     pub fn else_actions_mut(&mut self) -> Option<&mut Vec<Action>> {
         match self {
             Self::Conditional { else_actions, .. } => Some(else_actions),
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => Some(&mut detection.else_actions),
+            Self::ImageSearch(d) => Some(&mut d.detection.else_actions),
+            Self::Ocr(d) => Some(&mut d.detection.else_actions),
+            Self::FindPixel(d) => Some(&mut d.detection.else_actions),
             _ => None,
         }
     }
 
     pub fn detection(&self) -> Option<&DetectionBranch> {
         match self {
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => Some(detection),
+            Self::ImageSearch(d) => Some(&d.detection),
+            Self::Ocr(d) => Some(&d.detection),
+            Self::FindPixel(d) => Some(&d.detection),
             _ => None,
         }
     }
 
     pub fn detection_mut(&mut self) -> Option<&mut DetectionBranch> {
         match self {
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => Some(detection),
+            Self::ImageSearch(d) => Some(&mut d.detection),
+            Self::Ocr(d) => Some(&mut d.detection),
+            Self::FindPixel(d) => Some(&mut d.detection),
             _ => None,
         }
     }
@@ -228,9 +186,9 @@ impl ActionKind {
             | Self::ForEachRow { subactions, .. }
             | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => subactions,
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => &detection.subactions,
+            Self::ImageSearch(d) => &d.detection.subactions,
+            Self::Ocr(d) => &d.detection.subactions,
+            Self::FindPixel(d) => &d.detection.subactions,
             Self::NavigateSelect(data) => &data.subactions,
             _ => &[],
         }
@@ -244,9 +202,9 @@ impl ActionKind {
             | Self::ForEachRow { subactions, .. }
             | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => Some(subactions),
-            Self::ImageSearch { detection, .. }
-            | Self::Ocr { detection, .. }
-            | Self::FindPixel { detection, .. } => Some(&mut detection.subactions),
+            Self::ImageSearch(d) => Some(&mut d.detection.subactions),
+            Self::Ocr(d) => Some(&mut d.detection.subactions),
+            Self::FindPixel(d) => Some(&mut d.detection.subactions),
             Self::NavigateSelect(data) => Some(&mut data.subactions),
             _ => None,
         }
@@ -257,11 +215,11 @@ impl ActionKind {
         let label = action_type_label(self.type_key());
         match self {
             Self::Loop { name, .. }
-            | Self::ImageSearch { name, .. }
-            | Self::Ocr { name, .. }
-            | Self::FindPixel { name, .. }
             | Self::ForEachRow { name, .. }
             | Self::ForEachCell { name, .. } => named_branch_label(label, name),
+            Self::ImageSearch(d) => named_branch_label(label, &d.name),
+            Self::Ocr(d) => named_branch_label(label, &d.name),
+            Self::FindPixel(d) => named_branch_label(label, &d.name),
             Self::While { condition, .. } | Self::Conditional { condition, .. } => {
                 named_branch_label(label, &condition.name)
             }

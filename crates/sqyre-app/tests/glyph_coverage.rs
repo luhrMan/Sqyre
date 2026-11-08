@@ -114,7 +114,7 @@ fn is_ident(c: char) -> bool {
 #[test]
 fn ui_literals_have_glyphs() {
     let ctx = egui::Context::default();
-    SettingsUi::install_fonts(&ctx);
+    SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
     ctx.run_ui(egui::RawInput::default(), |_| {})
         .textures_delta
         .clear();

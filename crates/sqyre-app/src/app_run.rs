@@ -33,13 +33,9 @@ pub(crate) struct PendingProjectionRun {
 impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let name = self.workspace.macros[idx].name.clone();
         self.start_macro_by_name(&name, ctx);
     }
@@ -148,6 +144,8 @@ impl SqyreApp {
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         {
+            self.preview_tooltips
+                .set_desktop_outlines_enabled(self.settings_ui.settings().preview_desktop_outline);
             let preview_outline = self.preview_tooltips.take_desktop_outline();
             self.recording_overlay.sync_with_macro_record(
                 ctx,
@@ -181,6 +179,7 @@ mod native_run {
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
     use sqyre_persist::variables_path;
+    use sqyre_ports::AutomationBackend;
     use sqyre_vision::shared_ocrs;
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -215,6 +214,30 @@ mod native_run {
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
             if self.run_session.state.running.load(Ordering::SeqCst) {
+                // Re-triggering the *running* macro follows the hotkey-while-running
+                // policy; any other start still waits for the run to end.
+                let running_name = self.macro_overlay.running_macro_slot().lock().clone();
+                if running_name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                {
+                    match self.settings_ui.settings().hotkey_while_running {
+                        sqyre_persist::HotkeyWhileRunning::Stop => {
+                            self.request_stop();
+                            *self.run_session.state.status.lock() = "Stopping…".into();
+                            ctx.request_repaint();
+                            return;
+                        }
+                        sqyre_persist::HotkeyWhileRunning::Restart => {
+                            self.request_stop();
+                            self.start_when_idle = Some(name.to_string());
+                            *self.run_session.state.status.lock() = "Restarting…".into();
+                            ctx.request_repaint();
+                            return;
+                        }
+                        sqyre_persist::HotkeyWhileRunning::Ignore => {}
+                    }
+                }
                 sqyre_capture::mark_site("overlay:start:skip-running");
                 sqyre_capture::note(&format!(
                     "overlay: start skipped already-running name={name}"
@@ -282,33 +305,41 @@ mod native_run {
         fn launch_macro(&self, ctx: &egui::Context, idx: usize) {
             let settings = self.settings_ui.settings();
             MacroLaunch {
+                kit: RunKit {
+                    macros: self.workspace.macros.clone(),
+                    catalog: self.workspace.catalog.clone(),
+                    ctx: ctx.clone(),
+                    running: Arc::clone(&self.run_session.state.running),
+                    status: Arc::clone(&self.run_session.state.status),
+                    stop: self.run_session.state.stop.clone(),
+                    action_log: self.run_session.action_log.clone(),
+                    runtime_vars: self.run_session.runtime_vars.clone(),
+                    highlighter: self.run_session.highlighter.clone(),
+                    click_fx: self.run_session.click_fx.clone(),
+                    continue_wait: self.run_session.continue_wait.clone(),
+                    macro_hotkeys: self.run_session.macro_hotkeys.clone(),
+                    running_macro: self.macro_overlay.running_macro_slot(),
+                    close_matches: settings.image_search_close_matches_distance,
+                    variant_exit_early: settings.image_search_variant_exit_early,
+                    release_held_inputs: settings.release_held_inputs_on_end,
+                    while_max_iterations: settings.while_max_iterations,
+                    run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
+                    log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
+                    restore_cursor: settings.restore_cursor_on_end,
+                    play_finish_sound: settings.play_finish_sound,
+                    finish_sound_file: settings.finish_sound_file.clone(),
+                    sound_volume: settings.sound_volume,
+                },
                 macro_: self.workspace.macros[idx].clone(),
-                macros: self.workspace.macros.clone(),
-                catalog: self.workspace.catalog.clone(),
-                ctx: ctx.clone(),
-                running: Arc::clone(&self.run_session.state.running),
-                status: Arc::clone(&self.run_session.state.status),
-                stop: self.run_session.state.stop.clone(),
-                action_log: self.run_session.action_log.clone(),
-                runtime_vars: self.run_session.runtime_vars.clone(),
-                highlighter: self.run_session.highlighter.clone(),
-                continue_wait: self.run_session.continue_wait.clone(),
-                macro_hotkeys: self.run_session.macro_hotkeys.clone(),
-                running_macro: self.macro_overlay.running_macro_slot(),
-                close_matches: settings.image_search_close_matches_distance,
-                variant_exit_early: settings.image_search_variant_exit_early,
-                release_held_inputs: settings.release_held_inputs_on_end,
-                while_max_iterations: settings.while_max_iterations,
-                run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
-                play_finish_sound: settings.play_finish_sound,
-                sound_volume: settings.sound_volume,
             }
             .start();
         }
     }
 
-    struct MacroLaunch {
-        macro_: Macro,
+    /// Shared run inputs (catalog, run-state bridges, settings) carried by both
+    /// the direct launch and the stashed Android overlay kit.
+    #[derive(Clone)]
+    struct RunKit {
         macros: Vec<Macro>,
         catalog: sqyre_persist::ProgramCatalog,
         ctx: egui::Context,
@@ -318,6 +349,7 @@ mod native_run {
         action_log: sqyre_ports::SharedActionLog,
         runtime_vars: sqyre_ports::SharedRuntimeVars,
         highlighter: sqyre_ports::SharedHighlighter,
+        click_fx: sqyre_ports::SharedClickFx,
         continue_wait: sqyre_hotkeys::ContinueWaitBridge,
         macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
         running_macro: Arc<parking_lot::Mutex<Option<String>>>,
@@ -326,14 +358,23 @@ mod native_run {
         release_held_inputs: bool,
         while_max_iterations: i32,
         run_macro_max_depth: usize,
+        log_image_max_edge: usize,
+        restore_cursor: bool,
         play_finish_sound: bool,
+        finish_sound_file: String,
         sound_volume: f32,
+    }
+
+    struct MacroLaunch {
+        kit: RunKit,
+        macro_: Macro,
     }
 
     impl MacroLaunch {
         fn start(self) {
-            let Self {
-                mut macro_,
+            let Self { kit, macro_ } = self;
+            let mut macro_ = macro_;
+            let RunKit {
                 macros,
                 catalog,
                 ctx,
@@ -343,6 +384,7 @@ mod native_run {
                 action_log,
                 runtime_vars,
                 highlighter,
+                click_fx,
                 continue_wait,
                 macro_hotkeys,
                 running_macro,
@@ -351,13 +393,17 @@ mod native_run {
                 release_held_inputs,
                 while_max_iterations,
                 run_macro_max_depth,
+                log_image_max_edge,
+                restore_cursor,
                 play_finish_sound,
+                finish_sound_file,
                 sound_volume,
-            } = self;
+            } = kit;
             stop.clear();
             action_log.clear();
             runtime_vars.clear();
             highlighter.clear_all();
+            click_fx.clear();
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = macros
                     .iter()
@@ -379,6 +425,9 @@ mod native_run {
             sqyre_capture::mark_site(&format!("overlay:start:ok:{name}"));
             sqyre_capture::note(&format!("overlay: start ok name={name}"));
             sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name.as_str())]);
+            // Hide overlay buttons for this whole run when they should not appear
+            // in detection. Per-grab hiding restores between attempts and flickers.
+            let hide_overlay = sqyre_ports::OverlayMacroHide::enter();
 
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
@@ -394,6 +443,7 @@ mod native_run {
             let stop_flag = stop;
             let running_macro_slot = running_macro;
             thread::spawn(move || {
+                let _hide_overlay = hide_overlay;
                 let _clear_running = RunningClearOnDrop {
                     running: Arc::clone(&running),
                     running_macro: running_macro_slot,
@@ -421,8 +471,13 @@ mod native_run {
                         stop: &stop_flag,
                     };
                     let vars_dir = variables_path();
+                    let pre_run_cursor = if restore_cursor {
+                        watched.cursor_position()
+                    } else {
+                        None
+                    };
                     sqyre_capture::mark_site("run:worker:exec");
-                    execute_macro_with(
+                    let exec_result = execute_macro_with(
                         &mut macro_,
                         ExecDeps {
                             automation: &mut watched,
@@ -432,6 +487,7 @@ mod native_run {
                             release_held_inputs,
                             while_max_iterations,
                             run_macro_max_depth,
+                            log_image_max_edge,
                             resolver: Some(&resolver),
                             icons: Some(&icons),
                             macros: Some(&macro_lookup),
@@ -443,9 +499,16 @@ mod native_run {
                             highlighter: Some(&highlighter),
                             runtime_vars: Some(&runtime_vars),
                             variables_dir: Some(vars_dir.as_path()),
+                            click_fx: Some(&click_fx),
                         },
                     )
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string());
+                    if let Some((x, y)) = pre_run_cursor {
+                        watched
+                            .inner
+                            .move_to(x, y, sqyre_ports::MoveOptions::default());
+                    }
+                    exec_result
                 }));
                 sqyre_capture::mark_site("run:worker:exec-done");
 
@@ -459,7 +522,7 @@ mod native_run {
                     Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),
                     Ok(Ok(())) => {
                         if play_finish_sound {
-                            crate::sound::play_finish_sound(sound_volume);
+                            crate::sound::play_finish_sound(sound_volume, &finish_sound_file);
                         }
                         "Finished.".into()
                     }
@@ -517,38 +580,15 @@ mod native_run {
     #[cfg(target_os = "android")]
     static OVERLAY_PROJECTION: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
 
+    /// Stashed run inputs an overlay tap can launch after Sqyre backgrounds.
     #[cfg(target_os = "android")]
-    struct OverlayRunKit {
-        ctx: egui::Context,
-        macros: Vec<Macro>,
-        catalog: sqyre_persist::ProgramCatalog,
-        running: Arc<AtomicBool>,
-        status: Arc<parking_lot::Mutex<String>>,
-        stop: sqyre_hotkeys::StopFlag,
-        action_log: sqyre_ports::SharedActionLog,
-        runtime_vars: sqyre_ports::SharedRuntimeVars,
-        highlighter: sqyre_ports::SharedHighlighter,
-        continue_wait: sqyre_hotkeys::ContinueWaitBridge,
-        macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
-        running_macro: Arc<parking_lot::Mutex<Option<String>>>,
-        close_matches: i32,
-        variant_exit_early: bool,
-        release_held_inputs: bool,
-        while_max_iterations: i32,
-        run_macro_max_depth: usize,
-        play_finish_sound: bool,
-        sound_volume: f32,
-    }
-
-    #[cfg(target_os = "android")]
-    static OVERLAY_KIT: parking_lot::Mutex<Option<Arc<OverlayRunKit>>> =
-        parking_lot::Mutex::new(None);
+    static OVERLAY_KIT: parking_lot::Mutex<Option<Arc<RunKit>>> = parking_lot::Mutex::new(None);
 
     /// Remember the macros and settings an overlay tap can run after Sqyre leaves the screen.
     #[cfg(target_os = "android")]
     pub(crate) fn refresh_android_overlay_kit(app: &SqyreApp, ctx: &egui::Context) {
         let settings = app.settings_ui.settings();
-        let kit = OverlayRunKit {
+        let kit = RunKit {
             ctx: ctx.clone(),
             macros: app.workspace.macros.clone(),
             catalog: app.workspace.catalog.clone(),
@@ -558,6 +598,7 @@ mod native_run {
             action_log: app.run_session.action_log.clone(),
             runtime_vars: app.run_session.runtime_vars.clone(),
             highlighter: app.run_session.highlighter.clone(),
+            click_fx: app.run_session.click_fx.clone(),
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
             running_macro: app.macro_overlay.running_macro_slot(),
@@ -566,7 +607,10 @@ mod native_run {
             release_held_inputs: settings.release_held_inputs_on_end,
             while_max_iterations: settings.while_max_iterations,
             run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
+            log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
+            restore_cursor: settings.restore_cursor_on_end,
             play_finish_sound: settings.play_finish_sound,
+            finish_sound_file: settings.finish_sound_file.clone(),
             sound_volume: settings.sound_volume,
         };
         *OVERLAY_KIT.lock() = Some(Arc::new(kit));
@@ -626,26 +670,8 @@ mod native_run {
             return;
         }
         MacroLaunch {
+            kit: (*kit).clone(),
             macro_: kit.macros[idx].clone(),
-            macros: kit.macros.clone(),
-            catalog: kit.catalog.clone(),
-            ctx: kit.ctx.clone(),
-            running: Arc::clone(&kit.running),
-            status: Arc::clone(&kit.status),
-            stop: kit.stop.clone(),
-            action_log: kit.action_log.clone(),
-            runtime_vars: kit.runtime_vars.clone(),
-            highlighter: kit.highlighter.clone(),
-            continue_wait: kit.continue_wait.clone(),
-            macro_hotkeys: kit.macro_hotkeys.clone(),
-            running_macro: Arc::clone(&kit.running_macro),
-            close_matches: kit.close_matches,
-            variant_exit_early: kit.variant_exit_early,
-            release_held_inputs: kit.release_held_inputs,
-            while_max_iterations: kit.while_max_iterations,
-            run_macro_max_depth: kit.run_macro_max_depth,
-            play_finish_sound: kit.play_finish_sound,
-            sound_volume: kit.sound_volume,
         }
         .start();
     }

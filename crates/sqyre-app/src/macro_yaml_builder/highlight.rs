@@ -6,7 +6,7 @@ use std::sync::Arc;
 use eframe::egui::{self, text::LayoutJob, Color32, FontId, Galley, TextFormat};
 use sqyre_ui_model::nested_var_ref_color;
 
-use crate::theme::{contrast_fg, ok_fg, rgba, syntax_literal, PRIMARY, SPACE_4, SPACE_8};
+use crate::theme::{accent, contrast_fg, ok_fg, rgba, syntax_literal, SPACE_4, SPACE_8};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tok {
@@ -47,7 +47,7 @@ impl Palette {
         match tok {
             Tok::Text => {}
             Tok::Punct | Tok::Comment => f.color = self.weak,
-            Tok::Key => f.color = PRIMARY,
+            Tok::Key => f.color = accent(),
             Tok::Str => f.color = ok_fg(),
             Tok::Literal => f.color = syntax_literal(),
             Tok::Var => {

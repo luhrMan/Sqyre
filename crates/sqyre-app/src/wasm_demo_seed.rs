@@ -329,22 +329,13 @@ fn image_search(
     detection: DetectionBranch,
 ) -> Action {
     let mut a = blank_action("imagesearch").expect("imagesearch");
-    if let ActionKind::ImageSearch {
-        name: n,
-        targets: t,
-        search_area: sa,
-        tolerance: tol,
-        blur: b,
-        detection: det,
-        ..
-    } = &mut a.kind
-    {
-        *n = name.into();
-        *t = targets;
-        *sa = search_area;
-        *tol = tolerance;
-        *b = blur;
-        *det = detection;
+    if let ActionKind::ImageSearch(d) = &mut a.kind {
+        d.name = name.into();
+        d.targets = targets;
+        d.search_area = search_area;
+        d.tolerance = tolerance;
+        d.blur = blur;
+        d.detection = detection;
     }
     a
 }
@@ -357,23 +348,14 @@ fn ocr(
     out: CoordinateOutputs,
 ) -> Action {
     let mut a = blank_action("ocr").expect("ocr");
-    if let ActionKind::Ocr {
-        name: n,
-        target: t,
-        search_area: sa,
-        output_variable: ov,
-        grayscale,
-        detection,
-        ..
-    } = &mut a.kind
-    {
-        *n = name.into();
-        *t = target.into();
-        *sa = search_area;
-        *ov = output_variable.into();
-        *grayscale = true;
-        detection.coords = out;
-        detection.subactions.clear();
+    if let ActionKind::Ocr(d) = &mut a.kind {
+        d.name = name.into();
+        d.target = target.into();
+        d.search_area = search_area;
+        d.output_variable = output_variable.into();
+        d.grayscale = true;
+        d.detection.coords = out;
+        d.detection.subactions.clear();
     }
     a
 }
@@ -387,19 +369,12 @@ fn find_pixel(
     out: CoordinateOutputs,
 ) -> Action {
     let mut a = blank_action("findpixel").expect("findpixel");
-    if let ActionKind::FindPixel {
-        name: n,
-        search_area: sa,
-        target_color,
-        color_tolerance: ct,
-        detection,
-    } = &mut a.kind
-    {
-        *n = name.into();
-        *sa = search_area;
-        *target_color = color.into();
-        *ct = color_tolerance;
-        *detection = DetectionBranch {
+    if let ActionKind::FindPixel(d) = &mut a.kind {
+        d.name = name.into();
+        d.search_area = search_area;
+        d.target_color = color.into();
+        d.color_tolerance = color_tolerance;
+        d.detection = DetectionBranch {
             wait,
             coords: out,
             order: Default::default(),

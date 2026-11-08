@@ -4,7 +4,7 @@ use crate::cap_log;
 use crate::error::CaptureError;
 use crate::linux::wayland::eis::EisInput;
 use parking_lot::Mutex;
-use sqyre_ports::{AutomationError, DesktopRect};
+use sqyre_ports::{AutomationError, DesktopRect, APP_DIR_NAME};
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -86,6 +86,19 @@ const PORTAL_APP_ID: &str = "com.sqyre.app";
 
 static FORCE_SCREENCAST_PICKER: AtomicBool = AtomicBool::new(false);
 static SCREENCAST_SESSION_GRANTED: AtomicBool = AtomicBool::new(false);
+
+/// Gate the grant on at least one PipeWire stream, then mark the session granted.
+fn grant_screencast_streams(
+    streams: &[ashpd::desktop::screencast::Stream],
+) -> Result<(), CaptureError> {
+    if streams.is_empty() {
+        return Err(CaptureError::Message(
+            "portal ScreenCast returned no streams".into(),
+        ));
+    }
+    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    Ok(())
+}
 
 /// Portal Start succeeded this process, or a restore token is on disk from a prior grant.
 pub fn portal_screencast_granted() -> bool {
@@ -417,11 +430,13 @@ fn take_force_screencast_picker() -> bool {
 }
 
 fn restore_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-remote.token")
+    dirs_home().join(APP_DIR_NAME).join("wayland-remote.token")
 }
 
 fn legacy_screencast_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-screencast.token")
+    dirs_home()
+        .join(APP_DIR_NAME)
+        .join("wayland-screencast.token")
 }
 
 fn dirs_home() -> std::path::PathBuf {
@@ -595,12 +610,7 @@ async fn open_combined_session_with_token(
         || response.devices().contains(DeviceType::Pointer);
     REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
@@ -666,6 +676,16 @@ async fn finish_pipewire_setup(
             rect: stream_rect(s),
         })
         .collect();
+    // COSMIC advertises logical positions and physical sizes. Sqyre's desktop
+    // (and the PipeWire frame) is physical, so shift the origin before the
+    // overlap pack — a vertical pair overlaps in logical space and would
+    // otherwise be laid out side by side.
+    if sqyre_ports::cosmic_desktop_session() {
+        place_cosmic_streams(
+            &mut streams,
+            &super::compositor_kick::snapshot_output_geoms(),
+        );
+    }
     let x11_layout = crate::x11_capture::query_x11_monitor_rects();
     let monitor_rects = shared_monitor_rects(&mut streams, &x11_layout);
     cap_log(
@@ -775,12 +795,7 @@ async fn open_screencast_only_with_token(
         .map_err(portal_err("start response"))?;
     write_restore_token_at(&restore_token_path(), response.restore_token());
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
@@ -859,6 +874,40 @@ fn take_layout_match(remaining: &[DesktopRect], hint: DesktopRect) -> Option<usi
     remaining.first().map(|_| 0)
 }
 
+/// Move a COSMIC stream from its logical portal position onto the physical
+/// pixel grid when `wl_output` scale is greater than 1 and the stream size is
+/// the hardware mode. A logical-sized stream (GNOME) does not match the mode
+/// and is left alone.
+fn place_cosmic_stream(
+    rect: DesktopRect,
+    outputs: &[super::compositor_kick::WlOutputGeom],
+) -> DesktopRect {
+    let Some(output) = outputs.iter().find(|output| {
+        output.scale > 1
+            && output.x == rect.x
+            && output.y == rect.y
+            && output.width == rect.w
+            && output.height == rect.h
+    }) else {
+        return rect;
+    };
+    DesktopRect {
+        x: output.x.saturating_mul(output.scale),
+        y: output.y.saturating_mul(output.scale),
+        w: rect.w,
+        h: rect.h,
+    }
+}
+
+fn place_cosmic_streams(
+    streams: &mut [PwStreamSetup],
+    outputs: &[super::compositor_kick::WlOutputGeom],
+) {
+    for stream in streams.iter_mut() {
+        stream.rect = place_cosmic_stream(stream.rect, outputs);
+    }
+}
+
 fn layout_stream_rects(streams: &mut [PwStreamSetup]) {
     if streams.len() < 2 {
         return;
@@ -910,7 +959,9 @@ pub(super) fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
 ///
 /// A bare click uses the live cursor. The last Move is used only while
 /// ScreenCast metadata can still be behind that warp, so Move-then-Click
-/// still lands on the target.
+/// still lands on the target. A stale warp is never a click target: without
+/// live metadata the button applies at the seat pointer, which is the real
+/// cursor — warping to an old Move would click the wrong spot.
 fn click_reseat() -> (Option<(i32, i32)>, &'static str) {
     let sent = *LAST_ABS.lock();
     let warp_fresh = LAST_ABS_AT
@@ -936,8 +987,8 @@ fn reseat_target(
     match (sent, live) {
         (Some(sent), Some(live)) if sent != live && warp_fresh => (Some(sent), "warp"),
         (_, Some(live)) => (Some(live), "cursor"),
-        (Some(sent), None) => (Some(sent), "warp"),
-        (None, None) => (None, "none"),
+        (Some(sent), None) if warp_fresh => (Some(sent), "warp"),
+        _ => (None, "none"),
     }
 }
 
@@ -990,9 +1041,11 @@ mod tests {
             (Some((5, 6)), "cursor")
         );
         assert_eq!(
-            reseat_target(Some((1, 2)), None, false),
+            reseat_target(Some((1, 2)), None, true),
             (Some((1, 2)), "warp")
         );
+        // A stale warp must not move the pointer when no live cursor is known.
+        assert_eq!(reseat_target(Some((1, 2)), None, false), (None, "none"));
         assert_eq!(reseat_target(None, None, false), (None, "none"));
     }
 
@@ -1087,6 +1140,64 @@ mod tests {
         assert_eq!(rects[0].w, 2560);
         assert_eq!(rects[0].h, 1440);
         assert_eq!(rects[0].x, 1920);
+    }
+
+    #[test]
+    fn cosmic_vertical_pair_keeps_physical_rows() {
+        use super::super::compositor_kick::WlOutputGeom;
+        let outputs = [
+            WlOutputGeom {
+                x: 0,
+                y: 0,
+                width: 3840,
+                height: 2160,
+                scale: 2,
+            },
+            WlOutputGeom {
+                x: 0,
+                y: 1080,
+                width: 3840,
+                height: 2160,
+                scale: 2,
+            },
+        ];
+        let mut streams = vec![
+            PwStreamSetup {
+                node_id: 1,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 3840,
+                    h: 2160,
+                },
+            },
+            PwStreamSetup {
+                node_id: 2,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 1080,
+                    w: 3840,
+                    h: 2160,
+                },
+            },
+        ];
+        place_cosmic_streams(&mut streams, &outputs);
+        assert_eq!(streams[1].rect.y, 2160);
+        // Logical positions overlap once the size is physical; after the
+        // scale shift they stack and must not be packed onto one row.
+        layout_stream_rects(&mut streams);
+        assert_eq!(streams[0].rect.y, 0);
+        assert_eq!(streams[1].rect.y, 2160);
+        assert_eq!(streams[1].rect.x, 0);
+
+        // A logical-sized stream (not the hardware mode) is not shifted.
+        let logical = DesktopRect {
+            x: 0,
+            y: 1080,
+            w: 1920,
+            h: 1080,
+        };
+        assert_eq!(place_cosmic_stream(logical, &outputs), logical);
     }
 
     #[test]

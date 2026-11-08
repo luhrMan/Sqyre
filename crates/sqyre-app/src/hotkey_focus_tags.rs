@@ -97,20 +97,23 @@ fn find_focused_program(
         if name == GENERAL_PROGRAM {
             continue;
         }
-        let Some(data) = catalog.get(name) else {
-            continue;
+        let bound_path = {
+            let Some(data) = catalog.get(name) else {
+                continue;
+            };
+            let path = data.process_path.trim();
+            let owns = if !path.is_empty() {
+                window_matches_binding(win, path, &data.window_title)
+            } else {
+                window_matches_program(win, name)
+            };
+            if !owns {
+                continue;
+            }
+            !path.is_empty()
         };
-        let path = data.process_path.trim();
-        let owns = if !path.is_empty() {
-            window_matches_binding(win, path, &data.window_title)
-        } else {
-            window_matches_program(win, name)
-        };
-        if !owns {
-            continue;
-        }
-        let entry = (name.clone(), data.tags.clone());
-        if !path.is_empty() {
+        let entry = (name.clone(), catalog.program_macro_tags(name));
+        if bound_path {
             bound = Some(entry);
             break;
         }
@@ -146,7 +149,24 @@ mod tests {
         };
         let (name, tags) = find_focused_program(&cat, &win).expect("match");
         assert_eq!(name, "Bound");
-        assert_eq!(tags, vec!["combat".to_string()]);
+        assert_eq!(tags, vec!["Bound".to_string(), "combat".to_string()]);
+    }
+
+    #[test]
+    fn name_tag_is_present_without_extra_tags() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Solo").unwrap();
+        cat.set_process_binding("Solo", "/opt/solo/Solo", "Solo")
+            .unwrap();
+        let win = WindowInfo {
+            title: "Solo".into(),
+            process_name: "Solo".into(),
+            process_path: "/opt/solo/Solo".into(),
+            icon: None,
+        };
+        let (name, tags) = find_focused_program(&cat, &win).expect("match");
+        assert_eq!(name, "Solo");
+        assert_eq!(tags, vec!["Solo".to_string()]);
     }
 
     #[test]
@@ -154,7 +174,7 @@ mod tests {
         assert!(matches!(resolve(None), FocusResolve::Hold));
         let overlay = WindowInfo {
             title: sqyre_capture::OVERLAY_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: "/opt/sqyre".into(),
             icon: None,
         };

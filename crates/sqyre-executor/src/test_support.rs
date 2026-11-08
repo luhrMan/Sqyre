@@ -62,6 +62,42 @@ impl FixedResolver {
     }
 }
 
+/// Atlas member spec with `bounds` as `(x, y, w, h)`.
+pub fn atlas_member(
+    name: &str,
+    rows: i32,
+    cols: i32,
+    bounds: (i32, i32, i32, i32),
+) -> AtlasMemberSpec {
+    AtlasMemberSpec {
+        name: name.into(),
+        collection: FixedCollection { rows, cols, bounds },
+    }
+}
+
+/// Single-collection atlas whose member list is just that collection.
+pub fn one_atlas(name: &str, rows: i32, cols: i32, bounds: (i32, i32, i32, i32)) -> FixedResolver {
+    FixedResolver::with_atlas(
+        vec![atlas_member(name, rows, cols, bounds)],
+        vec![name.into()],
+    )
+}
+
+/// Macro "t" over `root` actions (default delays).
+pub fn macro_of(root: Vec<sqyre_domain::Action>) -> Macro {
+    let mut m = Macro::new("t", 0, vec![]);
+    m.root = sqyre_domain::root_loop(root);
+    m
+}
+
+/// `macro_of` with keyboard/mouse delays zeroed for fast tests.
+pub fn fast_macro_of(root: Vec<sqyre_domain::Action>) -> Macro {
+    let mut m = macro_of(root);
+    m.keyboard_delay = 0;
+    m.mouse_delay = 0;
+    m
+}
+
 /// Default used by most search tests: point (0,0), area (100,200)-(110,210).
 pub const SEARCH_FIXED_AREA: FixedResolver =
     FixedResolver::point_area((0, 0), (100, 200, 110, 210));
@@ -227,6 +263,8 @@ impl OcrEngine for QueuedOcrEngine {
 #[derive(Debug, Default)]
 pub struct RecordingBackend {
     pub log: Vec<String>,
+    /// Last `move_to` target (what a real backend's `cursor_position` returns).
+    pub pos: Option<(i32, i32)>,
 }
 
 impl RecordingBackend {
@@ -256,8 +294,12 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("sleep:{ms}"));
     }
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
+        self.pos = Some((x, y));
         self.log
             .push(format!("move:{x},{y},smooth={}", opts.smooth));
+    }
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        self.pos
     }
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         self.log.push(format!(
@@ -320,6 +362,9 @@ impl AutomationBackend for StopAfterSleeps {
     }
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
         self.inner.move_to(x, y, opts);
+    }
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        self.inner.cursor_position()
     }
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         self.inner.click(button, down)
@@ -421,6 +466,16 @@ pub struct ImmediateContinueWaiter {
     pub log: std::sync::Mutex<Vec<String>>,
     /// Indices returned by successive `wait_for_any_chord` calls (defaults to 0).
     pub any_queue: std::sync::Mutex<Vec<usize>>,
+}
+
+impl ImmediateContinueWaiter {
+    /// Waiter whose `wait_for_any_chord` returns `chords` in order.
+    pub fn queued(chords: &[usize]) -> Self {
+        Self {
+            any_queue: std::sync::Mutex::new(chords.to_vec()),
+            ..Default::default()
+        }
+    }
 }
 
 impl ContinueKeyWaiter for ImmediateContinueWaiter {

@@ -64,7 +64,7 @@ impl UpdateManager {
     }
 
     /// Kick off a background `check_latest` if not already working.
-    pub fn start_check(&mut self) {
+    pub fn start_check(&mut self, include_prerelease: bool) {
         if matches!(
             self.state,
             UpdateState::Checking | UpdateState::Downloading { .. }
@@ -95,7 +95,8 @@ impl UpdateManager {
         thread::Builder::new()
             .name("sqyre-update-check".into())
             .spawn(move || {
-                let result = sqyre_update::check_latest(&current).map_err(|e| e.to_string());
+                let result = sqyre_update::check_latest(&current, include_prerelease)
+                    .map_err(|e| e.to_string());
                 let _ = tx.send(WorkerMsg::Check(result));
             })
             .expect("spawn update check thread");
