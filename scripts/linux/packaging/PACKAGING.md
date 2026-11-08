@@ -15,11 +15,7 @@ App entrypoint: `sqyre-app` → binary name `sqyre`. App ID: `com.sqyre.app`.
 
 ### Prerequisites
 
-<<<<<<< HEAD
 - Rust ≥ 1.96.1, clang, X11 link deps (same as [DEVELOPING.md](../../../docs/DEVELOPING.md))
-=======
-- Rust ≥ 1.96, clang, X11 link deps (same as [DEVELOPING.md](../../../docs/DEVELOPING.md))
->>>>>>> d41abc1984d66677e590a1a44ffccee7eb607ffd
 - [appimage-builder](https://appimage-builder.readthedocs.io/en/stable/intro/install.html), plus `patchelf` and `squashfs-tools`
 
 The **dev container** installs these. PureCV needs **no OpenCV**.
