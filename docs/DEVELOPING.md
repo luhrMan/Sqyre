@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.95, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.96.1, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -123,7 +123,7 @@ On a bare host (no container), install once:
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install --locked trunk@0.21.14  # 0.22+ needs rustc 1.96.1; this repo pins 1.95.0
+cargo install --locked trunk@0.22.1  # rust-version 1.96.1, matching rust-toolchain.toml
 ```
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
@@ -192,7 +192,7 @@ OCR models are embedded at compile time from `assets/ocr-models/`; `SQYRE_OCR_MO
 
 ## Manual setup (without dev container)
 
-Prefer the container when possible. Needs **Rust ≥ 1.95**, clang, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
+Prefer the container when possible. Needs **Rust ≥ 1.96.1**, clang, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
 
 ```bash
 make            # or: cargo build -p sqyre-app
