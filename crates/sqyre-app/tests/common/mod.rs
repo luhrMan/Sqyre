@@ -14,8 +14,10 @@ pub fn build_docs_harness(
     // yet). `keep` leaks the unique dir for the rest of the process so the
     // process-global overrides stay valid through `Harness::run`.
     let dir = tempfile::tempdir().unwrap().keep();
-    // Isolate ~/.config/sqyre too: the data-dir pointer and instance lock live
-    // there, not under the data-dir override. OnceLock — first harness wins.
+    // Settings saves re-apply the (empty) docs `sqyre_dir`, clearing the override
+    // and falling back to home. A temp home also keeps `~/.config/sqyre` (the
+    // data-dir pointer and instance lock) off the real profile. OnceLock — first
+    // harness wins.
     sqyre_persist::set_home_dir(dir.join("home"));
     sqyre_persist::set_sqyre_dir_override(Some(dir.clone()));
     sqyre_persist::initialize_directories().unwrap();

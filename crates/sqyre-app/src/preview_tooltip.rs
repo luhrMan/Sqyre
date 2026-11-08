@@ -99,6 +99,8 @@ struct CapturedPreview {
 #[derive(Default)]
 pub struct PreviewTooltipCache {
     capturer: Option<Arc<OsCapturer>>,
+    /// Docs and kittest never open the real screen capturer.
+    capture_disabled: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
     /// In-flight captures keyed like cache entries; polled on the UI frame.
@@ -122,6 +124,14 @@ pub struct PreviewTooltipCache {
 impl PreviewTooltipCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Never opens the screen capturer (headless docs/kittest: no real-desktop pixels).
+    pub fn without_capture() -> Self {
+        Self {
+            capture_disabled: true,
+            ..Self::default()
+        }
     }
 
     pub fn invalidate_entity(&mut self, name: &str) {
@@ -692,6 +702,9 @@ impl PreviewTooltipCache {
     }
 
     fn ensure_capturer(&mut self) -> Result<(), String> {
+        if self.capture_disabled {
+            return Err("screen capture unavailable".into());
+        }
         if let Some(c) = &self.capturer {
             if !c.is_dead() {
                 return Ok(());

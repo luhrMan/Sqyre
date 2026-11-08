@@ -26,6 +26,10 @@ impl PreviewTooltipCache {
         Self
     }
 
+    pub fn without_capture() -> Self {
+        Self
+    }
+
     pub fn invalidate_entity(&mut self, _name: &str) {}
 
     pub fn show_for_entity(

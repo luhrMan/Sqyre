@@ -719,8 +719,11 @@ fn apply_windows(staged: &Path, target: &Path) -> Result<(), UpdateError> {
     }
     // Release zip uses a versioned name; move the running file aside so the
     // install is just sqyre.exe after restart + cleanup.
+    // Only when installing beside the runner: never move an unrelated exe aside.
     if let Ok(current) = std::env::current_exe() {
-        if !path_file_name_eq_ignore_ascii_case(&current, WINDOWS_EXE_NAME) {
+        if current.parent() == target.parent()
+            && !path_file_name_eq_ignore_ascii_case(&current, WINDOWS_EXE_NAME)
+        {
             let runner_old = sibling_dot_old(&current);
             let _ = fs::remove_file(&runner_old);
             let _ = fs::rename(&current, &runner_old);
@@ -881,6 +884,8 @@ fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage
         .unwrap();
 
         assert_eq!(fs::read(&target).unwrap(), b"new-build");
+        // The running exe lives elsewhere, so it must not be renamed aside.
+        assert!(std::env::current_exe().unwrap().exists());
     }
 
     #[test]
