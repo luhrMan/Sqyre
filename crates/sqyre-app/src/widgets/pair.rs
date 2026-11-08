@@ -833,10 +833,11 @@ mod tests {
                 .collect();
             out.drop_without_applying_deltas();
             if time >= 0.45 {
-                assert!(
-                    open && menu,
-                    "combo menu open={open} painted={menu} at t={time} texts={texts:?}"
-                );
+                assert!(open, "combo menu closed at t={time} texts={texts:?}");
+            }
+            // A popup's first open frame is an invisible sizing pass.
+            if time >= 0.55 {
+                assert!(menu, "combo menu not painted at t={time} texts={texts:?}");
             }
         }
     }
