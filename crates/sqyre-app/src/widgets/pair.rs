@@ -3,7 +3,8 @@
 //! Resting icon buttons are bare glyphs. A loose glyph beside a field does not
 //! read as part of that field, so [`pair_icon`] puts them in a single outline
 //! with a hairline between the slots. Pressing the leading icon focuses the
-//! paired control.
+//! paired control and, for a dropdown, leaves the menu open the way a click
+//! on the menu itself does.
 
 use eframe::egui::{self, Color32, Stroke};
 
@@ -99,18 +100,39 @@ fn paint_pair<R>(
     let result = prepared
         .content_ui
         .horizontal(|ui| {
+            let mut gesture = IconGesture::default();
             if let Some(lead) = leading.as_mut() {
                 let rect = ui.scope(|ui| lead(ui)).response.rect;
-                // The leading glyph is a label, so it has no id to focus.
-                // The paired control is the next focusable widget, and it has
-                // not been built yet, so move focus forward before painting it.
-                if leading_icon_pressed(ui, rect) {
+                gesture = icon_gesture(ui, rect);
+                // The glyph is only a label. Focus the control before it is
+                // built, and keep that focus when the button releases over the
+                // icon. Otherwise egui treats the release as a click outside
+                // and blurs the control, which closes a dropdown at once.
+                if gesture.pressed {
                     focus_following_widget(ui);
                 }
                 lead_rect = Some(rect);
                 ui.add_space(PAIR_SLOT_GAP);
             }
+            let saved_surrender = ui.ctx().options(|o| o.input_options.surrender_focus_on);
+            if gesture.pressed || gesture.clicked {
+                ui.ctx().options_mut(|o| {
+                    o.input_options.surrender_focus_on = egui::SurrenderFocusOn::Never;
+                });
+            }
+            if gesture.clicked {
+                activate_icon_target(ui);
+            }
+            let events_before = ui.ctx().output(|o| o.events.len());
             let scoped = ui.scope(|ui| widget(ui));
+            if gesture.pressed || gesture.clicked {
+                ui.ctx().options_mut(|o| {
+                    o.input_options.surrender_focus_on = saved_surrender;
+                });
+            }
+            if gesture.pressed {
+                remember_icon_target(ui, events_before);
+            }
             widget_rect = scoped.response.rect;
             let result = scoped.inner;
             for slot in trailing.iter_mut() {
@@ -143,13 +165,38 @@ fn paint_pair<R>(
     result
 }
 
-/// Primary press on the leading glyph, while the pair can take input.
-fn leading_icon_pressed(ui: &egui::Ui, rect: egui::Rect) -> bool {
-    ui.is_enabled()
-        && ui.input(|i| {
-            i.pointer.primary_pressed()
-                && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
-        })
+#[derive(Clone, Copy, Default)]
+struct IconGesture {
+    pressed: bool,
+    clicked: bool,
+}
+
+/// The control an icon press focused, and whether that control is a combo.
+#[derive(Clone, Copy)]
+struct IconFocusTarget {
+    id: egui::Id,
+    combo: bool,
+}
+
+fn icon_target_id(ui: &egui::Ui) -> egui::Id {
+    ui.id().with("pair_icon_target")
+}
+
+/// Pointer went down, or finished a click, on the leading glyph.
+fn icon_gesture(ui: &egui::Ui, rect: egui::Rect) -> IconGesture {
+    if !ui.is_enabled() {
+        return IconGesture::default();
+    }
+    ui.input(|i| {
+        let on_icon = i
+            .pointer
+            .interact_pos()
+            .is_some_and(|pos| rect.contains(pos));
+        IconGesture {
+            pressed: on_icon && i.pointer.primary_pressed(),
+            clicked: on_icon && i.pointer.primary_clicked(),
+        }
+    })
 }
 
 /// Move keyboard focus to the next focusable widget painted after this call.
@@ -160,6 +207,44 @@ fn focus_following_widget(ui: &egui::Ui) {
         }
         mem.move_focus(egui::FocusDirection::Next);
     });
+}
+
+/// Re-focus the control from the icon press, and toggle its menu when it is a combo.
+fn activate_icon_target(ui: &egui::Ui) {
+    let Some(target) = ui
+        .ctx()
+        .data(|data| data.get_temp::<IconFocusTarget>(icon_target_id(ui)))
+    else {
+        return;
+    };
+    ui.memory_mut(|mem| mem.request_focus(target.id));
+    if target.combo {
+        egui::Popup::toggle_id(ui.ctx(), target.id.with("popup"));
+    }
+}
+
+/// Remember which control the icon press focused, including combo menus.
+fn remember_icon_target(ui: &egui::Ui, events_before: usize) {
+    let Some(id) = ui.memory(|mem| mem.focused()) else {
+        return;
+    };
+    let gained_combo = ui.ctx().output(|output| {
+        output.events.iter().skip(events_before).any(|event| {
+            matches!(
+                event,
+                egui::output::OutputEvent::FocusGained(info)
+                    if info.typ == egui::WidgetType::ComboBox
+            )
+        })
+    });
+    let key = icon_target_id(ui);
+    let combo = gained_combo
+        || ui.ctx().data(|data| {
+            data.get_temp::<IconFocusTarget>(key)
+                .is_some_and(|target| target.combo && target.id == id)
+        });
+    ui.ctx()
+        .data_mut(|data| data.insert_temp(key, IconFocusTarget { id, combo }));
 }
 
 /// Drop the inner control's box so the pair frame is the only outline.
@@ -397,6 +482,22 @@ mod tests {
         }
     }
 
+    fn release(pos: egui::Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn galley_has(shapes: &[egui::epaint::ClippedShape], needle: &str) -> bool {
+        shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text.galley.text().contains(needle),
+            _ => false,
+        })
+    }
+
     /// Settle layout, then primary-press `glyph` and return whether `focused` became true.
     fn focus_after_icon_press(
         glyph: &str,
@@ -439,12 +540,37 @@ mod tests {
             &ctx,
             egui::RawInput {
                 screen_rect: Some(screen),
-                time: Some(0.4),
+                time: Some(0.35),
                 ..Default::default()
             },
             |ui| paint(ui, &mut focused),
         );
         held.drop_without_applying_deltas();
+        assert!(focused, "holding {glyph:?} blurred its widget");
+        focused = false;
+        let released = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.45),
+                events: vec![release(icon.center())],
+                ..Default::default()
+            },
+            |ui| paint(ui, &mut focused),
+        );
+        released.drop_without_applying_deltas();
+        assert!(focused, "releasing {glyph:?} blurred its widget");
+        focused = false;
+        let idle = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.55),
+                ..Default::default()
+            },
+            |ui| paint(ui, &mut focused),
+        );
+        idle.drop_without_applying_deltas();
         focused
     }
 
@@ -649,5 +775,129 @@ mod tests {
         up.drop_without_applying_deltas();
         assert!(clicked, "releasing the trailing icon did not click it");
         assert!(!focused, "the trailing click focused the field");
+    }
+
+    #[test]
+    fn pressing_a_combo_icon_leaves_the_menu_open() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 240.0));
+        let mut choice = 0usize;
+        let mut icon = egui::Rect::NOTHING;
+        let mut paint = |ui: &mut egui::Ui| {
+            pair_labeled(ui, "C", "Choice", |ui| {
+                egui::ComboBox::from_id_salt("choice")
+                    .width(160.0)
+                    .show_index(ui, &mut choice, 3, |i| format!("Item {i}"));
+            });
+        };
+        for pass in 0..2 {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                &mut paint,
+            );
+            icon = glyph_rect(&out.shapes, "C");
+            out.drop_without_applying_deltas();
+        }
+        assert!(icon.is_positive(), "missing combo icon");
+        let point = icon.center();
+        for (time, events) in [
+            (0.3, vec![press(point)]),
+            (0.35, vec![]),
+            (0.45, vec![release(point)]),
+            (0.55, vec![]),
+        ] {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                &mut paint,
+            );
+            let open = egui::Popup::is_any_open(&ctx);
+            let menu = galley_has(&out.shapes, "Item 1");
+            let texts: Vec<String> = out
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect();
+            out.drop_without_applying_deltas();
+            if time >= 0.45 {
+                assert!(
+                    open && menu,
+                    "combo menu open={open} painted={menu} at t={time} texts={texts:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pressing_a_tag_icon_leaves_suggestions_open() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 320.0));
+        let mut tags = Vec::new();
+        let mut draft = String::new();
+        let suggestions = vec!["alpha".to_owned(), "beta".to_owned()];
+        let glyph = egui_phosphor::regular::TAG;
+        let mut icon = egui::Rect::NOTHING;
+        let mut paint = |ui: &mut egui::Ui| {
+            super::super::tag_chip_editor(
+                ui,
+                &mut tags,
+                &mut draft,
+                &suggestions,
+                super::super::TagChipOptions {
+                    label_name: Some("Tags"),
+                    ..Default::default()
+                },
+            );
+        };
+        for pass in 0..2 {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                &mut paint,
+            );
+            icon = glyph_rect(&out.shapes, glyph);
+            out.drop_without_applying_deltas();
+        }
+        assert!(icon.is_positive(), "missing tag icon");
+        let point = icon.center();
+        for (time, events) in [
+            (0.3, vec![press(point)]),
+            (0.35, vec![]),
+            (0.45, vec![release(point)]),
+            (0.55, vec![]),
+        ] {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                &mut paint,
+            );
+            let visible = galley_has(&out.shapes, "alpha");
+            out.drop_without_applying_deltas();
+            if time >= 0.45 {
+                assert!(visible, "tag suggestions missing at t={time}");
+            }
+        }
     }
 }
