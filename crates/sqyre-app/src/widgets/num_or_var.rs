@@ -343,6 +343,65 @@ mod tests {
     }
 
     #[test]
+    fn number_fields_in_a_row_share_a_baseline() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 200.0));
+        for pass in 0..2 {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    crate::widgets::wrapped_row(ui, |ui| {
+                        let known = KnownVariableNames::default();
+                        let validation = EntryValidation::default();
+                        for label in ["In row", "In col", "In extra"] {
+                            let mut value = "1".to_owned();
+                            num_or_var_field(
+                                ui,
+                                "#",
+                                label,
+                                &mut value,
+                                NumOrVarOpts {
+                                    width: 160.0,
+                                    range: Some(1.0..=100.0),
+                                    theme: VarTheme {
+                                        known_vars: &known,
+                                        is_dark: true,
+                                    },
+                                    validation: &validation,
+                                    help: "cell",
+                                },
+                            );
+                        }
+                    });
+                },
+            );
+            let mut frames: Vec<egui::Rect> = out
+                .shapes
+                .iter()
+                .filter_map(|clipped| match &clipped.shape {
+                    egui::Shape::Rect(rect) if rect.fill.a() > 200 && rect.rect.width() > 80.0 => {
+                        Some(rect.rect)
+                    }
+                    _ => None,
+                })
+                .collect();
+            out.drop_without_applying_deltas();
+            frames.sort_by(|a, b| a.left().total_cmp(&b.left()));
+            assert_eq!(frames.len(), 3, "expected one frame per field: {frames:?}");
+            let top = frames[0].top();
+            for (i, rect) in frames.iter().enumerate() {
+                assert!(
+                    (rect.top() - top).abs() < 1.0,
+                    "field {i} stepped down on pass {pass}: {frames:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn empty_number_mode_does_not_write_zero() {
         let mut h = show_field(String::new(), None);
         h.run_steps(4);

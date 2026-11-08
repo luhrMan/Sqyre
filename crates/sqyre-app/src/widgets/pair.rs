@@ -231,6 +231,47 @@ mod tests {
     }
 
     #[test]
+    fn paired_icon_widgets_in_a_row_share_a_baseline() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 200.0));
+        for pass in 0..2 {
+            let mut name = "Alpha".to_owned();
+            let mut tags = "demo".to_owned();
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            pair_labeled(ui, "T", "Name", |ui| {
+                                ui.add(egui::TextEdit::singleline(&mut name).desired_width(160.0));
+                            });
+                            pair_labeled(ui, "#", "Tags", |ui| {
+                                ui.add(egui::TextEdit::singleline(&mut tags).desired_width(140.0));
+                            });
+                        });
+                    });
+                },
+            );
+            let mut frames: Vec<egui::Rect> = filled_rects(&out.shapes)
+                .into_iter()
+                .filter(|rect| rect.fill.a() > 200 && rect.rect.width() > 80.0)
+                .map(|rect| rect.rect)
+                .collect();
+            out.drop_without_applying_deltas();
+            frames.sort_by(|a, b| a.left().total_cmp(&b.left()));
+            assert_eq!(frames.len(), 2, "expected one frame per pair: {frames:?}");
+            assert!(
+                (frames[0].top() - frames[1].top()).abs() < 1.0,
+                "pair frames stepped on pass {pass}: {frames:?}"
+            );
+        }
+    }
+
+    #[test]
     fn pair_hover_reaches_the_inner_widget() {
         let ctx = egui::Context::default();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0));
