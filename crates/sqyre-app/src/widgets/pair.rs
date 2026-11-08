@@ -2,7 +2,8 @@
 //!
 //! Resting icon buttons are bare glyphs. A loose glyph beside a field does not
 //! read as part of that field, so [`pair_icon`] puts them in a single outline
-//! with a hairline between the slots.
+//! with a hairline between the slots. Pressing the leading icon focuses the
+//! paired control.
 
 use eframe::egui::{self, Color32, Stroke};
 
@@ -99,7 +100,14 @@ fn paint_pair<R>(
         .content_ui
         .horizontal(|ui| {
             if let Some(lead) = leading.as_mut() {
-                lead_rect = Some(ui.scope(|ui| lead(ui)).response.rect);
+                let rect = ui.scope(|ui| lead(ui)).response.rect;
+                // The leading glyph is a label, so it has no id to focus.
+                // The paired control is the next focusable widget, and it has
+                // not been built yet, so move focus forward before painting it.
+                if leading_icon_pressed(ui, rect) {
+                    focus_following_widget(ui);
+                }
+                lead_rect = Some(rect);
                 ui.add_space(PAIR_SLOT_GAP);
             }
             let scoped = ui.scope(|ui| widget(ui));
@@ -133,6 +141,25 @@ fn paint_pair<R>(
         .stroke(stroke);
     prepared.end(ui);
     result
+}
+
+/// Primary press on the leading glyph, while the pair can take input.
+fn leading_icon_pressed(ui: &egui::Ui, rect: egui::Rect) -> bool {
+    ui.is_enabled()
+        && ui.input(|i| {
+            i.pointer.primary_pressed()
+                && i.pointer.interact_pos().is_some_and(|p| rect.contains(p))
+        })
+}
+
+/// Move keyboard focus to the next focusable widget painted after this call.
+fn focus_following_widget(ui: &egui::Ui) {
+    ui.memory_mut(|mem| {
+        if let Some(id) = mem.focused() {
+            mem.surrender_focus(id);
+        }
+        mem.move_focus(egui::FocusDirection::Next);
+    });
 }
 
 /// Drop the inner control's box so the pair frame is the only outline.
@@ -347,5 +374,280 @@ mod tests {
         });
         assert!(frame_hovered, "hovered pair uses the hovered widget stroke");
         second.drop_without_applying_deltas();
+    }
+
+    fn glyph_rect(shapes: &[egui::epaint::ClippedShape], glyph: &str) -> egui::Rect {
+        shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text() == glyph => {
+                    Some(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                }
+                _ => None,
+            })
+            .unwrap_or(egui::Rect::NOTHING)
+    }
+
+    fn press(pos: egui::Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Settle layout, then primary-press `glyph` and return whether `focused` became true.
+    fn focus_after_icon_press(
+        glyph: &str,
+        mut paint: impl FnMut(&mut egui::Ui, &mut bool),
+    ) -> bool {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 240.0));
+        let mut icon = egui::Rect::NOTHING;
+        for pass in 0..2 {
+            let mut focused = false;
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| paint(ui, &mut focused),
+            );
+            icon = glyph_rect(&out.shapes, glyph);
+            out.drop_without_applying_deltas();
+            assert!(!focused, "the paired widget started focused");
+            assert!(icon.is_positive(), "missing icon glyph {glyph:?}");
+        }
+        let mut focused = false;
+        let pressed = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.3),
+                events: vec![press(icon.center())],
+                ..Default::default()
+            },
+            |ui| paint(ui, &mut focused),
+        );
+        pressed.drop_without_applying_deltas();
+        assert!(focused, "pressing {glyph:?} did not focus its widget");
+        focused = false;
+        let held = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.4),
+                ..Default::default()
+            },
+            |ui| paint(ui, &mut focused),
+        );
+        held.drop_without_applying_deltas();
+        focused
+    }
+
+    #[test]
+    fn pressing_the_pair_icon_focuses_the_widget() {
+        let mut name = "Alpha".to_owned();
+        let text_focused = focus_after_icon_press("T", |ui, focused| {
+            pair_labeled(ui, "T", "Name", |ui| {
+                *focused = ui
+                    .add(egui::TextEdit::singleline(&mut name).desired_width(140.0))
+                    .has_focus();
+            });
+        });
+        assert!(text_focused, "the name field lost focus on the next frame");
+
+        let mut number = 4.0;
+        let drag_focused = focus_after_icon_press("N", |ui, focused| {
+            pair_labeled(ui, "N", "Count", |ui| {
+                *focused = ui
+                    .add(egui::DragValue::new(&mut number).speed(1.0))
+                    .has_focus();
+            });
+        });
+        assert!(drag_focused, "the drag value lost focus on the next frame");
+
+        let mut choice = 0;
+        let combo_focused = focus_after_icon_press("C", |ui, focused| {
+            pair_labeled(ui, "C", "Choice", |ui| {
+                *focused = egui::ComboBox::from_id_salt("choice")
+                    .width(120.0)
+                    .show_index(ui, &mut choice, 2, |i| format!("Item {i}"))
+                    .has_focus();
+            });
+        });
+        assert!(combo_focused, "the combo lost focus on the next frame");
+    }
+
+    #[test]
+    fn pressing_one_pair_icon_focuses_that_pair() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 240.0));
+        let mut name = "Alpha".to_owned();
+        let mut tags = "demo".to_owned();
+        let mut name_icon = egui::Rect::NOTHING;
+        let mut tag_icon = egui::Rect::NOTHING;
+        for pass in 0..2 {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.horizontal(|ui| {
+                        pair_labeled(ui, "T", "Name", |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0));
+                        });
+                        pair_labeled(ui, "#", "Tags", |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut tags).desired_width(120.0));
+                        });
+                    });
+                },
+            );
+            name_icon = glyph_rect(&out.shapes, "T");
+            tag_icon = glyph_rect(&out.shapes, "#");
+            out.drop_without_applying_deltas();
+        }
+
+        let mut name_focus = false;
+        let mut tag_focus = false;
+        let pressed = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.3),
+                events: vec![press(tag_icon.center())],
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    pair_labeled(ui, "T", "Name", |ui| {
+                        name_focus = ui
+                            .add(egui::TextEdit::singleline(&mut name).desired_width(120.0))
+                            .has_focus();
+                    });
+                    pair_labeled(ui, "#", "Tags", |ui| {
+                        tag_focus = ui
+                            .add(egui::TextEdit::singleline(&mut tags).desired_width(120.0))
+                            .has_focus();
+                    });
+                });
+            },
+        );
+        pressed.drop_without_applying_deltas();
+        assert!(
+            tag_focus && !name_focus,
+            "tag icon press focused name={name_focus} tags={tag_focus}, icons {name_icon:?} {tag_icon:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_icon_press_does_not_focus_the_field() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 240.0));
+        let mut value = "query".to_owned();
+        let mut trail = egui::Rect::NOTHING;
+        for pass in 0..2 {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| {
+                    pair_icon(
+                        ui,
+                        |ui| {
+                            ui.label("S");
+                        },
+                        |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut value).desired_width(140.0));
+                        },
+                        |ui| {
+                            trail = ui
+                                .add(egui::Button::new("X").min_size(egui::vec2(18.0, 18.0)))
+                                .rect;
+                        },
+                    );
+                },
+            );
+            out.drop_without_applying_deltas();
+        }
+        assert!(trail.is_positive(), "missing trailing button");
+
+        let mut focused = false;
+        let mut clicked = false;
+        let down = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.3),
+                events: vec![press(trail.center())],
+                ..Default::default()
+            },
+            |ui| {
+                pair_icon(
+                    ui,
+                    |ui| {
+                        ui.label("S");
+                    },
+                    |ui| {
+                        focused = ui
+                            .add(egui::TextEdit::singleline(&mut value).desired_width(140.0))
+                            .has_focus();
+                    },
+                    |ui| {
+                        clicked = ui
+                            .add(egui::Button::new("X").min_size(egui::vec2(18.0, 18.0)))
+                            .clicked();
+                    },
+                );
+            },
+        );
+        down.drop_without_applying_deltas();
+        assert!(!focused, "pressing the trailing icon focused the field");
+        assert!(!clicked, "a press is not a click");
+
+        let up = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.4),
+                events: vec![egui::Event::PointerButton {
+                    pos: trail.center(),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ui| {
+                pair_icon(
+                    ui,
+                    |ui| {
+                        ui.label("S");
+                    },
+                    |ui| {
+                        focused = ui
+                            .add(egui::TextEdit::singleline(&mut value).desired_width(140.0))
+                            .has_focus();
+                    },
+                    |ui| {
+                        clicked = ui
+                            .add(egui::Button::new("X").min_size(egui::vec2(18.0, 18.0)))
+                            .clicked();
+                    },
+                );
+            },
+        );
+        up.drop_without_applying_deltas();
+        assert!(clicked, "releasing the trailing icon did not click it");
+        assert!(!focused, "the trailing click focused the field");
     }
 }
