@@ -1751,12 +1751,14 @@ impl SettingsUi {
                 }
             });
 
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
-                        .weak()
-                        .small(),
-                );
+            // The path is its own wrapping line. A horizontal row with the
+            // buttons lets a long Windows path push Choose past the pane.
+            ui.label(
+                egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
+                    .weak()
+                    .small(),
+            );
+            ui.horizontal_wrapped(|ui| {
                 if crate::file_dialogs::supported(PickPurpose::BackupDir)
                     && ui
                         .small_button("Choose…")
