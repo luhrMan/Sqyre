@@ -92,7 +92,14 @@ impl DataEditor {
             let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, target);
             let [tw, th] = fallback.size();
             let size = fit_panel(tw as f32, th as f32);
-            crate::image_view::add_checkered_image(ui, &fallback, size, egui::Sense::hover(), 0.0);
+            crate::image_view::add_checkered_image(
+                ui,
+                &fallback,
+                size,
+                egui::Sense::hover(),
+                0.0,
+                crate::image_view::CheckerboardEdge::Flush,
+            );
             ui.small(pixel_size_text(tw as i32, th as i32));
             ui.weak("No icon variants on disk.");
             return;
@@ -134,6 +141,7 @@ impl DataEditor {
                                     size,
                                     egui::Sense::hover(),
                                     0.0,
+                                    crate::image_view::CheckerboardEdge::Flush,
                                 );
                                 ui.small(pixel_size_text(tw as i32, th as i32));
                             }
