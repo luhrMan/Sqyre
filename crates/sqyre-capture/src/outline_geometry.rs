@@ -18,6 +18,33 @@ pub(crate) fn outline_should_clear(rect: OutlineRect) -> bool {
     rect.is_empty() || rect.width() < EDGE_PX * 2 || rect.height() < EDGE_PX * 2
 }
 
+/// Side length of a recorded-point marker window, in desktop pixels.
+pub(crate) const MARKER_PX: i32 = 12;
+
+/// Cap on simultaneous marker windows. Longer recordings are sampled evenly.
+pub(crate) const MARKER_CAP: usize = 256;
+
+/// Top-left and size of the square centered on a recorded point.
+pub(crate) fn marker_window(x: i32, y: i32) -> (i32, i32, i32, i32) {
+    let half = MARKER_PX / 2;
+    (x - half, y - half, MARKER_PX, MARKER_PX)
+}
+
+/// Keep every point up to [`MARKER_CAP`]; beyond that, sample the path evenly
+/// including the first and last points.
+pub(crate) fn sample_marker_points(points: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    if points.len() <= MARKER_CAP {
+        return points.to_vec();
+    }
+    let last = points.len() - 1;
+    let mut out = Vec::with_capacity(MARKER_CAP);
+    for i in 0..MARKER_CAP {
+        let idx = i * last / (MARKER_CAP - 1);
+        out.push(points[idx]);
+    }
+    out
+}
+
 /// `(x, y, w, h)` placements for the four edge windows — top, bottom, left, right, in that
 /// order — that together form a hollow rectangle outline around `rect`.
 ///
@@ -125,6 +152,21 @@ mod tests {
         let edges = edge_placements(rect);
         assert_eq!(edges[0].2, EDGE_PX * 2);
         assert_eq!(edges[2].3, 1.max(rect.height() - 2 * EDGE_PX));
+    }
+
+    #[test]
+    fn marker_window_is_centered_on_the_point() {
+        assert_eq!(marker_window(100, 200), (94, 194, MARKER_PX, MARKER_PX));
+    }
+
+    #[test]
+    fn sample_marker_points_keeps_ends_when_capped() {
+        let points: Vec<(i32, i32)> = (0..500).map(|i| (i, i * 2)).collect();
+        let sampled = sample_marker_points(&points);
+        assert_eq!(sampled.len(), MARKER_CAP);
+        assert_eq!(sampled[0], (0, 0));
+        assert_eq!(*sampled.last().unwrap(), (499, 998));
+        assert!(sampled.windows(2).all(|w| w[0].0 <= w[1].0));
     }
 
     fn aabb_overlap(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {

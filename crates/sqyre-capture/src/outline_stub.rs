@@ -19,3 +19,17 @@ impl SelectionOutline {
         false
     }
 }
+
+/// No-op point markers where there is no desktop overlay backend.
+#[derive(Debug, Default)]
+pub struct PointMarkerOverlay;
+
+impl PointMarkerOverlay {
+    pub fn open() -> Result<Self, CaptureError> {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+
+    pub fn set_points(&mut self, _points: &[(i32, i32)]) {}
+
+    pub fn clear(&mut self) {}
+}
