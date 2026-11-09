@@ -219,7 +219,7 @@ pub(crate) fn paint_preview_coord_chip(
         let mid = step.center().y;
         let up_rect = egui::Rect::from_min_max(step.min, egui::pos2(step.right(), mid));
         let down_rect = egui::Rect::from_min_max(egui::pos2(step.left(), mid), step.max);
-        use crate::widgets::num_entry::{arrow_step, step_fires};
+        use crate::widgets::num_entry::{arrow_step, scroll_steps, step_fires};
         let up = ui
             .interact(up_rect, id.with("increment"), egui::Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -233,6 +233,12 @@ pub(crate) fn paint_preview_coord_chip(
         let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
         if m > 0.0 {
             *value = n.saturating_sub(m as i32).to_string();
+        }
+        let wheel = scroll_steps(ui, id, step);
+        if wheel != 0.0 {
+            if let Some(cur) = crate::widgets::num_entry::pure_i32(value) {
+                *value = cur.saturating_add(wheel as i32).to_string();
+            }
         }
         crate::widgets::num_entry::paint_steppers(ui, step, up_rect, down_rect, &up, &down);
         ui.painter().rect_stroke(
@@ -571,7 +577,14 @@ pub(crate) fn paint_disk_preview(
         Some(tex) => {
             let [tw, th] = tex.size();
             let size = fit_panel(tw as f32, th as f32);
-            let resp = image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
+            let resp = image_view::add_checkered_image(
+                ui,
+                &tex,
+                size,
+                egui::Sense::hover(),
+                0.0,
+                image_view::CheckerboardEdge::Outset,
+            );
             paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
@@ -669,7 +682,12 @@ pub(crate) fn paint_zoomable_collection_preview(
     {
         let painter = ui.painter_at(viewport);
         if let Some(tex) = &tex {
-            image_view::paint_checkerboard(&painter, content, 0.0);
+            image_view::paint_checkerboard(
+                &painter,
+                content,
+                0.0,
+                image_view::CheckerboardEdge::Outset,
+            );
             painter.image(
                 tex.id(),
                 content,
@@ -735,7 +753,14 @@ pub(crate) fn show_file_hover(
                     FIT_PANEL_MAX_W.min(crate::widgets::visible_content_width(ui)),
                     FIT_PANEL_MAX_H,
                 );
-                image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
+                image_view::add_checkered_image(
+                    ui,
+                    &tex,
+                    size,
+                    egui::Sense::hover(),
+                    0.0,
+                    image_view::CheckerboardEdge::Outset,
+                );
                 ui.label(label);
             });
         }
@@ -1015,7 +1040,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let br = to_screen(rx, by);
             let rect = egui::Rect::from_min_max(tl, br);
             if let Some(Some(tex)) = textures.get(i) {
-                image_view::paint_checkerboard(&painter, rect, 0.0);
+                image_view::paint_checkerboard(
+                    &painter,
+                    rect,
+                    0.0,
+                    image_view::CheckerboardEdge::Outset,
+                );
                 painter.image(
                     tex.id(),
                     rect,
@@ -1173,6 +1203,61 @@ mod tests {
         h.get_by_label("Decrement").click();
         h.run_steps(2);
         assert_eq!(h.state().as_str(), "959");
+    }
+
+    #[test]
+    fn chip_wheel_over_the_stepper_changes_the_number() {
+        use egui_kittest::kittest::Queryable;
+
+        let preview = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(160.0, 60.0));
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 120.0])
+            .build_ui_state(
+                move |ui, v: &mut String| {
+                    paint_preview_coord_chip(
+                        ui,
+                        preview,
+                        CardinalEdge::Top,
+                        "left",
+                        v,
+                        &KnownVariableNames::default(),
+                        true,
+                        &EntryValidation::default(),
+                        "",
+                    );
+                },
+                "960".to_owned(),
+            );
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(1);
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(h.state().as_str(), "961");
+        let number = h
+            .get_by_label("left — drag to adjust, click to edit")
+            .rect()
+            .center();
+        h.hover_at(number);
+        h.run_steps(1);
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(
+            h.state().as_str(),
+            "961",
+            "the number text is not the incrementer"
+        );
     }
 
     /// Right-click Variable keeps the text entry after the chip loses focus,
