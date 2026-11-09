@@ -18,23 +18,21 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
 
 /// Field label: semantic glyph + short visible `name` (Small / weak).
 ///
-/// The AccessKit name is `name`. Help prose belongs on the paired control via
-/// [`tip`] — never tip-only field identity. Put this in
-/// [`crate::widgets::pair_labeled`] (field helpers already do) so the label
-/// and control share one frame.
+/// The painted name Label is the AccessKit name (do not also
+/// `widget_info` the outer row — that duplicates nodes for kittest). Help
+/// prose belongs on the paired control via [`tip`] — never tip-only field
+/// identity. Put this in [`crate::widgets::pair_labeled`] (field helpers
+/// already do) so the label and control share one frame.
 pub fn label(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
-    let resp = ui
-        .horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-            ui.add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()));
-            ui.add(
-                egui::Label::new(egui::RichText::new(name).small().weak())
-                    .sense(egui::Sense::hover()),
-            );
-        })
-        .response;
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.to_string()));
-    resp
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+        ui.add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()));
+        ui.add(
+            egui::Label::new(egui::RichText::new(name).small().weak())
+                .sense(egui::Sense::hover()),
+        );
+    })
+    .response
 }
 
 // --- Shared / common ---
