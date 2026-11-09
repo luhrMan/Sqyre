@@ -2,6 +2,8 @@
 //! steppers inside its right end, painted with the upper and lower strokes of
 //! the Sqyre "S". The steppers share the field's rect, so the row never grows
 //! taller; a trailing spacer atom keeps the value text clear of the glyphs.
+//! Hovering a stepper and rolling the wheel steps by the same amount as a
+//! click — one wheel line per step — without scrolling a parent pane.
 
 use crate::assets;
 use crate::theme::{accent, accent_dim};
@@ -217,6 +219,15 @@ pub(crate) fn string_steppers(
     if m > 0.0 {
         step(-m);
     }
+    let wheel = scroll_steps(ui, field_id, zone);
+    if wheel != 0.0 {
+        if let Some(cur) = pure_i32(value) {
+            *value = cur
+                .saturating_add(wheel as i32)
+                .clamp(*range.start(), *range.end())
+                .to_string();
+        }
+    }
     paint_steppers(ui, zone, up_rect, down_rect, &up, &down);
 }
 
@@ -278,6 +289,80 @@ fn apply_step<Num: egui::emath::Numeric>(
     }
     *value = Num::from_f64(next);
     true
+}
+
+/// Wheel lines over `rect` (positive = wheel up = increment).
+///
+/// Sub-line motion, including trackpad pixels, accumulates until it reaches
+/// one line ([`egui::InputOptions::line_scroll_speed`]). Vertical wheel
+/// motion is consumed so a parent [`egui::ScrollArea`] stays put. Ctrl/Cmd
+/// scroll stays a zoom, and Shift scroll stays horizontal.
+pub(crate) fn scroll_steps(ui: &Ui, id: egui::Id, rect: egui::Rect) -> f64 {
+    let key = id.with("wheel");
+    if !ui.is_enabled() || !ui.rect_contains_pointer(rect) {
+        ui.ctx().data_mut(|d| d.remove::<f64>(key));
+        return 0.0;
+    }
+    // Eat the smoothed tail too: a discrete notch is spread over later frames,
+    // and those frames must not fall through to a parent scroll area.
+    ui.input_mut(|i| i.smooth_scroll_delta.y = 0.0);
+    let (notch, zoom, horizontal) = ui.ctx().options(|o| {
+        (
+            o.input_options.line_scroll_speed,
+            o.input_options.zoom_modifier,
+            o.input_options.horizontal_scroll_modifier,
+        )
+    });
+    let raw = ui.input(|input| wheel_lines(input, notch, zoom, horizontal));
+    if raw == 0.0 {
+        return 0.0;
+    }
+    let acc = ui.ctx().data(|d| d.get_temp::<f64>(key).unwrap_or(0.0)) + raw;
+    let steps = acc.trunc();
+    let rest = acc - steps;
+    ui.ctx().data_mut(|d| {
+        if rest == 0.0 {
+            d.remove::<f64>(key);
+        } else {
+            d.insert_temp(key, rest);
+        }
+    });
+    steps
+}
+
+/// Signed wheel lines this frame, excluding zoom and horizontal-scroll modifiers.
+fn wheel_lines(
+    input: &egui::InputState,
+    notch: f32,
+    zoom: Modifiers,
+    horizontal: Modifiers,
+) -> f64 {
+    let notch = f64::from(notch);
+    if notch <= 0.0 {
+        return 0.0;
+    }
+    let page = f64::from(input.viewport_rect().height()) / notch;
+    let mut lines = 0.0;
+    for event in &input.events {
+        let egui::Event::MouseWheel {
+            unit,
+            delta,
+            modifiers,
+            ..
+        } = event
+        else {
+            continue;
+        };
+        if modifiers.matches_any(zoom) || modifiers.matches_any(horizontal) {
+            continue;
+        }
+        lines += match unit {
+            egui::MouseWheelUnit::Line => f64::from(delta.y),
+            egui::MouseWheelUnit::Point => f64::from(delta.y) / notch,
+            egui::MouseWheelUnit::Page => f64::from(delta.y) * page,
+        };
+    }
+    lines
 }
 
 /// Press → one step now; hold past [`REPEAT_DELAY`] → another step every
@@ -416,6 +501,10 @@ fn steppers<Num: egui::emath::Numeric>(
         let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
         if m > 0.0 {
             changed |= apply_step(ui, value, -m, step, range, max_decimals);
+        }
+        let wheel = scroll_steps(ui, drag_id, rect);
+        if wheel != 0.0 {
+            changed |= apply_step(ui, value, wheel, step, range, max_decimals);
         }
     }
 
@@ -819,6 +908,174 @@ mod tests {
             (field.right() - STEPPER_INSET - inc.right()).abs() < 0.5,
             "increment zone {inc:?} not flush with field right edge {field:?}"
         );
+    }
+
+    fn wheel_lines_at(harness: &mut egui_kittest::Harness<'_, i32>, at: egui::Pos2, lines: f32) {
+        harness.hover_at(at);
+        harness.run_steps(1);
+        harness.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, lines),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run_steps(1);
+    }
+
+    /// Hovering either stepper half and rolling the wheel steps once per line.
+    /// The number text itself does not take the wheel. Half-lines accumulate.
+    /// Ctrl/Cmd scroll stays a zoom.
+    #[test]
+    fn wheel_over_a_stepper_steps_the_value() {
+        let mut h = harness(0..=10);
+        h.run_steps(2);
+        let field = h.get_by_role(egui::accesskit::Role::SpinButton).rect();
+        let inc = h.get_by_label("Increment").rect().center();
+        let dec = h.get_by_label("Decrement").rect().center();
+        wheel_lines_at(&mut h, inc, 1.0);
+        assert_eq!(*h.state(), 6, "wheel up increments");
+        wheel_lines_at(&mut h, dec, -1.0);
+        wheel_lines_at(&mut h, dec, -1.0);
+        assert_eq!(*h.state(), 4, "wheel down decrements");
+
+        let number = egui::pos2(field.left() + 6.0, field.center().y);
+        wheel_lines_at(&mut h, number, 1.0);
+        assert_eq!(
+            *h.state(),
+            4,
+            "the number text is not the incrementer, so the wheel must not step it"
+        );
+
+        h.hover_at(inc);
+        h.run_steps(1);
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 0.5),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(*h.state(), 4, "half a line must not step yet");
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 0.5),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(
+            *h.state(),
+            5,
+            "sub-line wheel motion must accumulate to one step"
+        );
+
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::COMMAND,
+        });
+        h.run_steps(1);
+        assert_eq!(
+            *h.state(),
+            5,
+            "ctrl/cmd-scroll stays a zoom and must not step"
+        );
+    }
+
+    /// A wheel notch aimed at a stepper must not also move the enclosing scroller.
+    #[test]
+    fn wheel_over_a_stepper_does_not_scroll_the_parent() {
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 160.0])
+            .build_ui_state(
+                |ui, state: &mut (i32, f32)| {
+                    let out = egui::ScrollArea::vertical()
+                        .max_height(100.0)
+                        .show(ui, |ui| {
+                            ui.add_space(30.0);
+                            ui.add(num_entry(&mut state.0).speed(1).range(0..=20));
+                            ui.add_space(400.0);
+                        });
+                    state.1 = out.state.offset.y;
+                },
+                (5, 0.0),
+            );
+        h.run_steps(2);
+        let field = h.get_by_role(egui::accesskit::Role::SpinButton).rect();
+        let away = egui::pos2(field.center().x, field.bottom() + 24.0);
+        h.hover_at(away);
+        h.run_steps(1);
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -16.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        // Let egui finish smoothing the notch onto the scroll offset.
+        h.run_steps(15);
+        assert_eq!(
+            h.state().0,
+            5,
+            "scrolling empty space must not step the number"
+        );
+        let scrolled = h.state().1;
+        assert!(
+            scrolled > 1.0,
+            "a wheel notch off the stepper must scroll the parent, offset {scrolled}"
+        );
+
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(1);
+        let offset_before = h.state().1;
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        // Stay hovered while the notch's smoothed tail arrives.
+        h.run_steps(15);
+        assert_eq!(h.state().0, 4, "wheel down on the stepper decrements");
+        assert!(
+            (h.state().1 - offset_before).abs() < 0.5,
+            "the parent offset moved from {offset_before} to {}",
+            h.state().1
+        );
+    }
+
+    #[test]
+    fn wheel_over_a_string_stepper_steps_the_integer() {
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([200.0, 60.0])
+            .build_ui_state(
+                |ui, value: &mut String| {
+                    let resp = ui.add(egui::TextEdit::singleline(value).desired_width(80.0));
+                    string_steppers(ui, resp.id, resp.rect, value, 1..=9);
+                },
+                "8".to_owned(),
+            );
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(1);
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(h.state().as_str(), "9");
+        h.input_mut().events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+        assert_eq!(h.state().as_str(), "9", "clamped at the range end");
     }
 
     #[test]
