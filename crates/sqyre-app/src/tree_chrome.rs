@@ -443,16 +443,17 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         return;
     }
 
+    // Same expansion + sort as the edit tip Items grid / search order.
     let display = cached_sorted_image_search_targets(
         ui.ctx(),
         catalog,
         &d.targets,
-        &[],
+        &d.target_tags,
         d.sort_by,
         d.sort_then,
         &d.tag_priority,
     );
-    ui.add(egui::Label::new(format!("🔍 {}", d.targets.len())).wrap());
+    ui.add(egui::Label::new(format!("🔍 {}", display.len())).wrap());
 
     if !d.target_tags.is_empty() {
         crate::widgets::title_with_count(
@@ -460,7 +461,13 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
             egui::RichText::new("Tags").small().strong(),
             d.target_tags.len(),
         );
-        let groups = image_search_tip_tag_groups(catalog, &d.target_tags);
+        let groups = image_search_tip_tag_groups(
+            catalog,
+            &d.target_tags,
+            d.sort_by,
+            d.sort_then,
+            &d.tag_priority,
+        );
         if groups.is_empty() {
             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
         } else {
@@ -554,11 +561,16 @@ impl ImageSearchTipTagGroup {
 ///
 /// Include tags expand to items that match the **full** filter set (every `+`
 /// and none of the `−`). Exclude tags list every item carrying that tag.
+/// Member order matches the action's Search sorting (`sort_by` / `sort_then` /
+/// `tag_priority`) so the view tip agrees with the edit tip.
 pub(crate) fn image_search_tip_tag_groups(
     catalog: &ProgramCatalog,
     target_tags: &[String],
+    sort_by: sqyre_domain::ItemSortBy,
+    sort_then: sqyre_domain::ItemSortThen,
+    tag_priority: &[String],
 ) -> Vec<ImageSearchTipTagGroup> {
-    use sqyre_domain::{item_matches_tag_filters, parse_tag_filter};
+    use sqyre_domain::{item_matches_tag_filters, parse_tag_filter, ItemSortInfo};
 
     let catalog_refs = catalog_item_refs(catalog);
 
@@ -567,26 +579,25 @@ pub(crate) fn image_search_tip_tag_groups(
         let Some((include, name)) = parse_tag_filter(filter) else {
             continue;
         };
-        let mut matched: Vec<(String, String)> = catalog_refs
+        let infos: Vec<ItemSortInfo> = catalog_refs
             .iter()
             .filter(|item| {
                 item.tags.iter().any(|t| t.trim() == name)
                     && (!include || item_matches_tag_filters(&item.tags, target_tags))
             })
             .map(|item| {
-                let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
-                (display, item.target.clone())
+                let (display, tags) = crate::pickers::item_tooltip_parts(catalog, &item.target);
+                let (rows, cols) = catalog
+                    .item_meta(&item.target)
+                    .map(|m| (m.rows, m.cols))
+                    .unwrap_or((1, 1));
+                ItemSortInfo::from_parts(item.target.clone(), display, rows, cols, tags)
             })
             .collect();
-        matched.sort_by(|a, b| {
-            a.0.to_ascii_lowercase()
-                .cmp(&b.0.to_ascii_lowercase())
-                .then_with(|| a.1.cmp(&b.1))
-        });
         groups.push(ImageSearchTipTagGroup {
             include,
             name,
-            members: matched.into_iter().map(|(_, target)| target).collect(),
+            members: sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority),
         });
     }
     groups
@@ -947,6 +958,7 @@ mod tests {
 
     #[test]
     fn image_search_tip_tag_groups_lists_names_and_members() {
+        use sqyre_domain::{ItemSortBy, ItemSortThen};
         use sqyre_persist::{ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
@@ -985,7 +997,13 @@ mod tests {
             },
         );
 
-        let groups = image_search_tip_tag_groups(&cat, &["+consumable".into(), "-junk".into()]);
+        let groups = image_search_tip_tag_groups(
+            &cat,
+            &["+consumable".into(), "-junk".into()],
+            ItemSortBy::Name,
+            ItemSortThen::NameAsc,
+            &[],
+        );
         assert_eq!(groups.len(), 2);
         assert!(groups[0].include);
         assert_eq!(groups[0].name, "consumable");
@@ -998,6 +1016,112 @@ mod tests {
         assert_eq!(groups[1].members, vec!["Game~Junk".to_string()]);
         assert_eq!(groups[0].polarity_label(), "+");
         assert_eq!(groups[1].polarity_label(), "−");
+    }
+
+    /// View tip Items / tag grids must use the same Search sorting as the edit tip.
+    #[test]
+    fn image_search_view_tip_sort_matches_edit_order() {
+        use sqyre_domain::{ItemSortBy, ItemSortThen};
+        use sqyre_persist::{ProgramData, ProgramItem};
+        use std::collections::BTreeMap;
+
+        let mut cat = ProgramCatalog::default();
+        cat.programs_mut().insert(
+            "Demo".into(),
+            ProgramData {
+                name: "Demo".into(),
+                items: BTreeMap::from([
+                    (
+                        "Zebra".into(),
+                        ProgramItem {
+                            name: "Zebra".into(),
+                            tags: vec!["animal".into()],
+                            grid_cols: 1,
+                            grid_rows: 1,
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Ant".into(),
+                        ProgramItem {
+                            name: "Ant".into(),
+                            tags: vec!["animal".into()],
+                            grid_cols: 2,
+                            grid_rows: 2,
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Moose".into(),
+                        ProgramItem {
+                            name: "Moose".into(),
+                            tags: vec!["animal".into()],
+                            grid_cols: 1,
+                            grid_rows: 2,
+                            ..Default::default()
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let targets = vec!["Demo~Zebra".into(), "Demo~Ant".into(), "Demo~Moose".into()];
+        let tags = vec!["+animal".into()];
+        let sort_by = ItemSortBy::Name;
+        let sort_then = ItemSortThen::NameDesc;
+
+        let edit_order =
+            sorted_image_search_targets(&cat, &targets, &tags, sort_by, sort_then, &[]);
+        assert_eq!(
+            edit_order,
+            vec![
+                "Demo~Zebra".to_string(),
+                "Demo~Moose".to_string(),
+                "Demo~Ant".to_string()
+            ]
+        );
+
+        // Old view tip Items passed `&[]` for tags: tags-only actions showed an
+        // empty Items grid. Expansion must match edit/search order.
+        assert!(sorted_image_search_targets(&cat, &[], &[], sort_by, sort_then, &[]).is_empty());
+        assert_eq!(
+            sorted_image_search_targets(&cat, &[], &tags, sort_by, sort_then, &[]),
+            edit_order
+        );
+
+        // Old tag groups always sorted A→Z; they must follow Search sorting.
+        let groups = image_search_tip_tag_groups(&cat, &tags, sort_by, sort_then, &[]);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].members, edit_order);
+        let alpha_groups =
+            image_search_tip_tag_groups(&cat, &tags, ItemSortBy::Name, ItemSortThen::NameAsc, &[]);
+        assert_ne!(alpha_groups[0].members, edit_order);
+
+        let footprint = sorted_image_search_targets(
+            &cat,
+            &targets,
+            &tags,
+            ItemSortBy::Footprint,
+            ItemSortThen::FootprintLarge,
+            &[],
+        );
+        assert_eq!(
+            footprint,
+            vec![
+                "Demo~Ant".to_string(),
+                "Demo~Moose".to_string(),
+                "Demo~Zebra".to_string()
+            ]
+        );
+        let fp_groups = image_search_tip_tag_groups(
+            &cat,
+            &tags,
+            ItemSortBy::Footprint,
+            ItemSortThen::FootprintLarge,
+            &[],
+        );
+        assert_eq!(fp_groups[0].members, footprint);
     }
 
     #[test]

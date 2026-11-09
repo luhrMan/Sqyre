@@ -427,7 +427,7 @@ fn tip_preferred_width(
                 ctx,
                 catalog,
                 &d.targets,
-                &[],
+                &d.target_tags,
                 d.sort_by,
                 d.sort_then,
                 &d.tag_priority,
@@ -436,11 +436,17 @@ fn tip_preferred_width(
             // it exists, else as the largest tag group; the items grid uses
             // `display.len()`. Mirror `paint_image_search_tooltip_thumbs_pub`.
             let count = if display.is_empty() {
-                tree_chrome::image_search_tip_tag_groups(catalog, &d.target_tags)
-                    .iter()
-                    .map(|g| g.members.len())
-                    .max()
-                    .unwrap_or(0)
+                tree_chrome::image_search_tip_tag_groups(
+                    catalog,
+                    &d.target_tags,
+                    d.sort_by,
+                    d.sort_then,
+                    &d.tag_priority,
+                )
+                .iter()
+                .map(|g| g.members.len())
+                .max()
+                .unwrap_or(0)
             } else {
                 display.len()
             };
