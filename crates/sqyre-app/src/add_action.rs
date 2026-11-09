@@ -1,7 +1,8 @@
 //! Add Action picker dialog.
 //!
-//! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
-//! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
+//! Hover a tile ~1s for a **view** tip of that type’s defaults. **Edit defaults…**
+//! (or right-click a tile) opens **edit** (persisted in user settings). Left-click
+//! inserts a clone into the tree.
 
 use crate::action_tooltip::{
     apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
@@ -30,7 +31,10 @@ const DEFAULTS_HOVER_DELAY: Duration = Duration::from_secs(1);
 
 /// Picker chrome hint — discoverability for the delayed defaults preview.
 /// Keep in sync with [`DEFAULTS_HOVER_DELAY`] (asserted in tests).
-const HOVER_DELAY_HINT: &str = "Hover ~1s to preview defaults · Right-click to edit";
+const HOVER_DELAY_HINT: &str = "Hover ~1s to preview defaults";
+
+/// Visible affordance to edit the selected tile's defaults (not right-click-only).
+const EDIT_DEFAULTS_LABEL: &str = "Edit defaults…";
 
 /// Modal state for the blank-action picker grid.
 #[derive(Debug, Default)]
@@ -292,6 +296,20 @@ impl AddActionPicker {
             }
             ui.horizontal_wrapped(|ui| {
                 ui.weak(HOVER_DELAY_HINT);
+                let edit_enabled = !ordered.is_empty() && !editing;
+                if ui
+                    .add_enabled(edit_enabled, egui::Button::new(EDIT_DEFAULTS_LABEL).small())
+                    .on_hover_text(
+                        "Edit the selected action's default fields (also right-click a tile)",
+                    )
+                    .clicked()
+                {
+                    if let Some(t) = ordered.get(self.selected) {
+                        // Anchor near the dialog center-right; exact tile rect is unknown here.
+                        let anchor = ui.max_rect().right_top();
+                        edit_request = Some((t.action_type.to_string(), anchor));
+                    }
+                }
                 crate::widgets::combo_enum(
                     ui,
                     egui_phosphor::regular::SORT_ASCENDING,
@@ -723,8 +741,8 @@ mod tests {
             "hint must mention defaults preview"
         );
         assert!(
-            hint.contains("right-click"),
-            "hint must mention right-click edit"
+            EDIT_DEFAULTS_LABEL.to_ascii_lowercase().contains("edit"),
+            "visible Edit defaults affordance required"
         );
     }
 
