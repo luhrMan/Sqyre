@@ -134,9 +134,9 @@ impl EditorTab {
         }
     }
 
-    /// Semantic glyph for the icon tab face; [`Self::label`] stays the
-    /// tooltip / combo fallback text. Entity tabs use the canonical
-    /// [`crate::model_icons`] glyph so the same model looks the same app-wide.
+    /// Semantic glyph beside the visible [`Self::label`] on the tab face.
+    /// Entity tabs use the canonical [`crate::model_icons`] glyph so the same
+    /// model looks the same app-wide.
     fn icon(self) -> &'static str {
         use egui_phosphor::regular::*;
         match self {

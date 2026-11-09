@@ -15,8 +15,8 @@ pub fn text_width(ui: &egui::Ui, text: &str, style: egui::TextStyle) -> f32 {
 pub enum OverflowItem<'a> {
     /// Visual divider between button sections.
     Separator,
-    /// Clickable section or tab. Paints `icon` only — `label` stays the
-    /// tooltip and the AccessKit name.
+    /// Clickable section or tab. Paints glyph + visible `label` (P1-2);
+    /// AccessKit name matches `label`.
     Choice {
         label: &'a str,
         icon: &'a str,
@@ -34,16 +34,23 @@ pub fn always_bar(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize
     paint_items(ui, items)
 }
 
-/// Icon-only tab face: the `selectable_label` selection chrome around a glyph.
-/// `label` is the AccessKit name and hover text.
-fn paint_icon_choice(
+/// Icon + short text tab face with selectable chrome.
+fn paint_labeled_choice(
     ui: &mut egui::Ui,
     glyph: &str,
     label: &str,
     selected: bool,
 ) -> egui::Response {
+    let pad_x = crate::theme::SPACE_4;
+    let gap = crate::theme::SPACE_4;
     let side = crate::widgets::icon_btn_side(ui);
-    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let text_w = text_width(ui, label, egui::TextStyle::Small);
+    let desired = egui::vec2(
+        pad_x * 2.0 + side + gap + text_w,
+        side.max(ui.spacing().interact_size.y),
+    );
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
     let visuals = ui.style().interact_selectable(&response, selected);
     ui.painter().rect(
         rect.expand(visuals.expansion),
@@ -52,17 +59,25 @@ fn paint_icon_choice(
         visuals.fg_stroke,
         egui::StrokeKind::Inside,
     );
+    let icon_center = egui::pos2(rect.left() + pad_x + side * 0.5, rect.center().y);
     ui.painter().text(
-        rect.center(),
+        icon_center,
         egui::Align2::CENTER_CENTER,
         glyph,
         egui::TextStyle::Button.resolve(ui.style()),
         visuals.fg_stroke.color,
     );
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x + side + gap, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        font,
+        visuals.fg_stroke.color,
+    );
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, label)
     });
-    response.on_hover_text(label)
+    response
 }
 
 fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
@@ -77,7 +92,7 @@ fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
                 icon,
                 selected,
             } => {
-                if paint_icon_choice(ui, icon, label, *selected).clicked() {
+                if paint_labeled_choice(ui, icon, label, *selected).clicked() {
                     picked = Some(i);
                 }
             }
@@ -144,6 +159,26 @@ mod tests {
             harness.query_by_role(Role::ComboBox).is_none(),
             "buttons never collapse into a menu"
         );
+    }
+
+    #[test]
+    fn choice_paints_visible_label_text() {
+        let ctx = egui::Context::default();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.horizontal(|ui| {
+                always_bar(ui, &section_items());
+            });
+        });
+        let painted = |needle: &str| {
+            out.shapes.iter().any(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => text.galley.text() == needle,
+                _ => false,
+            })
+        };
+        for label in ["Programs", "Items", "Coordinates", "Tools"] {
+            assert!(painted(label), "{label} must be painted at rest");
+        }
+        out.drop_without_applying_deltas();
     }
 
     #[test]
