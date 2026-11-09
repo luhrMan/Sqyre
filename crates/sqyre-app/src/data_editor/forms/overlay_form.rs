@@ -291,17 +291,18 @@ impl DataEditor {
                 });
             },
         );
+        // Size is common-path (P1-3) — keep it outside collapsed Appearance.
+        crate::widgets::pair_labeled(ui, egui_phosphor::regular::RULER, "Size", |ui| {
+            help::tip(
+                ui.add(
+                    crate::widgets::num_entry(&mut self.form_overlay_size)
+                        .speed(1)
+                        .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
+                ),
+                help::DE_OVERLAY_SIZE,
+            );
+        });
         crate::widgets::collapsible_section(ui, "Appearance", "de_overlay_appearance", |ui| {
-            crate::widgets::pair_labeled(ui, egui_phosphor::regular::RULER, "Size", |ui| {
-                help::tip(
-                    ui.add(
-                        crate::widgets::num_entry(&mut self.form_overlay_size)
-                            .speed(1)
-                            .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
-                    ),
-                    help::DE_OVERLAY_SIZE,
-                );
-            });
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
