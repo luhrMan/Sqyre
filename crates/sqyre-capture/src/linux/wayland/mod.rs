@@ -29,9 +29,9 @@ pub use portal_remote::PortalEisInput;
 #[cfg(feature = "portal-capture")]
 pub use portal_session::{
     portal_cursor_position, portal_input_click, portal_input_key, portal_input_last_pos,
-    portal_input_move, portal_input_ready, portal_input_scroll, portal_remote_desktop_granted,
-    portal_screencast_granted, register_portal_app_now, request_portal_screencast_picker,
-    revoke_portal_grants,
+    portal_input_move, portal_input_ready, portal_input_scroll, portal_input_wait,
+    portal_remote_desktop_granted, portal_screencast_granted, register_portal_app_now,
+    request_portal_screencast_picker, revoke_portal_grants,
 };
 
 pub use layer_shell::{layer_shell_available, prefers_layer_shell_overlay_session};

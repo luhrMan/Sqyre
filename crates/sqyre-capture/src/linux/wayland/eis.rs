@@ -24,6 +24,7 @@ pub(crate) struct EisInput {
     /// Absolute warps sent this session. Diagnostic only.
     move_n: u32,
     last_move_log: Option<Instant>,
+    logged_protocol_error: bool,
 }
 
 struct DeviceSlot {
@@ -51,6 +52,7 @@ impl EisInput {
             sequence: 0,
             move_n: 0,
             last_move_log: None,
+            logged_protocol_error: false,
         };
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
@@ -58,12 +60,7 @@ impl EisInput {
                 return Err(CaptureError::Message("EIS handshake aborted".into()));
             }
             eis.drain();
-            if eis.devices.iter().any(|d| {
-                d.resumed
-                    && (d.device.has_capability(DeviceCapability::PointerAbsolute)
-                        || d.device.has_capability(DeviceCapability::Keyboard)
-                        || d.device.has_capability(DeviceCapability::Button))
-            }) {
+            if eis.has_usable_device() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(20));
@@ -85,21 +82,35 @@ impl EisInput {
         } else {
             regions.join(",")
         };
+        // COSMIC resumes devices when it handles `ei_seat.bind`, which can land
+        // after this wait. A zero here is not fatal — the session stays open.
         cap_log(
             "INPUT",
-            if resumed == 0 { "fail" } else { "ok" },
+            if resumed == 0 { "wait" } else { "ok" },
             &format!(
                 "eis devices={} resumed={resumed} regions={regions_s} layout={}",
                 eis.devices.len(),
                 if eis.cosmic_layout() { "cosmic" } else { "abs" },
             ),
         );
-        if resumed == 0 {
-            return Err(CaptureError::Message(
-                "Remote Desktop EIS connected but no input device resumed".into(),
-            ));
-        }
         Ok(eis)
+    }
+
+    fn log_protocol_error(&mut self, detail: &str) {
+        if self.logged_protocol_error {
+            return;
+        }
+        self.logged_protocol_error = true;
+        cap_log("INPUT", "fail", detail);
+    }
+
+    pub(crate) fn has_usable_device(&self) -> bool {
+        self.devices.iter().any(|d| {
+            d.resumed
+                && (d.device.has_capability(DeviceCapability::PointerAbsolute)
+                    || d.device.has_capability(DeviceCapability::Keyboard)
+                    || d.device.has_capability(DeviceCapability::Button))
+        })
     }
 
     pub(crate) fn drain(&mut self) {
@@ -118,9 +129,16 @@ impl EisInput {
         while let Some(result) = self.context.pending_event() {
             match result {
                 PendingRequestResult::Request(ev) => {
-                    let _ = self.converter.handle_event(ev);
+                    if let Err(e) = self.converter.handle_event(ev) {
+                        self.log_protocol_error(&format!("eis event: {e}"));
+                    }
                 }
-                PendingRequestResult::ParseError(_) | PendingRequestResult::InvalidObject(_) => {}
+                PendingRequestResult::ParseError(e) => {
+                    self.log_protocol_error(&format!("eis parse: {e}"));
+                }
+                PendingRequestResult::InvalidObject(id) => {
+                    self.log_protocol_error(&format!("eis invalid object={id}"));
+                }
             }
         }
         while let Some(ev) = self.converter.next_event() {

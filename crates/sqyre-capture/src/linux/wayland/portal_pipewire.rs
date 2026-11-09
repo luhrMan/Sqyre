@@ -2,9 +2,8 @@
 
 use super::portal_dma::{copy_pw_frame_into_rect, with_spa_chunk_bytes};
 use super::portal_session::{
-    note_portal_cursor, open_portal_session, rects_overlap, spawn_eis_thread,
-    stage_mutation_recent, stop_eis_thread, union_rect, LOGGED_CURSOR_META, PENDING_EIS_FD,
-    REMOTE_DESKTOP_GRANTED,
+    note_portal_cursor, open_portal_session, rects_overlap, stage_mutation_recent, stop_eis_thread,
+    union_rect, LOGGED_CURSOR_META, REMOTE_DESKTOP_GRANTED,
 };
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
@@ -892,7 +891,6 @@ fn portal_pw_thread(
     let _clear_streaming = ClearStreaming;
     let ready = Arc::new(ready);
     let (portal_hold, setup) = propagate_ready(&ready, pollster::block_on(open_portal_session()))?;
-    let eis_fd = PENDING_EIS_FD.lock().take();
 
     {
         let mut slot = frame.0.lock();
@@ -1277,9 +1275,6 @@ fn portal_pw_thread(
         stream_holds.push(stream);
     }
     let _registry = registry;
-    if let Some(fd) = eis_fd {
-        spawn_eis_thread(fd);
-    }
 
     while !shutdown.load(Ordering::SeqCst) {
         match msg_rx.try_recv() {
