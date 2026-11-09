@@ -773,7 +773,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
-pub use x11_focus::{OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
+pub use x11_focus::{set_wm_class, OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
 
 #[cfg(not(target_os = "linux"))]
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
