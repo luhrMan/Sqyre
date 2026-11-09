@@ -271,6 +271,14 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
     desktop_entry::install();
     #[cfg(all(feature = "native-runtime", target_os = "linux"))]
     sqyre_capture::linux::app_scope::enter_app_scope(assets::APP_ID);
+    // Before eframe starts GlobalShortcuts. The first portal method on the
+    // shared connection freezes the app id the COSMIC permission dialog shows.
+    #[cfg(all(
+        feature = "native-runtime",
+        feature = "portal-capture",
+        target_os = "linux"
+    ))]
+    sqyre_capture::linux::wayland::register_portal_app_now();
     #[cfg(all(
         not(target_arch = "wasm32"),
         feature = "native-runtime",

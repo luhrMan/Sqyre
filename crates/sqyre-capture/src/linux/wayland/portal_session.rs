@@ -480,13 +480,88 @@ fn stream_rect(stream: &ashpd::desktop::screencast::Stream) -> DesktopRect {
     let (x, y) = stream.position().unwrap_or((0, 0));
     DesktopRect { x, y, w, h }
 }
-async fn register_portal_app() {
+enum HostRegister {
+    /// This connection is associated with [`PORTAL_APP_ID`].
+    Ready,
+    /// Desktop file is not in GIO's cache yet (`App info not found`).
+    Retry,
+    /// No session bus, or another error. Do not open a portal method after this
+    /// on a fresh connection — the next call caches an empty host id.
+    Stop,
+}
+
+/// Classify a `Register` failure. The host portal keeps the first successful
+/// method's app id for the life of the D-Bus connection.
+fn host_register_outcome(err: &str) -> HostRegister {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("already associated") {
+        HostRegister::Ready
+    } else if lower.contains("not found") || lower.contains("could not find") {
+        HostRegister::Retry
+    } else {
+        HostRegister::Stop
+    }
+}
+
+async fn register_portal_app_once() -> HostRegister {
     let Ok(app_id) = PORTAL_APP_ID.parse::<ashpd::AppID>() else {
-        return;
+        return HostRegister::Stop;
     };
     match ashpd::register_host_app(app_id).await {
-        Ok(()) => cap_log("PORTAL", "appid", PORTAL_APP_ID),
-        Err(e) => cap_log("PORTAL", "appid", &format!("register skipped: {e}")),
+        Ok(()) => {
+            cap_log("PORTAL", "appid", PORTAL_APP_ID);
+            HostRegister::Ready
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            match host_register_outcome(&msg) {
+                HostRegister::Ready => {
+                    cap_log("PORTAL", "appid", "already associated");
+                    HostRegister::Ready
+                }
+                HostRegister::Retry => HostRegister::Retry,
+                HostRegister::Stop => {
+                    cap_log("PORTAL", "appid", &format!("register skipped: {msg}"));
+                    HostRegister::Stop
+                }
+            }
+        }
+    }
+}
+
+async fn register_portal_app() {
+    if matches!(register_portal_app_once().await, HostRegister::Retry) {
+        cap_log(
+            "PORTAL",
+            "appid",
+            &format!("register skipped: {PORTAL_APP_ID} not in desktop cache"),
+        );
+    }
+}
+
+/// Register `com.sqyre.app` before any other portal method on this process.
+///
+/// xdg-desktop-portal caches the app id from the first method on the
+/// connection. GlobalShortcuts (started with the UI) otherwise caches an empty
+/// id, and the macro ScreenCast / RemoteDesktop dialog stays "unknown application".
+/// GIO indexes a just-written desktop file asynchronously; retry that case only.
+pub fn register_portal_app_now() {
+    const ATTEMPTS: u32 = 8;
+    for attempt in 0..ATTEMPTS {
+        match pollster::block_on(register_portal_app_once()) {
+            HostRegister::Ready | HostRegister::Stop => return,
+            HostRegister::Retry => {
+                if attempt + 1 == ATTEMPTS {
+                    cap_log(
+                        "PORTAL",
+                        "appid",
+                        &format!("register skipped: {PORTAL_APP_ID} not in desktop cache"),
+                    );
+                    return;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
     }
 }
 
@@ -1002,6 +1077,24 @@ fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_register_keeps_a_cached_id_and_retries_a_missing_desktop_file() {
+        assert!(matches!(
+            host_register_outcome(
+                "org.freedesktop.portal.Error.Failed: Connection already associated with an application ID"
+            ),
+            HostRegister::Ready
+        ));
+        assert!(matches!(
+            host_register_outcome("App info not found for 'com.sqyre.app'"),
+            HostRegister::Retry
+        ));
+        assert!(matches!(
+            host_register_outcome("org.freedesktop.DBus.Error.ServiceUnknown"),
+            HostRegister::Stop
+        ));
+    }
 
     #[test]
     fn restore_token_roundtrip() {
