@@ -213,17 +213,33 @@ fn transparency_texture(ctx: &egui::Context) -> egui::TextureHandle {
     tex
 }
 
+/// How the transparency checkerboard meets the image rectangle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CheckerboardEdge {
+    /// One point past each side, so a capture or collection boundary reads
+    /// against the surrounding UI.
+    Outset,
+    /// Flush with the image. Item icons sit in their own cell and should not
+    /// grow a checkerboard halo.
+    Flush,
+}
+
 /// Checkerboard painted under image content so transparent pixels — and hence
 /// the real image edges — are visible. Paint before the image; `corner_radius`
 /// matches whatever rounding the image on top applies.
-///
-/// The board pads one pixel past each edge of `rect` so the boundary between
-/// image and surrounding UI is also marked, not just the transparent pixels.
-pub fn paint_checkerboard(painter: &egui::Painter, rect: egui::Rect, corner_radius: f32) {
+pub fn paint_checkerboard(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    corner_radius: f32,
+    edge: CheckerboardEdge,
+) {
     if !rect.is_positive() {
         return;
     }
-    let board = rect.expand(1.0);
+    let board = match edge {
+        CheckerboardEdge::Outset => rect.expand(1.0),
+        CheckerboardEdge::Flush => rect,
+    };
     let tex = transparency_texture(painter.ctx());
     // One texture repeat covers two squares in each axis.
     let uv = egui::Rect::from_min_size(egui::Pos2::ZERO, board.size() / (2.0 * TRANSPARENCY_TILE));
@@ -242,9 +258,10 @@ pub fn add_checkered_image(
     size: Vec2,
     sense: egui::Sense,
     corner_radius: f32,
+    edge: CheckerboardEdge,
 ) -> egui::Response {
     let (rect, _) = ui.allocate_exact_size(size, sense);
-    paint_checkerboard(ui.painter(), rect, corner_radius);
+    paint_checkerboard(ui.painter(), rect, corner_radius, edge);
     ui.put(
         rect,
         egui::Image::new((tex.id(), size))
@@ -418,7 +435,7 @@ mod tests {
         let ctx = egui::Context::default();
         let rect = egui::Rect::from_min_size(egui::pos2(10.0, 8.0), egui::vec2(40.0, 24.0));
         let out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            paint_checkerboard(ui.painter(), rect, 0.0);
+            paint_checkerboard(ui.painter(), rect, 0.0, CheckerboardEdge::Outset);
         });
         let board = rect.expand(1.0);
         let expected_uv =
@@ -433,6 +450,31 @@ mod tests {
             painted,
             "checkerboard did not paint a padded textured rect over {rect:?}"
         );
+        out.drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn checkerboard_flush_stays_on_the_image_rect() {
+        let ctx = egui::Context::default();
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 8.0), egui::vec2(40.0, 24.0));
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_checkerboard(ui.painter(), rect, 0.0, CheckerboardEdge::Flush);
+        });
+        let expected_uv =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size() / (2.0 * TRANSPARENCY_TILE));
+        let painted = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r) => {
+                r.rect == rect && r.brush.as_ref().is_some_and(|b| b.uv == expected_uv)
+            }
+            _ => false,
+        });
+        assert!(painted, "flush checkerboard did not stay on {rect:?}");
+        let halo = rect.expand(1.0);
+        let spilled = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r) => r.rect == halo,
+            _ => false,
+        });
+        assert!(!spilled, "flush checkerboard painted an outset edge");
         out.drop_without_applying_deltas();
     }
 

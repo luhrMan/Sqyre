@@ -465,7 +465,12 @@ pub fn paint_icon_thumb_at(
         let slot = egui::Rect::from_center_size(center, Vec2::new(max_w, max_h));
         ui.painter().rect_filled(slot, corner_radius, bg);
     }
-    image_view::paint_checkerboard(ui.painter(), rect, corner_radius);
+    image_view::paint_checkerboard(
+        ui.painter(),
+        rect,
+        corner_radius,
+        image_view::CheckerboardEdge::Flush,
+    );
     ui.painter().image(
         tex.id(),
         rect,
@@ -801,5 +806,37 @@ mod tests {
     #[test]
     fn rotating_variant_index_single_variant_is_zero() {
         assert_eq!(rotating_variant_index("Prog~Item", 1, 99.0), 0);
+    }
+
+    #[test]
+    fn item_icon_checkerboard_does_not_paint_an_edge() {
+        let ctx = egui::Context::default();
+        let tex = ctx.load_texture(
+            "item",
+            egui::ColorImage::new([8, 8], vec![egui::Color32::WHITE; 64]),
+            egui::TextureOptions::NEAREST,
+        );
+        let center = egui::pos2(100.0, 80.0);
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_icon_thumb_at(ui, &tex, center, 32.0, 32.0, 0.0, None);
+        });
+        let image = egui::Rect::from_center_size(center, egui::vec2(32.0, 32.0));
+        let boards: Vec<_> = out
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Rect(r) if r.brush.is_some() => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            boards.contains(&image),
+            "item icon checkerboard should match the image, got {boards:?}"
+        );
+        assert!(
+            !boards.contains(&image.expand(1.0)),
+            "item icon painted a checkerboard edge: {boards:?}"
+        );
+        out.drop_without_applying_deltas();
     }
 }
