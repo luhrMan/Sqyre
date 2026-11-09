@@ -410,21 +410,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     !app.workspace.macros.is_empty()
 }
 
-fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
-    if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
-        app.hotkey_record.open(&app.run_session.macro_hotkeys);
-    }
-    if toolbar_icon(
-        ui,
-        egui_phosphor::regular::ERASER,
-        crate::action_tooltip::help::META_HOTKEY_CLEAR,
-        !running && !app.workspace.macros[idx].hotkey.is_empty(),
-    )
-    .clicked()
-    {
-        app.apply_hotkey_to_selected(Vec::new(), None);
-    }
-
+fn paint_hotkey_trigger_toggle(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
     let mut on_press =
         HotkeyTrigger::parse(&app.workspace.macros[idx].hotkey_trigger) == HotkeyTrigger::Press;
     let tip = if on_press {
@@ -443,15 +429,34 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
             ),
         )
         .changed();
+    // Glanceable mode text at rest (P1-1) — tip alone is not enough.
+    let mode = if on_press {
+        HotkeyTrigger::Press
+    } else {
+        HotkeyTrigger::Release
+    };
+    ui.weak(mode.ui_label());
     if toggled {
-        let trigger = if on_press {
-            HotkeyTrigger::Press
-        } else {
-            HotkeyTrigger::Release
-        };
         let chord = app.workspace.macros[idx].hotkey.clone();
-        app.apply_hotkey_to_selected(chord, Some(trigger));
+        app.apply_hotkey_to_selected(chord, Some(mode));
     }
+}
+
+fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
+    if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
+        app.hotkey_record.open(&app.run_session.macro_hotkeys);
+    }
+    if toolbar_icon(
+        ui,
+        egui_phosphor::regular::ERASER,
+        crate::action_tooltip::help::META_HOTKEY_CLEAR,
+        !running && !app.workspace.macros[idx].hotkey.is_empty(),
+    )
+    .clicked()
+    {
+        app.apply_hotkey_to_selected(Vec::new(), None);
+    }
+    paint_hotkey_trigger_toggle(app, ui, idx, running);
 }
 
 /// Single icon that pops up the AI and YAML Macro Builder entries.
@@ -497,6 +502,9 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
                 });
+        } else {
+            // Mode chip stays glanceable when the record/clear cluster is collapsed.
+            paint_hotkey_trigger_toggle(app, ui, idx, running);
         }
         let hk_label = {
             let m = &app.workspace.macros[idx];
@@ -508,6 +516,7 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         };
         ui.weak(hk_label);
         app.workspace.macro_meta.paint_hotkey_toggle(ui);
+        crate::macro_meta::MacroMetaUi::paint_delay_summary(ui, &app.workspace.macros[idx]);
         app.workspace
             .macro_meta
             .paint_delay_button(ui, &app.workspace.macros[idx], !running);
