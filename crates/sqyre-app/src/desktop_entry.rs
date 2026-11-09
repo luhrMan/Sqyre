@@ -1,8 +1,10 @@
 //! Freedesktop `.desktop` entry + icon for unsandboxed Linux runs.
 //!
-//! GNOME resolves the portal dialog name ("Sqyre wants to remotely control…") and
+//! GNOME and COSMIC resolve the portal dialog name ("Sqyre wants to…") and
 //! Wayland dock icons from `<APP_ID>.desktop` in the XDG data dirs. Without it,
-//! the Remote Desktop / ScreenCast prompts show "Unknown Application".
+//! Remote Desktop / ScreenCast prompts show "unknown application".
+//! `StartupWMClass` is the desktop id (`com.sqyre.app`), matching the X11
+//! WM_CLASS class/instance — not the binary name `sqyre`.
 
 use crate::assets::{APP_ICON_SVG, APP_ID};
 use std::path::{Path, PathBuf};
@@ -17,13 +19,13 @@ fn desktop_entry(exec: &Path) -> String {
          Name={name}\n\
          Comment=Desktop macro builder — screen-aware automation\n\
          Categories=Development;Utility;\n\
-         Keywords={id};macro;automation;ocr;image-search;macro-recorder;auto-clicker;hotkey;\n\
+         Keywords={keyword};macro;automation;ocr;image-search;macro-recorder;auto-clicker;hotkey;\n\
          Icon={APP_ID}\n\
          Exec={exec}\n\
          Terminal=false\n\
-         StartupWMClass={id}\n",
+         StartupWMClass={APP_ID}\n",
         name = sqyre_ports::APP_NAME,
-        id = sqyre_ports::APP_ID,
+        keyword = sqyre_ports::APP_ID,
         exec = quote_exec_arg(&exec.to_string_lossy()),
     )
 }
@@ -160,6 +162,8 @@ mod tests {
         assert!(entry.contains("\nExec=/opt/sqyre-dev/sqyre\n"));
         assert!(entry.contains("\nName=Sqyre\n"));
         assert!(entry.contains(&format!("\nIcon={APP_ID}\n")));
+        assert!(entry.contains(&format!("\nStartupWMClass={APP_ID}\n")));
+        assert!(entry.contains("\nKeywords=sqyre;"));
         assert_eq!(entry.matches("Exec=").count(), 1);
     }
 

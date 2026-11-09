@@ -7,5 +7,5 @@ Keywords=sqyre;macro;automation;ocr;image-search;macro-recorder;auto-clicker;hot
 Icon=com.sqyre.app
 Exec=sqyre
 Terminal=false
-StartupWMClass=sqyre
+StartupWMClass=com.sqyre.app
 StartupNotify=true
