@@ -551,7 +551,6 @@ impl SqyreApp {
         #[cfg(all(feature = "native-runtime", target_os = "linux"))]
         {
             screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
-            macro_record_bridge.set_absolute_pos(sqyre_capture::portal_cursor_position);
         }
         let run = RunState::default();
         let stop = run.stop.clone();

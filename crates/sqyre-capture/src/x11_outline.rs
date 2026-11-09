@@ -352,9 +352,12 @@ impl Drop for SelectionOutline {
     }
 }
 
-// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
-// screen index valid on it; `color` is a stack local that outlives `XAllocColor`.
-unsafe fn alloc_stroke_pixel(display: *mut Display, screen: c_int) -> Result<c_ulong, String> {
+/// # Safety
+/// `display` is a live, non-null Xlib connection and `screen` is valid on it.
+pub(crate) unsafe fn alloc_stroke_pixel(
+    display: *mut Display,
+    screen: c_int,
+) -> Result<c_ulong, String> {
     // SAFETY: caller guarantees live `display` and a valid `screen`; `color` is a
     // stack local that outlives the `XAllocColor` call writing into it.
     unsafe {
@@ -374,7 +377,7 @@ unsafe fn alloc_stroke_pixel(display: *mut Display, screen: c_int) -> Result<c_u
     }
 }
 
-fn open_x_display() -> Result<*mut Display, CaptureError> {
+pub(crate) fn open_x_display() -> Result<*mut Display, CaptureError> {
     // SAFETY: null-checked before return; registered so winit's error hook skips it.
     unsafe {
         let display = XOpenDisplay(ptr::null());
@@ -404,7 +407,7 @@ fn close_x_display(display: *mut Display) {
 }
 
 /// `XCloseDisplay` off the caller thread so Drop / UI stay responsive under load.
-fn schedule_x_close(display: *mut Display) {
+pub(crate) fn schedule_x_close(display: *mut Display) {
     if display.is_null() {
         return;
     }
@@ -418,7 +421,11 @@ fn schedule_x_close(display: *mut Display) {
 
 /// Root pointer on `display`. Round-trip — do not call while `ConfigureWindow` is pending
 /// on this same connection.
-unsafe fn query_pointer_on(display: *mut Display) -> Option<(i32, i32, bool)> {
+///
+/// # Safety
+/// `display` is a live Xlib connection. Do not call while that connection has
+/// pending `ConfigureWindow` requests.
+pub(crate) unsafe fn query_pointer_on(display: *mut Display) -> Option<(i32, i32, bool)> {
     // SAFETY: caller guarantees `display` is a live Xlib connection with no pending
     // configure requests; all out-params are stack locals outliving `XQueryPointer`.
     unsafe {
@@ -521,9 +528,10 @@ fn apply_input_passthrough(display: *mut Display, edges: &[Window; 4]) -> bool {
     }
 }
 
-// SAFETY: `display` is a live connection; unread events are discarded so the
-// Xlib input buffer cannot stall later `XFlush` / `XConfigureWindow` calls.
-unsafe fn drain_x_events(display: *mut Display) {
+/// # Safety
+/// `display` is a live Xlib connection. Unread events are discarded so the
+/// input buffer cannot stall later `XFlush` / `XConfigureWindow` calls.
+pub(crate) unsafe fn drain_x_events(display: *mut Display) {
     // SAFETY: caller guarantees `display` is a live Xlib connection; `event` is a
     // stack-local zeroed `XEvent` that `XNextEvent` fully overwrites.
     unsafe {
@@ -555,6 +563,33 @@ unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, 
         let mask = (CWX | CWY | CWWidth | CWHeight) as c_uint;
         XConfigureWindow(display, win, mask, &mut changes);
     }
+}
+
+/// Root pointer in virtual-desktop pixels, on a quiet display that never
+/// configures windows. `None` when X11 is unavailable.
+///
+/// UI thread only — the cached `Display*` is not shared with the hook thread.
+pub fn x11_root_pointer() -> Option<(i32, i32)> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use parking_lot::Mutex;
+    static DISPLAY: Mutex<Option<usize>> = Mutex::new(None);
+    static OPEN_FAILED: AtomicBool = AtomicBool::new(false);
+    if OPEN_FAILED.load(Ordering::Relaxed) {
+        return None;
+    }
+    let mut slot = DISPLAY.lock();
+    if slot.is_none() {
+        let Ok(display) = open_x_display() else {
+            OPEN_FAILED.store(true, Ordering::Relaxed);
+            return None;
+        };
+        *slot = Some(display as usize);
+    }
+    let display = (*slot)? as *mut Display;
+    // SAFETY: `display` was opened by `open_x_display` and is only used here,
+    // never for ConfigureWindow, so the query does not wait on our own requests.
+    unsafe { query_pointer_on(display).map(|(x, y, _)| (x, y)) }
 }
 
 #[cfg(test)]

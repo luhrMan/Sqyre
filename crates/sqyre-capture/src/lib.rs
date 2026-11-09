@@ -27,6 +27,8 @@ mod win_focus;
 mod win_grab;
 #[cfg(target_os = "windows")]
 mod win_outline;
+#[cfg(target_os = "windows")]
+mod win_point_markers;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod window_match;
 #[cfg(target_os = "linux")]
@@ -39,6 +41,8 @@ mod x11_focus;
 mod x11_grab;
 #[cfg(target_os = "linux")]
 mod x11_outline;
+#[cfg(target_os = "linux")]
+mod x11_point_markers;
 #[cfg(target_os = "linux")]
 mod x11_secondary;
 #[cfg(target_os = "linux")]
@@ -90,10 +94,14 @@ pub use linux::wayland::OsWindowFocuser;
 pub use win_focus::OsWindowFocuser;
 
 #[cfg(target_os = "linux")]
-pub use x11_outline::SelectionOutline;
+pub use x11_outline::{x11_root_pointer, SelectionOutline};
+#[cfg(target_os = "linux")]
+pub use x11_point_markers::PointMarkerOverlay;
 
 #[cfg(target_os = "windows")]
 pub use win_outline::SelectionOutline;
+#[cfg(target_os = "windows")]
+pub use win_point_markers::PointMarkerOverlay;
 
 #[cfg(target_os = "linux")]
 pub use x11_grab::SelectionGrab;
@@ -123,7 +131,7 @@ pub fn unregister_secondary_x_display(display: *mut std::ffi::c_void) {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub use outline_stub::SelectionOutline;
+pub use outline_stub::{PointMarkerOverlay, SelectionOutline};
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use grab_stub::SelectionGrab;
