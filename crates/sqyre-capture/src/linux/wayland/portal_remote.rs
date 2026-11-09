@@ -2,7 +2,7 @@
 
 use super::{
     portal_input_click, portal_input_key, portal_input_last_pos, portal_input_move,
-    portal_input_ready, portal_input_scroll, portal_remote_desktop_granted,
+    portal_input_ready, portal_input_scroll,
 };
 use sqyre_ports::{AutomationError, PortalRemoteInput};
 
@@ -18,18 +18,10 @@ impl PortalRemoteInput for PortalEisInput {
         if self.ready() {
             return Ok(());
         }
+        // Opens the combined portal session when it is not up yet. The EIS thread
+        // starts inside that open; this wait covers the gap before a device resumes.
         let _ = crate::shared_capturer();
-        if self.ready() {
-            Ok(())
-        } else if portal_remote_desktop_granted() {
-            Err(AutomationError::Backend(
-                "Remote Desktop granted but EIS is not ready".into(),
-            ))
-        } else {
-            Err(AutomationError::Backend(
-                "desktop control not granted (enable Allow Remote Interaction, then Share)".into(),
-            ))
-        }
+        super::portal_session::portal_input_wait()
     }
 
     fn last_pos(&self) -> Option<(i32, i32)> {

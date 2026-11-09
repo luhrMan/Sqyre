@@ -580,19 +580,27 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
         caps.insert(
             "input.open".into(),
             timed(|| {
-                if sqyre_capture::portal_input_ready() {
-                    cap_log("INPUT", "ok", "backend=eis");
-                    CapabilityResult {
-                        status: CapStatus::Ok,
-                        backend: Some("eis".into()),
-                        ..CapabilityResult::default()
-                    }
-                } else if sqyre_capture::portal_remote_desktop_granted() {
-                    cap_log("INPUT", "fail", "reason=eis_not_ready");
-                    CapabilityResult::fail(String::from(
-                        "Remote Desktop granted but EIS pointer is not ready",
-                    ))
-                } else if sqyre_capture::portal_screencast_granted() {
+                if sqyre_capture::portal_input_ready()
+                    || sqyre_capture::portal_remote_desktop_granted()
+                {
+                    // The capturer returns on the first frame, which on COSMIC can
+                    // precede the EIS device resume. Wait out that handshake.
+                    return match sqyre_capture::portal_input_wait() {
+                        Ok(()) => {
+                            cap_log("INPUT", "ok", "backend=eis");
+                            CapabilityResult {
+                                status: CapStatus::Ok,
+                                backend: Some("eis".into()),
+                                ..CapabilityResult::default()
+                            }
+                        }
+                        Err(e) => {
+                            cap_log("INPUT", "fail", "reason=eis_not_ready");
+                            CapabilityResult::fail(e.to_string())
+                        }
+                    };
+                }
+                if sqyre_capture::portal_screencast_granted() {
                     cap_log("INPUT", "fail", "reason=no_remote_interaction");
                     CapabilityResult::fail(String::from(
                         "enable Allow Remote Interaction in the screen share dialog",
