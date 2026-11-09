@@ -4,8 +4,8 @@ use crate::{
     action_type_table, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch,
     FindPixelData, ImageSearchData, ListColumn, LoopJumpMode, MatchMethod, MouseButton, OcrData,
     PressState, ScalarValue, VariableAssignment, CELL_COORDINATES, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
-    PROGRAM_DELIMITER,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, DEFAULT_WAIT_TIME_MS, GENERAL_PROGRAM,
+    IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -111,7 +111,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             delay_ms: 0,
         },
         "wait" => ActionKind::Wait {
-            time: ScalarValue::Int(0),
+            time: ScalarValue::Int(DEFAULT_WAIT_TIME_MS),
         },
         "pause" => ActionKind::Pause {
             message: String::new(),
@@ -233,6 +233,17 @@ mod tests {
     fn blank_unknown_is_none() {
         assert!(blank_action("calculate").is_none());
         assert!(blank_action("nope").is_none());
+    }
+
+    #[test]
+    fn blank_wait_defaults_to_one_second() {
+        let a = blank_action("wait").unwrap();
+        match a.kind {
+            ActionKind::Wait { time } => {
+                assert_eq!(time, ScalarValue::Int(DEFAULT_WAIT_TIME_MS));
+            }
+            other => panic!("expected Wait, got {other:?}"),
+        }
     }
 
     #[test]
