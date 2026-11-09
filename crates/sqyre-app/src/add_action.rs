@@ -47,6 +47,8 @@ pub struct AddActionPicker {
     hover_pending: Option<HoverPending>,
     /// Filter over action labels / types.
     filter: String,
+    /// Focus the filter field the next time [`Self::show`] paints it.
+    focus_search: bool,
     /// Index into the filtered flat tile list for ↑↓ / Enter.
     selected: usize,
     /// Grid tile order (kept across opens).
@@ -96,8 +98,8 @@ impl AddActionPicker {
         self.open = true;
         self.filter.clear();
         self.selected = 0;
-        // Re-arm search focus for this open.
-        // (consumed in `show` via widgets::focus_search_once)
+        // Re-arm search focus for this open (consumed once in `show`).
+        self.focus_search = true;
     }
 
     /// Reload per-type prototypes when `action_defaults` changed elsewhere
@@ -287,6 +289,11 @@ impl AddActionPicker {
                     trailing: None,
                 },
             );
+            // One shot per open. Requesting again every frame interrupts IME.
+            if self.focus_search {
+                search_out.response.request_focus();
+                self.focus_search = false;
+            }
             if search_out.changed {
                 self.selected = 0;
             }
@@ -360,7 +367,6 @@ impl AddActionPicker {
         });
 
         if !open || dismiss {
-            crate::widgets::reset_focus_search(ctx, egui::Id::new("Add Action"));
             open = false;
         }
         if let Some((ty, anchor)) = edit_request {
@@ -430,6 +436,8 @@ impl AddActionPicker {
         }
         self.open = open;
         if !self.open {
+            // Tile picks never took the Esc / title-bar path, so re-arm here.
+            crate::widgets::reset_focus_search(ctx, egui::Id::new("Add Action"));
             self.tip = None;
             self.hover_pending = None;
         }
@@ -755,5 +763,87 @@ mod tests {
         // Fresh UID each create.
         let again = picker.create_action("wait").unwrap();
         assert_ne!(created.id, again.id);
+    }
+
+    fn show_picker(ui: &mut egui::Ui, picker: &mut AddActionPicker) {
+        let catalog = sqyre_persist::ProgramCatalog::default();
+        let mut icons = crate::icon_cache::IconCache::new();
+        let mut previews = crate::preview_tooltip::PreviewTooltipCache::without_capture();
+        let mut key_record = crate::key_record::KeyRecordUi::default();
+        let mut hotkey_record = crate::hotkey_record::HotkeyRecordUi::default();
+        let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
+        let screen_click = sqyre_hotkeys::ScreenClickBridge::new();
+        let known_vars = sqyre_domain::KnownVariableNames::default();
+        let mut tip = crate::paint_ctx::TipUiCtx {
+            paint: crate::paint_ctx::CatalogPaint {
+                catalog: &catalog,
+                icons: &mut icons,
+                previews: &mut previews,
+            },
+            theme: crate::paint_ctx::VarTheme {
+                known_vars: &known_vars,
+                is_dark: true,
+            },
+            bridges: crate::paint_ctx::RecordBridges {
+                key_record: &mut key_record,
+                hotkey_record: &mut hotkey_record,
+                macro_hotkeys: &macro_hotkeys,
+                screen_click: &screen_click,
+            },
+            compact_program_headers: false,
+            pending_scale: None,
+        };
+        let _ = picker.show(ui.ctx(), &mut tip, &[], |_| {});
+    }
+
+    fn search_input<'a>(
+        harness: &'a egui_kittest::Harness<'_, AddActionPicker>,
+    ) -> egui_kittest::Node<'a> {
+        use egui_kittest::kittest::Queryable;
+        harness.get_by_role(egui::accesskit::Role::TextInput)
+    }
+
+    /// Typing is the point of the picker: the filter field takes focus on every open.
+    #[test]
+    fn search_focuses_when_picker_opens_and_reopens() {
+        use egui_kittest::kittest::Queryable;
+
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1100.0, 700.0))
+            .build_ui_state(
+                |ui, picker: &mut AddActionPicker| show_picker(ui, picker),
+                {
+                    let mut picker = AddActionPicker::default();
+                    picker.open();
+                    picker
+                },
+            );
+        harness.run();
+        assert!(
+            search_input(&harness).is_focused(),
+            "search focuses when Add Action opens"
+        );
+
+        // Re-requesting focus every frame interrupts IME (Android keyboard flicker).
+        for _ in 0..3 {
+            harness.step();
+            let ime = harness.output().platform_output.ime.as_ref();
+            assert!(ime.is_some(), "search field should own the IME");
+            assert!(
+                !ime.is_some_and(|i| i.should_interrupt_composition),
+                "focus re-requested while the picker stays open"
+            );
+        }
+
+        harness.get_by_label("Add Wait").click();
+        harness.run();
+        assert!(!harness.state().open, "picking a tile closes the picker");
+
+        harness.state_mut().open();
+        harness.run();
+        assert!(
+            search_input(&harness).is_focused(),
+            "search focuses again the next time Add Action opens"
+        );
     }
 }
