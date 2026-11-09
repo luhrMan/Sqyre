@@ -180,6 +180,9 @@ pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
 pub const DEFAULT_SMOOTH_DELAY_MS: i32 = 1;
 
+/// Pause seeded into a new Wait action, and the value used when YAML omits `time`.
+pub const DEFAULT_WAIT_TIME_MS: i64 = 1000;
+
 /// Gaussian blur amount for template match / OCR preprocess (`<= 0` skips blur).
 pub const MIN_MATCH_BLUR: i32 = 0;
 pub const MAX_MATCH_BLUR: i32 = 99;
@@ -720,7 +723,7 @@ pub(crate) fn default_loop_count() -> ScalarValue {
 }
 
 pub(crate) fn default_wait_time() -> ScalarValue {
-    ScalarValue::Int(0)
+    ScalarValue::Int(DEFAULT_WAIT_TIME_MS)
 }
 
 impl Default for ConditionClause {
@@ -1587,6 +1590,17 @@ mod tests {
         let yaml = format!("\"{id}\"");
         let decoded: ActionId = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(decoded, id);
+    }
+
+    #[test]
+    fn omitted_wait_time_defaults_to_one_second() {
+        let action: Action = serde_yaml::from_str("type: wait").unwrap();
+        match action.kind {
+            ActionKind::Wait { time } => {
+                assert_eq!(time, ScalarValue::Int(DEFAULT_WAIT_TIME_MS));
+            }
+            other => panic!("expected Wait, got {other:?}"),
+        }
     }
 
     #[test]
