@@ -10,9 +10,10 @@ use std::os::raw::c_ulong;
 use std::ptr;
 use x11::xlib::{
     _XDisplay, Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True,
-    Window, XChangeProperty, XChangeWindowAttributes, XClassHint, XDefaultRootWindow, XEvent,
-    XFlush, XFree, XGetClassHint, XGetWMName, XGetWindowProperty, XInternAtom, XOpenDisplay,
-    XSendEvent, XSetWindowAttributes, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    Window, XChangeProperty, XChangeWindowAttributes, XClassHint, XCloseDisplay,
+    XDefaultRootWindow, XEvent, XFlush, XFree, XGetClassHint, XGetWMName, XGetWindowProperty,
+    XInternAtom, XOpenDisplay, XSendEvent, XSetClassHint, XSetWindowAttributes, XA_ATOM,
+    XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay / recording-HUD chrome.
@@ -21,6 +22,42 @@ pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
 /// Title for native overlay tip windows — must differ from [`OVERLAY_WM_TITLE`]
 /// so focus/portal filters can treat tips separately from buttons.
 pub const OVERLAY_TIP_WM_TITLE: &str = "sqyre-overlay-tip";
+
+/// Set ICCCM `WM_CLASS` instance and class to `app_id`.
+///
+/// egui-winit calls `with_name(app_id, "")`, so the property is `\0<app_id>\0`
+/// (empty instance, class = desktop id). GTK sets both strings to the app id.
+/// Both need to be `com.sqyre.app` so the window matches `StartupWMClass` and
+/// the toplevel app id XWayland reads from this hint.
+pub fn set_wm_class(win: u64, app_id: &str) {
+    if win == 0 || app_id.is_empty() || app_id.as_bytes().contains(&0) {
+        return;
+    }
+    let Ok(name) = CString::new(app_id) else {
+        return;
+    };
+    // SAFETY: `XOpenDisplay(null)` returns null or a connection this function
+    // closes before returning. `name` outlives `XSetClassHint`, which only
+    // reads the two C strings. `win` is an XID of the caller's X11 window.
+    let set = unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            false
+        } else {
+            let mut hint = XClassHint {
+                res_name: name.as_ptr().cast_mut(),
+                res_class: name.as_ptr().cast_mut(),
+            };
+            let ok = XSetClassHint(display, win as Window, &mut hint) == True;
+            XFlush(display);
+            XCloseDisplay(display);
+            ok
+        }
+    };
+    if set {
+        crate::cap_log("PORTAL", "wmclass", &format!("xid={win:#x} class={app_id}"));
+    }
+}
 
 /// Process-lifetime X11 display for focus / window-list APIs (serialized via Mutex).
 struct SharedFocusDisplay {
