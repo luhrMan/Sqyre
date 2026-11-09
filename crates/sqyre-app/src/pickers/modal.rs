@@ -192,6 +192,8 @@ pub fn show_active_picker(
                                 locked: &[],
                                 locked_hover: None,
                                 program_icons: Some(&program_icons),
+                                draft_width: None,
+                                draft_id: None,
                             },
                         );
                         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));

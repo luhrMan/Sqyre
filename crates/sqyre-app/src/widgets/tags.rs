@@ -443,7 +443,9 @@ fn tag_chip_editor_impl(
 ) -> (TagChipEdit, egui::Rect) {
     let mut edit = TagChipEdit::default();
     // Stable across chip-count changes so focus survives add/remove + Update/load_form.
-    let draft_id = ui.id().with("tag_draft_edit");
+    let draft_id = opts
+        .draft_id
+        .unwrap_or_else(|| ui.id().with("tag_draft_edit"));
     let nav_id = ui.id().with("tag_suggest_nav");
     let open_id = nav_id.with("open");
     let refocus_id = nav_id.with("refocus");
@@ -475,8 +477,10 @@ fn tag_chip_editor_impl(
     // icon | entrybox | add | tags — chips wrap after the add button, except
     // `single_row` where overflow collapses into a `+N` pill.
     let mut widget_rect = egui::Rect::NOTHING;
-    let mut paint_row = |ui: &mut egui::Ui| {
-        ui.set_max_width(wrap_cap);
+    let mut paint_row = |ui: &mut egui::Ui, cap_width: bool| {
+        if cap_width {
+            ui.set_max_width(wrap_cap);
+        }
         let resp = if let Some(name) = opts.label_name {
             let framed =
                 crate::widgets::pair_labeled(ui, egui_phosphor::regular::TAG, name, |ui| {
@@ -500,12 +504,16 @@ fn tag_chip_editor_impl(
     // holds a taller pair (the macro name beside this draft) that short box is
     // centered, so the tag field starts lower. The draft is one pair already;
     // a single-row editor is one `wrap_unit` so it asks for its real height.
+    //
+    // The draft-only editor stays a direct child of `ui`. A scope would wrap
+    // inside itself, so a wrapping header row could not move this pair onto
+    // the next line.
     let tag_resp = if !include_chips {
-        ui.scope(|ui| paint_row(ui)).inner
+        paint_row(ui, false)
     } else if opts.single_row {
-        super::wrap_unit(ui, |ui| paint_row(ui)).inner
+        super::wrap_unit(ui, |ui| paint_row(ui, true)).inner
     } else {
-        ui.horizontal_wrapped(|ui| paint_row(ui)).inner
+        ui.horizontal_wrapped(|ui| paint_row(ui, true)).inner
     };
     if refocus {
         tag_resp.request_focus();
@@ -942,7 +950,7 @@ fn paint_tag_draft(
     };
     let tag_te = egui::TextEdit::singleline(draft)
         .id(draft_id)
-        .desired_width(TAG_DRAFT_WIDTH)
+        .desired_width(opts.draft_width.unwrap_or(TAG_DRAFT_WIDTH))
         .hint_text(hint);
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
     if let Some(tip) = opts.draft_hover {
@@ -984,6 +992,11 @@ pub struct TagChipOptions<'a> {
     /// Program name → process icon. A chip or suggestion paints the icon when
     /// its tag, or the tag's first path segment, is a key.
     pub program_icons: Option<&'a HashMap<String, egui::TextureHandle>>,
+    /// Draft entry width. `None` keeps [`TAG_DRAFT_WIDTH`].
+    pub draft_width: Option<f32>,
+    /// Stable draft [`egui::Id`]. `None` derives one from the current [`egui::Ui`],
+    /// which changes if the editor moves between a fixed row and a wrapping row.
+    pub draft_id: Option<egui::Id>,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -999,6 +1012,8 @@ impl Default for TagChipOptions<'_> {
             locked: &[],
             locked_hover: None,
             program_icons: None,
+            draft_width: None,
+            draft_id: None,
         }
     }
 }

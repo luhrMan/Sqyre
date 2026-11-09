@@ -1115,6 +1115,8 @@ impl DataEditor {
                                 locked: &[],
                                 locked_hover: None,
                                 program_icons: Some(&program_icons),
+                                draft_width: None,
+                                draft_id: None,
                             },
                         );
                     }
