@@ -206,6 +206,13 @@ impl MacroMetaUi {
         }
     }
 
+    /// Glanceable delay summary when any delay is non-zero (P1 footer readability).
+    pub fn paint_delay_summary(ui: &mut egui::Ui, m: &Macro) {
+        if let Some(text) = format_delay_summary(m) {
+            ui.weak(text);
+        }
+    }
+
     /// Key icon toggle; returns whether the hotkey controls should be shown beside it.
     pub fn paint_hotkey_toggle(&mut self, ui: &mut egui::Ui) -> bool {
         crate::widgets::icon_toggle(
@@ -294,6 +301,24 @@ fn format_delay_tooltip(m: &Macro) -> String {
     parts.join("\n")
 }
 
+/// Compact at-rest delay text when any delay is non-zero.
+fn format_delay_summary(m: &Macro) -> Option<String> {
+    if m.global_delay <= 0 && m.keyboard_delay <= 0 && m.mouse_delay <= 0 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if m.global_delay > 0 {
+        parts.push(format!("G {}", m.global_delay));
+    }
+    if m.keyboard_delay > 0 {
+        parts.push(format!("K {}", m.keyboard_delay));
+    }
+    if m.mouse_delay > 0 {
+        parts.push(format!("M {}", m.mouse_delay));
+    }
+    Some(format!("{} ms", parts.join(" · ")))
+}
+
 fn glyph_width(ui: &egui::Ui, glyph: &str) -> f32 {
     ui.painter()
         .layout_no_wrap(
@@ -305,22 +330,38 @@ fn glyph_width(ui: &egui::Ui, glyph: &str) -> f32 {
         .x
 }
 
-/// Width of a label+widget pair aside from the widget: frame margin, stroke, icon, gap.
-fn pair_chrome(ui: &egui::Ui, glyph: &str) -> f32 {
-    glyph_width(ui, glyph) + 8.0 + 2.0 + crate::widgets::PAIR_SLOT_GAP
+fn label_name_width(ui: &egui::Ui, name: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            name.to_owned(),
+            egui::TextStyle::Small.resolve(ui.style()),
+            egui::Color32::WHITE,
+        )
+        .size()
+        .x
+}
+
+/// Width of a labeled pair aside from the widget: frame margin, stroke, glyph, name, gap.
+fn pair_chrome(ui: &egui::Ui, glyph: &str, name: &str) -> f32 {
+    glyph_width(ui, glyph)
+        + crate::theme::SPACE_4
+        + label_name_width(ui, name)
+        + 8.0
+        + 2.0
+        + crate::widgets::PAIR_SLOT_GAP
 }
 
 fn name_chrome(ui: &egui::Ui, show_error: bool) -> f32 {
-    let mut chrome = pair_chrome(ui, egui_phosphor::regular::TEXT_T);
+    let mut chrome = pair_chrome(ui, egui_phosphor::regular::TEXT_T, "Name");
     if show_error {
         chrome += glyph_width(ui, egui_phosphor::regular::X_CIRCLE);
     }
     chrome
 }
 
-/// Width of the tag field (icon, draft, Add) so the name can stop before it.
+/// Width of the tag field (label, draft, Add) so the name can stop before it.
 fn tag_input_width(ui: &egui::Ui) -> f32 {
-    pair_chrome(ui, egui_phosphor::regular::TAG)
+    pair_chrome(ui, egui_phosphor::regular::TAG, "Tags")
         + crate::widgets::tags::TAG_DRAFT_WIDTH
         + crate::widgets::icon_btn_side(ui)
 }
@@ -432,11 +473,16 @@ mod tests {
         macro_.keyboard_delay = 0;
         macro_.mouse_delay = 0;
         assert_eq!(format_delay_tooltip(&macro_), "Action delays (ms)");
+        assert!(format_delay_summary(&macro_).is_none());
         macro_.global_delay = 10;
         macro_.mouse_delay = 5;
         assert_eq!(
             format_delay_tooltip(&macro_),
             "Action delays (ms)\nGlobal: 10 ms\nMouse: 5 ms"
+        );
+        assert_eq!(
+            format_delay_summary(&macro_).as_deref(),
+            Some("G 10 · M 5 ms")
         );
     }
 

@@ -1,8 +1,9 @@
 //! Concise hover help for action editor fields.
 //!
 //! One short sentence per setting. Empty string means no description.
-//! Field labels are semantic icons ([`label`]) whose tooltip is the field
-//! `name`; the paired widget carries the description via [`tip`].
+//! Field labels paint a semantic icon plus a short visible [`label`] name;
+//! the paired widget carries help prose via [`tip`] (tips enrich — they do
+//! not replace the field name).
 
 use eframe::egui;
 
@@ -15,17 +16,23 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
     }
 }
 
-/// Semantic icon standing in for a field's text label. Hovering shows the
-/// field `name` so the icon always identifies what it labels; the field's
-/// description lives on the paired widget via [`tip`]. The icon's accessible
-/// name is `name`.
+/// Field label: semantic glyph + short visible `name` (Small / weak).
 ///
-/// Put it in [`crate::widgets::pair_labeled`] (field helpers already do) so the
-/// glyph and the control share one frame.
+/// The AccessKit name is `name`. Help prose belongs on the paired control via
+/// [`tip`] — never tip-only field identity. Put this in
+/// [`crate::widgets::pair_labeled`] (field helpers already do) so the label
+/// and control share one frame.
 pub fn label(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
     let resp = ui
-        .add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()))
-        .on_hover_text(name);
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+            ui.add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()));
+            ui.add(
+                egui::Label::new(egui::RichText::new(name).small().weak())
+                    .sense(egui::Sense::hover()),
+            );
+        })
+        .response;
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.to_string()));
     resp
 }

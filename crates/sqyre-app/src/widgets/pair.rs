@@ -1,10 +1,11 @@
-//! One framed control: an icon (or two) joined to the widget it labels or acts on.
+//! One framed control: a leading label (or icon) joined to the widget it names.
 //!
-//! Resting icon buttons are bare glyphs. A loose glyph beside a field does not
-//! read as part of that field, so [`pair_icon`] puts them in a single outline
-//! with a hairline between the slots. Pressing the leading icon focuses the
-//! paired control and, for a dropdown, leaves the menu open the way a click
-//! on the menu itself does.
+//! Resting toolbar icons are bare glyphs. A loose glyph beside a field does not
+//! read as part of that field, so [`pair_icon`] / [`pair_labeled`] put them in a
+//! single outline with a hairline between the slots. [`pair_labeled`] paints a
+//! short visible field name beside the glyph ([`crate::action_tooltip::help::label`]).
+//! Pressing the leading slot focuses the paired control and, for a dropdown,
+//! leaves the menu open the way a click on the menu itself does.
 
 use eframe::egui::{self, Color32, Stroke};
 
@@ -19,7 +20,7 @@ pub const PAIR_SLOT_GAP: f32 = crate::theme::SPACE_4;
 /// the overflow scroller every frame.
 const PAIR_STROKE_W: f32 = 1.0;
 
-/// Field icon and the control it names, in one [`pair_leading`] frame.
+/// Field glyph + visible name and the control it labels, in one [`pair_leading`] frame.
 pub fn pair_labeled<R>(
     ui: &mut egui::Ui,
     icon: &str,
@@ -316,6 +317,23 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn pair_labeled_paints_field_name_at_rest() {
+        let ctx = egui::Context::default();
+        let mut value = String::from("alpha");
+        let out = run(&ctx, egui::RawInput::default(), |ui| {
+            pair_labeled(ui, "T", "Name", |ui| {
+                ui.add(egui::TextEdit::singleline(&mut value).desired_width(120.0));
+            });
+        });
+        let has_name = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text.galley.text() == "Name",
+            _ => false,
+        });
+        assert!(has_name, "field name must be painted without hover");
+        out.drop_without_applying_deltas();
     }
 
     #[test]
