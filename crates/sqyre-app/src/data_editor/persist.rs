@@ -89,7 +89,7 @@ pub(super) fn persist_running_program_icon(
     }
     let path_changed = prev_process_path.trim() != path;
     let icon = known_icon
-        .or_else(|| icons.process_icon_bytes(path).cloned())
+        .or_else(|| icons.process_icon_bytes(path, window_title).cloned())
         .or_else(|| fetch_process_icon(path, window_title));
     let Some(icon) = icon else {
         if path_changed {
@@ -103,7 +103,7 @@ pub(super) fn persist_running_program_icon(
         return;
     }
     // Prefer the freshly saved file next time live OS lookup misses.
-    icons.invalidate_process(path);
+    icons.invalidate_process(path, window_title);
     icons.invalidate_path(&catalog.process_icon_path(program));
 }
 

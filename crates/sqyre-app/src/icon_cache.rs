@@ -42,7 +42,8 @@ pub struct IconCache {
     /// Brand shield with the S knocked out — the header's run indicator
     /// paints the animated S back into the hollow.
     shell: Option<TextureHandle>,
-    /// OS process icons keyed by process path.
+    /// OS process icons keyed by `(process_path, window_title)` so shared
+    /// executables (Proton/`wine-preloader`) keep distinct icons per game.
     process: HashMap<String, TextureHandle>,
     process_missing: HashMap<String, ()>,
     /// RGBA retained when an icon is seeded / fetched (for persisting on program save).
@@ -174,7 +175,7 @@ impl IconCache {
         process_path: &str,
         window_title: &str,
     ) -> Option<TextureHandle> {
-        let key = process_cache_key(process_path);
+        let key = process_identity_key(process_path, window_title, "");
         if key.is_empty() {
             return None;
         }
@@ -200,7 +201,7 @@ impl IconCache {
         }
         #[cfg(not(feature = "native-runtime"))]
         {
-            let _ = (ctx, window_title);
+            let _ = ctx;
             self.process_missing.insert(key, ());
             None
         }
@@ -208,9 +209,9 @@ impl IconCache {
 
     /// OS process icon for a catalog program (via its bound `process_path`).
     ///
-    /// Prefers a live OS / seeded icon; falls back to the PNG under
-    /// [`ProgramCatalog::process_icon_path`] so the icon still shows when the
-    /// bound app is not running.
+    /// Prefers the PNG under [`ProgramCatalog::process_icon_path`] so catalog
+    /// identity stays stable when several programs share one executable (Proton).
+    /// Falls back to a live OS / seeded icon when no PNG is saved yet.
     pub fn for_program(
         &mut self,
         ctx: &egui::Context,
@@ -222,11 +223,11 @@ impl IconCache {
         if prog.process_path.trim().is_empty() {
             return None;
         }
-        if let Some(tex) = self.for_process(ctx, &prog.process_path, &prog.window_title) {
+        let path = catalog.process_icon_path(program);
+        if let Some(tex) = self.for_path(ctx, &path) {
             return Some(tex);
         }
-        let path = catalog.process_icon_path(program);
-        self.for_path(ctx, &path)
+        self.for_process(ctx, &prog.process_path, &prog.window_title)
     }
 
     /// Process icon for each program that has one, keyed by the program's name.
@@ -256,7 +257,7 @@ impl IconCache {
         process_name: &str,
         icon: &ProcessIcon,
     ) -> Option<TextureHandle> {
-        let key = process_seed_key(process_path, window_title, process_name);
+        let key = process_identity_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -264,18 +265,22 @@ impl IconCache {
         Some(self.insert_process_icon(ctx, &key, icon))
     }
 
-    /// RGBA retained for `process_path` (from picker seed or live OS fetch).
-    pub fn process_icon_bytes(&self, process_path: &str) -> Option<&ProcessIcon> {
-        let key = process_cache_key(process_path);
+    /// RGBA retained for a process identity (from picker seed or live OS fetch).
+    pub fn process_icon_bytes(
+        &self,
+        process_path: &str,
+        window_title: &str,
+    ) -> Option<&ProcessIcon> {
+        let key = process_identity_key(process_path, window_title, "");
         if key.is_empty() {
             return None;
         }
         self.process_rgba.get(&key)
     }
 
-    /// Drop sticky miss + texture for a process path so the next lookup re-fetches.
-    pub fn invalidate_process(&mut self, process_path: &str) {
-        let key = process_cache_key(process_path);
+    /// Drop sticky miss + texture for a process identity so the next lookup re-fetches.
+    pub fn invalidate_process(&mut self, process_path: &str, window_title: &str) {
+        let key = process_identity_key(process_path, window_title, "");
         if key.is_empty() {
             return;
         }
@@ -291,7 +296,7 @@ impl IconCache {
         window_title: &str,
         process_name: &str,
     ) -> Option<TextureHandle> {
-        let key = process_seed_key(process_path, window_title, process_name);
+        let key = process_identity_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -690,7 +695,7 @@ pub fn paint_leading_process_icon(
     true
 }
 
-fn process_cache_key(process_path: &str) -> String {
+fn process_path_key(process_path: &str) -> String {
     let path = process_path.trim();
     if path.is_empty() {
         return String::new();
@@ -705,14 +710,20 @@ fn process_cache_key(process_path: &str) -> String {
     }
 }
 
-/// Cache key that stays usable when the OS path is empty (title + name).
-fn process_seed_key(process_path: &str, window_title: &str, process_name: &str) -> String {
-    let key = process_cache_key(process_path);
-    if !key.is_empty() {
-        return key;
-    }
+/// Cache key for a window identity: path + title when both exist.
+///
+/// Shared binaries (Proton `wine-preloader`) must not collapse to path alone.
+/// When the path is empty, falls back to `untitled:{name}:{title}`.
+fn process_identity_key(process_path: &str, window_title: &str, process_name: &str) -> String {
+    let path = process_path_key(process_path);
     let title = window_title.trim();
     let name = process_name.trim();
+    if !path.is_empty() {
+        if title.is_empty() {
+            return path;
+        }
+        return format!("{path}\0{title}");
+    }
     if title.is_empty() && name.is_empty() {
         return String::new();
     }
@@ -743,6 +754,56 @@ fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<Textu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn process_identity_key_keeps_shared_binaries_distinct() {
+        let proton = "/Steam/steamapps/common/Proton/files/bin/wine-preloader";
+        let a = process_identity_key(proton, "Game A", "wine-preloader");
+        let b = process_identity_key(proton, "Game B", "wine-preloader");
+        assert_ne!(a, b);
+        assert_eq!(
+            process_identity_key(proton, "Game A", "wine-preloader"),
+            process_identity_key(proton, "Game A", "other")
+        );
+        assert_eq!(
+            process_identity_key(proton, "", "wine-preloader"),
+            process_path_key(proton)
+        );
+    }
+
+    #[test]
+    fn seed_keeps_shared_process_icons_distinct() {
+        let ctx = egui::Context::default();
+        let mut cache = IconCache::new();
+        let proton = "/Steam/Proton/wine-preloader";
+        let icon_a = ProcessIcon {
+            width: 1,
+            height: 1,
+            rgba: vec![1, 0, 0, 255],
+        };
+        let icon_b = ProcessIcon {
+            width: 1,
+            height: 1,
+            rgba: vec![0, 1, 0, 255],
+        };
+        let _ = cache
+            .seed_process_icon(&ctx, proton, "Game A", "wine-preloader", &icon_a)
+            .unwrap();
+        let _ = cache
+            .seed_process_icon(&ctx, proton, "Game B", "wine-preloader", &icon_b)
+            .unwrap();
+        assert_eq!(
+            cache.process_icon_bytes(proton, "Game A").unwrap().rgba,
+            icon_a.rgba
+        );
+        assert_eq!(
+            cache.process_icon_bytes(proton, "Game B").unwrap().rgba,
+            icon_b.rgba
+        );
+        cache.invalidate_process(proton, "Game A");
+        assert!(cache.process_icon_bytes(proton, "Game A").is_none());
+        assert!(cache.process_icon_bytes(proton, "Game B").is_some());
+    }
 
     #[test]
     fn invalidate_target_clears_sticky_miss() {

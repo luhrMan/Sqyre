@@ -1,10 +1,12 @@
-//! Programs tab "Add running": one Program per process with an open window.
+//! Programs tab "Add running": one Program per process with an open window,
+//! or one per window title when several windows share a Wine/Proton runtime.
 
-use super::helpers::is_editor_listed_program;
+use super::helpers::{is_editor_listed_program, unique_name};
 use super::persist::{persist_running_program_icon, play_ui_add_sound};
 use super::{DataEditor, DataEditorCtx};
 use crate::window_types::{ProcessIcon, WindowInfo};
 use sqyre_persist::ProgramCatalog;
+use sqyre_validate::FS_FORBIDDEN_FILENAME_CHARS;
 use std::collections::HashSet;
 use std::sync::mpsc::{self, TryRecvError};
 
@@ -18,45 +20,142 @@ pub(super) struct NewRunningProgram {
     pub icon: Option<ProcessIcon>,
 }
 
-/// Programs to create from `windows`: named by process name, first window per
-/// process — icon-bearing windows only (iconless windows get no catalog entry).
+/// Programs to create from `windows`.
 ///
-/// Skips names that are invalid, reserved, or already in the catalog, and processes
-/// already bound to a catalog program.
+/// Ordinary apps: one entry per process (first icon-bearing window), named by
+/// process name. Wine/Proton runtimes share one binary across games, so those
+/// get one entry per window title (named from a sanitized title).
+///
+/// Skips names that are invalid, reserved, or already in the catalog, and
+/// identities already bound to a catalog program.
 pub(super) fn plan_running_programs(
     windows: &[WindowInfo],
     catalog: &ProgramCatalog,
 ) -> Vec<NewRunningProgram> {
-    let mut bound: HashSet<String> = catalog
-        .program_names()
-        .filter_map(|n| catalog.get(n))
-        .map(|p| p.process_path.trim().to_string())
-        .filter(|p| !p.is_empty())
-        .collect();
-    let mut names = HashSet::new();
-    let mut out = Vec::new();
-    for w in windows {
-        let name = w.process_name.trim();
-        let key = w.process_key();
-        if name.is_empty()
-            || w.icon.is_none()
-            || !is_editor_listed_program(name)
-            || sqyre_validate::validate_entity_name(name).is_err()
-            || catalog.get(name).is_some()
-            || bound.contains(key.trim())
-            || !names.insert(name.to_string())
-        {
+    let mut bound_paths: HashSet<String> = HashSet::new();
+    let mut bound_identities: HashSet<(String, String)> = HashSet::new();
+    for name in catalog.program_names() {
+        let Some(prog) = catalog.get(name) else {
+            continue;
+        };
+        let path = prog.process_path.trim().to_string();
+        if path.is_empty() {
             continue;
         }
-        bound.insert(key.trim().to_string());
+        let title = prog.window_title.trim().to_string();
+        bound_identities.insert((path.clone(), title));
+        bound_paths.insert(path);
+    }
+    let mut taken_names: HashSet<String> = catalog.program_names().cloned().collect();
+    let mut seen_identity: HashSet<(String, String)> = HashSet::new();
+    let mut out = Vec::new();
+    for w in windows {
+        let proc_name = w.process_name.trim();
+        let key = w.process_key();
+        let title = w.title.trim();
+        if proc_name.is_empty() || w.icon.is_none() {
+            continue;
+        }
+        let shared = is_shared_runtime(proc_name, key.trim());
+        let identity = if shared {
+            (key.trim().to_string(), title.to_string())
+        } else {
+            (key.trim().to_string(), String::new())
+        };
+        if !seen_identity.insert(identity) {
+            continue;
+        }
+        if shared {
+            if bound_identities.contains(&(key.trim().to_string(), title.to_string())) {
+                continue;
+            }
+        } else if bound_paths.contains(key.trim()) {
+            continue;
+        }
+        let Some(name) = (if shared && !title.is_empty() {
+            catalog_name_from_title(title, &taken_names)
+        } else {
+            catalog_name_from_process(proc_name, &taken_names)
+        }) else {
+            continue;
+        };
+        taken_names.insert(name.clone());
         out.push(NewRunningProgram {
-            name: name.to_string(),
+            name,
             process_path: key,
             window_title: w.title.clone(),
             icon: w.icon.clone(),
         });
     }
     out
+}
+
+/// Wine/Proton (and similar) host many games under one executable path.
+fn is_shared_runtime(process_name: &str, process_path: &str) -> bool {
+    let name = process_name.trim().to_ascii_lowercase();
+    let base = std::path::Path::new(process_path.trim())
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    fn runtime(s: &str) -> bool {
+        matches!(
+            s,
+            "wine-preloader"
+                | "wine64-preloader"
+                | "wine"
+                | "wine64"
+                | "proton"
+                | "pressure-vessel-adverb"
+        ) || s.contains("proton")
+    }
+    runtime(&name) || runtime(&base)
+}
+
+fn catalog_name_from_process(proc_name: &str, taken: &HashSet<String>) -> Option<String> {
+    if proc_name.is_empty()
+        || !is_editor_listed_program(proc_name)
+        || sqyre_validate::validate_entity_name(proc_name).is_err()
+        || taken.contains(proc_name)
+    {
+        return None;
+    }
+    Some(proc_name.to_string())
+}
+
+fn catalog_name_from_title(title: &str, taken: &HashSet<String>) -> Option<String> {
+    let base = sanitize_program_name(title);
+    if base.is_empty() || !is_editor_listed_program(&base) {
+        return None;
+    }
+    if sqyre_validate::validate_entity_name(&base).is_err() {
+        return None;
+    }
+    let name = unique_name(&base, |n| taken.contains(n));
+    if !is_editor_listed_program(&name) || sqyre_validate::validate_entity_name(&name).is_err() {
+        return None;
+    }
+    Some(name)
+}
+
+/// Turn a window title into a catalog-safe program name.
+fn sanitize_program_name(raw: &str) -> String {
+    let mapped: String = raw
+        .trim()
+        .chars()
+        .map(|c| {
+            if c == '\0'
+                || c.is_control()
+                || sqyre_domain::PROGRAM_DELIMITER.contains(c)
+                || FS_FORBIDDEN_FILENAME_CHARS.contains(&c)
+            {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    mapped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 impl DataEditor {
@@ -216,5 +315,48 @@ mod tests {
                 ("kitty", "kitty", "Term")
             ]
         );
+    }
+
+    #[test]
+    fn plan_splits_shared_proton_binaries_by_title() {
+        let cat = ProgramCatalog::default();
+        let proton =
+            "/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/bin/wine-preloader";
+        let windows = [
+            win("Hades II", "wine-preloader", proton),
+            win("Stardew Valley", "wine-preloader", proton),
+            win("Hades II", "wine-preloader", proton),
+        ];
+        let plan = plan_running_programs(&windows, &cat);
+        let got: Vec<(&str, &str)> = plan
+            .iter()
+            .map(|p| (p.name.as_str(), p.window_title.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("Hades II", "Hades II"),
+                ("Stardew Valley", "Stardew Valley")
+            ]
+        );
+    }
+
+    #[test]
+    fn plan_sanitizes_titles_with_forbidden_chars() {
+        let cat = ProgramCatalog::default();
+        let proton = "/Steam/Proton/wine-preloader";
+        let windows = [
+            win("Game: Subtitle?", "wine-preloader", proton),
+            win("Other / Title", "wine-preloader", proton),
+        ];
+        let plan = plan_running_programs(&windows, &cat);
+        let names: Vec<&str> = plan.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Game Subtitle", "Other Title"]);
+    }
+
+    #[test]
+    fn sanitize_strips_forbidden_filename_chars() {
+        assert_eq!(sanitize_program_name("  A:B/C?  "), "A B C");
+        assert_eq!(sanitize_program_name("ok"), "ok");
     }
 }

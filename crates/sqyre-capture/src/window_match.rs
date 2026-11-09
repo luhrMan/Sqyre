@@ -33,7 +33,12 @@ pub(crate) fn titles_equal(a: &str, b: &str) -> bool {
 
 /// Icon pick loop shared by X11/Windows `process_icon`: scans `candidates` for one whose
 /// path matches `process_path`, preferring a candidate whose title also matches
-/// `window_title`; otherwise returns the first path match.
+/// `window_title`.
+///
+/// When `window_title` is non-empty, only a title match is returned — never the first
+/// same-path window. Shared executables (Proton/`wine-preloader`) would otherwise steal
+/// each other's icons. Path-only fallback applies only for process-only bindings
+/// (empty title).
 ///
 /// `info` cheaply resolves a candidate's `(title, path)` and is called for every candidate.
 /// `icon` resolves its icon and is only called once a candidate's path has matched, since
@@ -58,8 +63,11 @@ pub(crate) fn pick_matching_icon<T>(
         let Some(found) = icon(&candidate, &wtitle, &wpath) else {
             continue;
         };
-        if !title.is_empty() && titles_equal(&wtitle, title) {
-            return Some(found);
+        if !title.is_empty() {
+            if titles_equal(&wtitle, title) {
+                return Some(found);
+            }
+            continue;
         }
         if path_fallback.is_none() {
             path_fallback = Some(found);
@@ -128,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn pick_matching_icon_falls_back_to_first_path_match() {
+    fn pick_matching_icon_falls_back_to_first_path_match_when_title_empty() {
         let candidates = vec![
             ("Other".to_string(), "/bin/app".to_string(), icon(1)),
             ("Unmatched".to_string(), "/bin/other".to_string(), icon(2)),
@@ -136,11 +144,35 @@ mod tests {
         let found = pick_matching_icon(
             candidates,
             "/bin/app",
-            "Missing",
+            "",
             |(t, p, _)| Some((t.clone(), p.clone())),
             |(_, _, i), _, _| Some(i.clone()),
         );
         assert_eq!(found.unwrap().rgba, icon(1).rgba);
+    }
+
+    #[test]
+    fn pick_matching_icon_none_when_title_misses_shared_binary() {
+        let candidates = vec![
+            (
+                "Game A".to_string(),
+                "/Proton/wine-preloader".to_string(),
+                icon(1),
+            ),
+            (
+                "Game B".to_string(),
+                "/Proton/wine-preloader".to_string(),
+                icon(2),
+            ),
+        ];
+        let found = pick_matching_icon(
+            candidates,
+            "/Proton/wine-preloader",
+            "Missing",
+            |(t, p, _)| Some((t.clone(), p.clone())),
+            |(_, _, i), _, _| Some(i.clone()),
+        );
+        assert!(found.is_none());
     }
 
     #[test]
