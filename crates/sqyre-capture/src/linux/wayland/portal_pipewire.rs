@@ -26,7 +26,7 @@ use sqyre_ports::{DesktopRect, RgbCapture, APP_ID};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -75,26 +75,58 @@ static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
 static SUSPEND_ON_IDLE: AtomicBool = AtomicBool::new(true);
 /// Streams currently in [`pw::stream::StreamState::Streaming`].
 static STREAMING: AtomicU32 = AtomicU32::new(0);
-/// In-flight captures that started while no stream was streaming.
+/// Monotonic ms when `STREAMING` last rose from 0. `0` means none are up.
+static STREAMING_SINCE: AtomicU64 = AtomicU64::new(0);
+/// In-flight captures that started while the stream was not stably awake.
 static WAKE_REQUESTS: AtomicU32 = AtomicU32::new(0);
+/// Monotonic ms until which a finished wake still counts, so the gap before
+/// the next retry does not blink the loader off. `0` means none.
+static WAKE_HOLD_UNTIL: AtomicU64 = AtomicU64::new(0);
 
-/// True while idle-suspend is on and a capture is waiting for a stream
-/// that is not streaming yet.
+/// Bridge between capture retries (100ms poll, then backoff) while the node
+/// is still restarting, so the loader does not drop and start again.
+const WAKE_HOLDOVER: Duration = Duration::from_millis(500);
+/// Driver restart reports Streaming, then Paused, then Streaming again.
+/// The wake ends only after Streaming holds this long.
+const WAKE_STABLE: Duration = Duration::from_millis(150);
+
+/// True for one continuous wake: from the capture that found the stream
+/// asleep until a stream has stayed up, including driver-restart blips and
+/// the gap before the next retry.
 pub(crate) fn pipewire_stream_waking() -> bool {
     wake_visible(
         SUSPEND_ON_IDLE.load(Ordering::SeqCst),
         WAKE_REQUESTS.load(Ordering::SeqCst),
-        STREAMING.load(Ordering::SeqCst),
+        mono_ms() < WAKE_HOLD_UNTIL.load(Ordering::SeqCst),
+        stream_is_stable(),
     )
 }
 
-fn wake_visible(suspend_on_idle: bool, wake_requests: u32, streaming: u32) -> bool {
-    suspend_on_idle && wake_requests > 0 && streaming == 0
+/// `holdover` is the post-attempt bridge; `stable` means a stream has stayed
+/// in Streaming long enough that the restart is over.
+fn wake_visible(suspend_on_idle: bool, wake_requests: u32, holdover: bool, stable: bool) -> bool {
+    suspend_on_idle && (wake_requests > 0 || (holdover && !stable))
+}
+
+fn wake_stream_stable(now_ms: u64, streaming_since_ms: u64, stable_ms: u64) -> bool {
+    streaming_since_ms > 0 && now_ms.saturating_sub(streaming_since_ms) >= stable_ms
+}
+
+fn mono_ms() -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
 }
 
 /// Apply the settings toggle. An open session is updated on the PipeWire thread.
 pub(crate) fn set_pipewire_suspend_on_idle(suspend: bool) {
     SUSPEND_ON_IDLE.store(suspend, Ordering::SeqCst);
+    if !suspend {
+        WAKE_HOLD_UNTIL.store(0, Ordering::SeqCst);
+    }
     if let Some(Ok(capturer)) = crate::shared_capturer_if_ready() {
         capturer.apply_pipewire_suspend_on_idle(suspend);
     }
@@ -104,27 +136,49 @@ fn account_stream_state(old: &pw::stream::StreamState, new: &pw::stream::StreamS
     let was = matches!(old, pw::stream::StreamState::Streaming);
     let now = matches!(new, pw::stream::StreamState::Streaming);
     if now && !was {
-        STREAMING.fetch_add(1, Ordering::SeqCst);
+        let prev = STREAMING.fetch_add(1, Ordering::SeqCst);
+        if prev == 0 {
+            // `0` is the asleep sentinel, so a clock reading of 0 stamps as 1.
+            STREAMING_SINCE.store(mono_ms().max(1), Ordering::SeqCst);
+        }
     } else if was && !now {
-        let _ = STREAMING.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        let prev = STREAMING.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        if prev == Ok(1) {
+            STREAMING_SINCE.store(0, Ordering::SeqCst);
+        }
     }
 }
 
-/// Held for one capture wait that began with every stream asleep.
+/// Held for one capture wait that is part of a wake.
 struct WakeTicket(bool);
 
 fn arm_wake_if_asleep() -> WakeTicket {
-    if !SUSPEND_ON_IDLE.load(Ordering::SeqCst) || STREAMING.load(Ordering::SeqCst) > 0 {
+    if !SUSPEND_ON_IDLE.load(Ordering::SeqCst) || stream_is_stable() {
         return WakeTicket(false);
     }
     WAKE_REQUESTS.fetch_add(1, Ordering::SeqCst);
     WakeTicket(true)
 }
 
+fn stream_is_stable() -> bool {
+    wake_stream_stable(
+        mono_ms(),
+        STREAMING_SINCE.load(Ordering::SeqCst),
+        WAKE_STABLE.as_millis() as u64,
+    )
+}
+
 impl Drop for WakeTicket {
     fn drop(&mut self) {
-        if self.0 {
-            WAKE_REQUESTS.fetch_sub(1, Ordering::SeqCst);
+        if !self.0 {
+            return;
+        }
+        let prev = WAKE_REQUESTS.fetch_sub(1, Ordering::SeqCst);
+        if prev == 1 {
+            WAKE_HOLD_UNTIL.store(
+                mono_ms().saturating_add(WAKE_HOLDOVER.as_millis() as u64),
+                Ordering::SeqCst,
+            );
         }
     }
 }
@@ -1340,6 +1394,7 @@ struct ClearStreaming;
 impl Drop for ClearStreaming {
     fn drop(&mut self) {
         STREAMING.store(0, Ordering::SeqCst);
+        STREAMING_SINCE.store(0, Ordering::SeqCst);
     }
 }
 
@@ -1987,11 +2042,28 @@ mod tests {
     }
 
     #[test]
-    fn wake_icon_only_while_suspend_is_on_and_no_stream_is_up() {
-        assert!(wake_visible(true, 1, 0));
-        assert!(!wake_visible(false, 1, 0));
-        assert!(!wake_visible(true, 0, 0));
-        assert!(!wake_visible(true, 1, 1));
+    fn wake_icon_is_one_sequence_until_the_stream_stays_up() {
+        // Suspend off: never, even with a request in flight.
+        assert!(!wake_visible(false, 1, true, false));
+        // Idle: nothing asked, and no retry gap to bridge.
+        assert!(!wake_visible(true, 0, false, false));
+        // Capture that started asleep stays loading after a Streaming blip.
+        assert!(wake_visible(true, 1, false, false));
+        assert!(wake_visible(true, 1, false, true));
+        // Gap before the next retry, stream still down: same sequence.
+        assert!(wake_visible(true, 0, true, false));
+        // Stream has stayed up and nothing is waiting: the sequence ends.
+        assert!(!wake_visible(true, 0, true, true));
+        assert!(!wake_visible(true, 0, false, true));
+    }
+
+    #[test]
+    fn wake_stream_is_stable_only_after_it_holds() {
+        let stable_ms = WAKE_STABLE.as_millis() as u64;
+        assert!(!wake_stream_stable(1_000, 0, stable_ms));
+        assert!(!wake_stream_stable(1_000, 900, stable_ms));
+        assert!(wake_stream_stable(1_000, 1_000 - stable_ms, stable_ms));
+        assert!(wake_stream_stable(1_000, 1, stable_ms));
     }
 
     #[test]

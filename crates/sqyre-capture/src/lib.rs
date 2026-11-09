@@ -451,8 +451,10 @@ pub fn set_pipewire_suspend_on_idle(suspend: bool) {
     }
 }
 
-/// True while idle-suspend is on and a capture is waiting for a PipeWire
-/// stream that is not streaming yet.
+/// True while a slept portal stream is waking for a capture.
+///
+/// Stays on through driver-restart blips and the gap before the next retry,
+/// and clears once a stream has stayed up.
 pub fn pipewire_stream_waking() -> bool {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]
     {
