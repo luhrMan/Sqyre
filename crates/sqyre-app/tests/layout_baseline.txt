@@ -1,13 +1,96 @@
-data_editor_atlases|412x915|clipped_h|right|
-data_editor_collections|412x915|clipped_h|right|
-data_editor_items|412x915|clipped_h|right|
-data_editor_masks|412x915|clipped_h|right|
-data_editor_overlay|412x915|clipped_h|right|
-data_editor_pixelcheck|412x915|clipped_h|right|
-data_editor_points_form|412x915|clipped_h|right|
-data_editor_points|412x915|clipped_h|right|
-data_editor_screencap|412x915|clipped_h|right|
-data_editor_searchareas|412x915|clipped_h|right|
-edit_findpixel|480x360|clipped_h|right|●
-variables_builtins|1280x720@1.5|clipped_h|right|Max stack depth for the matched image (Image Search)
-variables_builtins|1280x720@2.0|clipped_h|right|Max stack depth for the matched image (Image Search)
+data_editor_atlases|1280x720@1.5|clipped_h|right|Collections
+data_editor_atlases|1280x720@2.0|clipped_h|right|Collections
+data_editor_atlases|412x915|clipped_h|right|
+data_editor_atlases|480x360|clipped_h|right|Search Areas
+data_editor_atlases|640x480|clipped_h|right|Atlases
+data_editor_atlases|800x600|clipped_h|right|Pixel Check
+data_editor_collections|1280x720@1.5|clipped_h|right|Collections
+data_editor_collections|1280x720@2.0|clipped_h|right|Collections
+data_editor_collections|412x915|clipped_h|right|
+data_editor_collections|480x360|clipped_h|right|Search Areas
+data_editor_collections|640x480|clipped_h|right|Atlases
+data_editor_collections|800x600|clipped_h|right|Pixel Check
+data_editor_items|1280x720@1.5|clipped_h|right|Collections
+data_editor_items|1280x720@2.0|clipped_h|right|Collections
+data_editor_items|412x915|clipped_h|right|
+data_editor_items|480x360|clipped_h|right|Search Areas
+data_editor_items|640x480|clipped_h|right|Atlases
+data_editor_items|800x600|clipped_h|right|Pixel Check
+data_editor_masks|1280x720@1.5|clipped_h|right|Collections
+data_editor_masks|1280x720@2.0|clipped_h|right|Collections
+data_editor_masks|412x915|clipped_h|right|
+data_editor_masks|480x360|clipped_h|right|Search Areas
+data_editor_masks|640x480|clipped_h|right|Atlases
+data_editor_masks|800x600|clipped_h|right|Pixel Check
+data_editor_overlay|1280x720@1.5|clipped_h|right|Collections
+data_editor_overlay|1280x720@2.0|clipped_h|right|Collections
+data_editor_overlay|412x915|clipped_h|right|
+data_editor_overlay|480x360|clipped_h|right|Search Areas
+data_editor_overlay|640x480|clipped_h|right|Atlases
+data_editor_overlay|800x600|clipped_h|right|Pixel Check
+data_editor_pixelcheck|1280x720@1.5|clipped_h|right|Collections
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|Collections
+data_editor_pixelcheck|412x915|clipped_h|right|
+data_editor_pixelcheck|480x360|clipped_h|right|Search Areas
+data_editor_pixelcheck|640x480|clipped_h|right|Atlases
+data_editor_pixelcheck|800x600|clipped_h|right|Pixel Check
+data_editor_points_form|1280x720@1.5|clipped_h|right|Collections
+data_editor_points_form|1280x720@2.0|clipped_h|right|Collections
+data_editor_points_form|412x915|clipped_h|right|
+data_editor_points_form|480x360|clipped_h|right|Search Areas
+data_editor_points_form|640x480|clipped_h|right|Atlases
+data_editor_points_form|800x600|clipped_h|right|Pixel Check
+data_editor_points|1280x720@1.5|clipped_h|right|Collections
+data_editor_points|1280x720@2.0|clipped_h|right|Collections
+data_editor_points|412x915|clipped_h|right|
+data_editor_points|480x360|clipped_h|right|Search Areas
+data_editor_points|640x480|clipped_h|right|Atlases
+data_editor_points|800x600|clipped_h|right|Pixel Check
+data_editor_programs|1280x720@1.5|clipped_h|right|Collections
+data_editor_programs|1280x720@2.0|clipped_h|right|Collections
+data_editor_programs|412x915|clipped_h|right|
+data_editor_programs|480x360|clipped_h|right|Search Areas
+data_editor_programs|640x480|clipped_h|right|Atlases
+data_editor_programs|800x600|clipped_h|right|Pixel Check
+data_editor_screencap|1280x720@1.5|clipped_h|right|Collections
+data_editor_screencap|1280x720@2.0|clipped_h|right|Collections
+data_editor_screencap|412x915|clipped_h|right|
+data_editor_screencap|480x360|clipped_h|right|Search Areas
+data_editor_screencap|640x480|clipped_h|right|Atlases
+data_editor_screencap|800x600|clipped_h|right|Pixel Check
+data_editor_searchareas|1280x720@1.5|clipped_h|right|Collections
+data_editor_searchareas|1280x720@2.0|clipped_h|right|Collections
+data_editor_searchareas|412x915|clipped_h|right|
+data_editor_searchareas|480x360|clipped_h|right|Search Areas
+data_editor_searchareas|640x480|clipped_h|right|Atlases
+data_editor_searchareas|800x600|clipped_h|right|Pixel Check
+edit_findpixel|1024x640|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|1280x720@1.5|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|1280x720@2.0|clipped_h|right|●
+edit_findpixel|1280x720@2.0|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|1280x720|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|1920x1080|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|640x480|clipped_h|right|●
+edit_findpixel|640x480|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|800x600|overlap|Output X: foundX ↔ Output Y: foundY
+edit_findpixel|915x412|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|1024x640|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|1280x720@1.5|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|1280x720|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|1920x1080|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|640x480|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch_stress|800x600|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|1024x640|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|1280x720@1.5|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|1280x720|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|1920x1080|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|640x480|overlap|Output X: foundX ↔ Output Y: foundY
+edit_imagesearch|800x600|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|1024x640|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|1280x720@1.5|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|1280x720@2.0|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|1280x720|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|1920x1080|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|640x480|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|800x600|overlap|Output X: foundX ↔ Output Y: foundY
+edit_ocr|915x412|overlap|Output X: foundX ↔ Output Y: foundY
