@@ -40,20 +40,20 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 - One obvious next step on empty states (“No macros yet — create one”).
 - Avoid requiring the user to know IDs, paths, or enum variant names to complete common tasks.
 
-### Icon-first (glyphs portray, tooltips explain)
-- Portray information with a **simple, recognizable icon** instead of an always-visible text label; the wording it replaces goes in the **hover tooltip**. Applies to field labels, state/type/status indicators, badges, and compact row controls.
+### Icon-first chrome; visible field names (glyphs portray, tips enrich)
+- **Chrome** (toolbar, confirm, row actions, type/status badges): prefer a recognizable glyph; the plain-language name lives in the hover tip + AccessKit name. Does **not** apply to editable form field labels — those must paint a short visible name (charter clarity / Project `ui-standards.md` §8 win over tip-only field identity).
 - Use shared glyph sources, not ad-hoc characters: `egui_phosphor::regular::*` (outline) and `PHOSPHOR_FILL_FAMILY` (filled, e.g. toggled state) for icons, `widgets::VectorIcon` for action-type pictures, `warn_badge` for the ⚠ corner marker.
-- Field/row labels: `widgets::pair_labeled` — the glyph and its control share one frame and a hairline, so the icon reads as part of that widget. Shared field helpers already do this. A trailing action on that control (clear, pick, record) stays inside the frame (`pair_icon` when the leading slot is not a field label). `help::label` shows `name` on hover and sets the accessible name; attach extra help to the control with `help::tip(resp, help)`. Shared help strings live in `action_tooltip/help.rs` (`h::`, action-editor fields) and `help_text.rs` (`ht::`, window/panel/picker chrome). Toolbar and confirm icons stay bare glyphs.
+- Field/row labels: `widgets::pair_labeled` — glyph + **visible short name** and the control share one frame and a hairline. Shared field helpers already do this. A trailing action on that control (clear, pick, record) stays inside the frame (`pair_icon` when the leading slot is not a field label). `help::label` paints `name` (Small/weak) beside the glyph and sets the accessible name; attach help prose to the control with `help::tip(resp, help)` — never tip-only field identity. Shared help strings live in `action_tooltip/help.rs` (`h::`, action-editor fields) and `help_text.rs` (`ht::`, window/panel/picker chrome). Toolbar and confirm icons stay bare glyphs.
 - Icon-only actions with no paired widget (toolbar, confirm, row chrome): `widgets::icon_button` / `cancel_icon_button` / `record_icon_button` / `icon_toggle` / `IconButton::new` — `tip` is both hover text and AccessKit name. Glyph only at rest (no fill or stroke). Hover and press draw the interactive fill, same as the brand button. Do not add a resting frame around them.
-- Keep **visible text** where the text is the content or an icon would be ambiguous: user-typed names (macros, items, tags), editable values, search/filter fields, empty-state copy, and primary action buttons (Save / Cancel). No clear glyph → short text label + tooltip beats a cryptic icon.
-- Tooltip wording is the plain-language text the icon replaces — same rules as labels below.
+- Keep **visible text** for: editable field names, user-typed names (macros, items, tags), editable values, search/filter fields, empty-state copy, primary action verbs (Save / Cancel / Edit defaults…), and glanceable mode/status (hotkey On press/On release, non-zero delay summary). No clear glyph for chrome → short text label + tooltip beats a cryptic icon.
+- Tooltip wording is plain-language enrichment — same glossary rules as labels below.
 
 ### Understandable
 - Labels and hints use everyday words (macro, item, click, wait) — not crate/type jargon in the UI string.
-- Every non-obvious control gets hover help or a one-line hint; for icon-only info, the tooltip carries the text the icon replaced.
+- Every non-obvious control gets hover help or a one-line hint; for icon-only **chrome**, the tooltip carries the AccessKit name. Form field identity stays visible via `help::label`.
 - Errors and status text say what happened and what to try next in plain language.
-- Progressive disclosure: show the common path first; tuck thresholds, preprocess flags, gate formulas, expert geometry, etc. under `widgets::advanced_section` (tooltips use `tip_advanced`, which wraps it). Optional *feature* groups use `widgets::collapsible_section` with the feature name — never raw `ui.collapsing`, never an Advanced nested inside another disclosure.
-- Static explanatory prose does not get rendered inline — it lives in the hover tooltip of a compact `help::label` (icon + short name). `.weak()` text is for live values (counts, resolved positions), not documentation.
+- Progressive disclosure: show the common path first (identity, targets, search area, detection Output X/Y + wait/order); tuck expert thresholds, preprocess flags, alternate match methods, Nav edge cases, mask geometry under `widgets::advanced_section` (tooltips use `tip_advanced`, which wraps it). Optional *feature* groups use `widgets::collapsible_section` with the feature name — never raw `ui.collapsing`, never an Advanced nested inside another disclosure. Required / common-path fields must not live only inside default-collapsed Advanced.
+- Static explanatory **prose** does not get rendered inline — it lives in `help::tip` on the labeled control. `.weak()` text is for live values (counts, resolved positions) and short visible field names beside glyphs, not long documentation.
 
 ### Consistent rendering (look alike / refactorable)
 Keep surfaces **visually interchangeable**: same control kinds should look and lay out the same so refactors stay safe and screenshots/docs stay reliable.
@@ -87,8 +87,9 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - [ ] List/combo: sorted predictably; filter or searchable combo if the set can grow
 - [ ] Empty / no-match states have plain copy
 - [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
-- [ ] Info/labels use a clear icon with `name: help` hover text where a glyph fits (`help::label`, `icon_button`, Phosphor / `VectorIcon`); visible text kept where no icon works
-- [ ] Beginner path visible; advanced options collapsed by default
+- [ ] Form field names visible at rest (`help::label` / `pair_labeled`); icon-only chrome still has tip + AccessKit name
+- [ ] Beginner / common path visible; expert options collapsed by default (not Output X/Y or wait/order)
+- [ ] Primary create/edit not right-click-only
 - [ ] Labels, hints, and errors readable by a non-technical user
 - [ ] Reused `theme::*` tokens/visuals, `widgets::*` (incl. controls), `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)
 - [ ] Layout matches a sibling of the same kind; dialogs use shared fit/scroll helpers
