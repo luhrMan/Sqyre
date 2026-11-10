@@ -1358,7 +1358,7 @@ fn show_zoom_view(
                     .pivot(egui::Align2::CENTER_BOTTOM)
                     .fixed_pos(mark.center_top() + egui::vec2(0.0, -6.0))
                     .show(ui.ctx(), |ui| {
-                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        crate::theme::popup_frame(ui).show(ui, |ui| {
                             ui.label(egui::RichText::new(label).strong());
                             if let Some(d) = &detail {
                                 ui.label(d);
