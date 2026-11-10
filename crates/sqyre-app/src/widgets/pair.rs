@@ -105,14 +105,21 @@ fn paint_pair<R>(
         .horizontal(|ui| {
             let mut gesture = IconGesture::default();
             if let Some(lead) = leading.as_mut() {
+                clear_icon_button_took_pointer(ui);
                 let rect = ui.scope(|ui| lead(ui)).response.rect;
-                gesture = icon_gesture(ui, rect);
-                // The glyph is only a label. Focus the control before it is
-                // built, and keep that focus when the button releases over the
-                // icon. Otherwise egui treats the release as a click outside
-                // and blurs the control, which closes a dropdown at once.
-                if gesture.pressed {
-                    focus_following_widget(ui);
+                // Label leads forward focus into the value slot. Action leads
+                // ([`super::entity_pick_button`]) own the click — forwarding
+                // would `move_focus(Next)` onto the next sibling outside the
+                // pair (Preview refresh, …).
+                if !take_icon_button_took_pointer(ui) {
+                    gesture = icon_gesture(ui, rect);
+                    // Focus the control before it is built, and keep that focus
+                    // when the button releases over the icon. Otherwise egui
+                    // treats the release as a click outside and blurs the
+                    // control, which closes a dropdown at once.
+                    if gesture.pressed {
+                        focus_following_widget(ui);
+                    }
                 }
                 lead_rect = Some(rect);
                 ui.add_space(PAIR_SLOT_GAP);
@@ -183,6 +190,28 @@ struct IconFocusTarget {
 
 fn icon_target_id(ui: &egui::Ui) -> egui::Id {
     ui.id().with("pair_icon_target")
+}
+
+fn icon_button_took_pointer_id() -> egui::Id {
+    egui::Id::new("sqyre_pair_icon_button_took_pointer")
+}
+
+/// Called from [`super::icon_button`] when that control owns a press/click so
+/// [`paint_pair`] skips label→focus forwarding for the lead slot.
+pub(super) fn note_icon_button_took_pointer(ui: &egui::Ui) {
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(icon_button_took_pointer_id(), true));
+}
+
+fn clear_icon_button_took_pointer(ui: &egui::Ui) {
+    ui.ctx()
+        .data_mut(|d| d.remove_temp::<bool>(icon_button_took_pointer_id()));
+}
+
+fn take_icon_button_took_pointer(ui: &egui::Ui) -> bool {
+    ui.ctx()
+        .data_mut(|d| d.remove_temp::<bool>(icon_button_took_pointer_id()))
+        .unwrap_or(false)
 }
 
 /// Pointer went down, or finished a click, on the leading glyph.
@@ -609,6 +638,95 @@ mod tests {
             });
         });
         assert!(combo_focused, "the combo lost focus on the next frame");
+    }
+
+    /// Catalog pick lead is a real button — must not `move_focus(Next)` onto a
+    /// sibling after the pair (Preview refresh regression).
+    #[test]
+    fn entity_pick_lead_does_not_focus_the_next_sibling() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 240.0));
+        let glyph = crate::model_icons::SEARCH_AREA;
+        let mut pick_rect = egui::Rect::NOTHING;
+        for pass in 0..2 {
+            let out = run(
+                &ctx,
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(pass as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| {
+                    pair_leading(
+                        ui,
+                        |ui| {
+                            pick_rect = super::super::entity_pick_button(ui, glyph, "Pick…").rect;
+                        },
+                        |ui| {
+                            ui.label("value");
+                        },
+                    );
+                    let _ = super::super::icon_button(ui, "↻", "Refresh");
+                },
+            );
+            out.drop_without_applying_deltas();
+            assert!(pick_rect.is_positive(), "missing pick button");
+        }
+
+        let mut refresh_focused = false;
+        let pressed = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.3),
+                events: vec![press(pick_rect.center())],
+                ..Default::default()
+            },
+            |ui| {
+                pair_leading(
+                    ui,
+                    |ui| {
+                        let _ = super::super::entity_pick_button(ui, glyph, "Pick…");
+                    },
+                    |ui| {
+                        ui.label("value");
+                    },
+                );
+                refresh_focused = super::super::icon_button(ui, "↻", "Refresh").has_focus();
+            },
+        );
+        pressed.drop_without_applying_deltas();
+        assert!(
+            !refresh_focused,
+            "entity pick lead forwarded focus to the next sibling"
+        );
+
+        let released = run(
+            &ctx,
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(0.4),
+                events: vec![release(pick_rect.center())],
+                ..Default::default()
+            },
+            |ui| {
+                pair_leading(
+                    ui,
+                    |ui| {
+                        let _ = super::super::entity_pick_button(ui, glyph, "Pick…");
+                    },
+                    |ui| {
+                        ui.label("value");
+                    },
+                );
+                refresh_focused = super::super::icon_button(ui, "↻", "Refresh").has_focus();
+            },
+        );
+        released.drop_without_applying_deltas();
+        assert!(
+            !refresh_focused,
+            "entity pick release left focus on the next sibling"
+        );
     }
 
     #[test]

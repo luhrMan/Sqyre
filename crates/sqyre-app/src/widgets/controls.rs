@@ -121,6 +121,12 @@ fn icon_button_inner(
     let fg = color.unwrap_or(visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);
+    // [`super::pair`] label→focus must not run when this button owns the press
+    // (entity pick lead); otherwise `move_focus(Next)` lands on the next
+    // focusable sibling outside the pair (e.g. Preview refresh).
+    if response.clicked() || response.is_pointer_button_down_on() {
+        super::pair::note_icon_button_took_pointer(ui);
+    }
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
