@@ -3,20 +3,15 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{
-    apply_list_nav, maybe_scroll_to, picker_searchable_scroll_ex, poll_list_nav, ListNavAction,
-    PickerScrollOpts, HINT_LIST,
+    apply_list_nav, picker_searchable_scroll_ex, poll_list_nav, ListNavAction, PickerScrollOpts,
+    HINT_LIST,
 };
 use super::types::{ActivePicker, CoordKind, PickerResult};
-#[cfg(feature = "native-runtime")]
-use super::window::fetch_open_windows;
-use super::window::poll_window_picker_load;
+use super::window::{poll_window_picker_load, refresh_window_picker};
 use crate::paint_ctx::CatalogPaint;
 use crate::widgets::{list_vacancy, reset_focus_search};
 use eframe::egui;
 use sqyre_domain::CoordinateRef;
-use std::sync::mpsc;
-#[cfg(feature = "native-runtime")]
-use std::thread;
 
 pub fn show_active_picker(
     ctx: &egui::Context,
@@ -97,6 +92,7 @@ pub fn show_active_picker(
                 save = true;
             }
 
+            let mut refresh_windows = false;
             match picker {
                 ActivePicker::Items {
                     search,
@@ -276,7 +272,9 @@ pub fn show_active_picker(
                                 scroll_to_selection,
                                 compact_program_headers,
                             );
-                        }) {
+                        })
+                        .search_changed
+                        {
                             *scroll_to_selection = true;
                         }
                     }
@@ -317,28 +315,25 @@ pub fn show_active_picker(
                         PickerScrollOpts::list(ui).with_hint(Some("Search macros…")),
                         Some(focus_id),
                         |ui, q| {
-                            let mut visible = 0usize;
-                            for (name, tags) in macros {
-                                if !query_matches_name_or_tags(q, name, tags) {
-                                    continue;
-                                }
-                                visible += 1;
-                                let selected = value == name;
-                                let resp = ui.selectable_label(
-                                    selected,
-                                    egui::RichText::new(name.as_str()).small(),
-                                );
-                                if selected && *scroll_to_selection && !did_scroll {
-                                    maybe_scroll_to(ui, &resp, scroll_to_selection);
-                                    did_scroll = true;
-                                }
-                                if resp.clicked() {
-                                    *value = name.clone();
-                                }
-                            }
-                            list_vacancy(ui, q, visible, "macros");
+                            let rows: Vec<&String> = macros
+                                .iter()
+                                .filter(|(name, tags)| query_matches_name_or_tags(q, name, tags))
+                                .map(|(name, _)| name)
+                                .collect();
+                            let selected = value.clone();
+                            did_scroll = super::paint_nav_selectable_rows(
+                                ui,
+                                rows,
+                                |name| selected == **name,
+                                |name| egui::RichText::new(name.as_str()).small(),
+                                |name| *value = (*name).clone(),
+                                scroll_to_selection,
+                                "macros",
+                                q,
+                            );
                         },
-                    );
+                    )
+                    .search_changed;
                     if search_changed {
                         *scroll_to_selection = true;
                     } else if *scroll_to_selection && !did_scroll {
@@ -407,72 +402,71 @@ pub fn show_active_picker(
                             if loading {
                                 crate::widgets::loading_line(ui, "Loading windows…");
                             }
-                            let mut visible = 0usize;
-                            for w in windows.iter() {
-                                if !query_matches_window(q, w) {
-                                    continue;
-                                }
-                                visible += 1;
-                                let selected = window_title == &w.title
-                                    && (process_path == &w.process_path
-                                        || (process_path == &w.title
-                                            && w.process_path.trim().is_empty())
-                                        || (process_path == &w.process_name
-                                            && !w.process_name.is_empty()));
-                                let process_tex = match w.icon.as_ref() {
-                                    Some(icon) => paint.icons.seed_process_icon(
-                                        ui.ctx(),
-                                        &w.process_path,
-                                        &w.title,
-                                        &w.process_name,
-                                        icon,
-                                    ),
-                                    None => paint.icons.cached_process_for(
-                                        &w.process_path,
-                                        &w.title,
-                                        &w.process_name,
-                                    ),
-                                };
-                                let label = egui::RichText::new(w.label()).small();
-                                let resp = match process_tex.as_ref() {
-                                    Some(tex) => {
-                                        let icon = egui::Image::new((
-                                            tex.id(),
-                                            egui::Vec2::splat(crate::icon_cache::PROCESS_ICON_SIDE),
-                                        ))
-                                        .fit_to_exact_size(egui::Vec2::splat(
-                                            crate::icon_cache::PROCESS_ICON_SIDE,
-                                        ))
-                                        .maintain_aspect_ratio(true);
-                                        ui.selectable_label(selected, (icon, label))
+                            let rows: Vec<&crate::window_types::WindowInfo> = windows
+                                .iter()
+                                .filter(|w| query_matches_window(q, w))
+                                .collect();
+                            let sel_title = window_title.clone();
+                            let sel_path = process_path.clone();
+                            did_scroll = super::paint_nav_rows(
+                                ui,
+                                rows,
+                                |w| {
+                                    sel_title == w.title
+                                        && (sel_path == w.process_path
+                                            || (sel_path == w.title
+                                                && w.process_path.trim().is_empty())
+                                            || (sel_path == w.process_name
+                                                && !w.process_name.is_empty()))
+                                },
+                                |ui, w, selected| {
+                                    let process_tex = match w.icon.as_ref() {
+                                        Some(icon) => paint.icons.seed_process_icon(
+                                            ui.ctx(),
+                                            &w.process_path,
+                                            &w.title,
+                                            &w.process_name,
+                                            icon,
+                                        ),
+                                        None => paint.icons.cached_process_for(
+                                            &w.process_path,
+                                            &w.title,
+                                            &w.process_name,
+                                        ),
+                                    };
+                                    let label = egui::RichText::new(w.label()).small();
+                                    match process_tex.as_ref() {
+                                        Some(tex) => {
+                                            let icon = egui::Image::new((
+                                                tex.id(),
+                                                egui::Vec2::splat(
+                                                    crate::icon_cache::PROCESS_ICON_SIDE,
+                                                ),
+                                            ))
+                                            .fit_to_exact_size(egui::Vec2::splat(
+                                                crate::icon_cache::PROCESS_ICON_SIDE,
+                                            ))
+                                            .maintain_aspect_ratio(true);
+                                            ui.selectable_label(selected, (icon, label))
+                                        }
+                                        None => ui.selectable_label(selected, label),
                                     }
-                                    None => ui.selectable_label(selected, label),
-                                };
-                                if selected && *scroll_to_selection && !did_scroll {
-                                    maybe_scroll_to(ui, &resp, scroll_to_selection);
-                                    did_scroll = true;
-                                }
-                                if resp.clicked() {
+                                },
+                                |w| {
                                     *window_title = w.title.clone();
                                     *process_path = w.process_key();
-                                }
-                            }
-                            if !loading {
-                                list_vacancy(ui, q, visible, "windows");
-                            }
-                        });
+                                },
+                                super::NavListChrome {
+                                    scroll_to_selection,
+                                    vacancy_noun: "windows",
+                                    q,
+                                    show_vacancy: !loading,
+                                },
+                            );
+                        })
+                        .search_changed;
                     if refresh_clicked && pending.is_none() {
-                        *load_error = None;
-                        let (tx, rx) = mpsc::channel();
-                        #[cfg(feature = "native-runtime")]
-                        thread::spawn(move || {
-                            let _ = tx.send(fetch_open_windows());
-                        });
-                        #[cfg(not(feature = "native-runtime"))]
-                        {
-                            let _ = tx.send(Ok(Vec::new()));
-                        }
-                        *pending = Some(rx);
+                        refresh_windows = true;
                         *scroll_to_selection = true;
                         ui.ctx().request_repaint();
                     } else if search_changed {
@@ -482,6 +476,9 @@ pub fn show_active_picker(
                     }
                 }
                 ActivePicker::None => {}
+            }
+            if refresh_windows {
+                refresh_window_picker(picker);
             }
 
             // Save floats over the list's bottom-right corner; Esc (and ◂ Back
