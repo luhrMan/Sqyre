@@ -114,8 +114,8 @@ fn active_resize_dir(ctx: &egui::Context) -> Option<ResizeDirection> {
 /// Start a client-side resize as soon as the edge is pressed.
 ///
 /// Call from [`eframe::App::logic`] (before any paint) so Wayland gets
-/// `xdg_toplevel.resize` with a fresh button serial and so `ui` can take the
-/// solid-fill-only path for the rest of the gesture.
+/// `xdg_toplevel.resize` with a fresh button serial. Sets the resize-active
+/// flag so [`eframe::App::clear_color`] stays opaque for the gesture.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn poll_borderless_resize_start(ctx: &egui::Context) {
     if borderless_resize_active_ctx(ctx) {

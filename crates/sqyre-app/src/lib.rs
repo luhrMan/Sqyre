@@ -1104,22 +1104,6 @@ impl eframe::App for SqyreApp {
 
         #[cfg(not(target_arch = "wasm32"))]
         let borderless = !self.settings_ui.settings().window_decorations;
-        #[cfg(not(target_arch = "wasm32"))]
-        let resizing = borderless && window_frame::is_borderless_resize_active();
-        #[cfg(target_arch = "wasm32")]
-        let resizing = false;
-
-        // Live client-side resize: solid opaque fill only. Relaying out panels /
-        // floaters on every configure makes the chrome slide and hitch before
-        // the next buffer lands — the compositor already moves the window;
-        // we just need a cheap opaque present until the pointer is released.
-        if resizing {
-            ui.painter()
-                .rect_filled(ui.ctx().viewport_rect(), 0.0, ui.visuals().panel_fill);
-            #[cfg(not(target_arch = "wasm32"))]
-            window_frame::handle_borderless_resize(ui.ctx());
-            return;
-        }
 
         // Re-fit spacing when the viewport crosses the auto-compact threshold.
         SettingsUi::sync_density(ui.ctx(), self.settings_ui.settings());
@@ -1192,11 +1176,11 @@ impl eframe::App for SqyreApp {
     /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
     /// don't paint eframe's default dark plate behind the gold chrome.
     ///
-    /// During a client-side borderless resize the clear is opaque panel fill —
-    /// a transparent clear + wgpu surface recreate flashes the desktop each
-    /// configure. On wasm there are no transparent OS overlay windows — an
-    /// opaque clear keeps a panic/blank frame from looking like the page body
-    /// color bleeding through.
+    /// During a client-side borderless resize the clear stays opaque panel fill
+    /// while UI still paints live — a transparent clear + wgpu surface recreate
+    /// flashes the desktop each configure. On wasm there are no transparent OS
+    /// overlay windows — an opaque clear keeps a panic/blank frame from looking
+    /// like the page body color bleeding through.
     fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         #[cfg(target_arch = "wasm32")]
         {
