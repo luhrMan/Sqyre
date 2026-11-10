@@ -272,6 +272,10 @@ pub const DE_MASK_SHAPE: &str =
 pub const DE_MASK_IMAGE_MODE: &str =
     "Image mask mode — shape fields are hidden while a PNG is on disk.";
 pub const DE_MASK_INVERSE: &str = "When on, only the shape region is kept; the rest is masked out.";
+pub const DE_MASK_ITEMS: &str =
+    "Program items with this mask applied as a live preview. Excluded pixels are dimmed.";
+pub const DE_MASK_ITEMS_FILTER: &str =
+    "Show every item in the program, or only items that already use this mask.";
 pub const DE_PREVIEW_ZOOM: &str = "Scroll to zoom; drag to pan when zoomed.";
 /// Declared Variables section (Variables panel).
 pub const VARS_DECLARED: &str =

@@ -1148,3 +1148,44 @@ fn delete_key_in_model_name_field_does_not_remove_model() {
         "unsaved name edit must not delete the program"
     );
 }
+
+#[test]
+fn masks_row_opens_mask_editor() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+
+    assert!(
+        !harness.state().docs_mask_editor_open(),
+        "mask editor should start closed"
+    );
+
+    harness.get_by_label("Masks").click();
+    harness.run();
+
+    assert!(
+        harness.state().docs_mask_editor_open(),
+        "Masks should open the mask editor for the selected program"
+    );
+}
+
+#[test]
+fn search_masks_row_opens_mask_editor() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+
+    harness.get_by_label("Search masks").click();
+    harness.run();
+
+    assert!(
+        harness.state().docs_mask_editor_open(),
+        "Search masks should open the mask editor for the selected program"
+    );
+}

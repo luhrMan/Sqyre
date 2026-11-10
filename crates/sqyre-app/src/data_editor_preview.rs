@@ -554,60 +554,6 @@ pub(crate) fn attach_preview_error_icon(ui: &mut egui::Ui, rect: egui::Rect, err
     crate::widgets::controls::reveal_status_tip(ui, &resp, err);
 }
 
-pub(crate) fn paint_disk_preview(
-    ui: &mut egui::Ui,
-    icons: &mut IconCache,
-    path: Option<&std::path::Path>,
-    fallback: Option<egui::TextureHandle>,
-    title: &str,
-    grid: Option<(i32, i32)>,
-    replace_clicked: Option<&mut bool>,
-) {
-    crate::widgets::section_separator(ui);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(title).strong());
-        if let Some(flag) = replace_clicked {
-            if ui.small_button("Replace Image").clicked() {
-                *flag = true;
-            }
-        }
-    });
-    let tex = path.and_then(|p| icons.for_path(ui.ctx(), p)).or(fallback);
-    match tex {
-        Some(tex) => {
-            let [tw, th] = tex.size();
-            let size = fit_panel(tw as f32, th as f32);
-            let resp = image_view::add_checkered_image(
-                ui,
-                &tex,
-                size,
-                egui::Sense::hover(),
-                0.0,
-                image_view::CheckerboardEdge::Outset,
-            );
-            paint_preview_frame(ui.painter(), resp.rect);
-            if let Some((rows, cols)) = grid {
-                paint_grid_overlay(ui, resp.rect, rows, cols);
-            }
-            if let Some(path) = path {
-                if paint_preview_floaters(ui, resp.rect, true, None, "Fit image in viewport", None)
-                    .refresh
-                {
-                    icons.invalidate_path(path);
-                }
-            }
-            if let Some(path) = path {
-                if path.is_file() {
-                    ui.weak(path.display().to_string());
-                }
-            }
-        }
-        None => {
-            ui.weak("No image on disk.");
-        }
-    }
-}
-
 /// Collection-tab preview with wheel zoom / drag pan.
 #[expect(
     clippy::too_many_arguments,
@@ -775,10 +721,6 @@ const FIT_PANEL_MAX_H: f32 = 240.0;
 
 pub(crate) fn fit_panel(w: f32, h: f32) -> egui::Vec2 {
     image_view::fit_in_box_no_upscale(w, h, FIT_PANEL_MAX_W, FIT_PANEL_MAX_H)
-}
-
-pub(crate) fn paint_grid_overlay(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i32) {
-    paint_grid_overlay_painter(ui.painter(), rect, rows, cols);
 }
 
 pub(crate) fn paint_grid_overlay_painter(
@@ -1344,7 +1286,7 @@ mod tests {
                 |ui| {
                     let rect =
                         egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 80.0));
-                    paint_grid_overlay(ui, rect, 2, 2);
+                    paint_grid_overlay_painter(ui.painter(), rect, 2, 2);
                 },
             );
             let n = marker_shapes(&out.shapes, color);

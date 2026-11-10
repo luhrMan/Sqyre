@@ -255,6 +255,10 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
 
 /// Paint a selectable `cell_w`×`row_h` icon cell (no under-icon label).
 /// Returns `(cell_clicked, cell_response)`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cell layout plus optional after_icon overlay callback"
+)]
 fn icon_grid_cell(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -263,6 +267,7 @@ fn icon_grid_cell(
     selected: bool,
     style: IconCellStyle,
     row_h: f32,
+    after_icon: &mut Option<&mut IconAfterIcon<'_>>,
 ) -> (bool, egui::Response) {
     let IconCellStyle { cell, thumb } = style;
     let rounding = 4.0;
@@ -305,7 +310,11 @@ fn icon_grid_cell(
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
 
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
-    crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
+    let icon_rect =
+        crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
+    if let Some(cb) = after_icon.as_mut() {
+        cb(ui.painter(), icon_rect, target);
+    }
 
     // Caller attaches the tip: under `dnd_drag_source` it must use the outer
     // drag response (that owns hover + Grab cursor), not this inner cell.
@@ -322,6 +331,8 @@ pub type IconIndexClick<'a> = dyn FnMut(usize) + 'a;
 pub type IconReorder<'a> = dyn FnMut(usize, usize) + 'a;
 /// Whether a target may show Remove.
 pub type IconTargetPred<'a> = dyn Fn(&str) -> bool + 'a;
+/// After the icon thumb is painted: `(painter, fitted_icon_rect, target)`.
+pub type IconAfterIcon<'a> = dyn FnMut(&egui::Painter, egui::Rect, &str) + 'a;
 
 /// Click, remove, and reorder behavior for [`paint_even_icon_grid`].
 ///
@@ -335,6 +346,7 @@ pub struct IconGridOps<'a> {
     pub on_remove: Option<&'a mut IconIndexClick<'a>>,
     pub on_reorder: Option<&'a mut IconReorder<'a>>,
     pub is_removable: Option<&'a IconTargetPred<'a>>,
+    pub after_icon: Option<&'a mut IconAfterIcon<'a>>,
 }
 
 /// Lay out `targets` in even rows (no column stretch, no staircase wrap).
@@ -405,8 +417,16 @@ pub fn paint_even_icon_grid(
                         // owns hover (Grab hand). Tip must attach to that outer
                         // response — same pattern as reorderable tag chips.
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
-                            let (clicked, cell) =
-                                icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
+                            let (clicked, cell) = icon_grid_cell(
+                                ui,
+                                catalog,
+                                icons,
+                                target,
+                                sel,
+                                style,
+                                row_h,
+                                &mut ops.after_icon,
+                            );
                             if clicked {
                                 if let Some(on_cell) = ops.on_cell.as_mut() {
                                     on_cell(k, target);
@@ -430,8 +450,16 @@ pub fn paint_even_icon_grid(
                         }
                         (drag.inner.rect, Some(drag.response))
                     } else {
-                        let (clicked, cell) =
-                            icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
+                        let (clicked, cell) = icon_grid_cell(
+                            ui,
+                            catalog,
+                            icons,
+                            target,
+                            sel,
+                            style,
+                            row_h,
+                            &mut ops.after_icon,
+                        );
                         attach_item_icon_tooltip(&cell, catalog, icons, target);
                         if clicked {
                             if let Some(on_cell) = ops.on_cell.as_mut() {
@@ -477,6 +505,37 @@ pub fn paint_even_icon_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn after_icon_receives_fitted_icon_rect() {
+        let ctx = egui::Context::default();
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let targets = vec!["p~item".to_string()];
+        let mut seen = Vec::new();
+        let mut after_icon = |_painter: &egui::Painter, rect: egui::Rect, target: &str| {
+            seen.push((target.to_string(), rect));
+        };
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_even_icon_grid(
+                ui,
+                &catalog,
+                &mut icons,
+                &targets,
+                |_| false,
+                IconGridKind::Picker,
+                IconGridOps {
+                    after_icon: Some(&mut after_icon),
+                    ..Default::default()
+                },
+                None,
+            );
+        });
+        out.drop_without_applying_deltas();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "p~item");
+        assert!(seen[0].1.is_positive(), "fitted icon rect must be positive");
+    }
 
     /// The selection ring must not spill past the cell into the grid gap or the
     /// enclosing pane's padding — paint it inside the cell bounds.
