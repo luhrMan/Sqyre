@@ -743,6 +743,36 @@ fn data_editor_search_and_program_pairs_swap() {
     assert!(harness.query_by_label("Search Points…").is_none());
 }
 
+/// Program selector tip must attach once — IconButton already tips, so a
+/// second `on_hover_text` stacked a duplicate popup.
+#[test]
+fn data_editor_program_selector_shows_single_hover_tip() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    harness
+        .ctx
+        .all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    let tip = "Program: Demo Program";
+    let rect = harness.get_by_label(tip).rect();
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    let tip_galleys = harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Text(t) => t.galley.text() == tip,
+            _ => false,
+        })
+        .count();
+    assert_eq!(
+        tip_galleys, 1,
+        "program selector must paint one hover tip, got {tip_galleys}"
+    );
+}
+
 #[test]
 fn data_editor_items_sort_menu_hosts_tag_priority() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {

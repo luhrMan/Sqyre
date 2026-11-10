@@ -732,6 +732,8 @@ impl DataEditor {
             .selected_program
             .as_deref()
             .and_then(|p| icons.for_program(ui.ctx(), catalog, p));
+        // IconButton already attaches tip as hover text; image buttons need it
+        // explicitly. Applying both stacks two identical tips.
         let resp = match &tex {
             Some(tex) => {
                 let resp = ui.add(
@@ -745,7 +747,7 @@ impl DataEditor {
                 resp.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip.clone())
                 });
-                resp
+                resp.on_hover_text(&tip)
             }
             None => ui.add(crate::widgets::IconButton::new(
                 crate::model_icons::PROGRAM,
@@ -753,7 +755,6 @@ impl DataEditor {
                 self.program_open.then_some(crate::theme::accent()),
             )),
         };
-        let resp = resp.on_hover_text(&tip);
         if resp.clicked() {
             self.program_open = !self.program_open;
             if self.program_open {
