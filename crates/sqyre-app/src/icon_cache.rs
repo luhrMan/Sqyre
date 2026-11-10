@@ -453,6 +453,36 @@ fn rotating_variant_index(target: &str, count: usize, time_secs: f64) -> usize {
     (tick as usize + stable_variant_index(target, count)) % count
 }
 
+/// Letterbox slot for `target` inside `max_w`×`max_h` that stays fixed while variants rotate.
+///
+/// Takes the component-wise max fitted size across every known variant so a wide
+/// frame followed by a tall one cannot resize grids, tree thumbs, or sibling layout.
+pub fn stable_icon_thumb_size(
+    ctx: &egui::Context,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    target: &str,
+    max_w: f32,
+    max_h: f32,
+) -> Vec2 {
+    let paths = demo_icons::merged_variant_paths(catalog, target);
+    let mut size = Vec2::ZERO;
+    for path in &paths {
+        if let Some(tex) = icons.for_path(ctx, path) {
+            let [tw, th] = tex.size();
+            let fitted = image_view::fit_icon_thumb(tw as f32, th as f32, max_w, max_h);
+            size.x = size.x.max(fitted.x);
+            size.y = size.y.max(fitted.y);
+        }
+    }
+    if size == Vec2::ZERO {
+        let tex = icons.for_target_or_fallback(ctx, catalog, target);
+        let [tw, th] = tex.size();
+        return image_view::fit_icon_thumb(tw as f32, th as f32, max_w, max_h);
+    }
+    size
+}
+
 /// Paint a catalog/item icon centered at `center`, fitting inside `max_w`×`max_h`.
 pub fn paint_icon_thumb_at(
     ui: &egui::Ui,
@@ -867,6 +897,43 @@ mod tests {
     #[test]
     fn rotating_variant_index_single_variant_is_zero() {
         assert_eq!(rotating_variant_index("Prog~Item", 1, 99.0), 0);
+    }
+
+    #[test]
+    fn stable_icon_thumb_size_uses_max_across_variants() {
+        crate::demo_icons::with_exclusive(|| {
+            crate::demo_icons::clear();
+            crate::demo_icons::register_item_variant_solid(
+                "Prog",
+                "Item",
+                "wide",
+                64,
+                16,
+                [255, 0, 0, 255],
+            );
+            crate::demo_icons::register_item_variant_solid(
+                "Prog",
+                "Item",
+                "tall",
+                16,
+                64,
+                [0, 255, 0, 255],
+            );
+            let catalog = ProgramCatalog::default();
+            let ctx = egui::Context::default();
+            let mut icons = IconCache::new();
+            let target = "Prog~Item";
+            for path in demo_icons::merged_variant_paths(&catalog, target) {
+                assert!(icons.for_path(&ctx, &path).is_some());
+            }
+            let slot = stable_icon_thumb_size(&ctx, &catalog, &mut icons, target, 30.0, 18.0);
+            let wide = image_view::fit_icon_thumb(64.0, 16.0, 30.0, 18.0);
+            let tall = image_view::fit_icon_thumb(16.0, 64.0, 30.0, 18.0);
+            assert!((slot.x - wide.x.max(tall.x)).abs() < 0.01);
+            assert!((slot.y - wide.y.max(tall.y)).abs() < 0.01);
+            // Current rotating texture alone would be smaller on one axis.
+            assert!(slot.x > tall.x + 0.5 || slot.y > wide.y + 0.5);
+        });
     }
 
     #[test]

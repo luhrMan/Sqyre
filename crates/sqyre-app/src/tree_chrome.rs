@@ -1,7 +1,6 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
-use crate::image_view;
 use crate::paint_ctx::VarTheme;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::{
@@ -166,13 +165,14 @@ fn target_thumb_size(
     icons: &mut IconCache,
     target: &str,
 ) -> Vec2 {
-    icons
-        .for_target(ui.ctx(), catalog, target)
-        .map(|tex| {
-            let [tw, th] = tex.size();
-            image_view::fit_icon_thumb(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H)
-        })
-        .unwrap_or(Vec2::splat(TARGET_THUMB_MAX_H))
+    crate::icon_cache::stable_icon_thumb_size(
+        ui.ctx(),
+        catalog,
+        icons,
+        target,
+        TARGET_THUMB_MAX_W,
+        TARGET_THUMB_MAX_H,
+    )
 }
 
 /// Paint the pastel type badge with a glyph.
@@ -948,6 +948,7 @@ pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image_view;
     use sqyre_domain::{ActionKind, CoordinateRef, PressState, ScalarValue};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {

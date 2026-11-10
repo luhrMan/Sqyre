@@ -106,6 +106,34 @@ pub fn register_item_variant(
     store().lock().expect("demo icon store").insert(path, img);
 }
 
+/// Register a solid `width`×`height` placeholder (tests that need non-square variants).
+#[cfg(test)]
+pub fn register_item_variant_solid(
+    program: &str,
+    item: &str,
+    variant: &str,
+    width: u32,
+    height: u32,
+    rgba: [u8; 4],
+) {
+    let path = item_variant_path(program, item, variant);
+    let target = format!("{program}~{item}");
+    let px = (width.max(1) * height.max(1)) as usize;
+    let mut pixels = Vec::with_capacity(px * 4);
+    for _ in 0..px {
+        pixels.extend_from_slice(&rgba);
+    }
+    push_item_path(target, path.clone());
+    store().lock().expect("demo icon store").insert(
+        path,
+        DemoRgba {
+            rgba: pixels,
+            width: width.max(1),
+            height: height.max(1),
+        },
+    );
+}
+
 /// Register a procedural collection board image.
 pub fn register_collection(program: &str, collection: &str, accent: [u8; 3], pattern: usize) {
     let path = collection_icon_path(program, collection);
