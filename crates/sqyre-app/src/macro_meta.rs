@@ -306,7 +306,8 @@ impl MacroMetaUi {
                     out.persist = true;
                 }
             });
-            if crate::widgets::dismiss_row(ui, true) {
+            // Title-bar ✕ closes via `.open`; Esc only — no painted Cancel twin.
+            if crate::widgets::consume_escape(ui) {
                 close = true;
             }
         });

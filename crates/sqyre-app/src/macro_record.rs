@@ -301,13 +301,15 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         screen.center().y - default_h * 0.5,
     );
 
+    let mut open = true;
     crate::widgets::fit_dialog_popup(
         egui::Window::new("Recorded actions")
             .collapsible(false)
             .resizable(true)
             .default_size([default_w, default_h])
             .default_pos(default_pos)
-            .min_size(crate::widgets::FLOATER_MIN_PICKER),
+            .min_size(crate::widgets::FLOATER_MIN_PICKER)
+            .open(&mut open),
         ctx,
         egui::Id::new("sqyre_macro_record_review"),
         pending_scale,
@@ -394,7 +396,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
 
             let action_count = draft.root.children().len();
             crate::widgets::heading_with_count(ui, "Actions", action_count);
-            // Leave room for Copy/Close (+ status) so the list grows with the window.
+            // Leave room for Copy (+ status) so the list grows with the window.
             let footer_reserve = if status.is_set() { 60.0 } else { 40.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
             let actions_w = crate::widgets::visible_width(ui);
@@ -427,12 +429,9 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 if ui.small_button("Copy").clicked() {
                     copy = true;
                 }
-                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
-                    close = true;
-                }
             });
             status.paint(ui);
-            // Esc closes when no widget inside the review window owns keys.
+            // Title-bar ✕ + Esc close — no painted Close twin.
             if !close
                 && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
                 && crate::widgets::consume_escape(ui)
@@ -441,6 +440,9 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             }
         });
     });
+    if !open {
+        close = true;
+    }
 
     if let Some((i, coord_ref, name)) = adopt_nearby {
         if let Some(pt) = points.get_mut(i) {

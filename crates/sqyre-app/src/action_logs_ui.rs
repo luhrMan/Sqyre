@@ -232,12 +232,8 @@ pub fn show_logs_window(
                     egui_phosphor::regular::ARROW_DOWN,
                     egui_phosphor::fill::ARROW_DOWN,
                 );
+                // Title-bar ✕ + Esc close this window — no painted Close twin.
                 ui.weak(&counts);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
-                        nav = LogsNav::Close;
-                    }
-                });
             });
 
             // ── Search + kind toggles ───────────────────────────────────────
