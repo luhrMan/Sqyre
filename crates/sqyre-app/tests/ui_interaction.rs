@@ -92,6 +92,62 @@ fn new_macro_button_adds_macro() {
     );
 }
 
+/// Top-bar chrome: Data Editor / Settings sit under the Sqyre brand; the
+/// macro-list toggle shares that second row on the right.
+#[test]
+fn top_bar_chrome_row_under_brand() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+
+    let brand = harness.get_by_label("Sqyre").rect();
+    let data_editor = harness.get_by_label("Data Editor").rect();
+    let settings = harness.get_by_label("Settings").rect();
+    let list_toggle = harness.get_by_label("Hide macro list").rect();
+
+    assert!(
+        data_editor.top() > brand.bottom() - 2.0,
+        "Data Editor should sit under the brand (brand={brand:?}, data={data_editor:?})"
+    );
+    assert!(
+        settings.top() > brand.bottom() - 2.0,
+        "Settings should sit under the brand (brand={brand:?}, settings={settings:?})"
+    );
+    let chrome_mid_y = (data_editor.center().y + settings.center().y) * 0.5;
+    assert!(
+        (list_toggle.center().y - chrome_mid_y).abs() < data_editor.height(),
+        "macro-list toggle should share the chrome row (list={list_toggle:?}, chrome_y={chrome_mid_y})"
+    );
+    assert!(
+        list_toggle.left() > settings.right(),
+        "macro-list toggle should be on the right of the chrome row"
+    );
+
+    // Click each chrome control from a clean top bar (open dialogs steal
+    // labels / hit targets for later clicks).
+    harness.get_by_label("Data Editor").click();
+    harness.run();
+    assert!(harness.state().docs_data_editor_open());
+
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    harness.get_by_label("Settings").click();
+    harness.run();
+    assert!(harness.state().docs_settings_open());
+
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    assert!(harness.state().docs_macro_list_open());
+    harness.get_by_label("Hide macro list").click();
+    harness.run();
+    assert!(!harness.state().docs_macro_list_open());
+}
+
 fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
     harness
         .query_all_by_label("Wait")

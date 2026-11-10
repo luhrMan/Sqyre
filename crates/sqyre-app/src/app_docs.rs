@@ -483,6 +483,11 @@ impl SqyreApp {
         self.macro_list_open = open;
     }
 
+    /// Whether the macro list side panel is open (docs / interaction harnesses).
+    pub fn docs_macro_list_open(&self) -> bool {
+        self.macro_list_open
+    }
+
     /// Number of macros currently loaded (docs / interaction harnesses).
     pub fn docs_macro_count(&self) -> usize {
         self.workspace.macros.len()
