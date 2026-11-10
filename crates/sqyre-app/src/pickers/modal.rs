@@ -107,8 +107,8 @@ pub fn show_active_picker(
                     let program_names: Vec<String> =
                         paint.catalog.program_names().cloned().collect();
                     let mut opts = PickerScrollOpts::list(ui).with_hint(Some("Search items…"));
-                    // Selected-count row + optional tag filters + Save/Cancel.
-                    opts.footer_reserve = if staged_tags.is_some() { 160.0 } else { 80.0 };
+                    // Count line (+ compact single-row tag chips when Image Search).
+                    opts.footer_reserve = if staged_tags.is_some() { 72.0 } else { 36.0 };
                     let mut trailing = |ui: &mut egui::Ui| {
                         super::collapse_all_button(
                             ui,
@@ -162,7 +162,6 @@ pub fn show_active_picker(
                             .sum();
                         list_vacancy(ui, q, visible, "items");
                     });
-                    crate::widgets::section_separator(ui);
                     if let Some(tags) = staged_tags.as_mut() {
                         let suggestions =
                             crate::data_editor::helpers::collect_all_item_tags(paint.catalog);
@@ -171,10 +170,6 @@ pub fn show_active_picker(
                             .ctx()
                             .data(|d| d.get_temp::<String>(draft_id))
                             .unwrap_or_default();
-                        crate::action_tooltip::help::tip(
-                            ui.label(egui::RichText::new("Tag filters").strong()),
-                            crate::action_tooltip::help::IS_TARGET_TAGS,
-                        );
                         let program_icons = paint.icons.program_name_icons(ui.ctx(), paint.catalog);
                         let _ = crate::widgets::tag_chip_editor(
                             ui,
@@ -186,10 +181,10 @@ pub fn show_active_picker(
                                 show_add_button: true,
                                 label_name: None,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
-                                draft_hint: None,
+                                draft_hint: Some("Tag filters…"),
                                 reorderable: false,
                                 signed_filters: true,
-                                single_row: false,
+                                single_row: true,
                                 locked: &[],
                                 locked_hover: None,
                                 program_icons: Some(&program_icons),
@@ -224,13 +219,13 @@ pub fn show_active_picker(
                             .iter()
                             .filter(|t| !staged.iter().any(|s| s == *t))
                             .count();
-                        ui.label(format!(
-                            "{} selected · {} from tag filters",
+                        ui.weak(format!(
+                            "{} selected · {} from tags",
                             staged.len(),
                             from_tags
                         ));
                     } else {
-                        ui.label(format!("{} selected", staged.len()));
+                        ui.weak(format!("{} selected", staged.len()));
                     }
                 }
                 ActivePicker::Coord {
@@ -252,51 +247,38 @@ pub fn show_active_picker(
                         let kind = *kind;
                         let program_names: Vec<String> =
                             paint.catalog.program_names().cloned().collect();
-                        crate::widgets::fill_row(
-                            ui,
-                            |ui| {
-                                super::collapse_all_button(
-                                    ui,
-                                    program_names.iter().map(|n| {
-                                        super::coord_list::coord_list_collapse_id(kind, n)
-                                    }),
-                                    |ctx, open| {
-                                        super::set_coord_list_openness(
-                                            ctx,
-                                            kind,
-                                            program_names.iter().map(|n| n.as_str()),
-                                            open,
-                                        );
-                                    },
-                                );
-                            },
-                            |ui| {
-                                let out = crate::widgets::search_field(
-                                    ui,
-                                    search,
-                                    crate::widgets::SearchFieldOpts {
-                                        hint: HINT_LIST,
-                                        focus_id: Some(focus_id),
-                                        clearable: false,
-                                        stable_id: None,
-                                        trailing: None,
-                                    },
-                                );
-                                if out.changed {
-                                    *scroll_to_selection = true;
-                                }
-                            },
-                        );
-                        paint_coord_ref_list(
-                            ui,
-                            paint,
-                            search,
-                            value,
-                            kind,
-                            cell_pick,
-                            scroll_to_selection,
-                            compact_program_headers,
-                        );
+                        let mut opts = PickerScrollOpts::list(ui).with_hint(Some(HINT_LIST));
+                        let mut trailing = |ui: &mut egui::Ui| {
+                            super::collapse_all_button(
+                                ui,
+                                program_names
+                                    .iter()
+                                    .map(|n| super::coord_list::coord_list_collapse_id(kind, n)),
+                                |ctx, open| {
+                                    super::set_coord_list_openness(
+                                        ctx,
+                                        kind,
+                                        program_names.iter().map(|n| n.as_str()),
+                                        open,
+                                    );
+                                },
+                            );
+                        };
+                        opts.trailing = Some(&mut trailing);
+                        if picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
+                            paint_coord_ref_list(
+                                ui,
+                                paint,
+                                q,
+                                value,
+                                kind,
+                                cell_pick,
+                                scroll_to_selection,
+                                compact_program_headers,
+                            );
+                        }) {
+                            *scroll_to_selection = true;
+                        }
                     }
                 }
                 ActivePicker::Macro {

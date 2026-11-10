@@ -103,8 +103,10 @@ impl PickerScrollOpts<'_> {
     }
 }
 
-/// Search row → optional below-search → separator → capped vertical scroll.
-/// `body` receives lowercase trimmed query.
+/// Search row → optional below-search → capped vertical scroll.
+///
+/// No separator under the search bar — pickers stay flush (point / items / macros
+/// share this chrome). `body` receives the lowercase trimmed query.
 ///
 /// Scroll height is measured after the search row so the pane fits remaining space.
 /// Returns whether search text changed this frame (callers can re-arm scroll-to-selection).
@@ -171,11 +173,6 @@ pub fn picker_searchable_scroll_ex(
             crate::widgets::show_overflow(ui, "picker_below_search", 0.45, |ui| {
                 below(ui);
             });
-        }
-        // The divider is only meaningful under a painted row; with everything
-        // hidden it leaves dead space above the list.
-        if has_search || trailing.is_some() || below_search.is_some() {
-            crate::widgets::section_separator(ui);
         }
     }
     let q = search.trim().to_ascii_lowercase();
