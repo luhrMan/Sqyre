@@ -70,6 +70,10 @@ pub const ED_ADD_ALL_PROGRAMS: &str =
 
 /// Generate button for the AI prompt draft.
 pub const PROMPT_GENERATE: &str = "Build a schema-aware prompt for an external AI tool";
+/// Copy the generated prompt to the clipboard.
+pub const PROMPT_COPY: &str = "Copy prompt";
+/// Validate pasted AI YAML before import.
+pub const PROMPT_VALIDATE: &str = "Validate pasted YAML";
 /// Import button for pasted YAML.
 pub const PROMPT_IMPORT: &str = "Decode, validate, and add as a new macro";
 
@@ -84,6 +88,12 @@ pub const REC_SCREEN_Y: &str = "Screen Y (physical pixels)";
 
 // --- YAML builder ---
 
+/// Check YAML against the macro schema.
+pub const YAML_VALIDATE: &str = "Validate YAML";
+/// Discard edits and reload the tree's current macro.
+pub const YAML_RELOAD_TREE: &str = "Reload from Tree";
+/// Restore the saved draft that no longer matches the tree.
+pub const YAML_RESTORE_DRAFT: &str = "Restore Draft";
 /// Import as a new macro.
 pub const YAML_IMPORT_NEW: &str = "Add this YAML as a new macro";
 /// Import over the selected macro.

@@ -169,9 +169,12 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.nl_draft.trim().is_empty(),
-                        egui::Button::new("Generate prompt").small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::SPARKLE,
+                            ht::PROMPT_GENERATE,
+                            None,
+                        ),
                     )
-                    .on_hover_text(ht::PROMPT_GENERATE)
                     .clicked()
                 {
                     self.generated_prompt = build_prompt(&self.nl_draft, macros, catalog);
@@ -180,7 +183,11 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.generated_prompt.is_empty(),
-                        egui::Button::new("Copy prompt").small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::COPY,
+                            ht::PROMPT_COPY,
+                            None,
+                        ),
                     )
                     .clicked()
                 {
@@ -219,7 +226,11 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Validate").small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::LIST_CHECKS,
+                            ht::PROMPT_VALIDATE,
+                            None,
+                        ),
                     )
                     .clicked()
                 {
@@ -235,9 +246,12 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Import macro").small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::PLUS,
+                            ht::PROMPT_IMPORT,
+                            Some(crate::theme::MACRO_START),
+                        ),
                     )
-                    .on_hover_text(ht::PROMPT_IMPORT)
                     .clicked()
                 {
                     match prepare_import_macro(&self.import_yaml, &existing) {
