@@ -43,6 +43,9 @@ pub const LOGS_FIT_VIEW: &str = "Fit image in viewport (0)";
 
 /// Mask upload button on the coordinate form.
 pub const ED_UPLOAD_IMAGE: &str = "Replace this mask with a PNG from disk.";
+/// Mask remove-image icon on the Masks form.
+pub const ED_REMOVE_MASK_IMAGE: &str =
+    "Delete the PNG and use shape geometry instead. Image mask mode hides shape fields while a PNG is on disk.";
 /// Window pick control on the program form.
 pub const ED_PICK_WINDOW: &str = "Pick window…";
 /// Context menu on a disabled list row.

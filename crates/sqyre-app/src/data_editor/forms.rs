@@ -15,8 +15,8 @@ use super::helpers::{
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    catalog_search_area_pixel_size, paint_disk_preview, paint_preview_coord_chip,
-    paint_preview_floaters, paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
+    catalog_search_area_pixel_size, paint_preview_coord_chip, paint_preview_floaters,
+    paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
     paint_zoomable_collection_preview, show_file_hover, CardinalEdge, RecordFloater,
 };
 #[cfg(feature = "native-runtime")]
@@ -56,7 +56,7 @@ pub(super) struct FormCtx<'a> {
     pub is_dark: bool,
 }
 
-fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
+pub(super) fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
     let name = name.trim();
     if name.is_empty() {
         return;
@@ -68,7 +68,7 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
 
 /// Name label + content-sized edit + `DE_NAME` tip — the body of every
 /// catalog-entity Name row. Standalone rows go through [`paint_name_field`].
-fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
+pub(super) fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
     crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
         let name_w = crate::widgets::name_edit_width(ui, name, "");
         help::tip(

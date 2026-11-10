@@ -9,6 +9,7 @@ mod form_state;
 mod forms;
 pub(crate) mod helpers;
 mod lists;
+pub(crate) mod mask_preview;
 mod overlay;
 mod persist;
 #[cfg(feature = "native-runtime")]
@@ -288,6 +289,10 @@ pub struct DataEditor {
     form_height: String,
     form_radius: String,
     form_inverse: bool,
+    /// Masks-tab items grid filter (session-only).
+    mask_items_filter: mask_preview::MaskItemsFilter,
+    /// Cached scrim texture for the Masks items preview.
+    mask_scrim_cache: Option<mask_preview::MaskScrimCache>,
     form_search_area: String,
     /// Atlas member Collection names (ordered).
     form_atlas_members: Vec<String>,
@@ -433,6 +438,8 @@ impl Default for DataEditor {
             form_height: String::new(),
             form_radius: String::new(),
             form_inverse: false,
+            mask_items_filter: mask_preview::MaskItemsFilter::default(),
+            mask_scrim_cache: None,
             form_search_area: String::new(),
             form_atlas_members: Vec::new(),
             form_atlas_add: String::new(),
