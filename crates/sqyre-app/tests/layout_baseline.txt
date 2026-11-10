@@ -348,6 +348,7 @@ edit_findpixel|1280x720|overlap|Sqyre ↔ Data Editor
 edit_findpixel|1280x720|overlap|Sqyre ↔ Settings
 edit_findpixel|1920x1080|overlap|Sqyre ↔ Data Editor
 edit_findpixel|1920x1080|overlap|Sqyre ↔ Settings
+edit_findpixel|412x915|clipped_h|right|●
 edit_findpixel|412x915|overlap|Sqyre ↔ Data Editor
 edit_findpixel|412x915|overlap|Sqyre ↔ Settings
 edit_findpixel|480x360|clipped_h|right|●
