@@ -77,22 +77,6 @@ impl SettingsSection {
         }
     }
 
-    fn subtitle(self) -> &'static str {
-        match self {
-            Self::General => "Application and behavior options.",
-            Self::Macros => "How macros run, record, respond to hotkeys, and search the screen.",
-            Self::Sound => "Cue sounds for macros and UI actions.",
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            Self::Permissions => "Access Sqyre needs for capture, input, and macro playback.",
-            Self::Data => {
-                "Data folder location and zip backups of macros, settings, images, and variables."
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            Self::Updates => "Check GitHub Releases for a newer Sqyre build.",
-            Self::Appearance => "Theme and display options.",
-        }
-    }
-
     fn visible(self, q: &str) -> bool {
         match self {
             Self::General => section_visible(q, SECTION_GENERAL, GENERAL_SETTINGS),
@@ -660,8 +644,9 @@ impl SettingsUi {
                         return;
                     }
                     let section = self.active_section;
-                    ui.label(egui::RichText::new(section.label()).strong().heading());
-                    ui.label(egui::RichText::new(section.subtitle()).weak());
+                    // Strong title only — sidebar already names the section; no
+                    // Body subtitle band under the heading.
+                    ui.label(egui::RichText::new(section.label()).strong());
                     crate::widgets::section_separator(ui);
                     let section_hit = match section {
                         SettingsSection::General => query_matches(&q, SECTION_GENERAL),
