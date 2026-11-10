@@ -233,6 +233,11 @@ impl SqyreApp {
         self.data_editor.open
     }
 
+    /// Active Data Editor tab label (docs / interaction harnesses).
+    pub fn docs_data_editor_tab(&self) -> &'static str {
+        self.data_editor.tab.label()
+    }
+
     /// Program catalog (docs / interaction harnesses).
     pub fn docs_catalog(&self) -> &sqyre_persist::ProgramCatalog {
         &self.workspace.catalog

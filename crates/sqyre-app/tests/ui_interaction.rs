@@ -1202,7 +1202,7 @@ fn delete_key_in_model_name_field_does_not_remove_model() {
 }
 
 #[test]
-fn masks_row_opens_mask_editor() {
+fn masks_tab_opens_for_selected_program() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
         app.open_data_editor_programs_for_docs()
     });
@@ -1210,34 +1210,44 @@ fn masks_row_opens_mask_editor() {
     harness.get_by_label("Demo Program").click();
     harness.run();
 
-    assert!(
-        !harness.state().docs_mask_editor_open(),
-        "mask editor should start closed"
+    assert_ne!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Masks tab should start inactive on Programs"
     );
 
     harness.get_by_label("Masks").click();
     harness.run();
 
-    assert!(
-        harness.state().docs_mask_editor_open(),
-        "Masks should open the mask editor for the selected program"
+    assert_eq!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Masks should switch the Data Editor tab for the selected program"
     );
 }
 
 #[test]
-fn search_masks_row_opens_mask_editor() {
+fn open_masks_from_command_palette() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
-        app.open_data_editor_programs_for_docs()
+        app.open_data_editor_programs_for_docs();
+        app.open_command_palette_for_docs();
     });
     harness.run();
-    harness.get_by_label("Demo Program").click();
-    harness.run();
-
-    harness.get_by_label("Search masks").click();
-    harness.run();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("masks".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Open Masks").click();
+    harness.run_steps(4);
 
     assert!(
-        harness.state().docs_mask_editor_open(),
-        "Search masks should open the mask editor for the selected program"
+        harness.state().docs_data_editor_open(),
+        "Open Masks should keep/open the Data Editor"
+    );
+    assert_eq!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Open Masks should land on the Masks tab"
     );
 }
