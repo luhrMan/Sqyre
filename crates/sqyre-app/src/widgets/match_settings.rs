@@ -71,6 +71,22 @@ pub fn paint_match_settings(
     }
 }
 
+/// Tolerance and blur, then `advanced` for the method (and any siblings).
+///
+/// The caller owns the disclosure: image search uses `tip_advanced`; forms use
+/// `advanced_section`. `advanced` receives `match_method` so it is not borrowed
+/// twice.
+pub fn paint_match_settings_advanced(
+    ui: &mut egui::Ui,
+    tolerance: &mut f64,
+    blur: &mut i32,
+    match_method: &mut MatchMethod,
+    advanced: impl FnOnce(&mut egui::Ui, &mut MatchMethod),
+) {
+    paint_match_settings(ui, tolerance, blur, match_method, false);
+    advanced(ui, match_method);
+}
+
 /// Match method combo only (everyday [`MatchMethod::ui_label`] names).
 pub fn paint_match_method(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     let mut method_label = match_method.ui_label().to_string();
