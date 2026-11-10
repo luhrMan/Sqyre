@@ -305,15 +305,15 @@ pub fn paint_edit_fields(
                         },
                     );
                     let mut pick = false;
-                    let reserve = crate::widgets::icon_btn_side(ui) + crate::widgets::PAIR_SLOT_GAP;
-                    crate::widgets::pair_icon(
+                    crate::widgets::pair_leading(
                         ui,
                         |ui| {
-                            help::label(
+                            pick = crate::widgets::entity_pick_button(
                                 ui,
                                 egui_phosphor::regular::TERMINAL_WINDOW,
-                                "Process path",
-                            );
+                                "Pick process window…",
+                            )
+                            .clicked();
                         },
                         |ui| {
                             crate::icon_cache::paint_leading_process_icon(
@@ -327,8 +327,7 @@ pub fn paint_edit_fields(
                             if process_path.contains(['\n', '\r']) {
                                 process_path.retain(|c| c != '\n' && c != '\r');
                             }
-                            let width =
-                                (crate::widgets::fields::finite_room(ui) - reserve).max(24.0);
+                            let width = crate::widgets::fields::finite_room(ui).max(24.0);
                             let path_rows = path_wrap_rows(width, process_path);
                             help::tip(
                                 ui.add(
@@ -340,11 +339,6 @@ pub fn paint_edit_fields(
                                 ),
                                 h::FOCUS_PROCESS,
                             );
-                        },
-                        |ui| {
-                            if pick_icon_btn(ui).clicked() {
-                                pick = true;
-                            }
                         },
                     );
                     if pick {
@@ -816,7 +810,7 @@ fn targets_editor(
                 );
             }
         });
-        if crate::widgets::pick_icon_button(ui, h::IS_ITEMS).clicked() {
+        if crate::widgets::entity_pick_button(ui, crate::model_icons::ITEM, h::IS_ITEMS).clicked() {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -1003,10 +997,6 @@ fn item_tag_suggestions(
     tags
 }
 
-fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    crate::widgets::pick_icon_button(ui, "Pick…")
-}
-
 /// Soft-wrap row count for a process path in the Focus Window tip.
 fn path_wrap_rows(available_width: f32, path: &str) -> usize {
     // ~7px per monospace-ish char at default tip font size; clamp so the tip
@@ -1016,7 +1006,7 @@ fn path_wrap_rows(available_width: f32, path: &str) -> usize {
     len.div_ceil(chars_per_line).clamp(1, 4)
 }
 
-/// Icon label + read-only value + pick button. Returns true when pick was clicked.
+/// Kind glyph is the pick button; value sits beside it. Returns true on pick.
 fn picker_display_row(
     ui: &mut egui::Ui,
     icon: &str,
@@ -1025,19 +1015,23 @@ fn picker_display_row(
     display: &str,
 ) -> bool {
     let mut clicked = false;
-    pair_labeled(ui, icon, label, |ui| {
-        help::tip(
-            ui.label(if display.is_empty() {
-                sqyre_domain::EMPTY_UNSET
-            } else {
-                display
-            }),
-            help_text,
-        );
-        if pick_icon_btn(ui).clicked() {
-            clicked = true;
-        }
-    });
+    let tip = format!("Pick {label}…");
+    crate::widgets::pair_leading(
+        ui,
+        |ui| {
+            clicked = crate::widgets::entity_pick_button(ui, icon, &tip).clicked();
+        },
+        |ui| {
+            help::tip(
+                ui.label(if display.is_empty() {
+                    sqyre_domain::EMPTY_UNSET
+                } else {
+                    display
+                }),
+                help_text,
+            );
+        },
+    );
     clicked
 }
 
@@ -1136,47 +1130,53 @@ fn coord_picker_row(
     } = paint;
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
-    pair_labeled(ui, icon, label, |ui| {
-        if let Some(prog) = coord.program() {
-            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-        }
-        let color = if !validation.error.is_empty() {
-            theme::error_fg()
-        } else if !validation.warning.is_empty() {
-            theme::warn_fg()
-        } else {
-            ui.visuals().text_color()
-        };
-        let trailing_width = ui.spacing().interact_size.x * 2.0 + ui.spacing().item_spacing.x * 2.0;
-        let label_width = (ui.available_width() - trailing_width).max(0.0);
-        let resp = ui
-            .scope(|ui| {
-                ui.set_max_width(label_width);
-                ui.add(
-                    egui::Label::new(egui::RichText::new(display).monospace().color(color))
-                        .truncate()
-                        .show_tooltip_when_elided(false),
-                )
-            })
-            .inner;
-        if !coord.is_empty() {
-            attach_coord_hover(ui, &resp, catalog, previews, coord, kind, help_text);
-        } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
-            let _ = resp.on_hover_text(tip);
-        } else {
-            help::tip(resp, help_text);
-        }
-        var_pills::paint_entry_validation_icon(ui, &validation);
-        if pick_icon_btn(ui).clicked() {
-            *picker = ActivePicker::Coord {
-                kind,
-                search: String::new(),
-                value: coord.0.clone(),
-                cell_pick: None,
-                scroll_to_selection: true,
+    let pick_tip = format!("Pick {label}…");
+    crate::widgets::pair_leading(
+        ui,
+        |ui| {
+            if crate::widgets::entity_pick_button(ui, icon, &pick_tip).clicked() {
+                *picker = ActivePicker::Coord {
+                    kind,
+                    search: String::new(),
+                    value: coord.0.clone(),
+                    cell_pick: None,
+                    scroll_to_selection: true,
+                };
+            }
+        },
+        |ui| {
+            if let Some(prog) = coord.program() {
+                crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+            }
+            let color = if !validation.error.is_empty() {
+                theme::error_fg()
+            } else if !validation.warning.is_empty() {
+                theme::warn_fg()
+            } else {
+                ui.visuals().text_color()
             };
-        }
-    });
+            let trail = ui.spacing().interact_size.x + ui.spacing().item_spacing.x;
+            let label_width = (ui.available_width() - trail).max(0.0);
+            let resp = ui
+                .scope(|ui| {
+                    ui.set_max_width(label_width);
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(display).monospace().color(color))
+                            .truncate()
+                            .show_tooltip_when_elided(false),
+                    )
+                })
+                .inner;
+            if !coord.is_empty() {
+                attach_coord_hover(ui, &resp, catalog, previews, coord, kind, help_text);
+            } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
+                let _ = resp.on_hover_text(tip);
+            } else {
+                help::tip(resp, help_text);
+            }
+            var_pills::paint_entry_validation_icon(ui, &validation);
+        },
+    );
 }
 
 fn coord_unset_validation(kind: CoordKind, coord: &CoordinateRef) -> EntryValidation {
