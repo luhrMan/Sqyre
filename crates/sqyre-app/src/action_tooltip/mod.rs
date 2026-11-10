@@ -537,8 +537,11 @@ fn edit_tip_clicked_outside(ctx: &egui::Context, area_id: egui::Id, blocked: boo
     true
 }
 
-/// Vertical popup chrome around the view tip body (inner margin + stroke).
-const VIEW_TIP_CHROME_H: f32 = 20.0;
+/// Vertical reserve outside the view-tip scroll body (frame margins + stroke).
+fn view_tip_chrome_h(ctx: &egui::Context) -> f32 {
+    let m = crate::theme::chrome_inner_margin_ctx(ctx);
+    f32::from(m.top + m.bottom) + crate::theme::SPACE_12
+}
 
 /// Scroll position of the pointer-following view tip, kept across frames.
 #[derive(Debug, Clone, Copy)]
@@ -621,7 +624,7 @@ pub(crate) fn show_action_view_tip(
         .data(|d| d.get_temp::<ViewTipScroll>(scroll_key))
         .filter(|s| s.tip_id == tip_id && s.pass + 1 >= pass)
         .map_or(0.0, |s| s.offset);
-    let max_body_h = (screen.height() - VIEW_TIP_CHROME_H).max(40.0);
+    let max_body_h = (screen.height() - view_tip_chrome_h(ctx)).max(40.0);
     // interactable(false): clicks pass through to the control underneath.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
@@ -793,8 +796,19 @@ fn show_edit_window(
     let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(screen.width());
     // Grow with content from a modest default; ScrollArea caps at the window height.
-    const EDIT_CHROME: f32 = 72.0; // type pill + Save/Cancel + separator + margins
-    let max_scroll_h = (screen.height() - EDIT_CHROME).max(100.0);
+    // Type pill + Save row + separator + popup frame margins (density-aware).
+    let edit_chrome = {
+        let m = crate::theme::chrome_inner_margin_ctx(ctx);
+        let row = ctx
+            .global_style()
+            .as_ref()
+            .spacing
+            .interact_size
+            .y
+            .max(18.0);
+        f32::from(m.top + m.bottom) + row * 2.0 + crate::theme::SPACE_8 + crate::theme::SPACE_4
+    };
+    let max_scroll_h = (screen.height() - edit_chrome).max(100.0);
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit(edit) = state {
@@ -829,7 +843,7 @@ fn show_edit_window(
     // egui's sticky Resize `desired_size` grows. Content is pinned with
     // `fill_resize_body` so sections cannot lock/ratchet horizontal size.
     let fit_min_h = if fitting && fit_fields_h > 0.0 {
-        (EDIT_CHROME + fit_fields_h.min(max_scroll_h)).clamp(48.0, screen.height())
+        (edit_chrome + fit_fields_h.min(max_scroll_h)).clamp(48.0, screen.height())
     } else {
         48.0
     };
