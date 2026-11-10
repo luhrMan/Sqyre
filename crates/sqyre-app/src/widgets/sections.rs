@@ -156,7 +156,7 @@ pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOn
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     egui::Frame::window(ui.style())
-        .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 2))
+        .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, SPACE_2 as i8))
         .shadow(egui::Shadow::NONE)
         .show(&mut child, add_contents);
 }
