@@ -386,41 +386,51 @@ impl DataEditor {
                 return;
             }
             paint_name_field(ui, &mut self.form_name);
-            let reference = CoordinateRef(self.form_search_area.clone());
-            crate::widgets::pair_labeled(ui, crate::model_icons::SEARCH_AREA, "Reference", |ui| {
-                if let Some(prog) = reference.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                }
-                let resp = ui.monospace(reference.as_str());
-                if !reference.is_empty() {
-                    let kind = if reference.is_collection() {
-                        PreviewKind::Collection
-                    } else {
-                        PreviewKind::SearchArea
-                    };
-                    previews.show_for_coordinate_ref(
+            let ref_val = self.form_search_area.clone();
+            let reference = CoordinateRef(ref_val.clone());
+            crate::widgets::pair_leading(
+                ui,
+                |ui| {
+                    if crate::widgets::entity_pick_button(
                         ui,
-                        &resp,
-                        catalog,
-                        &reference,
-                        kind,
-                        help::DE_SCREENCAP_REF,
-                    );
-                } else {
-                    help::tip(resp, help::DE_SCREENCAP_REF);
-                }
-                if crate::widgets::pick_icon_button(ui, "Pick search area or collection cell…")
+                        crate::model_icons::SEARCH_AREA,
+                        "Pick search area or collection cell…",
+                    )
                     .clicked()
-                {
-                    self.window_picker = ActivePicker::Coord {
-                        kind: CoordKind::SearchArea,
-                        search: String::new(),
-                        value: self.form_search_area.clone(),
-                        cell_pick: None,
-                        scroll_to_selection: true,
-                    };
-                }
-            });
+                    {
+                        self.window_picker = ActivePicker::Coord {
+                            kind: CoordKind::SearchArea,
+                            search: String::new(),
+                            value: ref_val.clone(),
+                            cell_pick: None,
+                            scroll_to_selection: true,
+                        };
+                    }
+                },
+                |ui| {
+                    if let Some(prog) = reference.program() {
+                        crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                    }
+                    let resp = ui.monospace(reference.as_str());
+                    if !reference.is_empty() {
+                        let kind = if reference.is_collection() {
+                            PreviewKind::Collection
+                        } else {
+                            PreviewKind::SearchArea
+                        };
+                        previews.show_for_coordinate_ref(
+                            ui,
+                            &resp,
+                            catalog,
+                            &reference,
+                            kind,
+                            help::DE_SCREENCAP_REF,
+                        );
+                    } else {
+                        help::tip(resp, help::DE_SCREENCAP_REF);
+                    }
+                },
+            );
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
