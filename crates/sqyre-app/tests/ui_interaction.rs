@@ -237,6 +237,28 @@ fn add_action_picker_lists_wait() {
 }
 
 #[test]
+fn add_action_edit_defaults_affordance_is_visible() {
+    let mut harness = build_docs_harness([1100.0, 520.0], |app| {
+        app.open_add_action_picker();
+    });
+    harness.run();
+    // Defaults edit must not be right-click-only (icon chrome + tip).
+    harness.get_by_label("Edit the selected action's default fields (also right-click a tile)");
+}
+
+#[test]
+fn image_search_edit_shows_output_and_wait_without_advanced() {
+    let mut harness = build_docs_harness([1100.0, 720.0], |app| {
+        app.open_action_editor_for_docs("imagesearch");
+    });
+    harness.run_steps(6);
+    // Common-path detection fields stay outside collapsed Advanced.
+    harness.get_by_label("Output X");
+    harness.get_by_label("Output Y");
+    harness.get_by_label("Repeat mode");
+}
+
+#[test]
 fn add_action_picker_focuses_search_on_open() {
     let mut harness = build_docs_harness([1100.0, 520.0], |app| {
         app.open_add_action_picker();
