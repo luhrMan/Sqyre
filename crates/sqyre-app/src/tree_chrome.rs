@@ -384,7 +384,16 @@ fn paint_image_search_extras(
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
     ui.spacing_mut().item_spacing.x = TARGET_THUMB_GAP;
-    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel, false);
+    let count_pill = paint_pill(
+        ui,
+        &format!(
+            "{} {}",
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+            targets.len()
+        ),
+        pastel,
+        false,
+    );
     extend_drag_handle(drag_handle, count_pill.rect);
     if count_pill.hovered() {
         tip_hovered = true;
@@ -453,7 +462,14 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         d.sort_then,
         &d.tag_priority,
     );
-    ui.add(egui::Label::new(format!("🔍 {}", display.len())).wrap());
+    ui.add(
+        egui::Label::new(format!(
+            "{} {}",
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+            display.len()
+        ))
+        .wrap(),
+    );
 
     if !d.target_tags.is_empty() {
         crate::widgets::title_with_count(
