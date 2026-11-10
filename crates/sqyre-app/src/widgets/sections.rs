@@ -188,6 +188,18 @@ pub fn tinted_section<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui:
     inner.inner
 }
 
+/// X-span of the enclosing [`split_view`] pane (content through the splitter
+/// line), if `ui` is inside one. Scrollbars reclaim through [`PANE_PAD`] to
+/// this span so the bar sits flush with the separator.
+pub(crate) fn split_pane_span(ui: &egui::Ui) -> Option<Rangef> {
+    for node in ui.stack().iter() {
+        if let Some(span) = node.tags().get_downcast::<Rangef>(PANE_TAG) {
+            return Some(*span);
+        }
+    }
+    None
+}
+
 /// Outer rect of the nearest framed ancestor (window, panel, card, popup)
 /// including its inner margin — the painted edge, not the content region.
 pub fn frame_outer_rect(ui: &egui::Ui) -> Option<Rect> {
