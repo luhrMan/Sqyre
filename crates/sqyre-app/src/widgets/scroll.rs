@@ -103,9 +103,23 @@ fn scroll_edge_expand(ui: &egui::Ui) -> Option<(egui::Rect, egui::Margin)> {
                 0.0
             },
         );
+        // `fill_resize_body` (and similar) clip to the margin-inset content
+        // rect. That clip matches `avail` and would zero the reclaim — treat
+        // it as "content of this frame" and allow the bar onto `outer`. A
+        // tighter pane clip (split view, nested column) still caps expansion.
+        let clip_is_frame_content = (outer.max.x - clip.max.x).abs() <= f32::from(m.right) + 0.5
+            && (outer.max.y - clip.max.y).abs() <= f32::from(m.bottom) + 0.5;
+        let ceiling = if clip_is_frame_content {
+            outer
+        } else {
+            egui::Rect::from_min_max(
+                egui::pos2(clip.min.x.max(outer.min.x), clip.min.y.max(outer.min.y)),
+                egui::pos2(clip.max.x.min(outer.max.x), clip.max.y.min(outer.max.y)),
+            )
+        };
         let max = egui::pos2(
-            (avail.max.x + grow.x).min(clip.max.x),
-            (avail.max.y + grow.y).min(clip.max.y),
+            (avail.max.x + grow.x).min(ceiling.max.x),
+            (avail.max.y + grow.y).min(ceiling.max.y),
         );
         if max.x <= avail.max.x + 0.5 && max.y <= avail.max.y + 0.5 {
             return None;
@@ -142,6 +156,10 @@ fn show_expanded<R>(
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    // Floating bars follow `clip_rect`. Parents that clip to the content
+    // rect (inside frame margin) would otherwise pull the bar back off the
+    // edge we just reclaimed — expand the clip to cover the viewport.
+    child.set_clip_rect(ui.clip_rect().union(rect));
     let out = scroll.show(&mut child, add_contents);
     // egui's auto-shrink paints `content_size.min(inner.size())`; mirror it so
     // overflowing content claims the capped viewport, not the full content.
@@ -711,6 +729,51 @@ mod tests {
             .drop_without_applying_deltas();
         }
         assert!(last_h > 12.0, "header collapsed to a sliver ({last_h}px)");
+    }
+
+    /// `fill_resize_body`-style clip (content-sized) must not block reclaiming
+    /// the frame margin — otherwise floating bars sit a margin inward of the
+    /// dialog edge.
+    #[test]
+    fn scroll_viewport_expands_when_clip_matches_frame_content() {
+        let ctx = egui::Context::default();
+        let margin = egui::Margin::same(6);
+        let mut viewport = egui::Rect::NOTHING;
+        let mut frame_outer_right = 0.0_f32;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(300.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.set_clip_rect(pane);
+            egui::Frame::new()
+                .inner_margin(margin)
+                .show(&mut pane_ui, |ui| {
+                    let content = ui.max_rect();
+                    frame_outer_right = content.max.x + f32::from(margin.right);
+                    // Mimic fill_resize_body: child clipped to content, not outer.
+                    let (body_rect, _) =
+                        ui.allocate_exact_size(content.size(), egui::Sense::hover());
+                    let mut body = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(body_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    body.set_clip_rect(body_rect);
+                    let out = show_dialog_scroll(
+                        &mut body,
+                        body_rect.width(),
+                        body_rect.height(),
+                        |ui| {
+                            ui.allocate_space(egui::vec2(50.0, 500.0));
+                        },
+                    );
+                    viewport = out.inner_rect;
+                });
+        })
+        .drop_without_applying_deltas();
+        assert!(
+            (viewport.max.x - frame_outer_right).abs() < 0.5,
+            "viewport right {viewport:?} should reach frame outer {frame_outer_right}"
+        );
     }
 
     /// Inside a framed container the scroll viewport reaches the frame's
