@@ -1,13 +1,1029 @@
-data_editor_atlases|412x915|clipped_h|right|
-data_editor_collections|412x915|clipped_h|right|
-data_editor_items|412x915|clipped_h|right|
-data_editor_masks|412x915|clipped_h|right|
-data_editor_overlay|412x915|clipped_h|right|
-data_editor_pixelcheck|412x915|clipped_h|right|
-data_editor_points_form|412x915|clipped_h|right|
-data_editor_points|412x915|clipped_h|right|
-data_editor_screencap|412x915|clipped_h|right|
-data_editor_searchareas|412x915|clipped_h|right|
+add_action_picker|1024x640|overlap|Sqyre ↔ Data Editor
+add_action_picker|1024x640|overlap|Sqyre ↔ Settings
+add_action_picker|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+add_action_picker|1280x720@1.5|overlap|Sqyre ↔ Settings
+add_action_picker|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+add_action_picker|1280x720@2.0|overlap|Sqyre ↔ Settings
+add_action_picker|1280x720|overlap|Sqyre ↔ Data Editor
+add_action_picker|1280x720|overlap|Sqyre ↔ Settings
+add_action_picker|1920x1080|overlap|Sqyre ↔ Data Editor
+add_action_picker|1920x1080|overlap|Sqyre ↔ Settings
+add_action_picker|412x915|overlap|Sqyre ↔ Data Editor
+add_action_picker|412x915|overlap|Sqyre ↔ Settings
+add_action_picker|480x360|overlap|Sqyre ↔ Data Editor
+add_action_picker|480x360|overlap|Sqyre ↔ Settings
+add_action_picker|640x480|overlap|Sqyre ↔ Data Editor
+add_action_picker|640x480|overlap|Sqyre ↔ Settings
+add_action_picker|800x600|overlap|Sqyre ↔ Data Editor
+add_action_picker|800x600|overlap|Sqyre ↔ Settings
+add_action_picker|915x412|overlap|Sqyre ↔ Data Editor
+add_action_picker|915x412|overlap|Sqyre ↔ Settings
+ai_builder|1024x640|overlap|Sqyre ↔ Data Editor
+ai_builder|1024x640|overlap|Sqyre ↔ Settings
+ai_builder|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+ai_builder|1280x720@1.5|overlap|Sqyre ↔ Settings
+ai_builder|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+ai_builder|1280x720@2.0|overlap|Sqyre ↔ Settings
+ai_builder|1280x720|overlap|Sqyre ↔ Data Editor
+ai_builder|1280x720|overlap|Sqyre ↔ Settings
+ai_builder|1920x1080|overlap|Sqyre ↔ Data Editor
+ai_builder|1920x1080|overlap|Sqyre ↔ Settings
+ai_builder|412x915|overlap|Sqyre ↔ Data Editor
+ai_builder|412x915|overlap|Sqyre ↔ Settings
+ai_builder|480x360|overlap|Sqyre ↔ Data Editor
+ai_builder|480x360|overlap|Sqyre ↔ Settings
+ai_builder|640x480|overlap|Sqyre ↔ Data Editor
+ai_builder|640x480|overlap|Sqyre ↔ Settings
+ai_builder|800x600|overlap|Sqyre ↔ Data Editor
+ai_builder|800x600|overlap|Sqyre ↔ Settings
+ai_builder|915x412|overlap|Sqyre ↔ Data Editor
+ai_builder|915x412|overlap|Sqyre ↔ Settings
+command_palette|1024x640|overlap|Sqyre ↔ Data Editor
+command_palette|1024x640|overlap|Sqyre ↔ Settings
+command_palette|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+command_palette|1280x720@1.5|overlap|Sqyre ↔ Settings
+command_palette|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+command_palette|1280x720@2.0|overlap|Sqyre ↔ Settings
+command_palette|1280x720|overlap|Sqyre ↔ Data Editor
+command_palette|1280x720|overlap|Sqyre ↔ Settings
+command_palette|1920x1080|overlap|Sqyre ↔ Data Editor
+command_palette|1920x1080|overlap|Sqyre ↔ Settings
+command_palette|412x915|overlap|Sqyre ↔ Data Editor
+command_palette|412x915|overlap|Sqyre ↔ Settings
+command_palette|480x360|overlap|Sqyre ↔ Data Editor
+command_palette|480x360|overlap|Sqyre ↔ Settings
+command_palette|640x480|overlap|Sqyre ↔ Data Editor
+command_palette|640x480|overlap|Sqyre ↔ Settings
+command_palette|800x600|overlap|Sqyre ↔ Data Editor
+command_palette|800x600|overlap|Sqyre ↔ Settings
+command_palette|915x412|overlap|Sqyre ↔ Data Editor
+command_palette|915x412|overlap|Sqyre ↔ Settings
+data_editor_atlases|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|1024x640|overlap|Sqyre ↔ Settings
+data_editor_atlases|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_atlases|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_atlases|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|1280x720|overlap|Sqyre ↔ Settings
+data_editor_atlases|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_atlases|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|412x915|overlap|Sqyre ↔ Settings
+data_editor_atlases|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|480x360|overlap|Sqyre ↔ Settings
+data_editor_atlases|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|640x480|overlap|Sqyre ↔ Settings
+data_editor_atlases|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|800x600|overlap|Sqyre ↔ Settings
+data_editor_atlases|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_atlases|915x412|overlap|Sqyre ↔ Settings
+data_editor_collections|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_collections|1024x640|overlap|Sqyre ↔ Settings
+data_editor_collections|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_collections|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_collections|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_collections|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_collections|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_collections|1280x720|overlap|Sqyre ↔ Settings
+data_editor_collections|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_collections|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_collections|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_collections|412x915|overlap|Sqyre ↔ Settings
+data_editor_collections|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_collections|480x360|overlap|Sqyre ↔ Settings
+data_editor_collections|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_collections|640x480|overlap|Sqyre ↔ Settings
+data_editor_collections|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_collections|800x600|overlap|Sqyre ↔ Settings
+data_editor_collections|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_collections|915x412|overlap|Sqyre ↔ Settings
+data_editor_items|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_items|1024x640|overlap|Sqyre ↔ Settings
+data_editor_items|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_items|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_items|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_items|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_items|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_items|1280x720|overlap|Sqyre ↔ Settings
+data_editor_items|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_items|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_items|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_items|412x915|overlap|Sqyre ↔ Settings
+data_editor_items|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_items|480x360|overlap|Sqyre ↔ Settings
+data_editor_items|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_items|640x480|overlap|Sqyre ↔ Settings
+data_editor_items|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_items|800x600|overlap|Sqyre ↔ Settings
+data_editor_items|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_items|915x412|overlap|Sqyre ↔ Settings
+data_editor_masks|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_masks|1024x640|overlap|Sqyre ↔ Settings
+data_editor_masks|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_masks|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_masks|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_masks|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_masks|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_masks|1280x720|overlap|Sqyre ↔ Settings
+data_editor_masks|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_masks|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_masks|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_masks|412x915|overlap|Sqyre ↔ Settings
+data_editor_masks|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_masks|480x360|overlap|Sqyre ↔ Settings
+data_editor_masks|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_masks|640x480|overlap|Sqyre ↔ Settings
+data_editor_masks|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_masks|800x600|overlap|Sqyre ↔ Settings
+data_editor_masks|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_masks|915x412|overlap|Sqyre ↔ Settings
+data_editor_overlay|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|1024x640|overlap|Sqyre ↔ Settings
+data_editor_overlay|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_overlay|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_overlay|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|1280x720|overlap|Sqyre ↔ Settings
+data_editor_overlay|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_overlay|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|412x915|overlap|Sqyre ↔ Settings
+data_editor_overlay|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|480x360|overlap|Sqyre ↔ Settings
+data_editor_overlay|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|640x480|overlap|Sqyre ↔ Settings
+data_editor_overlay|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|800x600|overlap|Sqyre ↔ Settings
+data_editor_overlay|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_overlay|915x412|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|1024x640|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|1280x720|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|412x915|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|480x360|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|640x480|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|800x600|overlap|Sqyre ↔ Settings
+data_editor_pixelcheck|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_pixelcheck|915x412|overlap|Sqyre ↔ Settings
+data_editor_points_form|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|1024x640|overlap|Sqyre ↔ Settings
+data_editor_points_form|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_points_form|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_points_form|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|1280x720|overlap|Sqyre ↔ Settings
+data_editor_points_form|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_points_form|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|412x915|overlap|Sqyre ↔ Settings
+data_editor_points_form|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|480x360|overlap|Sqyre ↔ Settings
+data_editor_points_form|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|640x480|overlap|Sqyre ↔ Settings
+data_editor_points_form|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|800x600|overlap|Sqyre ↔ Settings
+data_editor_points_form|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_points_form|915x412|overlap|Sqyre ↔ Settings
+data_editor_points|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_points|1024x640|overlap|Sqyre ↔ Settings
+data_editor_points|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_points|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_points|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_points|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_points|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_points|1280x720|overlap|Sqyre ↔ Settings
+data_editor_points|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_points|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_points|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_points|412x915|overlap|Sqyre ↔ Settings
+data_editor_points|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_points|480x360|overlap|Sqyre ↔ Settings
+data_editor_points|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_points|640x480|overlap|Sqyre ↔ Settings
+data_editor_points|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_points|800x600|overlap|Sqyre ↔ Settings
+data_editor_points|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_points|915x412|overlap|Sqyre ↔ Settings
+data_editor_programs|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_programs|1024x640|overlap|Sqyre ↔ Settings
+data_editor_programs|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_programs|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_programs|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_programs|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_programs|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_programs|1280x720|overlap|Sqyre ↔ Settings
+data_editor_programs|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_programs|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_programs|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_programs|412x915|overlap|Sqyre ↔ Settings
+data_editor_programs|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_programs|480x360|overlap|Sqyre ↔ Settings
+data_editor_programs|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_programs|640x480|overlap|Sqyre ↔ Settings
+data_editor_programs|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_programs|800x600|overlap|Sqyre ↔ Settings
+data_editor_programs|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_programs|915x412|overlap|Sqyre ↔ Settings
+data_editor_screencap|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|1024x640|overlap|Sqyre ↔ Settings
+data_editor_screencap|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_screencap|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_screencap|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|1280x720|overlap|Sqyre ↔ Settings
+data_editor_screencap|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_screencap|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|412x915|overlap|Sqyre ↔ Settings
+data_editor_screencap|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|480x360|overlap|Sqyre ↔ Settings
+data_editor_screencap|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|640x480|overlap|Sqyre ↔ Settings
+data_editor_screencap|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|800x600|overlap|Sqyre ↔ Settings
+data_editor_screencap|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_screencap|915x412|overlap|Sqyre ↔ Settings
+data_editor_searchareas|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|1024x640|overlap|Sqyre ↔ Settings
+data_editor_searchareas|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_searchareas|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_searchareas|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|1280x720|overlap|Sqyre ↔ Settings
+data_editor_searchareas|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_searchareas|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|412x915|overlap|Sqyre ↔ Settings
+data_editor_searchareas|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|480x360|overlap|Sqyre ↔ Settings
+data_editor_searchareas|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|640x480|overlap|Sqyre ↔ Settings
+data_editor_searchareas|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|800x600|overlap|Sqyre ↔ Settings
+data_editor_searchareas|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_searchareas|915x412|overlap|Sqyre ↔ Settings
+delay_dialog|1024x640|overlap|Sqyre ↔ Data Editor
+delay_dialog|1024x640|overlap|Sqyre ↔ Settings
+delay_dialog|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+delay_dialog|1280x720@1.5|overlap|Sqyre ↔ Settings
+delay_dialog|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+delay_dialog|1280x720@2.0|overlap|Sqyre ↔ Settings
+delay_dialog|1280x720|overlap|Sqyre ↔ Data Editor
+delay_dialog|1280x720|overlap|Sqyre ↔ Settings
+delay_dialog|1920x1080|overlap|Sqyre ↔ Data Editor
+delay_dialog|1920x1080|overlap|Sqyre ↔ Settings
+delay_dialog|412x915|overlap|Sqyre ↔ Data Editor
+delay_dialog|412x915|overlap|Sqyre ↔ Settings
+delay_dialog|480x360|overlap|Sqyre ↔ Data Editor
+delay_dialog|480x360|overlap|Sqyre ↔ Settings
+delay_dialog|640x480|overlap|Sqyre ↔ Data Editor
+delay_dialog|640x480|overlap|Sqyre ↔ Settings
+delay_dialog|800x600|overlap|Sqyre ↔ Data Editor
+delay_dialog|800x600|overlap|Sqyre ↔ Settings
+delay_dialog|915x412|overlap|Sqyre ↔ Data Editor
+delay_dialog|915x412|overlap|Sqyre ↔ Settings
+edit_click|1024x640|overlap|Sqyre ↔ Data Editor
+edit_click|1024x640|overlap|Sqyre ↔ Settings
+edit_click|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_click|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_click|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_click|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_click|1280x720|overlap|Sqyre ↔ Data Editor
+edit_click|1280x720|overlap|Sqyre ↔ Settings
+edit_click|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_click|1920x1080|overlap|Sqyre ↔ Settings
+edit_click|412x915|overlap|Sqyre ↔ Data Editor
+edit_click|412x915|overlap|Sqyre ↔ Settings
+edit_click|480x360|overlap|Sqyre ↔ Data Editor
+edit_click|480x360|overlap|Sqyre ↔ Settings
+edit_click|640x480|overlap|Sqyre ↔ Data Editor
+edit_click|640x480|overlap|Sqyre ↔ Settings
+edit_click|800x600|overlap|Sqyre ↔ Data Editor
+edit_click|800x600|overlap|Sqyre ↔ Settings
+edit_click|915x412|overlap|Sqyre ↔ Data Editor
+edit_click|915x412|overlap|Sqyre ↔ Settings
+edit_conditional|1024x640|overlap|Sqyre ↔ Data Editor
+edit_conditional|1024x640|overlap|Sqyre ↔ Settings
+edit_conditional|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_conditional|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_conditional|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_conditional|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_conditional|1280x720|overlap|Sqyre ↔ Data Editor
+edit_conditional|1280x720|overlap|Sqyre ↔ Settings
+edit_conditional|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_conditional|1920x1080|overlap|Sqyre ↔ Settings
+edit_conditional|412x915|overlap|Sqyre ↔ Data Editor
+edit_conditional|412x915|overlap|Sqyre ↔ Settings
+edit_conditional|480x360|overlap|Sqyre ↔ Data Editor
+edit_conditional|480x360|overlap|Sqyre ↔ Settings
+edit_conditional|640x480|overlap|Sqyre ↔ Data Editor
+edit_conditional|640x480|overlap|Sqyre ↔ Settings
+edit_conditional|800x600|overlap|Sqyre ↔ Data Editor
+edit_conditional|800x600|overlap|Sqyre ↔ Settings
+edit_conditional|915x412|overlap|Sqyre ↔ Data Editor
+edit_conditional|915x412|overlap|Sqyre ↔ Settings
+edit_findpixel|1024x640|overlap|Sqyre ↔ Data Editor
+edit_findpixel|1024x640|overlap|Sqyre ↔ Settings
+edit_findpixel|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_findpixel|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_findpixel|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_findpixel|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_findpixel|1280x720|overlap|Sqyre ↔ Data Editor
+edit_findpixel|1280x720|overlap|Sqyre ↔ Settings
+edit_findpixel|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_findpixel|1920x1080|overlap|Sqyre ↔ Settings
+edit_findpixel|412x915|overlap|Sqyre ↔ Data Editor
+edit_findpixel|412x915|overlap|Sqyre ↔ Settings
 edit_findpixel|480x360|clipped_h|right|●
-variables_builtins|1280x720@1.5|clipped_h|right|Max stack depth for the matched image (Image Search)
-variables_builtins|1280x720@2.0|clipped_h|right|Max stack depth for the matched image (Image Search)
+edit_findpixel|480x360|overlap|Sqyre ↔ Data Editor
+edit_findpixel|480x360|overlap|Sqyre ↔ Settings
+edit_findpixel|640x480|overlap|Sqyre ↔ Data Editor
+edit_findpixel|640x480|overlap|Sqyre ↔ Settings
+edit_findpixel|800x600|overlap|Sqyre ↔ Data Editor
+edit_findpixel|800x600|overlap|Sqyre ↔ Settings
+edit_findpixel|915x412|overlap|Sqyre ↔ Data Editor
+edit_findpixel|915x412|overlap|Sqyre ↔ Settings
+edit_focuswindow|1024x640|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|1024x640|overlap|Sqyre ↔ Settings
+edit_focuswindow|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_focuswindow|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_focuswindow|1280x720|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|1280x720|overlap|Sqyre ↔ Settings
+edit_focuswindow|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|1920x1080|overlap|Sqyre ↔ Settings
+edit_focuswindow|412x915|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|412x915|overlap|Sqyre ↔ Settings
+edit_focuswindow|480x360|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|480x360|overlap|Sqyre ↔ Settings
+edit_focuswindow|640x480|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|640x480|overlap|Sqyre ↔ Settings
+edit_focuswindow|800x600|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|800x600|overlap|Sqyre ↔ Settings
+edit_focuswindow|915x412|overlap|Sqyre ↔ Data Editor
+edit_focuswindow|915x412|overlap|Sqyre ↔ Settings
+edit_foreachcell|1024x640|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|1024x640|overlap|Sqyre ↔ Settings
+edit_foreachcell|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_foreachcell|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_foreachcell|1280x720|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|1280x720|overlap|Sqyre ↔ Settings
+edit_foreachcell|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|1920x1080|overlap|Sqyre ↔ Settings
+edit_foreachcell|412x915|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|412x915|overlap|Sqyre ↔ Settings
+edit_foreachcell|480x360|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|480x360|overlap|Sqyre ↔ Settings
+edit_foreachcell|640x480|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|640x480|overlap|Sqyre ↔ Settings
+edit_foreachcell|800x600|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|800x600|overlap|Sqyre ↔ Settings
+edit_foreachcell|915x412|overlap|Sqyre ↔ Data Editor
+edit_foreachcell|915x412|overlap|Sqyre ↔ Settings
+edit_foreachrow|1024x640|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|1024x640|overlap|Sqyre ↔ Settings
+edit_foreachrow|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_foreachrow|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_foreachrow|1280x720|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|1280x720|overlap|Sqyre ↔ Settings
+edit_foreachrow|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|1920x1080|overlap|Sqyre ↔ Settings
+edit_foreachrow|412x915|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|412x915|overlap|Sqyre ↔ Settings
+edit_foreachrow|480x360|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|480x360|overlap|Sqyre ↔ Settings
+edit_foreachrow|640x480|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|640x480|overlap|Sqyre ↔ Settings
+edit_foreachrow|800x600|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|800x600|overlap|Sqyre ↔ Settings
+edit_foreachrow|915x412|overlap|Sqyre ↔ Data Editor
+edit_foreachrow|915x412|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|1024x640|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|1024x640|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|1280x720|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|1280x720|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|1920x1080|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|640x480|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|640x480|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|800x600|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|800x600|overlap|Sqyre ↔ Settings
+edit_imagesearch_stress|915x412|overlap|Sqyre ↔ Data Editor
+edit_imagesearch_stress|915x412|overlap|Sqyre ↔ Settings
+edit_imagesearch|1024x640|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|1024x640|overlap|Sqyre ↔ Settings
+edit_imagesearch|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_imagesearch|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_imagesearch|1280x720|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|1280x720|overlap|Sqyre ↔ Settings
+edit_imagesearch|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|1920x1080|overlap|Sqyre ↔ Settings
+edit_imagesearch|412x915|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|412x915|overlap|Sqyre ↔ Settings
+edit_imagesearch|480x360|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|480x360|overlap|Sqyre ↔ Settings
+edit_imagesearch|640x480|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|640x480|overlap|Sqyre ↔ Settings
+edit_imagesearch|800x600|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|800x600|overlap|Sqyre ↔ Settings
+edit_imagesearch|915x412|overlap|Sqyre ↔ Data Editor
+edit_imagesearch|915x412|overlap|Sqyre ↔ Settings
+edit_key|1024x640|overlap|Sqyre ↔ Data Editor
+edit_key|1024x640|overlap|Sqyre ↔ Settings
+edit_key|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_key|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_key|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_key|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_key|1280x720|overlap|Sqyre ↔ Data Editor
+edit_key|1280x720|overlap|Sqyre ↔ Settings
+edit_key|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_key|1920x1080|overlap|Sqyre ↔ Settings
+edit_key|412x915|overlap|Sqyre ↔ Data Editor
+edit_key|412x915|overlap|Sqyre ↔ Settings
+edit_key|480x360|overlap|Sqyre ↔ Data Editor
+edit_key|480x360|overlap|Sqyre ↔ Settings
+edit_key|640x480|overlap|Sqyre ↔ Data Editor
+edit_key|640x480|overlap|Sqyre ↔ Settings
+edit_key|800x600|overlap|Sqyre ↔ Data Editor
+edit_key|800x600|overlap|Sqyre ↔ Settings
+edit_key|915x412|overlap|Sqyre ↔ Data Editor
+edit_key|915x412|overlap|Sqyre ↔ Settings
+edit_loopjump|1024x640|overlap|Sqyre ↔ Data Editor
+edit_loopjump|1024x640|overlap|Sqyre ↔ Settings
+edit_loopjump|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_loopjump|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_loopjump|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_loopjump|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_loopjump|1280x720|overlap|Sqyre ↔ Data Editor
+edit_loopjump|1280x720|overlap|Sqyre ↔ Settings
+edit_loopjump|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_loopjump|1920x1080|overlap|Sqyre ↔ Settings
+edit_loopjump|412x915|overlap|Sqyre ↔ Data Editor
+edit_loopjump|412x915|overlap|Sqyre ↔ Settings
+edit_loopjump|480x360|overlap|Sqyre ↔ Data Editor
+edit_loopjump|480x360|overlap|Sqyre ↔ Settings
+edit_loopjump|640x480|overlap|Sqyre ↔ Data Editor
+edit_loopjump|640x480|overlap|Sqyre ↔ Settings
+edit_loopjump|800x600|overlap|Sqyre ↔ Data Editor
+edit_loopjump|800x600|overlap|Sqyre ↔ Settings
+edit_loopjump|915x412|overlap|Sqyre ↔ Data Editor
+edit_loopjump|915x412|overlap|Sqyre ↔ Settings
+edit_loop|1024x640|overlap|Sqyre ↔ Data Editor
+edit_loop|1024x640|overlap|Sqyre ↔ Settings
+edit_loop|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_loop|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_loop|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_loop|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_loop|1280x720|overlap|Sqyre ↔ Data Editor
+edit_loop|1280x720|overlap|Sqyre ↔ Settings
+edit_loop|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_loop|1920x1080|overlap|Sqyre ↔ Settings
+edit_loop|412x915|overlap|Sqyre ↔ Data Editor
+edit_loop|412x915|overlap|Sqyre ↔ Settings
+edit_loop|480x360|overlap|Sqyre ↔ Data Editor
+edit_loop|480x360|overlap|Sqyre ↔ Settings
+edit_loop|640x480|overlap|Sqyre ↔ Data Editor
+edit_loop|640x480|overlap|Sqyre ↔ Settings
+edit_loop|800x600|overlap|Sqyre ↔ Data Editor
+edit_loop|800x600|overlap|Sqyre ↔ Settings
+edit_loop|915x412|overlap|Sqyre ↔ Data Editor
+edit_loop|915x412|overlap|Sqyre ↔ Settings
+edit_move|1024x640|overlap|Sqyre ↔ Data Editor
+edit_move|1024x640|overlap|Sqyre ↔ Settings
+edit_move|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_move|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_move|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_move|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_move|1280x720|overlap|Sqyre ↔ Data Editor
+edit_move|1280x720|overlap|Sqyre ↔ Settings
+edit_move|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_move|1920x1080|overlap|Sqyre ↔ Settings
+edit_move|412x915|overlap|Sqyre ↔ Data Editor
+edit_move|412x915|overlap|Sqyre ↔ Settings
+edit_move|480x360|overlap|Sqyre ↔ Data Editor
+edit_move|480x360|overlap|Sqyre ↔ Settings
+edit_move|640x480|overlap|Sqyre ↔ Data Editor
+edit_move|640x480|overlap|Sqyre ↔ Settings
+edit_move|800x600|overlap|Sqyre ↔ Data Editor
+edit_move|800x600|overlap|Sqyre ↔ Settings
+edit_move|915x412|overlap|Sqyre ↔ Data Editor
+edit_move|915x412|overlap|Sqyre ↔ Settings
+edit_navigatekey|1024x640|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|1024x640|overlap|Sqyre ↔ Settings
+edit_navigatekey|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_navigatekey|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_navigatekey|1280x720|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|1280x720|overlap|Sqyre ↔ Settings
+edit_navigatekey|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|1920x1080|overlap|Sqyre ↔ Settings
+edit_navigatekey|412x915|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|412x915|overlap|Sqyre ↔ Settings
+edit_navigatekey|480x360|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|480x360|overlap|Sqyre ↔ Settings
+edit_navigatekey|640x480|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|640x480|overlap|Sqyre ↔ Settings
+edit_navigatekey|800x600|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|800x600|overlap|Sqyre ↔ Settings
+edit_navigatekey|915x412|overlap|Sqyre ↔ Data Editor
+edit_navigatekey|915x412|overlap|Sqyre ↔ Settings
+edit_navigateselect|1024x640|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|1024x640|overlap|Sqyre ↔ Settings
+edit_navigateselect|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_navigateselect|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_navigateselect|1280x720|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|1280x720|overlap|Sqyre ↔ Settings
+edit_navigateselect|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|1920x1080|overlap|Sqyre ↔ Settings
+edit_navigateselect|412x915|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|412x915|overlap|Sqyre ↔ Settings
+edit_navigateselect|480x360|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|480x360|overlap|Sqyre ↔ Settings
+edit_navigateselect|640x480|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|640x480|overlap|Sqyre ↔ Settings
+edit_navigateselect|800x600|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|800x600|overlap|Sqyre ↔ Settings
+edit_navigateselect|915x412|overlap|Sqyre ↔ Data Editor
+edit_navigateselect|915x412|overlap|Sqyre ↔ Settings
+edit_ocr|1024x640|overlap|Sqyre ↔ Data Editor
+edit_ocr|1024x640|overlap|Sqyre ↔ Settings
+edit_ocr|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_ocr|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_ocr|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_ocr|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_ocr|1280x720|overlap|Sqyre ↔ Data Editor
+edit_ocr|1280x720|overlap|Sqyre ↔ Settings
+edit_ocr|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_ocr|1920x1080|overlap|Sqyre ↔ Settings
+edit_ocr|412x915|overlap|Sqyre ↔ Data Editor
+edit_ocr|412x915|overlap|Sqyre ↔ Settings
+edit_ocr|480x360|overlap|Sqyre ↔ Data Editor
+edit_ocr|480x360|overlap|Sqyre ↔ Settings
+edit_ocr|640x480|overlap|Sqyre ↔ Data Editor
+edit_ocr|640x480|overlap|Sqyre ↔ Settings
+edit_ocr|800x600|overlap|Sqyre ↔ Data Editor
+edit_ocr|800x600|overlap|Sqyre ↔ Settings
+edit_ocr|915x412|overlap|Sqyre ↔ Data Editor
+edit_ocr|915x412|overlap|Sqyre ↔ Settings
+edit_pause|1024x640|overlap|Sqyre ↔ Data Editor
+edit_pause|1024x640|overlap|Sqyre ↔ Settings
+edit_pause|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_pause|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_pause|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_pause|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_pause|1280x720|overlap|Sqyre ↔ Data Editor
+edit_pause|1280x720|overlap|Sqyre ↔ Settings
+edit_pause|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_pause|1920x1080|overlap|Sqyre ↔ Settings
+edit_pause|412x915|overlap|Sqyre ↔ Data Editor
+edit_pause|412x915|overlap|Sqyre ↔ Settings
+edit_pause|480x360|overlap|Sqyre ↔ Data Editor
+edit_pause|480x360|overlap|Sqyre ↔ Settings
+edit_pause|640x480|overlap|Sqyre ↔ Data Editor
+edit_pause|640x480|overlap|Sqyre ↔ Settings
+edit_pause|800x600|overlap|Sqyre ↔ Data Editor
+edit_pause|800x600|overlap|Sqyre ↔ Settings
+edit_pause|915x412|overlap|Sqyre ↔ Data Editor
+edit_pause|915x412|overlap|Sqyre ↔ Settings
+edit_runmacro|1024x640|overlap|Sqyre ↔ Data Editor
+edit_runmacro|1024x640|overlap|Sqyre ↔ Settings
+edit_runmacro|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_runmacro|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_runmacro|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_runmacro|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_runmacro|1280x720|overlap|Sqyre ↔ Data Editor
+edit_runmacro|1280x720|overlap|Sqyre ↔ Settings
+edit_runmacro|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_runmacro|1920x1080|overlap|Sqyre ↔ Settings
+edit_runmacro|412x915|overlap|Sqyre ↔ Data Editor
+edit_runmacro|412x915|overlap|Sqyre ↔ Settings
+edit_runmacro|480x360|overlap|Sqyre ↔ Data Editor
+edit_runmacro|480x360|overlap|Sqyre ↔ Settings
+edit_runmacro|640x480|overlap|Sqyre ↔ Data Editor
+edit_runmacro|640x480|overlap|Sqyre ↔ Settings
+edit_runmacro|800x600|overlap|Sqyre ↔ Data Editor
+edit_runmacro|800x600|overlap|Sqyre ↔ Settings
+edit_runmacro|915x412|overlap|Sqyre ↔ Data Editor
+edit_runmacro|915x412|overlap|Sqyre ↔ Settings
+edit_savevariable|1024x640|overlap|Sqyre ↔ Data Editor
+edit_savevariable|1024x640|overlap|Sqyre ↔ Settings
+edit_savevariable|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_savevariable|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_savevariable|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_savevariable|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_savevariable|1280x720|overlap|Sqyre ↔ Data Editor
+edit_savevariable|1280x720|overlap|Sqyre ↔ Settings
+edit_savevariable|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_savevariable|1920x1080|overlap|Sqyre ↔ Settings
+edit_savevariable|412x915|overlap|Sqyre ↔ Data Editor
+edit_savevariable|412x915|overlap|Sqyre ↔ Settings
+edit_savevariable|480x360|overlap|Sqyre ↔ Data Editor
+edit_savevariable|480x360|overlap|Sqyre ↔ Settings
+edit_savevariable|640x480|overlap|Sqyre ↔ Data Editor
+edit_savevariable|640x480|overlap|Sqyre ↔ Settings
+edit_savevariable|800x600|overlap|Sqyre ↔ Data Editor
+edit_savevariable|800x600|overlap|Sqyre ↔ Settings
+edit_savevariable|915x412|overlap|Sqyre ↔ Data Editor
+edit_savevariable|915x412|overlap|Sqyre ↔ Settings
+edit_setvariable|1024x640|overlap|Sqyre ↔ Data Editor
+edit_setvariable|1024x640|overlap|Sqyre ↔ Settings
+edit_setvariable|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_setvariable|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_setvariable|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_setvariable|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_setvariable|1280x720|overlap|Sqyre ↔ Data Editor
+edit_setvariable|1280x720|overlap|Sqyre ↔ Settings
+edit_setvariable|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_setvariable|1920x1080|overlap|Sqyre ↔ Settings
+edit_setvariable|412x915|overlap|Sqyre ↔ Data Editor
+edit_setvariable|412x915|overlap|Sqyre ↔ Settings
+edit_setvariable|480x360|overlap|Sqyre ↔ Data Editor
+edit_setvariable|480x360|overlap|Sqyre ↔ Settings
+edit_setvariable|640x480|overlap|Sqyre ↔ Data Editor
+edit_setvariable|640x480|overlap|Sqyre ↔ Settings
+edit_setvariable|800x600|overlap|Sqyre ↔ Data Editor
+edit_setvariable|800x600|overlap|Sqyre ↔ Settings
+edit_setvariable|915x412|overlap|Sqyre ↔ Data Editor
+edit_setvariable|915x412|overlap|Sqyre ↔ Settings
+edit_type_stress|1024x640|overlap|Sqyre ↔ Data Editor
+edit_type_stress|1024x640|overlap|Sqyre ↔ Settings
+edit_type_stress|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_type_stress|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_type_stress|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_type_stress|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_type_stress|1280x720|overlap|Sqyre ↔ Data Editor
+edit_type_stress|1280x720|overlap|Sqyre ↔ Settings
+edit_type_stress|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_type_stress|1920x1080|overlap|Sqyre ↔ Settings
+edit_type_stress|640x480|overlap|Sqyre ↔ Data Editor
+edit_type_stress|640x480|overlap|Sqyre ↔ Settings
+edit_type_stress|800x600|overlap|Sqyre ↔ Data Editor
+edit_type_stress|800x600|overlap|Sqyre ↔ Settings
+edit_type_stress|915x412|overlap|Sqyre ↔ Data Editor
+edit_type_stress|915x412|overlap|Sqyre ↔ Settings
+edit_type|1024x640|overlap|Sqyre ↔ Data Editor
+edit_type|1024x640|overlap|Sqyre ↔ Settings
+edit_type|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_type|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_type|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_type|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_type|1280x720|overlap|Sqyre ↔ Data Editor
+edit_type|1280x720|overlap|Sqyre ↔ Settings
+edit_type|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_type|1920x1080|overlap|Sqyre ↔ Settings
+edit_type|412x915|overlap|Sqyre ↔ Data Editor
+edit_type|412x915|overlap|Sqyre ↔ Settings
+edit_type|480x360|overlap|Sqyre ↔ Data Editor
+edit_type|480x360|overlap|Sqyre ↔ Settings
+edit_type|640x480|overlap|Sqyre ↔ Data Editor
+edit_type|640x480|overlap|Sqyre ↔ Settings
+edit_type|800x600|overlap|Sqyre ↔ Data Editor
+edit_type|800x600|overlap|Sqyre ↔ Settings
+edit_type|915x412|overlap|Sqyre ↔ Data Editor
+edit_type|915x412|overlap|Sqyre ↔ Settings
+edit_wait|1024x640|overlap|Sqyre ↔ Data Editor
+edit_wait|1024x640|overlap|Sqyre ↔ Settings
+edit_wait|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_wait|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_wait|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_wait|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_wait|1280x720|overlap|Sqyre ↔ Data Editor
+edit_wait|1280x720|overlap|Sqyre ↔ Settings
+edit_wait|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_wait|1920x1080|overlap|Sqyre ↔ Settings
+edit_wait|412x915|overlap|Sqyre ↔ Data Editor
+edit_wait|412x915|overlap|Sqyre ↔ Settings
+edit_wait|480x360|overlap|Sqyre ↔ Data Editor
+edit_wait|480x360|overlap|Sqyre ↔ Settings
+edit_wait|640x480|overlap|Sqyre ↔ Data Editor
+edit_wait|640x480|overlap|Sqyre ↔ Settings
+edit_wait|800x600|overlap|Sqyre ↔ Data Editor
+edit_wait|800x600|overlap|Sqyre ↔ Settings
+edit_wait|915x412|overlap|Sqyre ↔ Data Editor
+edit_wait|915x412|overlap|Sqyre ↔ Settings
+edit_while|1024x640|overlap|Sqyre ↔ Data Editor
+edit_while|1024x640|overlap|Sqyre ↔ Settings
+edit_while|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+edit_while|1280x720@1.5|overlap|Sqyre ↔ Settings
+edit_while|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+edit_while|1280x720@2.0|overlap|Sqyre ↔ Settings
+edit_while|1280x720|overlap|Sqyre ↔ Data Editor
+edit_while|1280x720|overlap|Sqyre ↔ Settings
+edit_while|1920x1080|overlap|Sqyre ↔ Data Editor
+edit_while|1920x1080|overlap|Sqyre ↔ Settings
+edit_while|412x915|overlap|Sqyre ↔ Data Editor
+edit_while|412x915|overlap|Sqyre ↔ Settings
+edit_while|480x360|overlap|Sqyre ↔ Data Editor
+edit_while|480x360|overlap|Sqyre ↔ Settings
+edit_while|640x480|overlap|Sqyre ↔ Data Editor
+edit_while|640x480|overlap|Sqyre ↔ Settings
+edit_while|800x600|overlap|Sqyre ↔ Data Editor
+edit_while|800x600|overlap|Sqyre ↔ Settings
+edit_while|915x412|overlap|Sqyre ↔ Data Editor
+edit_while|915x412|overlap|Sqyre ↔ Settings
+logs_window|1024x640|overlap|Sqyre ↔ Data Editor
+logs_window|1024x640|overlap|Sqyre ↔ Settings
+logs_window|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+logs_window|1280x720@1.5|overlap|Sqyre ↔ Settings
+logs_window|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+logs_window|1280x720@2.0|overlap|Sqyre ↔ Settings
+logs_window|1280x720|overlap|Sqyre ↔ Data Editor
+logs_window|1280x720|overlap|Sqyre ↔ Settings
+logs_window|1920x1080|overlap|Sqyre ↔ Data Editor
+logs_window|1920x1080|overlap|Sqyre ↔ Settings
+logs_window|412x915|overlap|Sqyre ↔ Data Editor
+logs_window|412x915|overlap|Sqyre ↔ Settings
+logs_window|480x360|overlap|Sqyre ↔ Data Editor
+logs_window|480x360|overlap|Sqyre ↔ Settings
+logs_window|640x480|overlap|Sqyre ↔ Data Editor
+logs_window|640x480|overlap|Sqyre ↔ Settings
+logs_window|800x600|overlap|Sqyre ↔ Data Editor
+logs_window|800x600|overlap|Sqyre ↔ Settings
+logs_window|915x412|overlap|Sqyre ↔ Data Editor
+logs_window|915x412|overlap|Sqyre ↔ Settings
+main_no_list|1024x640|overlap|Sqyre ↔ Data Editor
+main_no_list|1024x640|overlap|Sqyre ↔ Settings
+main_no_list|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+main_no_list|1280x720@1.5|overlap|Sqyre ↔ Settings
+main_no_list|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+main_no_list|1280x720@2.0|overlap|Sqyre ↔ Settings
+main_no_list|1280x720|overlap|Sqyre ↔ Data Editor
+main_no_list|1280x720|overlap|Sqyre ↔ Settings
+main_no_list|1920x1080|overlap|Sqyre ↔ Data Editor
+main_no_list|1920x1080|overlap|Sqyre ↔ Settings
+main_no_list|412x915|overlap|Sqyre ↔ Data Editor
+main_no_list|412x915|overlap|Sqyre ↔ Settings
+main_no_list|480x360|overlap|Sqyre ↔ Data Editor
+main_no_list|480x360|overlap|Sqyre ↔ Settings
+main_no_list|640x480|overlap|Sqyre ↔ Data Editor
+main_no_list|640x480|overlap|Sqyre ↔ Settings
+main_no_list|800x600|overlap|Sqyre ↔ Data Editor
+main_no_list|800x600|overlap|Sqyre ↔ Settings
+main_no_list|915x412|overlap|Sqyre ↔ Data Editor
+main_no_list|915x412|overlap|Sqyre ↔ Settings
+main_stress|1024x640|overlap|Sqyre ↔ Data Editor
+main_stress|1024x640|overlap|Sqyre ↔ Settings
+main_stress|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+main_stress|1280x720@1.5|overlap|Sqyre ↔ Settings
+main_stress|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+main_stress|1280x720@2.0|overlap|Sqyre ↔ Settings
+main_stress|1280x720|overlap|Sqyre ↔ Data Editor
+main_stress|1280x720|overlap|Sqyre ↔ Settings
+main_stress|1920x1080|overlap|Sqyre ↔ Data Editor
+main_stress|1920x1080|overlap|Sqyre ↔ Settings
+main_stress|640x480|overlap|Sqyre ↔ Data Editor
+main_stress|640x480|overlap|Sqyre ↔ Settings
+main_stress|800x600|overlap|Sqyre ↔ Data Editor
+main_stress|800x600|overlap|Sqyre ↔ Settings
+main_stress|915x412|overlap|Sqyre ↔ Data Editor
+main_stress|915x412|overlap|Sqyre ↔ Settings
+main|1024x640|overlap|Sqyre ↔ Data Editor
+main|1024x640|overlap|Sqyre ↔ Settings
+main|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+main|1280x720@1.5|overlap|Sqyre ↔ Settings
+main|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+main|1280x720@2.0|overlap|Sqyre ↔ Settings
+main|1280x720|overlap|Sqyre ↔ Data Editor
+main|1280x720|overlap|Sqyre ↔ Settings
+main|1920x1080|overlap|Sqyre ↔ Data Editor
+main|1920x1080|overlap|Sqyre ↔ Settings
+main|412x915|overlap|Sqyre ↔ Data Editor
+main|412x915|overlap|Sqyre ↔ Settings
+main|480x360|overlap|Sqyre ↔ Data Editor
+main|480x360|overlap|Sqyre ↔ Settings
+main|640x480|overlap|Sqyre ↔ Data Editor
+main|640x480|overlap|Sqyre ↔ Settings
+main|800x600|overlap|Sqyre ↔ Data Editor
+main|800x600|overlap|Sqyre ↔ Settings
+main|915x412|overlap|Sqyre ↔ Data Editor
+main|915x412|overlap|Sqyre ↔ Settings
+settings_appearance|1024x640|overlap|Sqyre ↔ Data Editor
+settings_appearance|1024x640|overlap|Sqyre ↔ Settings
+settings_appearance|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_appearance|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_appearance|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_appearance|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_appearance|1280x720|overlap|Sqyre ↔ Data Editor
+settings_appearance|1280x720|overlap|Sqyre ↔ Settings
+settings_appearance|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_appearance|1920x1080|overlap|Sqyre ↔ Settings
+settings_appearance|412x915|overlap|Sqyre ↔ Data Editor
+settings_appearance|412x915|overlap|Sqyre ↔ Settings
+settings_appearance|480x360|overlap|Sqyre ↔ Data Editor
+settings_appearance|480x360|overlap|Sqyre ↔ Settings
+settings_appearance|640x480|overlap|Sqyre ↔ Data Editor
+settings_appearance|640x480|overlap|Sqyre ↔ Settings
+settings_appearance|800x600|overlap|Sqyre ↔ Data Editor
+settings_appearance|800x600|overlap|Sqyre ↔ Settings
+settings_appearance|915x412|overlap|Sqyre ↔ Data Editor
+settings_appearance|915x412|overlap|Sqyre ↔ Settings
+settings_data|1024x640|overlap|Sqyre ↔ Data Editor
+settings_data|1024x640|overlap|Sqyre ↔ Settings
+settings_data|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_data|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_data|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_data|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_data|1280x720|overlap|Sqyre ↔ Data Editor
+settings_data|1280x720|overlap|Sqyre ↔ Settings
+settings_data|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_data|1920x1080|overlap|Sqyre ↔ Settings
+settings_data|412x915|overlap|Sqyre ↔ Data Editor
+settings_data|412x915|overlap|Sqyre ↔ Settings
+settings_data|480x360|overlap|Sqyre ↔ Data Editor
+settings_data|480x360|overlap|Sqyre ↔ Settings
+settings_data|640x480|overlap|Sqyre ↔ Data Editor
+settings_data|640x480|overlap|Sqyre ↔ Settings
+settings_data|800x600|overlap|Sqyre ↔ Data Editor
+settings_data|800x600|overlap|Sqyre ↔ Settings
+settings_data|915x412|overlap|Sqyre ↔ Data Editor
+settings_data|915x412|overlap|Sqyre ↔ Settings
+settings_general|1024x640|overlap|Sqyre ↔ Data Editor
+settings_general|1024x640|overlap|Sqyre ↔ Settings
+settings_general|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_general|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_general|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_general|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_general|1280x720|overlap|Sqyre ↔ Data Editor
+settings_general|1280x720|overlap|Sqyre ↔ Settings
+settings_general|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_general|1920x1080|overlap|Sqyre ↔ Settings
+settings_general|412x915|overlap|Sqyre ↔ Data Editor
+settings_general|412x915|overlap|Sqyre ↔ Settings
+settings_general|480x360|overlap|Sqyre ↔ Data Editor
+settings_general|480x360|overlap|Sqyre ↔ Settings
+settings_general|640x480|overlap|Sqyre ↔ Data Editor
+settings_general|640x480|overlap|Sqyre ↔ Settings
+settings_general|800x600|overlap|Sqyre ↔ Data Editor
+settings_general|800x600|overlap|Sqyre ↔ Settings
+settings_general|915x412|overlap|Sqyre ↔ Data Editor
+settings_general|915x412|overlap|Sqyre ↔ Settings
+settings_macros|1024x640|overlap|Sqyre ↔ Data Editor
+settings_macros|1024x640|overlap|Sqyre ↔ Settings
+settings_macros|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_macros|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_macros|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_macros|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_macros|1280x720|overlap|Sqyre ↔ Data Editor
+settings_macros|1280x720|overlap|Sqyre ↔ Settings
+settings_macros|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_macros|1920x1080|overlap|Sqyre ↔ Settings
+settings_macros|412x915|overlap|Sqyre ↔ Data Editor
+settings_macros|412x915|overlap|Sqyre ↔ Settings
+settings_macros|480x360|overlap|Sqyre ↔ Data Editor
+settings_macros|480x360|overlap|Sqyre ↔ Settings
+settings_macros|640x480|overlap|Sqyre ↔ Data Editor
+settings_macros|640x480|overlap|Sqyre ↔ Settings
+settings_macros|800x600|overlap|Sqyre ↔ Data Editor
+settings_macros|800x600|overlap|Sqyre ↔ Settings
+settings_macros|915x412|overlap|Sqyre ↔ Data Editor
+settings_macros|915x412|overlap|Sqyre ↔ Settings
+settings_permissions|1024x640|overlap|Sqyre ↔ Data Editor
+settings_permissions|1024x640|overlap|Sqyre ↔ Settings
+settings_permissions|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_permissions|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_permissions|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_permissions|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_permissions|1280x720|overlap|Sqyre ↔ Data Editor
+settings_permissions|1280x720|overlap|Sqyre ↔ Settings
+settings_permissions|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_permissions|1920x1080|overlap|Sqyre ↔ Settings
+settings_permissions|412x915|overlap|Sqyre ↔ Data Editor
+settings_permissions|412x915|overlap|Sqyre ↔ Settings
+settings_permissions|480x360|overlap|Sqyre ↔ Data Editor
+settings_permissions|480x360|overlap|Sqyre ↔ Settings
+settings_permissions|640x480|overlap|Sqyre ↔ Data Editor
+settings_permissions|640x480|overlap|Sqyre ↔ Settings
+settings_permissions|800x600|overlap|Sqyre ↔ Data Editor
+settings_permissions|800x600|overlap|Sqyre ↔ Settings
+settings_permissions|915x412|overlap|Sqyre ↔ Data Editor
+settings_permissions|915x412|overlap|Sqyre ↔ Settings
+settings_sound|1024x640|overlap|Sqyre ↔ Data Editor
+settings_sound|1024x640|overlap|Sqyre ↔ Settings
+settings_sound|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_sound|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_sound|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_sound|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_sound|1280x720|overlap|Sqyre ↔ Data Editor
+settings_sound|1280x720|overlap|Sqyre ↔ Settings
+settings_sound|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_sound|1920x1080|overlap|Sqyre ↔ Settings
+settings_sound|412x915|overlap|Sqyre ↔ Data Editor
+settings_sound|412x915|overlap|Sqyre ↔ Settings
+settings_sound|480x360|overlap|Sqyre ↔ Data Editor
+settings_sound|480x360|overlap|Sqyre ↔ Settings
+settings_sound|640x480|overlap|Sqyre ↔ Data Editor
+settings_sound|640x480|overlap|Sqyre ↔ Settings
+settings_sound|800x600|overlap|Sqyre ↔ Data Editor
+settings_sound|800x600|overlap|Sqyre ↔ Settings
+settings_sound|915x412|overlap|Sqyre ↔ Data Editor
+settings_sound|915x412|overlap|Sqyre ↔ Settings
+settings_updates|1024x640|overlap|Sqyre ↔ Data Editor
+settings_updates|1024x640|overlap|Sqyre ↔ Settings
+settings_updates|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+settings_updates|1280x720@1.5|overlap|Sqyre ↔ Settings
+settings_updates|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+settings_updates|1280x720@2.0|overlap|Sqyre ↔ Settings
+settings_updates|1280x720|overlap|Sqyre ↔ Data Editor
+settings_updates|1280x720|overlap|Sqyre ↔ Settings
+settings_updates|1920x1080|overlap|Sqyre ↔ Data Editor
+settings_updates|1920x1080|overlap|Sqyre ↔ Settings
+settings_updates|412x915|overlap|Sqyre ↔ Data Editor
+settings_updates|412x915|overlap|Sqyre ↔ Settings
+settings_updates|480x360|overlap|Sqyre ↔ Data Editor
+settings_updates|480x360|overlap|Sqyre ↔ Settings
+settings_updates|640x480|overlap|Sqyre ↔ Data Editor
+settings_updates|640x480|overlap|Sqyre ↔ Settings
+settings_updates|800x600|overlap|Sqyre ↔ Data Editor
+settings_updates|800x600|overlap|Sqyre ↔ Settings
+settings_updates|915x412|overlap|Sqyre ↔ Data Editor
+settings_updates|915x412|overlap|Sqyre ↔ Settings
+variables_builtins|1024x640|overlap|Sqyre ↔ Data Editor
+variables_builtins|1024x640|overlap|Sqyre ↔ Settings
+variables_builtins|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+variables_builtins|1280x720@1.5|overlap|Sqyre ↔ Settings
+variables_builtins|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+variables_builtins|1280x720@2.0|overlap|Sqyre ↔ Settings
+variables_builtins|1280x720|overlap|Sqyre ↔ Data Editor
+variables_builtins|1280x720|overlap|Sqyre ↔ Settings
+variables_builtins|1920x1080|overlap|Sqyre ↔ Data Editor
+variables_builtins|1920x1080|overlap|Sqyre ↔ Settings
+variables_builtins|412x915|overlap|Sqyre ↔ Data Editor
+variables_builtins|412x915|overlap|Sqyre ↔ Settings
+variables_builtins|480x360|overlap|Sqyre ↔ Data Editor
+variables_builtins|480x360|overlap|Sqyre ↔ Settings
+variables_builtins|640x480|overlap|Sqyre ↔ Data Editor
+variables_builtins|640x480|overlap|Sqyre ↔ Settings
+variables_builtins|800x600|overlap|Sqyre ↔ Data Editor
+variables_builtins|800x600|overlap|Sqyre ↔ Settings
+variables_builtins|915x412|overlap|Sqyre ↔ Data Editor
+variables_builtins|915x412|overlap|Sqyre ↔ Settings
+variables_runtime|1024x640|overlap|Sqyre ↔ Data Editor
+variables_runtime|1024x640|overlap|Sqyre ↔ Settings
+variables_runtime|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+variables_runtime|1280x720@1.5|overlap|Sqyre ↔ Settings
+variables_runtime|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+variables_runtime|1280x720@2.0|overlap|Sqyre ↔ Settings
+variables_runtime|1280x720|overlap|Sqyre ↔ Data Editor
+variables_runtime|1280x720|overlap|Sqyre ↔ Settings
+variables_runtime|1920x1080|overlap|Sqyre ↔ Data Editor
+variables_runtime|1920x1080|overlap|Sqyre ↔ Settings
+variables_runtime|412x915|overlap|Sqyre ↔ Data Editor
+variables_runtime|412x915|overlap|Sqyre ↔ Settings
+variables_runtime|480x360|overlap|Sqyre ↔ Data Editor
+variables_runtime|480x360|overlap|Sqyre ↔ Settings
+variables_runtime|640x480|overlap|Sqyre ↔ Data Editor
+variables_runtime|640x480|overlap|Sqyre ↔ Settings
+variables_runtime|800x600|overlap|Sqyre ↔ Data Editor
+variables_runtime|800x600|overlap|Sqyre ↔ Settings
+variables_runtime|915x412|overlap|Sqyre ↔ Data Editor
+variables_runtime|915x412|overlap|Sqyre ↔ Settings
+yaml_builder|1024x640|overlap|Sqyre ↔ Data Editor
+yaml_builder|1024x640|overlap|Sqyre ↔ Settings
+yaml_builder|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+yaml_builder|1280x720@1.5|overlap|Sqyre ↔ Settings
+yaml_builder|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+yaml_builder|1280x720@2.0|overlap|Sqyre ↔ Settings
+yaml_builder|1280x720|overlap|Sqyre ↔ Data Editor
+yaml_builder|1280x720|overlap|Sqyre ↔ Settings
+yaml_builder|1920x1080|overlap|Sqyre ↔ Data Editor
+yaml_builder|1920x1080|overlap|Sqyre ↔ Settings
+yaml_builder|412x915|overlap|Sqyre ↔ Data Editor
+yaml_builder|412x915|overlap|Sqyre ↔ Settings
+yaml_builder|480x360|overlap|Sqyre ↔ Data Editor
+yaml_builder|480x360|overlap|Sqyre ↔ Settings
+yaml_builder|640x480|overlap|Sqyre ↔ Data Editor
+yaml_builder|640x480|overlap|Sqyre ↔ Settings
+yaml_builder|800x600|overlap|Sqyre ↔ Data Editor
+yaml_builder|800x600|overlap|Sqyre ↔ Settings
+yaml_builder|915x412|overlap|Sqyre ↔ Data Editor
+yaml_builder|915x412|overlap|Sqyre ↔ Settings
