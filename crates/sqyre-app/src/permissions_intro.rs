@@ -83,10 +83,11 @@ impl PermissionsIntro {
                 .weak(),
             );
             crate::widgets::section_separator(ui);
-            // Footer height (button row) stays outside the scroll so Continue is always visible.
-            let footer_h = ui.spacing().interact_size.y
-                + crate::theme::element_gap(ui)
-                + crate::theme::section_gap(ui);
+            // Footer (Continue) stays outside the scroll. Reserve one interact
+            // row plus the layout's item_spacing — not a second section_gap
+            // (the separator above already spent the section band).
+            let footer_h =
+                ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
             crate::widgets::show_scroll_edge_fit(
