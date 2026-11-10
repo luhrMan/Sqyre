@@ -630,6 +630,70 @@ fn data_editor_items_sort_menu_hosts_tag_priority() {
 
     // Picking Tags keeps the popup open so the priority chips can be edited.
     harness.get_by_label("Tag priority");
+    assert_eq!(
+        harness.state().docs_settings().data_editor_items_sort,
+        sqyre_domain::CatalogItemSort::Tags,
+        "choosing Tags should persist to settings"
+    );
+
+    let priority = harness.get_by_label("Priority tag…");
+    priority.focus();
+    priority.type_text("rare");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(
+        harness
+            .state()
+            .docs_settings()
+            .data_editor_items_tag_priority,
+        vec!["rare".to_string()],
+        "tag priority chips should persist to settings"
+    );
+    let reloaded = sqyre_persist::UserSettings::load_default().unwrap();
+    assert_eq!(
+        reloaded.data_editor_items_sort,
+        sqyre_domain::CatalogItemSort::Tags
+    );
+    assert_eq!(
+        reloaded.data_editor_items_tag_priority,
+        vec!["rare".to_string()]
+    );
+}
+
+#[test]
+fn data_editor_items_sort_restores_from_settings() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.docs_settings_mut().data_editor_items_sort = sqyre_domain::CatalogItemSort::Tags;
+        app.docs_settings_mut().data_editor_items_tag_priority = vec!["heal".into()];
+        app.open_data_editor_tab_for_docs("items");
+    });
+    harness.run();
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("Sort items").click();
+    harness.run();
+    harness.get_by_label("Tag priority");
+    assert_eq!(
+        harness.state().docs_settings().data_editor_items_sort,
+        sqyre_domain::CatalogItemSort::Tags
+    );
+    assert_eq!(
+        harness
+            .state()
+            .docs_settings()
+            .data_editor_items_tag_priority,
+        vec!["heal".to_string()]
+    );
+    // Idle frames must not rewrite the saved priority.
+    harness.run_steps(3);
+    assert_eq!(
+        harness
+            .state()
+            .docs_settings()
+            .data_editor_items_tag_priority,
+        vec!["heal".to_string()]
+    );
 }
 
 fn ui_scale_appearance_harness() -> egui_kittest::Harness<'static, sqyre_app::SqyreApp> {

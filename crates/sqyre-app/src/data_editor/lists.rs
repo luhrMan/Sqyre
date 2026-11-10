@@ -198,7 +198,8 @@ impl DataEditor {
                         } else {
                             None
                         };
-                    let sort = self.items_list_sort;
+                    let sort = settings.data_editor_items_sort;
+                    let tag_priority = settings.data_editor_items_tag_priority.as_slice();
                     if grouped {
                         // Program accordion (grid manages its own scroll flag).
                         let mut grid_scroll = scroll_to.get();
@@ -215,7 +216,7 @@ impl DataEditor {
                             settings.show_empty_program_headers,
                             Some(&mut grid_scroll),
                             sort,
-                            &self.items_tag_priority,
+                            tag_priority,
                             menu,
                         );
                         scroll_to.set(grid_scroll);
@@ -230,7 +231,7 @@ impl DataEditor {
                                         q,
                                         true,
                                         sort,
-                                        &self.items_tag_priority,
+                                        tag_priority,
                                     )
                                     .len(),
                                 )
@@ -245,7 +246,7 @@ impl DataEditor {
                                 q,
                                 false,
                                 sort,
-                                &self.items_tag_priority,
+                                tag_priority,
                             );
                             visible = pickers::paint_program_items_grid(
                                 ui,

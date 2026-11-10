@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use crate::{PersistError, Result};
 use sqyre_domain::{
     clamp_match_blur, clamp_match_tolerance, rename_coordinate_entity, rename_coordinate_program,
-    CoordinateRef, Macro, MatchMethod, ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT,
-    ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD,
-    ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
+    CatalogItemSort, CoordinateRef, Macro, MatchMethod, ACTION_COLOR_KEY_CONTROL_FLOW,
+    ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
+    ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
@@ -758,6 +758,12 @@ pub struct UserSettings {
     /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
     #[serde(default = "default_data_editor_left_frac")]
     pub data_editor_left_split: f32,
+    /// Data Editor Items / Pixel Check left-list sort.
+    #[serde(default, skip_serializing_if = "is_default_catalog_item_sort")]
+    pub data_editor_items_sort: CatalogItemSort,
+    /// Tag priority when [`Self::data_editor_items_sort`] is [`CatalogItemSort::Tags`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_editor_items_tag_priority: Vec<String>,
     /// Macro list side panel width as a fraction of the window (`0.15`–`0.75`).
     #[serde(default = "default_macro_list_frac")]
     pub macro_list_split: f32,
@@ -1021,6 +1027,10 @@ fn default_macro_list_frac() -> f32 {
 fn default_auto_compact_density() -> bool {
     DEFAULT_AUTO_COMPACT_DENSITY
 }
+fn is_default_catalog_item_sort(v: &CatalogItemSort) -> bool {
+    *v == CatalogItemSort::default()
+}
+
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -1071,6 +1081,8 @@ impl Default for UserSettings {
             hotkey_tag_filters: Vec::new(),
             hotkey_tags_while_focused: false,
             data_editor_left_split: DEFAULT_DATA_EDITOR_LEFT_FRAC,
+            data_editor_items_sort: CatalogItemSort::default(),
+            data_editor_items_tag_priority: Vec::new(),
             macro_list_split: DEFAULT_MACRO_LIST_FRAC,
             last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
@@ -1680,6 +1692,35 @@ mod tests {
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn data_editor_items_sort_and_tag_priority_roundtrip() {
+        let s = UserSettings {
+            data_editor_items_sort: CatalogItemSort::Tags,
+            data_editor_items_tag_priority: vec!["rare".into(), "heal".into()],
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&s).unwrap();
+        assert!(yaml.contains("data_editor_items_sort: tags"));
+        assert!(yaml.contains("rare"));
+        let back: UserSettings = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.data_editor_items_sort, CatalogItemSort::Tags);
+        assert_eq!(
+            back.data_editor_items_tag_priority,
+            vec!["rare".to_string(), "heal".to_string()]
+        );
+
+        let defaults = UserSettings::default();
+        let default_yaml = serde_yaml::to_string(&defaults).unwrap();
+        assert!(
+            !default_yaml.contains("data_editor_items_sort"),
+            "default NameAsc sort should omit from yaml"
+        );
+        assert!(
+            !default_yaml.contains("data_editor_items_tag_priority"),
+            "empty tag priority should omit from yaml"
         );
     }
 
