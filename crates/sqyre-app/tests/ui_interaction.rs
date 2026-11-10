@@ -694,6 +694,36 @@ fn data_editor_scope_all_programs_restores_group_headers() {
     harness.get_by_label("center");
 }
 
+/// All-programs expand/collapse-all must open groups when collapsed and close
+/// them when expanded (and flip its tip/glyph with that state).
+#[test]
+fn data_editor_all_programs_expand_collapse_all() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("List scope").click();
+    harness.run();
+    harness.get_by_label("All programs").click();
+    harness.run();
+
+    // Selection scroll opens the demo group, so the toggle starts as Collapse.
+    harness.get_by_label("Collapse all").click();
+    harness.run();
+    harness.get_by_label("Expand all");
+    assert!(
+        harness.query_by_label("center").is_none(),
+        "collapse-all should hide entity rows under closed groups"
+    );
+
+    harness.get_by_label("Expand all").click();
+    harness.run();
+    harness.get_by_label("Collapse all");
+    harness.get_by_label("center");
+}
+
 /// The header search and program selector share one toggle cluster: both
 /// collapse to adjacent icons, expanding one replaces the other's pair, and
 /// the expanded controls open to the right of both icons.

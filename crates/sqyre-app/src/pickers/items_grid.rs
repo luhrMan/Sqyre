@@ -59,7 +59,8 @@ pub fn collapse_all_button(
         )
     };
     if crate::widgets::icon_button(ui, icon, tip).clicked() {
-        on_set(ui.ctx(), !any_collapsed);
+        // Match the macro-tree toolbar: expand when any group is closed.
+        on_set(ui.ctx(), any_collapsed);
     }
 }
 
@@ -314,6 +315,8 @@ pub(crate) fn sort_by_display_name(rows: &mut [(String, String)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui;
+    use egui_kittest::kittest::Queryable;
     use sqyre_persist::{ProgramData, ProgramItem};
 
     fn pdata() -> ProgramData {
@@ -350,5 +353,38 @@ mod tests {
         assert_eq!(by_name, vec!["Game~sword"]);
         let by_tag = program_item_targets(&data, "Game", "armor", false, sort, &[]);
         assert_eq!(by_tag, vec!["Game~shield"]);
+    }
+
+    fn group_open(ctx: &egui::Context, id: egui::Id) -> bool {
+        egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false).is_open()
+    }
+
+    /// Regression: the toggle used to pass `!any_collapsed`, so "Expand all"
+    /// only collapsed and the tip/icon never flipped.
+    #[test]
+    fn collapse_all_button_expands_then_collapses() {
+        let ids = [egui::Id::new("collapse_a"), egui::Id::new("collapse_b")];
+        let mut harness = egui_kittest::Harness::new_ui(|ui| {
+            collapse_all_button(ui, ids, |ctx, open| {
+                set_collapsing_openness(ctx, ids, open);
+            });
+        });
+        harness.run();
+        assert!(ids.iter().all(|id| !group_open(&harness.ctx, *id)));
+        harness.get_by_label("Expand all").click();
+        harness.run();
+        assert!(
+            ids.iter().all(|id| group_open(&harness.ctx, *id)),
+            "Expand all should open every group"
+        );
+        harness.get_by_label("Collapse all").click();
+        harness.run();
+        assert!(
+            ids.iter().all(|id| !group_open(&harness.ctx, *id)),
+            "Collapse all should close every group"
+        );
+        // Tip (and therefore glyph) must flip with openness.
+        assert!(harness.query_by_label("Expand all").is_some());
+        assert!(harness.query_by_label("Collapse all").is_none());
     }
 }
