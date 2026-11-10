@@ -1423,9 +1423,12 @@ impl SettingsUi {
                 if ui
                     .add_enabled(
                         saved > 0,
-                        egui::Button::new("Reset saved action defaults").small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                            ht::SET_RESET_ACTION_DEFAULTS,
+                            None,
+                        ),
                     )
-                    .on_hover_text(ht::SET_RESET_ACTION_DEFAULTS)
                     .clicked()
                 {
                     self.settings.action_defaults.clear();
@@ -1602,10 +1605,18 @@ impl SettingsUi {
                     .unwrap_or_else(|| path.trim().to_string())
             };
             ui.label(egui::RichText::new(name).weak().small());
-            if crate::file_dialogs::supported(purpose) && ui.small_button("Choose…").clicked() {
+            if crate::file_dialogs::supported(purpose)
+                && settings_choose_btn(ui, "Choose…").clicked()
+            {
                 crate::file_dialogs::request(purpose, "Choose cue sound", None);
             }
-            if !field(&mut self.settings).trim().is_empty() && ui.small_button("Built-in").clicked()
+            if !field(&mut self.settings).trim().is_empty()
+                && crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::HOUSE,
+                    "Use built-in sound",
+                )
+                .clicked()
             {
                 field(&mut self.settings).clear();
                 self.mark_dirty();
@@ -1654,7 +1665,7 @@ impl SettingsUi {
             }
 
             ui.horizontal_wrapped(|ui| {
-                if ui.small_button("Open .sqyre folder").clicked() {
+                if settings_folder_btn(ui, "Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
                         Err(e) => self.set_err(format!(
@@ -1664,23 +1675,16 @@ impl SettingsUi {
                     }
                 }
                 if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
-                    && ui.small_button("Choose location…").clicked()
+                    && settings_choose_btn(ui, "Choose location…").clicked()
                 {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
-                    if ui
-                        .small_button("Use host ~/.sqyre…")
-                        .on_hover_text(ht::SET_HOST_FOLDER)
-                        .clicked()
-                    {
+                    if settings_folder_btn(ui, ht::SET_HOST_FOLDER).clicked() {
                         self.choose_host_sqyre_location();
                     }
                     if !self.settings.sqyre_dir.trim().is_empty()
-                        && ui
-                            .small_button("Use Flatpak sandbox")
-                            .on_hover_text(ht::SET_FLATPAK_RESET)
-                            .clicked()
+                        && settings_reset_btn(ui, ht::SET_FLATPAK_RESET).clicked()
                     {
                         self.reset_sqyre_to_sandbox(db, macros, catalog);
                     }
@@ -1732,7 +1736,7 @@ impl SettingsUi {
                     self.settings.backup_interval_hours = v;
                     self.mark_dirty();
                 }
-                if ui.small_button("Reset").clicked() {
+                if settings_reset_btn(ui, "Reset to default").clicked() {
                     self.settings.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
                     self.mark_dirty();
                 }
@@ -1753,7 +1757,7 @@ impl SettingsUi {
                     self.settings.backup_max_keep = v;
                     self.mark_dirty();
                 }
-                if ui.small_button("Reset").clicked() {
+                if settings_reset_btn(ui, "Reset to default").clicked() {
                     self.settings.backup_max_keep = DEFAULT_BACKUP_MAX_KEEP;
                     self.mark_dirty();
                 }
@@ -1768,10 +1772,7 @@ impl SettingsUi {
             );
             ui.horizontal_wrapped(|ui| {
                 if crate::file_dialogs::supported(PickPurpose::BackupDir)
-                    && ui
-                        .small_button("Choose…")
-                        .on_hover_text(ht::SET_BACKUP_DIR)
-                        .clicked()
+                    && settings_choose_btn(ui, ht::SET_BACKUP_DIR).clicked()
                 {
                     crate::file_dialogs::request(
                         PickPurpose::BackupDir,
@@ -1780,10 +1781,7 @@ impl SettingsUi {
                     );
                 }
                 if !self.settings.backup_dir.trim().is_empty()
-                    && ui
-                        .small_button("Reset")
-                        .on_hover_text(ht::SET_BACKUP_DIR)
-                        .clicked()
+                    && settings_reset_btn(ui, ht::SET_BACKUP_DIR).clicked()
                 {
                     self.settings.backup_dir.clear();
                     self.settings.apply_backup_dir_override();
@@ -1808,10 +1806,18 @@ impl SettingsUi {
             }
 
             ui.horizontal(|ui| {
-                if ui.small_button("Back up now").clicked() {
+                if crate::widgets::icon_button(ui, egui_phosphor::regular::ARCHIVE, "Back up now")
+                    .clicked()
+                {
                     self.run_manual_backup();
                 }
-                if ui.small_button("Restore from backup…").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::UPLOAD_SIMPLE,
+                    "Restore from backup…",
+                )
+                .clicked()
+                {
                     self.request_restore_backup();
                 }
             });
@@ -1990,8 +1996,14 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
-                    .add_enabled(!busy, egui::Button::new("Check now").small())
-                    .on_hover_text(ht::SET_UPDATE_NOW)
+                    .add_enabled(
+                        !busy,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::ARROW_CLOCKWISE,
+                            ht::SET_UPDATE_NOW,
+                            None,
+                        ),
+                    )
                     .clicked()
                 {
                     update.start_check(self.settings.update_include_prerelease);
@@ -2000,12 +2012,26 @@ impl SettingsUi {
                 match &update.state {
                     UpdateState::Available { .. }
                         if ui
-                            .add_enabled(!busy, egui::Button::new("Download & install").small())
+                            .add_enabled(
+                                !busy,
+                                crate::widgets::IconButton::new(
+                                    egui_phosphor::regular::DOWNLOAD_SIMPLE,
+                                    "Download & install",
+                                    None,
+                                ),
+                            )
                             .clicked() =>
                     {
                         update.start_download();
                     }
-                    UpdateState::Ready { .. } if ui.small_button("Restart to finish").clicked() => {
+                    UpdateState::Ready { .. }
+                        if crate::widgets::icon_button(
+                            ui,
+                            egui_phosphor::regular::ARROW_CLOCKWISE,
+                            "Restart to finish",
+                        )
+                        .clicked() =>
+                    {
                         self.restart_requested = true;
                     }
                     _ => {}
@@ -2455,7 +2481,7 @@ impl SettingsUi {
                     egui::StrokeKind::Outside,
                 );
                 if !self.settings.accent_color.trim().is_empty()
-                    && ui.small_button("Reset").clicked()
+                    && settings_reset_btn(ui, "Reset accent color").clicked()
                 {
                     self.settings.accent_color.clear();
                     self.mark_dirty();
@@ -2496,7 +2522,7 @@ impl SettingsUi {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
-                if ui.small_button("Reset").clicked() {
+                if settings_reset_btn(ui, "Reset to default").clicked() {
                     self.settings.mono_font_size = 0;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
@@ -2522,7 +2548,7 @@ impl SettingsUi {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
-                if ui.small_button("Reset").clicked() {
+                if settings_reset_btn(ui, "Reset to default").clicked() {
                     self.settings.ui_font_size = DEFAULT_UI_FONT_SIZE;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
@@ -2548,7 +2574,7 @@ impl SettingsUi {
                     self.mark_dirty();
                     self.ui_scale_apply_pending = true;
                 }
-                if ui.small_button("Reset").clicked() {
+                if settings_reset_btn(ui, "Reset to default").clicked() {
                     self.settings.ui_scale = DEFAULT_UI_SCALE;
                     self.mark_dirty();
                     self.ui_scale_apply_pending = false;
@@ -2607,11 +2633,10 @@ impl SettingsUi {
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.label(label);
-                    // Reserved scrollbar lane insets the clip, not max_rect —
-                    // keep the right-aligned controls inside it.
+                    // Keep right-aligned controls clear of the floating V-bar overlay.
                     crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Reset").clicked() {
+                        if settings_reset_btn(ui, "Reset to default").clicked() {
                             self.settings.action_colors.set(key, String::new());
                             clear_custom_action_color(key);
                             self.mark_dirty();
@@ -2651,7 +2676,7 @@ impl SettingsUi {
             }
 
             if setting_visible(q, section_hit, SETTING_ACTION_COLORS)
-                && ui.small_button("Reset all action colors").clicked()
+                && settings_reset_btn(ui, "Reset all action colors").clicked()
             {
                 self.settings.action_colors.clear_all();
                 clear_all_custom_action_colors();
@@ -3168,6 +3193,19 @@ fn sidebar_width(ui: &egui::Ui) -> f32 {
     let edge_gap = ui.spacing().window_margin.leftf() + pad;
     let balanced = pad + label_w + edge_gap - crate::theme::PANEL_SPLITTER_W / 2.0;
     balanced.max(button_w + crate::widgets::sections::PANE_PAD)
+}
+
+/// Tip-named Reset chrome (Settings keeps checkbox prose; action verbs are icons).
+fn settings_reset_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    crate::widgets::icon_button(ui, egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE, tip)
+}
+
+fn settings_choose_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    crate::widgets::pick_icon_button(ui, tip)
+}
+
+fn settings_folder_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    crate::widgets::icon_button(ui, egui_phosphor::regular::FOLDER_OPEN, tip)
 }
 
 /// Bold title for a group of settings within a section page.
