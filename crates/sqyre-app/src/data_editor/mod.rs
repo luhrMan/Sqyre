@@ -243,7 +243,7 @@ struct ListCache {
 
 pub struct DataEditor {
     pub open: bool,
-    tab: EditorTab,
+    pub(crate) tab: EditorTab,
     /// Header search query — applies to the left list while `search_open`,
     /// and is preserved (unfiltered) while the field is hidden.
     search: String,
