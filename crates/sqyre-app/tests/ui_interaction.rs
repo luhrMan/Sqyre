@@ -64,6 +64,36 @@ fn settings_checkbox_toggles_highlight_active_action() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn settings_checkbox_toggles_os_title_bar() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_settings_appearance_for_docs();
+    });
+    harness.run();
+
+    assert!(
+        harness.state().docs_settings().window_decorations,
+        "docs fixture should start with OS title bar on"
+    );
+
+    harness.get_by_label("OS title bar").click();
+    harness.run();
+
+    assert!(
+        !harness.state().docs_settings().window_decorations,
+        "clicking OS title bar should hide decorations"
+    );
+
+    harness.get_by_label("OS title bar").click();
+    harness.run();
+
+    assert!(
+        harness.state().docs_settings().window_decorations,
+        "second click should restore decorations"
+    );
+}
+
 #[test]
 fn new_macro_button_adds_macro() {
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {

@@ -33,6 +33,14 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::top("app_top_bar")
         .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
+            #[cfg(not(target_arch = "wasm32"))]
+            let undecorated = !app.settings_ui.settings().window_decorations;
+            #[cfg(not(target_arch = "wasm32"))]
+            if undecorated {
+                // Interact first so later chrome keeps click priority; empty
+                // gaps still drag/double-click the native window.
+                crate::window_frame::top_bar_window_drag(ui, ui.max_rect());
+            }
             crate::widgets::show_overflow(ui, "app_top_bar", 1.0, |ui| {
                 brand_header(app, ui);
             });
@@ -51,10 +59,13 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         let list_side = crate::widgets::icon_btn_side(ui);
         let list_reserve = list_side + gap;
 
-        // Top-right update banner (native only).
+        // Top-right window chrome / update banner (native only).
         #[cfg(not(target_arch = "wasm32"))]
         let mid_right = {
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                if !app.settings_ui.settings().window_decorations {
+                    crate::window_frame::window_control_buttons(ui);
+                }
                 show_update_banner(app, ui);
             });
             let chrome_left = if right.response.rect.width() > 0.0 {

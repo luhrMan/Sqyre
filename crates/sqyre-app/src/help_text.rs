@@ -270,6 +270,9 @@ pub const SET_KEEP_HEADERS: &str =
     "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).";
 /// Main-window outline.
 pub const SET_WIN_OUTLINE: &str = "Show a thin gold outline around the edge of the main window.";
+/// OS title bar / decorations.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_WIN_DECORATIONS: &str = "Show the system title bar around the main window. When off, drag the top bar to move, double-click it to maximize, and grab the window edges to resize.";
 /// Run button glow.
 pub const SET_RUN_GLOW: &str =
     "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.";
