@@ -561,12 +561,10 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         // Right-to-left: builder menu rightmost; then hotkey controls, chord,
         // key toggle, delay — the same left-to-right order the footer strip had.
         paint_builder_menu(app, ui);
+        // Same row as the other icons. A section frame around `ui.horizontal`
+        // is offered the strip's full width, and that row becomes the chip.
         if app.workspace.macro_meta.hotkey_open {
-            theme::section_frame(ui)
-                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
-                });
+            paint_hotkey_controls(app, ui, idx, running);
         }
         let hk_label = {
             let m = &app.workspace.macros[idx];
@@ -724,6 +722,58 @@ mod tests {
         assert!(
             tag_y > name_y + 8.0,
             "tag field did not wrap under the name (name_y {name_y}, tag_y {tag_y})"
+        );
+    }
+
+    /// Opening the hotkey controls must not stretch the footer chip across the pane
+    /// or make it taller than the icon row.
+    #[test]
+    fn hotkey_controls_keep_footer_chip_hugged() {
+        let mut app = crate::SqyreApp::for_docs();
+        app.workspace.macros[0].hotkey = vec!["ctrl".into(), "shift".into(), "f1".into()];
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 600.0),
+        );
+        let measure = |app: &mut crate::SqyreApp| {
+            let mut chip = eframe::egui::Rect::NOTHING;
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| super::footer_floats(app, ui),
+            );
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Rect(rect) = &clipped.shape {
+                    let r = rect.rect;
+                    if r.top() > 540.0 && r.height() > 8.0 && r.width() > chip.width() {
+                        chip = r;
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+            chip
+        };
+        app.workspace.macro_meta.hotkey_open = false;
+        let closed = measure(&mut app);
+        app.workspace.macro_meta.hotkey_open = true;
+        let open = measure(&mut app);
+        assert!(
+            closed.width() > 40.0 && closed.height() > 8.0,
+            "closed chip not found: {closed:?}"
+        );
+        assert!(
+            open.height() <= closed.height() + 2.0,
+            "hotkey controls grew the chip taller: closed {closed:?} open {open:?}"
+        );
+        assert!(
+            open.width() < closed.width() + 120.0 && open.width() < 400.0,
+            "hotkey controls stretched the chip: closed {closed:?} open {open:?}"
         );
     }
 }
