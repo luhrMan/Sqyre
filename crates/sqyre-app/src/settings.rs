@@ -3200,10 +3200,14 @@ fn settings_reset_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     crate::widgets::icon_button(ui, egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE, tip)
 }
 
+// Folder/file pickers are desktop-only; wasm drops those call sites via `cfg!`
+// / `#[cfg(not(wasm))]`, so the helpers are unused on that target.
+#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 fn settings_choose_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     crate::widgets::pick_icon_button(ui, tip)
 }
 
+#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 fn settings_folder_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     crate::widgets::icon_button(ui, egui_phosphor::regular::FOLDER_OPEN, tip)
 }
