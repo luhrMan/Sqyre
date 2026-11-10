@@ -100,7 +100,7 @@ impl DataEditor {
                     };
                 }
                 if !self.form_overlay_point.is_empty()
-                    && crate::widgets::cancel_icon_button(
+                    && crate::widgets::clear_icon_button(
                         ui,
                         "Clear — use manual X/Y instead of a catalog point",
                     )
@@ -196,7 +196,7 @@ impl DataEditor {
                                     };
                                 }
                                 if !self.form_overlay_gate_search_area.is_empty()
-                                    && crate::widgets::cancel_icon_button(ui, "Clear search area")
+                                    && crate::widgets::clear_icon_button(ui, "Clear search area")
                                         .clicked()
                                 {
                                     self.form_overlay_gate_search_area.clear();

@@ -64,10 +64,17 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response 
     icon_button_inner(ui, glyph, tip, None)
 }
 
-/// Red `✕` — the one cancel/clear affordance app-wide (dismiss a dialog, clear
-/// a field, abort an armed picker). `tip` names what is cancelled or cleared.
+/// Red `✕` — cancel / dismiss / abort (dialog no, close a floater, disarm a
+/// picker). Field and selection clears use [`clear_icon_button`] instead.
+/// `tip` names what is cancelled.
 pub fn cancel_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     icon_button_inner(ui, egui_phosphor::regular::X, tip, Some(MACRO_STOP))
+}
+
+/// Red eraser — empties a field, selection, filter, or binding. `tip` names
+/// what is cleared. Cancel / dismiss stays [`cancel_icon_button`].
+pub fn clear_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    icon_button_inner(ui, egui_phosphor::regular::ERASER, tip, Some(MACRO_STOP))
 }
 
 /// Green `✓` — the yes side of confirm rows (`no` is [`cancel_icon_button`]).
@@ -101,10 +108,11 @@ fn icon_button_inner(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
-/// [`icon_button`] / [`cancel_icon_button`] as a [`egui::Widget`] — the form
-/// [`egui::Ui::add_enabled`] requires. (`add_enabled_ui` wraps content in a
-/// scope child that owns the rest of a wrapping row, so a single disabled icon
-/// could never move to the next row and painted past the clip.)
+/// [`icon_button`] / [`cancel_icon_button`] / [`clear_icon_button`] as a
+/// [`egui::Widget`] — the form [`egui::Ui::add_enabled`] requires.
+/// (`add_enabled_ui` wraps content in a scope child that owns the rest of a
+/// wrapping row, so a single disabled icon could never move to the next row
+/// and painted past the clip.)
 pub struct IconButton<'a> {
     pub glyph: &'a str,
     pub tip: &'a str,

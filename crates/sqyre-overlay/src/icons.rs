@@ -384,14 +384,20 @@ pub fn show_icon_picker_grid(
 
     // Search row: `desired_width(INFINITY)` fills leftover space without an
     // absolute min_width (absolute widths + item_spacing ratchet the parent).
-    // Always use the same widget tree (Clear + TextEdit) so the field keeps
-    // focus when the query goes empty ↔ non-empty.
+    // Always use the same widget tree (clear eraser + TextEdit) so the field
+    // keeps focus when the query goes empty ↔ non-empty.
     ui.horizontal(|ui| {
         ui.label(egui_phosphor::regular::MAGNIFYING_GLASS)
             .on_hover_text("Search");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let clear = egui::RichText::new(egui_phosphor::regular::ERASER)
+                .color(sqyre_ui_theme::MACRO_STOP);
             if ui
-                .add_enabled(!search.is_empty(), egui::Button::new("Clear").small())
+                .add_enabled(
+                    !search.is_empty(),
+                    egui::Button::new(clear).small().frame(false),
+                )
+                .on_hover_text("Clear search")
                 .clicked()
             {
                 search.clear();
