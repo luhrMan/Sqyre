@@ -88,7 +88,10 @@ fn paint_pair<R>(
     trailing: &mut [&mut dyn FnMut(&mut egui::Ui)],
 ) -> R {
     let mut prepared = egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(4, 2))
+        .inner_margin(egui::Margin::symmetric(
+            crate::theme::SPACE_4 as i8,
+            crate::theme::SPACE_2 as i8,
+        ))
         .stroke(Stroke::new(PAIR_STROKE_W, Color32::TRANSPARENT))
         .begin(ui);
     strip_inner_chrome(&mut prepared.content_ui);
