@@ -180,6 +180,7 @@ impl MacroMetaUi {
                         show_add_button: true,
                         label_name: Some("Tags"),
                         draft_hover: Some(help::META_TAGS),
+                        draft_hint: None,
                         reorderable: false,
                         signed_filters: false,
                         single_row: false,

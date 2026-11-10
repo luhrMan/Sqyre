@@ -186,6 +186,7 @@ pub fn show_active_picker(
                                 show_add_button: true,
                                 label_name: None,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
+                                draft_hint: None,
                                 reorderable: false,
                                 signed_filters: true,
                                 single_row: false,
@@ -286,7 +287,6 @@ pub fn show_active_picker(
                                 }
                             },
                         );
-                        crate::widgets::section_separator(ui);
                         paint_coord_ref_list(
                             ui,
                             paint,
