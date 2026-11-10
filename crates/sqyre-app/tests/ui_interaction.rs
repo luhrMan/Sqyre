@@ -247,6 +247,18 @@ fn add_action_edit_defaults_affordance_is_visible() {
 }
 
 #[test]
+fn delay_dialog_uses_icon_field_labels() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_delay_dialog_for_docs();
+    });
+    harness.run();
+    // C3: delay rows use pair_labeled icons, not Body text captions.
+    harness.get_by_label("Global");
+    harness.get_by_label("Keyboard");
+    harness.get_by_label("Mouse");
+}
+
+#[test]
 fn image_search_edit_shows_output_and_wait_without_advanced() {
     let mut harness = build_docs_harness([1100.0, 720.0], |app| {
         app.open_action_editor_for_docs("imagesearch");
