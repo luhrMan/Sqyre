@@ -201,8 +201,9 @@ struct IconCellStyle {
 }
 
 impl IconCellStyle {
-    /// Height of one grid row: tallest fitted thumb plus the cell inset, so wide
-    /// icons do not leave a mostly empty square cell.
+    /// Height of one grid row: tallest stable thumb plus the cell inset, so wide
+    /// icons do not leave a mostly empty square cell and rotating variants cannot
+    /// resize the row each second.
     fn row_height(
         self,
         ctx: &egui::Context,
@@ -214,8 +215,10 @@ impl IconCellStyle {
         let tallest = row
             .iter()
             .map(|target| {
-                let [tw, th] = icons.for_target_or_fallback(ctx, catalog, target).size();
-                image_view::fit_icon_thumb(tw as f32, th as f32, self.thumb, self.thumb).y
+                crate::icon_cache::stable_icon_thumb_size(
+                    ctx, catalog, icons, target, self.thumb, self.thumb,
+                )
+                .y
             })
             .fold(0.0, f32::max);
         (tallest + inset).clamp(inset.max(1.0), self.cell)
@@ -267,9 +270,11 @@ fn icon_grid_cell(
     let desired = Vec2::new(cell, row_h);
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
+    // `contains_pointer`: when wrapped in `dnd_drag_source`, the outer drag
+    // interact steals exclusive `hovered()`, but the pointer is still here.
     let fill = if selected {
         picker_selected_fill()
-    } else if resp.hovered() {
+    } else if resp.contains_pointer() {
         ui.visuals().widgets.hovered.bg_fill
     } else {
         ui.visuals().widgets.inactive.weak_bg_fill
@@ -302,8 +307,8 @@ fn icon_grid_cell(
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
 
-    attach_item_icon_tooltip(&resp, catalog, icons, target);
-
+    // Caller attaches the tip: under `dnd_drag_source` it must use the outer
+    // drag response (that owns hover + Grab cursor), not this inner cell.
     (resp.clicked(), resp)
 }
 
@@ -396,6 +401,9 @@ pub fn paint_even_icon_grid(
                         && ops.is_removable.is_none_or(|pred| pred(target));
                     let cell_id = ui.id().with(("icon_dnd", k, target));
                     let (cell_rect, cell_anchor) = if reorderable {
+                        // `dnd_drag_source` adds a later Sense::drag interact that
+                        // owns hover (Grab hand). Tip must attach to that outer
+                        // response — same pattern as reorderable tag chips.
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
                             let (clicked, cell) =
                                 icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
@@ -406,6 +414,7 @@ pub fn paint_even_icon_grid(
                             }
                             cell
                         });
+                        attach_item_icon_tooltip(&drag.response, catalog, icons, target);
                         if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                             let from = *payload;
                             if from != k {
@@ -423,6 +432,7 @@ pub fn paint_even_icon_grid(
                     } else {
                         let (clicked, cell) =
                             icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
+                        attach_item_icon_tooltip(&cell, catalog, icons, target);
                         if clicked {
                             if let Some(on_cell) = ops.on_cell.as_mut() {
                                 on_cell(k, target);
@@ -549,5 +559,152 @@ mod tests {
             (last - first).abs() <= 1.0,
             "item tooltip width ratcheted across frames: {first:.1} -> {last:.1} ({widths:?})"
         );
+    }
+
+    /// Reorderable grids wrap each cell in `dnd_drag_source`, whose later
+    /// Sense::drag interact steals exclusive `hovered()` (Grab hand). The tip
+    /// must open via the outer drag response — not the inner cell alone.
+    #[test]
+    fn item_tooltip_opens_on_reorderable_grid() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.tooltip_grace_time = 0.0;
+        });
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let targets = vec!["prog~dnd_tip_item".to_owned()];
+        let needle = "dnd_tip_item";
+        // First cell sits near the origin inside the grid layout.
+        let hover = egui::pos2(36.0, 36.0);
+        let mut saw_tip = false;
+        let mut reorder = |_from: usize, _to: usize| {};
+        for frame in 0..12 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                events: if frame == 0 {
+                    vec![egui::Event::PointerMoved(hover)]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                paint_even_icon_grid(
+                    ui,
+                    &catalog,
+                    &mut icons,
+                    &targets,
+                    |_| false,
+                    IconGridKind::Targets { removable: false },
+                    IconGridOps {
+                        on_reorder: Some(&mut reorder),
+                        ..Default::default()
+                    },
+                    None,
+                );
+            });
+            let tip = out.shapes.iter().any(|clipped| {
+                matches!(
+                    &clipped.shape,
+                    egui::Shape::Text(t) if t.galley.text().contains(needle)
+                )
+            });
+            if tip {
+                saw_tip = true;
+                break;
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            saw_tip,
+            "item tooltip never opened on reorderable icon grid (Grab hand steals hover)"
+        );
+    }
+
+    /// Target grids (overlay gate items, Image Search tips) used the current
+    /// rotating variant's aspect for row height — wide then tall icons made the
+    /// section jump every second. Slot height must stay fixed across ticks.
+    #[test]
+    fn target_grid_row_height_stable_across_variant_rotation() {
+        crate::demo_icons::with_exclusive(|| {
+            crate::demo_icons::clear();
+            crate::demo_icons::register_item_variant_solid(
+                "Prog",
+                "Gate",
+                "wide",
+                64,
+                16,
+                [255, 0, 0, 255],
+            );
+            crate::demo_icons::register_item_variant_solid(
+                "Prog",
+                "Gate",
+                "tall",
+                16,
+                64,
+                [0, 255, 0, 255],
+            );
+            let target = "Prog~Gate".to_string();
+            let catalog = ProgramCatalog::default();
+            let ctx = egui::Context::default();
+            let mut icons = IconCache::new();
+            for path in crate::demo_icons::merged_variant_paths(&catalog, &target) {
+                assert!(
+                    icons.for_path(&ctx, &path).is_some(),
+                    "demo variant failed to load: {}",
+                    path.display()
+                );
+            }
+            // Prove the fitted heights actually differ — otherwise the test is inert.
+            let wide = image_view::fit_icon_thumb(64.0, 16.0, EDIT_THUMB, EDIT_THUMB);
+            let tall = image_view::fit_icon_thumb(16.0, 64.0, EDIT_THUMB, EDIT_THUMB);
+            assert!(
+                (wide.y - tall.y).abs() > 1.0,
+                "fixture aspect ratios must differ: wide={wide:?} tall={tall:?}"
+            );
+
+            let mut heights = Vec::new();
+            let mut reorder = |_from: usize, _to: usize| {};
+            for tick in 0..5 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::pos2(0.0, 0.0),
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    time: Some(tick as f64),
+                    predicted_dt: 1.0,
+                    ..Default::default()
+                };
+                let out = ctx.run_ui(input, |ui| {
+                    let y0 = ui.cursor().min.y;
+                    paint_even_icon_grid(
+                        ui,
+                        &catalog,
+                        &mut icons,
+                        std::slice::from_ref(&target),
+                        |_| false,
+                        IconGridKind::Targets { removable: false },
+                        IconGridOps {
+                            on_reorder: Some(&mut reorder),
+                            ..Default::default()
+                        },
+                        None,
+                    );
+                    heights.push(ui.cursor().min.y - y0);
+                });
+                out.drop_without_applying_deltas();
+            }
+            let first = heights[0];
+            assert!(
+                heights.iter().all(|h| (h - first).abs() <= 0.5),
+                "target grid row height jumped across variant ticks: {heights:?}"
+            );
+        });
     }
 }
