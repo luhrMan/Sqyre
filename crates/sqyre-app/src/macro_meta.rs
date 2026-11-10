@@ -204,9 +204,10 @@ impl MacroMetaUi {
             if focused_now != editing {
                 ui.ctx().request_repaint();
             }
-            let (chips_changed, chips_rect) = if m.tags.is_empty() {
-                (false, None)
-            } else {
+            // Always reserve the chip band — empty tags still claim one row so
+            // the window chrome (Data Editor / Settings / list toggle) stays on
+            // the same plane as a tagged header instead of dropping under the brand.
+            let (chips_changed, chips_rect) = {
                 let (changed, rect) = crate::widgets::tag_chip_list(
                     ui,
                     &mut m.tags,
@@ -679,7 +680,23 @@ mod tests {
         }
 
         let (bare, _, _) = paint_header(pane_w, "Alpha", &[], "Alpha");
-        assert!(bare.chips_rect.is_none(), "empty tags reserved a chip row");
+        let bare_chips = bare
+            .chips_rect
+            .expect("empty tags should still reserve a chip row");
+        let row_bottom = bare.name_rect.bottom().max(bare.tag_rect.bottom());
+        assert!(
+            bare_chips.top() + 1.0 >= row_bottom,
+            "empty chip band is not below the name/tag row: chips {bare_chips:?} row_bottom {row_bottom}"
+        );
+        assert!(
+            bare_chips.height() > 8.0,
+            "empty chip band has no height: {bare_chips:?}"
+        );
+        let short_chips = short.chips_rect.expect("short chips");
+        assert!(
+            (bare_chips.top() - short_chips.top()).abs() < 2.0,
+            "empty and tagged chip bands should share a baseline (bare {bare_chips:?}, tagged {short_chips:?})"
+        );
     }
 
     #[test]

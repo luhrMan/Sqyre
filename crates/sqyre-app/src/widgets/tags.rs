@@ -430,9 +430,22 @@ pub fn tag_draft_editor(
     tag_chip_editor_impl(ui, tags, draft, all_suggestions, opts, false)
 }
 
+/// Height of one empty/created-tag chip row (Small text + pill padding).
+///
+/// The macro header reserves this even when a macro has no tags so Data Editor /
+/// Settings / list-toggle stay on the same plane as a tagged header.
+fn tag_chip_row_height(ui: &egui::Ui) -> f32 {
+    let galley = ui.painter().layout_no_wrap(
+        "Ag".to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        egui::Color32::WHITE,
+    );
+    pill_outer_size(galley.size(), false).y
+}
+
 /// Created-tag chips, wrapping within the row. Returns whether `tags` changed
-/// and the row's rectangle (empty tags still occupy no caller-visible row —
-/// callers should skip this when `tags` is empty).
+/// and the row's rectangle. An empty list still reserves one chip-row of height
+/// so callers keep a stable band under the draft field.
 pub fn tag_chip_list(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
@@ -441,6 +454,11 @@ pub fn tag_chip_list(
     signed_filters: bool,
     program_icons: Option<&HashMap<String, egui::TextureHandle>>,
 ) -> (bool, egui::Rect) {
+    if tags.is_empty() {
+        // Height only — do not claim available_width (self-sizing parents ratchet).
+        let (_, rect) = ui.allocate_space(egui::vec2(0.0, tag_chip_row_height(ui)));
+        return (false, rect);
+    }
     let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
     let mut changed = false;
     let rect = ui

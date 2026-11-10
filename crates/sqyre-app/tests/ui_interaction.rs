@@ -194,6 +194,54 @@ fn top_bar_chrome_row_under_brand() {
     assert!(!harness.state().docs_macro_list_open());
 }
 
+/// Untagged macros must keep the chip band so chrome does not drop under the
+/// brand and leave empty space in the header.
+#[test]
+fn top_bar_chrome_keeps_tag_plane_without_tags() {
+    let measure = |clear_tags: bool| {
+        let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+            app.open_macro_list_for_docs();
+            if clear_tags {
+                app.clear_selected_macro_tags_for_docs();
+            }
+        });
+        harness.run_steps(4);
+        let brand = harness.get_by_label("Sqyre").rect();
+        let data_editor = harness.get_by_label("Data Editor").rect();
+        let list_toggle = harness.get_by_label("Hide macro list").rect();
+        let bar_rect =
+            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+                .map(|s| s.outer_rect)
+                .unwrap_or(egui::Rect::NOTHING);
+        (brand, data_editor, list_toggle, bar_rect)
+    };
+
+    let (tagged_brand, tagged_data, _tagged_list, tagged_bar) = measure(false);
+    let (bare_brand, bare_data, bare_list, bare_bar) = measure(true);
+
+    assert!(
+        bare_data.top() > bare_brand.center().y,
+        "untagged Data Editor should sit under the brand (brand={bare_brand:?}, data={bare_data:?})"
+    );
+    assert!(
+        (bare_list.center().y - bare_data.center().y).abs() < bare_data.height(),
+        "untagged list toggle should share the tag-row plane (list={bare_list:?}, data={bare_data:?})"
+    );
+    assert!(
+        (bare_data.center().y - tagged_data.center().y).abs() < 4.0,
+        "clearing tags should not drop chrome (tagged={tagged_data:?}, bare={bare_data:?})"
+    );
+    assert!(
+        (bare_bar.height() - tagged_bar.height()).abs() < 4.0,
+        "untagged header should keep the chip-band height (tagged={tagged_bar:?}, bare={bare_bar:?}, brand={tagged_brand:?})"
+    );
+    assert!(
+        bare_bar.height() < bare_brand.height() + bare_data.height() * 2.4,
+        "untagged chrome should not add a third strip (bar_h={}, brand={bare_brand:?}, data={bare_data:?})",
+        bare_bar.height()
+    );
+}
+
 fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
     harness
         .query_all_by_label("Wait")
