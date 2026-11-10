@@ -38,7 +38,7 @@ pub use dialogs::{
     floating_scrollbar_overlay_width, save_row, sync_viewport_window_scale, visible_content_width,
     visible_height, visible_width, ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel,
     ViewportScaleEvent, FLOATER_MIN_COMPACT, FLOATER_MIN_EDITOR, FLOATER_MIN_MODAL,
-    FLOATER_MIN_PALETTE, FLOATER_MIN_PANEL, FLOATER_MIN_PICKER, FOOTER_RESERVE_ACTION,
+    FLOATER_MIN_PALETTE, FLOATER_MIN_PANEL, FLOATER_MIN_PICKER,
 };
 pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyCta, EmptyStateAction};
 pub use fields::{
