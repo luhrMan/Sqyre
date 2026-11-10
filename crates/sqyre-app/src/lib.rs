@@ -1184,7 +1184,10 @@ impl SqyreApp {
 
         egui::CentralPanel::default()
             .frame(
-                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)),
+                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(
+                    crate::theme::SPACE_8 as i8,
+                    crate::theme::SPACE_4 as i8,
+                )),
             )
             .show(ui, |ui| {
                 #[cfg(target_arch = "wasm32")]
@@ -1197,8 +1200,8 @@ impl SqyreApp {
                             ui,
                             "No macros yet",
                             Some("Create a macro or import a backup to get started."),
-                            Some("New macro"),
-                            Some("Import backup"),
+                            Some(crate::widgets::EmptyCta::Add("New macro")),
+                            Some(crate::widgets::EmptyCta::Import("Import backup")),
                         )
                     });
                     match clicked {

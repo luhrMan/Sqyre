@@ -1,7 +1,6 @@
 //! First-start popup: explains each permission this platform needs, then requests them
 //! all once the user clicks Continue. Nothing prompts while it is showing.
 
-use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, RichText};
 
 /// Popup body width on wide windows; narrower windows use the dialog bounds instead.
@@ -66,7 +65,7 @@ impl PermissionsIntro {
         let mut confirmed = false;
         let id = egui::Id::new("sqyre_permissions_intro");
         let bounds = crate::widgets::dialog_constrain_rect(ctx);
-        let frame = egui::Frame::popup(&ctx.global_style());
+        let frame = crate::theme::popup_frame_ctx(ctx);
         let margin = frame.total_margin().sum();
         let body_w = (bounds.width() - margin.x).clamp(0.0, MAX_BODY_WIDTH);
         let area = egui::Modal::default_area(id)
@@ -112,10 +111,7 @@ impl PermissionsIntro {
                     );
                 });
             if self.showing() {
-                let clicked = ui
-                    .button("Continue")
-                    .on_hover_text(ht::PERM_SHOW_PROMPTS)
-                    .clicked();
+                let clicked = crate::widgets::confirm_icon_button(ui, "Continue").clicked();
                 let enter = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                 confirmed = clicked || enter;
             } else {

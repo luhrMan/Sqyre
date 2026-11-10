@@ -1810,7 +1810,7 @@ pub(super) fn list_columns_editor(
             if i > 0 {
                 crate::widgets::section_separator(ui);
             }
-            let frame = theme::section_frame(ui.style()).show(ui, |ui| {
+            let frame = theme::section_frame(ui).show(ui, |ui| {
                 var_ref_field(
                     ui,
                     egui_phosphor::regular::LIST_BULLETS,
@@ -1869,7 +1869,7 @@ fn assignments_editor(
             if i > 0 {
                 crate::widgets::section_separator(ui);
             }
-            let frame = theme::section_frame(ui.style()).show(ui, |ui| {
+            let frame = theme::section_frame(ui).show(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
                     egui_phosphor::regular::BRACKETS_CURLY,

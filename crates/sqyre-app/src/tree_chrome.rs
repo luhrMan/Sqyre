@@ -1578,27 +1578,23 @@ mod tests {
                 ui.label(
                     egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
                 );
-                egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::symmetric(10, 8))
-                    .show(ui, |ui| {
-                        ui.set_width(tip_w);
-                        paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
-                        ui.label(
-                            egui::RichText::new(
-                                "Search the screen for catalog Images (optional tag filters).",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "tip width ≈ {tip_w:.0}pt (was fixed 340pt)"
-                            ))
+                crate::theme::popup_frame(ui).show(ui, |ui| {
+                    ui.set_width(tip_w);
+                    paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
+                    ui.label(
+                        egui::RichText::new(
+                            "Search the screen for catalog Images (optional tag filters).",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("tip width ≈ {tip_w:.0}pt (was fixed 340pt)"))
                             .small()
                             .strong(),
-                        );
-                        paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
-                    });
+                    );
+                    paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
+                });
             });
 
         let _ = harness.run_ok();
@@ -1629,9 +1625,7 @@ mod tests {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
                     for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
-                        egui::Frame::popup(ui.style())
-                            .inner_margin(egui::Margin::symmetric(10, 8))
-                            .show(ui, |ui| {
+                        crate::theme::popup_frame(ui).show(ui, |ui| {
                                 ui.set_width(w);
                                 ui.label(egui::RichText::new(label).strong());
                                 ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());

@@ -124,7 +124,10 @@ impl VariablesPanelUi {
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
                 // Split remaining height between declared list (top) and Runtime/Built-ins.
-                const TAB_CHROME: f32 = 48.0;
+                // Two `section_separator` bands (each one `section_gap`) + the tab row.
+                let tab_chrome = 2.0 * crate::theme::section_gap(ui)
+                    + ui.spacing().interact_size.y
+                    + ui.spacing().item_spacing.y;
                 /// Compact Runtime strip when there is no snapshot to list
                 /// (heading + two-line empty state); the declared list takes
                 /// the leftover instead of leaving a dead band at the bottom.
@@ -145,17 +148,17 @@ impl VariablesPanelUi {
                 let avail = ui.available_height();
                 let min_bottom = 100.0;
                 let min_top = 120.0;
-                let need = TAB_CHROME + min_bottom + min_top;
+                let need = tab_chrome + min_bottom + min_top;
                 let (top_h, bottom_h) = if runtime_empty {
-                    let cap = RUNTIME_EMPTY_H.min((avail - TAB_CHROME - min_top).max(1.0));
+                    let cap = RUNTIME_EMPTY_H.min((avail - tab_chrome - min_top).max(1.0));
                     let bottom = measured_bottom.map(|h| h.min(cap)).unwrap_or(cap);
-                    ((avail - TAB_CHROME - bottom).max(1.0), bottom)
+                    ((avail - tab_chrome - bottom).max(1.0), bottom)
                 } else if avail >= need {
-                    let cap = ((avail - TAB_CHROME) * 0.38).max(min_bottom);
+                    let cap = ((avail - tab_chrome) * 0.38).max(min_bottom);
                     let bottom = measured_bottom.map(|h| h.min(cap)).unwrap_or(cap);
-                    ((avail - TAB_CHROME - bottom).max(min_top), bottom)
+                    ((avail - tab_chrome - bottom).max(min_top), bottom)
                 } else {
-                    let body = (avail - TAB_CHROME).max(1.0);
+                    let body = (avail - tab_chrome).max(1.0);
                     let bottom = (body * 0.38).max(1.0);
                     let top = (body - bottom).max(1.0);
                     (top, bottom)

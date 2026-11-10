@@ -870,12 +870,12 @@ fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp:
     Pos2::new(x, y)
 }
 
-fn hud_frame() -> egui::Frame {
+fn hud_frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(HUD_STROKE, theme::accent()))
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(10, 6))
+        .inner_margin(crate::theme::chrome_inner_margin_ctx(ctx))
 }
 
 fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
@@ -894,14 +894,14 @@ fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
         .resizable(false)
         .title_bar(false)
         .anchor(anchor, offset)
-        .frame(hud_frame())
+        .frame(hud_frame(ctx))
         .show(ctx, |ui| {
             ui.label(egui::RichText::new(text).color(theme::accent()).strong());
         });
 }
 
 fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, panel: Vec2) {
-    let frame = hud_frame();
+    let frame = hud_frame(ui.ctx());
 
     if class == ViewportClass::EmbeddedWindow {
         paint_hud_window(ui.ctx(), text, at_top);

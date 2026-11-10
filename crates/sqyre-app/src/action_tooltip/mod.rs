@@ -631,127 +631,124 @@ pub(crate) fn show_action_view_tip(
         .sense(egui::Sense::hover())
         .constrain_to(screen)
         .show(ctx, |ui| {
-            egui::Frame::popup(ui.style())
-                .inner_margin(egui::Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    // Area content is capped at last frame's size; lift both axes so
-                    // the tip can grow up to the constrain rect before scrolling.
-                    // Width uses the content-derived preferred width, not `max_w`,
-                    // so wrap-capable children (prose, captions, error labels)
-                    // cannot inflate the tip to the half-viewport cap.
-                    ui.set_max_width(preferred_w);
-                    ui.set_max_height(max_body_h);
-                    // V-only: tip body wraps prose and icon grids to the body width.
-                    // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
-                    let out = crate::widgets::show_scroll_edge_fit(
-                        ui,
-                        crate::widgets::scroll_vertical()
-                            .id_salt("view_tip_body")
-                            .max_height(max_body_h)
-                            .vertical_scroll_offset(offset),
-                        |ui| {
-                            tree_chrome::paint_pill_tip(ui, label, pastel);
-                            ui.label(egui::RichText::new(description).small().weak());
-                            if !summary_pills.is_empty() {
-                                crate::theme::add_section_gap(ui);
-                                sections::tip_wrapped_section(ui, |ui| {
-                                    ui.spacing_mut().item_spacing =
-                                        Vec2::splat(crate::theme::SPACE_2);
-                                    let band_h = var_pills::summary_pill_height(ui);
-                                    for pill in &summary_pills {
-                                        tree_chrome::paint_summary_pill_cell(
-                                            ui,
-                                            action,
-                                            pill,
-                                            catalog,
-                                            icons,
-                                            VarTheme {
-                                                known_vars,
-                                                is_dark,
-                                            },
-                                            band_h,
-                                            true,
-                                        );
-                                    }
-                                });
-                            }
-                            if let Some((coord_ref, kind)) = coord_preview {
+            crate::theme::popup_frame(ui).show(ui, |ui| {
+                // Area content is capped at last frame's size; lift both axes so
+                // the tip can grow up to the constrain rect before scrolling.
+                // Width uses the content-derived preferred width, not `max_w`,
+                // so wrap-capable children (prose, captions, error labels)
+                // cannot inflate the tip to the half-viewport cap.
+                ui.set_max_width(preferred_w);
+                ui.set_max_height(max_body_h);
+                // V-only: tip body wraps prose and icon grids to the body width.
+                // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
+                let out = crate::widgets::show_scroll_edge_fit(
+                    ui,
+                    crate::widgets::scroll_vertical()
+                        .id_salt("view_tip_body")
+                        .max_height(max_body_h)
+                        .vertical_scroll_offset(offset),
+                    |ui| {
+                        tree_chrome::paint_pill_tip(ui, label, pastel);
+                        ui.label(egui::RichText::new(description).small().weak());
+                        if !summary_pills.is_empty() {
+                            crate::theme::add_section_gap(ui);
+                            sections::tip_wrapped_section(ui, |ui| {
+                                ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
+                                let band_h = var_pills::summary_pill_height(ui);
+                                for pill in &summary_pills {
+                                    tree_chrome::paint_summary_pill_cell(
+                                        ui,
+                                        action,
+                                        pill,
+                                        catalog,
+                                        icons,
+                                        VarTheme {
+                                            known_vars,
+                                            is_dark,
+                                        },
+                                        band_h,
+                                        true,
+                                    );
+                                }
+                            });
+                        }
+                        if let Some((coord_ref, kind)) = coord_preview {
+                            sections::tip_section(ui, |ui| {
+                                previews.paint_for_coordinate_ref(
+                                    ui, catalog, &coord_ref, kind, false, false,
+                                );
+                            });
+                        }
+                        if let ActionKind::ImageSearch(d) = &action.kind {
+                            if !d.targets.is_empty() || !d.target_tags.is_empty() {
                                 sections::tip_section(ui, |ui| {
-                                    previews.paint_for_coordinate_ref(
-                                        ui, catalog, &coord_ref, kind, false, false,
+                                    tree_chrome::paint_image_search_tooltip_thumbs_pub(
+                                        ui, action, catalog, icons,
                                     );
                                 });
                             }
-                            if let ActionKind::ImageSearch(d) = &action.kind {
-                                if !d.targets.is_empty() || !d.target_tags.is_empty() {
-                                    sections::tip_section(ui, |ui| {
-                                        tree_chrome::paint_image_search_tooltip_thumbs_pub(
-                                            ui, action, catalog, icons,
+                        }
+                        if !extra.is_empty() {
+                            sections::tip_section(ui, |ui| {
+                                for p in &extra {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(format!("{}:", p.label))
+                                                .small()
+                                                .strong(),
+                                        );
+                                        if p.label.eq_ignore_ascii_case("Program") {
+                                            crate::icon_cache::paint_program_icon(
+                                                ui,
+                                                catalog,
+                                                icons,
+                                                p.minimal(),
+                                            );
+                                        } else if p.label.eq_ignore_ascii_case("App") {
+                                            if let ActionKind::FocusWindow {
+                                                process_path,
+                                                window_title,
+                                                ..
+                                            } = &action.kind
+                                            {
+                                                crate::icon_cache::paint_leading_process_icon(
+                                                    ui,
+                                                    icons,
+                                                    process_path,
+                                                    window_title,
+                                                );
+                                            }
+                                        }
+                                        var_pills::paint_var_ref_content(
+                                            ui,
+                                            p.minimal(),
+                                            known_vars,
+                                            is_dark,
+                                            if p.minimal() == CoordinateRef::UNSET_LABEL {
+                                                crate::theme::warn_fg()
+                                            } else {
+                                                ui.visuals().text_color()
+                                            },
                                         );
                                     });
                                 }
-                            }
-                            if !extra.is_empty() {
-                                sections::tip_section(ui, |ui| {
-                                    for p in &extra {
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(format!("{}:", p.label))
-                                                    .small()
-                                                    .strong(),
-                                            );
-                                            if p.label.eq_ignore_ascii_case("Program") {
-                                                crate::icon_cache::paint_program_icon(
-                                                    ui,
-                                                    catalog,
-                                                    icons,
-                                                    p.minimal(),
-                                                );
-                                            } else if p.label.eq_ignore_ascii_case("App") {
-                                                if let ActionKind::FocusWindow {
-                                                    process_path,
-                                                    window_title,
-                                                    ..
-                                                } = &action.kind
-                                                {
-                                                    crate::icon_cache::paint_leading_process_icon(
-                                                        ui,
-                                                        icons,
-                                                        process_path,
-                                                        window_title,
-                                                    );
-                                                }
-                                            }
-                                            var_pills::paint_var_ref_content(
-                                                ui,
-                                                p.minimal(),
-                                                known_vars,
-                                                is_dark,
-                                                if p.minimal() == CoordinateRef::UNSET_LABEL {
-                                                    crate::theme::warn_fg()
-                                                } else {
-                                                    ui.visuals().text_color()
-                                                },
-                                            );
-                                        });
-                                    }
-                                });
-                            }
+                            });
+                        }
+                    },
+                );
+                let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        scroll_key,
+                        ViewTipScroll {
+                            tip_id,
+                            offset: out.state.offset.y.min(max_offset),
+                            max_offset,
+                            pass,
                         },
-                    );
-                    let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
-                    ui.ctx().data_mut(|d| {
-                        d.insert_temp(
-                            scroll_key,
-                            ViewTipScroll {
-                                tip_id,
-                                offset: out.state.offset.y.min(max_offset),
-                                max_offset,
-                                pass,
-                            },
-                        )
-                    });
+                    )
                 });
+            });
         });
 }
 
@@ -850,10 +847,7 @@ fn show_edit_window(
             .default_pos(anchor + Vec2::new(crate::theme::SPACE_12, crate::theme::SPACE_12))
             .default_size([max_w, 1.0])
             .min_size([crate::widgets::FLOATER_MIN_COMPACT[0], fit_min_h])
-            .frame(
-                egui::Frame::popup(ctx.global_style().as_ref())
-                    .inner_margin(egui::Margin::symmetric(10, 6)),
-            ),
+            .frame(crate::theme::popup_frame_ctx(ctx)),
         ctx,
         area_id,
         *pending_scale,

@@ -3,8 +3,8 @@
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Visuals};
 
 use super::tokens::{
-    accent, accent_dim, chip_fill, error_fg, frame_fill, inner_stroke, panel_split_stroke, rgba,
-    warn_fg, WINDOW_RESIZE_CORNER_SIZE,
+    accent, accent_dim, chip_fill, density, error_fg, frame_fill, inner_stroke, panel_split_stroke,
+    rgba, warn_fg, SPACE_2, SPACE_4, WINDOW_RESIZE_CORNER_SIZE,
 };
 
 /// Selected-text stroke — light cream readable on dim gold fill.
@@ -72,13 +72,44 @@ pub fn scroll_style() -> egui::style::ScrollStyle {
     s
 }
 
+/// Inner margin for popup / tip / HUD chrome — density-aware SSOT.
+///
+/// Compact/Normal: [`SPACE_4`]×[`SPACE_2`]. Spaced: element×half-element.
+/// Replaces one-off `(8,6)` / `(10,6)` / `(10,8)` / `same(6)` popup pads.
+pub fn chrome_inner_margin(ui: &egui::Ui) -> egui::Margin {
+    chrome_inner_margin_ctx(ui.ctx())
+}
+
+/// [`chrome_inner_margin`] when only a [`egui::Context`] is available (Modal /
+/// Window builders before the body `Ui` exists).
+pub fn chrome_inner_margin_ctx(ctx: &egui::Context) -> egui::Margin {
+    let e = density(ctx).element;
+    let h = e.max(SPACE_4);
+    let v = (e * 0.5).max(SPACE_2);
+    egui::Margin::symmetric(h as i8, v as i8)
+}
+
+/// `Frame::popup` + [`chrome_inner_margin`] — the one popup chrome frame.
+pub fn popup_frame(ui: &egui::Ui) -> egui::Frame {
+    egui::Frame::popup(ui.style()).inner_margin(chrome_inner_margin(ui))
+}
+
+/// [`popup_frame`] from a context (permissions Modal, edit-tip Window frame).
+pub fn popup_frame_ctx(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::popup(ctx.global_style().as_ref()).inner_margin(chrome_inner_margin_ctx(ctx))
+}
+
 /// Rounded group frame with a faint Sqyre fill + dim gold stroke.
-pub fn section_frame(style: &egui::Style) -> egui::Frame {
-    egui::Frame::group(style)
+///
+/// Inner margin tracks density element gap, clamped to [`SPACE_2`]…[`SPACE_4`]
+/// so Compact cards tighten and Spaced cards do not inflate past Normal.
+pub fn section_frame(ui: &egui::Ui) -> egui::Frame {
+    let m = density(ui.ctx()).element.clamp(SPACE_2, SPACE_4) as i8;
+    egui::Frame::group(ui.style())
         .fill(frame_fill())
         .stroke(inner_stroke())
         .corner_radius(CornerRadius::same(4))
-        .inner_margin(egui::Margin::same(6))
+        .inner_margin(egui::Margin::same(m))
 }
 
 /// Full-width framed card, then a [`super::section_gap`] gap after it.
@@ -86,7 +117,7 @@ pub fn framed_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui
     // Cap width *inside* the frame. Measuring outside and then applying
     // `set_max_width` ignores inner_margin/stroke, so the right border clips.
     // Clip-anchored: the reserved scrollbar lane insets the clip, not max_rect.
-    section_frame(ui.style()).show(ui, |ui| {
+    section_frame(ui).show(ui, |ui| {
         crate::widgets::clamp_row_right_to_clip(ui);
         add_contents(ui);
     });
@@ -130,8 +161,39 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(style.visuals.window_stroke.color, PRIMARY);
-        assert_eq!(section_frame(&style).stroke.color, accent_dim());
         assert_eq!(inner_stroke().color, accent_dim());
         assert_eq!(panel_split_stroke().color.a(), 0x80);
+    }
+
+    #[test]
+    fn chrome_inner_margin_tracks_density() {
+        let ctx = egui::Context::default();
+        // Default density = Normal (element 4) → 4×2.
+        let m = chrome_inner_margin_ctx(&ctx);
+        assert_eq!(m.left, SPACE_4 as i8);
+        assert_eq!(m.top, SPACE_2 as i8);
+
+        crate::theme::set_density(&ctx, crate::theme::DensityGaps::new(4.0, 2.0));
+        let compact = chrome_inner_margin_ctx(&ctx);
+        assert_eq!(compact.left, SPACE_4 as i8);
+        assert_eq!(compact.top, SPACE_2 as i8);
+
+        crate::theme::set_density(&ctx, crate::theme::DensityGaps::new(12.0, 8.0));
+        let spaced = chrome_inner_margin_ctx(&ctx);
+        assert_eq!(spaced.left, crate::theme::SPACE_8 as i8);
+        assert_eq!(spaced.top, SPACE_4 as i8);
+    }
+
+    #[test]
+    fn popup_and_section_frames_use_shared_margins() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let popup = popup_frame(ui);
+            assert_eq!(popup.inner_margin, chrome_inner_margin(ui));
+            assert_eq!(section_frame(ui).stroke.color, accent_dim());
+            let m = section_frame(ui).inner_margin;
+            assert!(m.left >= SPACE_2 as i8 && m.left <= SPACE_4 as i8);
+        })
+        .drop_without_applying_deltas();
     }
 }
