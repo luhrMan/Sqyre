@@ -26,3 +26,6 @@ pub(crate) const ATLAS: &str = regular::GLOBE;
 pub(crate) const OVERLAY: &str = regular::CURSOR_CLICK;
 /// Macro (run-macro target, macro pickers).
 pub(crate) const MACRO: &str = regular::MAGIC_WAND;
+/// Open a catalog / entity picker (trailing browse affordance).
+/// Distinct from entity glyphs so field labels and pick buttons never twin.
+pub(crate) const PICK: &str = regular::LIST_MAGNIFYING_GLASS;

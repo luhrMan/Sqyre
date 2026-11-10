@@ -64,6 +64,12 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response 
     icon_button_inner(ui, glyph, tip, None)
 }
 
+/// Browse/open a catalog picker. Always uses [`crate::model_icons::PICK`] —
+/// never the entity glyph (the field label already shows that).
+pub fn pick_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    icon_button(ui, crate::model_icons::PICK, tip)
+}
+
 /// Red `✕` — cancel / dismiss / abort (dialog no, close a floater, disarm a
 /// picker). Field and selection clears use [`clear_icon_button`] instead.
 /// `tip` names what is cancelled.

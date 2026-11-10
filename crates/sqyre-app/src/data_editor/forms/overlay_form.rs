@@ -88,9 +88,7 @@ impl DataEditor {
                 } else {
                     help::tip(resp, help::DE_OVERLAY_POINT);
                 }
-                if crate::widgets::icon_button(ui, crate::model_icons::POINT, "Pick point…")
-                    .clicked()
-                {
+                if crate::widgets::pick_icon_button(ui, "Pick point…").clicked() {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::Point,
                         search: String::new(),
@@ -115,7 +113,7 @@ impl DataEditor {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "X",
                     help::DE_OVERLAY_X,
                     &mut self.form_overlay_x,
@@ -123,7 +121,7 @@ impl DataEditor {
                 );
                 crate::widgets::drag_field(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_VERTICAL,
                     "Y",
                     help::DE_OVERLAY_Y,
                     &mut self.form_overlay_y,
@@ -180,12 +178,8 @@ impl DataEditor {
                                 } else {
                                     help::tip(resp, help::DE_OVERLAY_GATE_AREA);
                                 }
-                                if crate::widgets::icon_button(
-                                    ui,
-                                    crate::model_icons::SEARCH_AREA,
-                                    "Pick search area…",
-                                )
-                                .clicked()
+                                if crate::widgets::pick_icon_button(ui, "Pick search area…")
+                                    .clicked()
                                 {
                                     self.window_picker = ActivePicker::Coord {
                                         kind: CoordKind::SearchArea,

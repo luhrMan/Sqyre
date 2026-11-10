@@ -409,12 +409,8 @@ impl DataEditor {
                 } else {
                     help::tip(resp, help::DE_SCREENCAP_REF);
                 }
-                if crate::widgets::icon_button(
-                    ui,
-                    crate::model_icons::SEARCH_AREA,
-                    "Pick search area or collection cell…",
-                )
-                .clicked()
+                if crate::widgets::pick_icon_button(ui, "Pick search area or collection cell…")
+                    .clicked()
                 {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::SearchArea,
