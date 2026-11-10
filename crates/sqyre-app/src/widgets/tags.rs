@@ -298,7 +298,38 @@ fn step_tag_suggest_selection(selected: Option<usize>, len: usize, next: bool) -
 struct TagSuggestNav {
     /// `None` keeps keyboard focus on the draft field.
     selected: Option<usize>,
+    /// User-typed filter. Arrow-key highlight fills the draft from a suggestion
+    /// but leaves this alone so the dropdown does not collapse while browsing.
     query: String,
+}
+
+/// Put the highlighted suggestion into `draft`, or restore the typed query when
+/// selection returns to the field.
+fn apply_suggest_draft(
+    draft: &mut String,
+    nav: &TagSuggestNav,
+    suggestions: &[String],
+    signed_filters: bool,
+) {
+    match nav.selected {
+        Some(i) => {
+            let Some(name) = suggestions.get(i) else {
+                return;
+            };
+            let fill = if signed_filters {
+                signed_suggestion_raw(&nav.query, name)
+            } else {
+                name.clone()
+            };
+            if *draft != fill {
+                *draft = fill;
+            }
+        }
+        None if *draft != nav.query => {
+            *draft = nav.query.clone();
+        }
+        None => {}
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -519,22 +550,33 @@ fn tag_chip_editor_impl(
         tag_resp.request_focus();
     }
 
+    // Add-button commit clears the draft without going through `pending`.
+    if edit.submitted {
+        nav = TagSuggestNav::default();
+    } else if tag_resp.changed() {
+        // Typing (not arrow-fill) owns the filter query and clears highlight.
+        nav.query = draft.clone();
+        nav.selected = None;
+    } else if nav.selected.is_none() && nav.query != *draft {
+        // External draft mutation while the field owns focus (e.g. load_form).
+        nav.query = draft.clone();
+    }
+
     // Focused empty field → full unused-tag list; typing filters it.
+    // Filter from the typed query so arrow-fill does not shrink the list.
     let already = tags_with_locked(tags, opts.locked);
-    let suggestions = if opts.enabled && (draft_focused || was_open || !draft.trim().is_empty()) {
+    let suggestions = if opts.enabled
+        && (draft_focused || was_open || !nav.query.trim().is_empty() || !draft.trim().is_empty())
+    {
         if opts.signed_filters {
-            let q = draft.trim().trim_start_matches(['+', '-']).trim();
+            let q = nav.query.trim().trim_start_matches(['+', '-']).trim();
             tag_completion_options_signed(q, &already, all_suggestions)
         } else {
-            tag_completion_options(draft, &already, all_suggestions)
+            tag_completion_options(&nav.query, &already, all_suggestions)
         }
     } else {
         Vec::new()
     };
-    if nav.query != *draft {
-        nav.query = draft.clone();
-        nav.selected = None;
-    }
     if let Some(i) = nav.selected {
         if i >= suggestions.len() {
             nav.selected = suggestions.len().checked_sub(1);
@@ -557,6 +599,8 @@ fn tag_chip_editor_impl(
     } else if suggestions.is_empty() {
         nav.selected = None;
     }
+    // Arrow highlight fills the entrybox; Up / empty list restores the typed query.
+    apply_suggest_draft(draft, &nav, &suggestions, opts.signed_filters);
 
     let mut pending: Option<String> = None;
     if keys.accept {
@@ -943,7 +987,9 @@ fn paint_tag_draft(
     edit: &mut TagChipEdit,
     tags: &mut Vec<String>,
 ) -> egui::Response {
-    let hint = if opts.signed_filters {
+    let hint = if let Some(hint) = opts.draft_hint {
+        hint
+    } else if opts.signed_filters {
         "Add +tag or -tag…"
     } else {
         "Add tag…"
@@ -953,6 +999,8 @@ fn paint_tag_draft(
         .desired_width(opts.draft_width.unwrap_or(TAG_DRAFT_WIDTH))
         .hint_text(hint);
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
+    // Hint alone is not always the AccessKit name; pin it so tests/AT can find the field.
+    tag_resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, hint));
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
@@ -978,6 +1026,8 @@ pub struct TagChipOptions<'a> {
     pub label_name: Option<&'a str>,
     /// Icon tooltip / draft hover text.
     pub draft_hover: Option<&'a str>,
+    /// Override the draft field hint (and AccessKit name when empty).
+    pub draft_hint: Option<&'a str>,
     /// When true, chips can be drag-reordered (tag priority lists).
     pub reorderable: bool,
     /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
@@ -1006,6 +1056,7 @@ impl Default for TagChipOptions<'_> {
             show_add_button: true,
             label_name: None,
             draft_hover: None,
+            draft_hint: None,
             reorderable: false,
             signed_filters: false,
             single_row: false,
@@ -1146,6 +1197,71 @@ mod tests {
         assert_eq!(step_tag_suggest_selection(Some(2), 3, false), Some(1));
         assert_eq!(step_tag_suggest_selection(None, 3, false), None);
         assert_eq!(step_tag_suggest_selection(None, 0, true), None);
+    }
+
+    #[test]
+    fn apply_suggest_draft_fills_and_restores() {
+        let suggestions = ["alpha".into(), "beta".into()];
+        let mut draft = String::from("al");
+        let mut nav = TagSuggestNav {
+            selected: Some(0),
+            query: "al".into(),
+        };
+        apply_suggest_draft(&mut draft, &nav, &suggestions, false);
+        assert_eq!(draft, "alpha");
+        nav.selected = Some(1);
+        apply_suggest_draft(&mut draft, &nav, &suggestions, false);
+        assert_eq!(draft, "beta");
+        nav.selected = None;
+        apply_suggest_draft(&mut draft, &nav, &suggestions, false);
+        assert_eq!(draft, "al");
+        draft.clear();
+        nav.query = "+al".into();
+        nav.selected = Some(0);
+        apply_suggest_draft(&mut draft, &nav, &suggestions, true);
+        assert_eq!(draft, "+alpha");
+    }
+
+    #[test]
+    fn arrow_highlight_fills_draft_without_collapsing_list() {
+        use egui_kittest::kittest::Queryable;
+        let all: Vec<String> = vec!["alpha".into(), "alpine".into(), "beta".into()];
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size([400.0, 300.0])
+            .build_ui_state(
+                move |ui, (tags, draft): &mut (Vec<String>, String)| {
+                    tag_chip_editor(ui, tags, draft, &all, TagChipOptions::default());
+                },
+                (Vec::new(), String::new()),
+            );
+        harness.run_steps(2);
+        let field = harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .rect()
+            .center();
+        pointer_click(&mut harness, field);
+        harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .type_text("al");
+        harness.run_steps(2);
+        assert_eq!(harness.state().1, "al");
+        harness.key_press(Key::ArrowDown);
+        harness.run_steps(2);
+        assert_eq!(harness.state().1, "alpha");
+        // Typed filter is preserved: second Down still reaches alpine.
+        harness.key_press(Key::ArrowDown);
+        harness.run_steps(2);
+        assert_eq!(harness.state().1, "alpine");
+        assert!(
+            harness.query_by_label("alpha").is_some() && harness.query_by_label("alpine").is_some(),
+            "arrow-fill must not collapse the filtered suggestion list"
+        );
+        harness.key_press(Key::ArrowUp);
+        harness.run_steps(2);
+        assert_eq!(harness.state().1, "alpha");
+        harness.key_press(Key::ArrowUp);
+        harness.run_steps(2);
+        assert_eq!(harness.state().1, "al");
     }
 
     fn pointer_click(
