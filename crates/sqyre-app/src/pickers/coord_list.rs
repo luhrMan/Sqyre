@@ -252,9 +252,8 @@ pub fn paint_coord_ref_list(
 mod tests {
     use eframe::egui::{self, RawInput};
 
-    /// The coord list must fill the remaining body — a reserved
-    /// [`crate::widgets::FOOTER_RESERVE_ACTION`] band under a floating Save
-    /// left a large empty footer in the search-area / point pickers.
+    /// The coord list must fill the remaining body — the old 52pt reserved
+    /// footer under a floating Save left a large empty band in pickers.
     #[test]
     fn coord_list_height_fills_remaining_body() {
         let ctx = egui::Context::default();
@@ -296,8 +295,8 @@ mod tests {
             "list height must equal remaining body ({list_h} vs {after_search})"
         );
         assert!(
-            list_h > body_h - crate::widgets::FOOTER_RESERVE_ACTION - 40.0,
-            "list must not leave a FOOTER_RESERVE_ACTION dead band (list_h={list_h}, body_h={body_h})"
+            list_h > body_h - 52.0 - 40.0,
+            "list must not leave a 52pt footer dead band (list_h={list_h}, body_h={body_h})"
         );
     }
 }
