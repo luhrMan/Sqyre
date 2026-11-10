@@ -1191,8 +1191,8 @@ impl SqyreApp {
                             ui,
                             "No macros yet",
                             Some("Create a macro or import a backup to get started."),
-                            Some("New macro"),
-                            Some("Import backup"),
+                            Some(crate::widgets::EmptyCta::Add("New macro")),
+                            Some(crate::widgets::EmptyCta::Import("Import backup")),
                         )
                     });
                     match clicked {
