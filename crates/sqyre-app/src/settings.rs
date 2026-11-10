@@ -770,13 +770,12 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_LAST_MACRO)
-            && ui
-                .checkbox(
-                    &mut self.settings.restore_last_macro,
-                    "Re-select the last used macro on launch",
-                )
-                .on_hover_text(ht::SET_LAST_MACRO)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.restore_last_macro,
+                "Re-select the last used macro on launch",
+                ht::SET_LAST_MACRO,
+            )
         {
             self.mark_dirty();
         }
@@ -784,45 +783,47 @@ impl SettingsUi {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if setting_visible(q, section_hit, SETTING_CLOSE_TO_TRAY)
-                && ui
-                    .checkbox(
-                        &mut self.settings.close_to_tray,
-                        "Closing the window minimizes to the tray",
-                    )
-                    .on_hover_text(ht::SET_CLOSE_TO_TRAY)
-                    .changed()
+                && dirty_checkbox(
+                    ui,
+                    &mut self.settings.close_to_tray,
+                    "Closing the window minimizes to the tray",
+                    ht::SET_CLOSE_TO_TRAY,
+                )
             {
                 self.mark_dirty();
             }
 
             if setting_visible(q, section_hit, SETTING_START_MINIMIZED)
-                && ui
-                    .checkbox(&mut self.settings.start_minimized, "Start in the tray")
-                    .on_hover_text(ht::SET_START_MINIMIZED)
-                    .changed()
+                && dirty_checkbox(
+                    ui,
+                    &mut self.settings.start_minimized,
+                    "Start in the tray",
+                    ht::SET_START_MINIMIZED,
+                )
             {
                 self.mark_dirty();
             }
 
             #[cfg(target_os = "linux")]
             if setting_visible(q, section_hit, SETTING_AUTOSTART)
-                && ui
-                    .checkbox(&mut self.settings.launch_on_login, "Launch on login")
-                    .on_hover_text(ht::SET_AUTOSTART)
-                    .changed()
+                && dirty_checkbox(
+                    ui,
+                    &mut self.settings.launch_on_login,
+                    "Launch on login",
+                    ht::SET_AUTOSTART,
+                )
             {
                 self.mark_dirty();
             }
 
             #[cfg(all(target_os = "linux", feature = "native-runtime"))]
             if setting_visible(q, section_hit, SETTING_SUSPEND_CAPTURE)
-                && ui
-                    .checkbox(
-                        &mut self.settings.suspend_screen_capture_when_idle,
-                        "Sleep screen capture when idle",
-                    )
-                    .on_hover_text(ht::SET_SUSPEND_CAPTURE)
-                    .changed()
+                && dirty_checkbox(
+                    ui,
+                    &mut self.settings.suspend_screen_capture_when_idle,
+                    "Sleep screen capture when idle",
+                    ht::SET_SUSPEND_CAPTURE,
+                )
             {
                 self.mark_dirty();
             }
@@ -836,23 +837,23 @@ impl SettingsUi {
                 ui.label(egui::RichText::new("Diagnostics").strong());
             }
             if show_diag
-                && ui
-                    .checkbox(
-                        &mut self.settings.diagnostic_logging,
-                        "Write diagnostic log (diag.log)",
-                    )
-                    .on_hover_text(ht::SET_DIAG_LOG)
-                    .changed()
+                && dirty_checkbox(
+                    ui,
+                    &mut self.settings.diagnostic_logging,
+                    "Write diagnostic log (diag.log)",
+                    ht::SET_DIAG_LOG,
+                )
             {
                 self.mark_dirty();
             }
             if show_mem {
                 ui.horizontal(|ui| {
-                    if ui
-                        .checkbox(&mut self.settings.memory_logging, "Sample memory (mem.log)")
-                        .on_hover_text(ht::SET_MEM_LOG)
-                        .changed()
-                    {
+                    if dirty_checkbox(
+                        ui,
+                        &mut self.settings.memory_logging,
+                        "Sample memory (mem.log)",
+                        ht::SET_MEM_LOG,
+                    ) {
                         self.mark_dirty();
                     }
                     ui.label("every");
@@ -927,86 +928,79 @@ impl SettingsUi {
         subsection_heading(ui, first, "Playback");
 
         if show_highlight
-            && ui
-                .checkbox(
-                    &mut self.settings.highlight_active_action,
-                    "Highlight the currently executing action",
-                )
-                .on_hover_text(ht::SET_RUN_ROW_HL)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.highlight_active_action,
+                "Highlight the currently executing action",
+                ht::SET_RUN_ROW_HL,
+            )
         {
             self.mark_dirty();
         }
 
         if show_click_fx
-            && ui
-                .checkbox(
-                    &mut self.settings.click_effect,
-                    "Flash a marker where clicks land",
-                )
-                .on_hover_text(ht::SET_CLICK_MARKER)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.click_effect,
+                "Flash a marker where clicks land",
+                ht::SET_CLICK_MARKER,
+            )
         {
             self.mark_dirty();
         }
 
         if show_release
-            && ui
-                .checkbox(
-                    &mut self.settings.release_held_inputs_on_end,
-                    "Release held keys and buttons when a macro ends",
-                )
-                .on_hover_text(ht::SET_RELEASE_KEYS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.release_held_inputs_on_end,
+                "Release held keys and buttons when a macro ends",
+                ht::SET_RELEASE_KEYS,
+            )
         {
             self.mark_dirty();
         }
 
         #[cfg(any(feature = "native-runtime", target_os = "windows"))]
         if show_cursor
-            && ui
-                .checkbox(
-                    &mut self.settings.restore_cursor_on_end,
-                    "Restore the mouse position when a macro ends",
-                )
-                .on_hover_text(ht::SET_RESTORE_CURSOR)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.restore_cursor_on_end,
+                "Restore the mouse position when a macro ends",
+                ht::SET_RESTORE_CURSOR,
+            )
         {
             self.mark_dirty();
         }
 
         if show_overlay_stop
-            && ui
-                .checkbox(
-                    &mut self.settings.overlay_press_stops_run,
-                    "Overlay buttons stop the running macro",
-                )
-                .on_hover_text(ht::SET_OVL_STOP)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.overlay_press_stops_run,
+                "Overlay buttons stop the running macro",
+                ht::SET_OVL_STOP,
+            )
         {
             self.mark_dirty();
         }
 
         if show_overlay_detect
-            && ui
-                .checkbox(
-                    &mut self.settings.overlay_buttons_in_detection,
-                    "Overlay buttons appear in detection",
-                )
-                .on_hover_text(ht::SET_CAPTURE_BUTTONS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.overlay_buttons_in_detection,
+                "Overlay buttons appear in detection",
+                ht::SET_CAPTURE_BUTTONS,
+            )
         {
             self.mark_dirty();
         }
 
         if show_overlay_over
-            && ui
-                .checkbox(
-                    &mut self.settings.overlay_buttons_over_sqyre,
-                    "Show overlay buttons over Sqyre",
-                )
-                .on_hover_text(ht::SET_BUTTONS_FRONT)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.overlay_buttons_over_sqyre,
+                "Show overlay buttons over Sqyre",
+                ht::SET_BUTTONS_FRONT,
+            )
         {
             self.mark_dirty();
         }
@@ -1109,13 +1103,12 @@ impl SettingsUi {
         }
         subsection_heading(ui, first, "Recording");
         if show_hide
-            && ui
-                .checkbox(
-                    &mut self.settings.hide_app_during_recording,
-                    "Hide Sqyre while recording points and search areas",
-                )
-                .on_hover_text(ht::SET_HIDE_ON_RECORD)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.hide_app_during_recording,
+                "Hide Sqyre while recording points and search areas",
+                ht::SET_HIDE_ON_RECORD,
+            )
         {
             self.mark_dirty();
         }
@@ -1237,13 +1230,12 @@ impl SettingsUi {
         }
         subsection_heading(ui, first, "Hotkeys");
         if show_tags
-            && ui
-                .checkbox(
-                    &mut self.settings.hotkey_tags_while_focused,
-                    "Select hotkey tags while a Program is focused",
-                )
-                .on_hover_text(ht::SET_HOTKEY_TAGS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.hotkey_tags_while_focused,
+                "Select hotkey tags while a Program is focused",
+                ht::SET_HOTKEY_TAGS,
+            )
         {
             self.mark_dirty();
         }
@@ -1347,33 +1339,21 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 ui.label("New macro delays — key:")
                     .on_hover_text(ht::SET_DEFAULT_DELAYS);
-                let mut v = self.settings.default_keyboard_delay_ms;
-                if ui
-                    .add(
-                        crate::widgets::num_entry(&mut v)
-                            .range(0..=60_000)
-                            .speed(5)
-                            .suffix(" ms"),
-                    )
-                    .on_hover_text(ht::SET_DEFAULT_DELAYS)
-                    .changed()
-                {
-                    self.settings.default_keyboard_delay_ms = v;
+                if dirty_i32(
+                    ui,
+                    &mut self.settings.default_keyboard_delay_ms,
+                    ht::SET_DEFAULT_DELAYS,
+                    |d| d.range(0..=60_000).speed(5).suffix(" ms"),
+                ) {
                     self.mark_dirty();
                 }
                 ui.label("mouse:");
-                let mut v = self.settings.default_mouse_delay_ms;
-                if ui
-                    .add(
-                        crate::widgets::num_entry(&mut v)
-                            .range(0..=60_000)
-                            .speed(5)
-                            .suffix(" ms"),
-                    )
-                    .on_hover_text(ht::SET_DEFAULT_DELAYS)
-                    .changed()
-                {
-                    self.settings.default_mouse_delay_ms = v;
+                if dirty_i32(
+                    ui,
+                    &mut self.settings.default_mouse_delay_ms,
+                    ht::SET_DEFAULT_DELAYS,
+                    |d| d.range(0..=60_000).speed(5).suffix(" ms"),
+                ) {
                     self.mark_dirty();
                 }
             });
@@ -1440,13 +1420,12 @@ impl SettingsUi {
         subsection_heading(ui, first, "Image Search");
 
         if show_variant
-            && ui
-                .checkbox(
-                    &mut self.settings.image_search_variant_exit_early,
-                    "Stop at the first matching icon variant",
-                )
-                .on_hover_text(ht::SET_VARIANT_STOP)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.image_search_variant_exit_early,
+                "Stop at the first matching icon variant",
+                ht::SET_VARIANT_STOP,
+            )
         {
             self.mark_dirty();
         }
@@ -1460,18 +1439,12 @@ impl SettingsUi {
                 |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Ignore nearby duplicate image matches:");
-                        let mut v = self.settings.image_search_close_matches_distance;
-                        if ui
-                            .add(
-                                crate::widgets::num_entry(&mut v)
-                                    .range(0..=100)
-                                    .speed(1)
-                                    .suffix(" px"),
-                            )
-                            .on_hover_text(ht::SET_DEDUP_PX)
-                            .changed()
-                        {
-                            self.settings.image_search_close_matches_distance = v;
+                        if dirty_i32(
+                            ui,
+                            &mut self.settings.image_search_close_matches_distance,
+                            ht::SET_DEDUP_PX,
+                            |d| d.range(0..=100).speed(1).suffix(" px"),
+                        ) {
                             self.mark_dirty();
                         }
                     });
@@ -1496,32 +1469,29 @@ impl SettingsUi {
 
     fn draw_sound(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_FINISH_SOUND)
-            && ui
-                .checkbox(
-                    &mut self.settings.play_finish_sound,
-                    "Play a sound when a macro finishes",
-                )
-                .on_hover_text(ht::SET_FINISH_CUE)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.play_finish_sound,
+                "Play a sound when a macro finishes",
+                ht::SET_FINISH_CUE,
+            )
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_UI_SOUNDS) {
-            let mut changed = ui
-                .checkbox(
-                    &mut self.settings.play_add_sound,
-                    "Play a sound when adding",
-                )
-                .on_hover_text(ht::SET_ADD_DEL_CUES)
-                .changed();
-            changed |= ui
-                .checkbox(
-                    &mut self.settings.play_delete_sound,
-                    "Play a sound when deleting",
-                )
-                .on_hover_text(ht::SET_ADD_DEL_CUES)
-                .changed();
+            let mut changed = dirty_checkbox(
+                ui,
+                &mut self.settings.play_add_sound,
+                "Play a sound when adding",
+                ht::SET_ADD_DEL_CUES,
+            );
+            changed |= dirty_checkbox(
+                ui,
+                &mut self.settings.play_delete_sound,
+                "Play a sound when deleting",
+                ht::SET_ADD_DEL_CUES,
+            );
             if changed {
                 self.mark_dirty();
             }
@@ -1698,27 +1668,26 @@ impl SettingsUi {
         {
             let _ = (db, macros, catalog);
 
-            if ui
-                .checkbox(&mut self.settings.backup_enabled, "Automatic backups")
-                .on_hover_text(ht::SET_AUTO_BACKUP)
-                .changed()
-            {
+            if dirty_checkbox(
+                ui,
+                &mut self.settings.backup_enabled,
+                "Automatic backups",
+                ht::SET_AUTO_BACKUP,
+            ) {
                 self.mark_dirty();
             }
 
             ui.horizontal(|ui| {
                 ui.label("Interval (hours):");
-                let mut v = self.settings.backup_interval_hours;
-                if ui
-                    .add(
-                        crate::widgets::num_entry(&mut v)
-                            .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
-                            .speed(1),
-                    )
-                    .on_hover_text(ht::SET_BACKUP_HOURS)
-                    .changed()
-                {
-                    self.settings.backup_interval_hours = v;
+                if dirty_i32(
+                    ui,
+                    &mut self.settings.backup_interval_hours,
+                    ht::SET_BACKUP_HOURS,
+                    |d| {
+                        d.range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
+                            .speed(1)
+                    },
+                ) {
                     self.mark_dirty();
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
@@ -1729,17 +1698,12 @@ impl SettingsUi {
 
             ui.horizontal(|ui| {
                 ui.label("Keep at most:");
-                let mut v = self.settings.backup_max_keep;
-                if ui
-                    .add(
-                        crate::widgets::num_entry(&mut v)
-                            .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
-                            .speed(1),
-                    )
-                    .on_hover_text(ht::SET_BACKUP_KEEP)
-                    .changed()
-                {
-                    self.settings.backup_max_keep = v;
+                if dirty_i32(
+                    ui,
+                    &mut self.settings.backup_max_keep,
+                    ht::SET_BACKUP_KEEP,
+                    |d| d.range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP).speed(1),
+                ) {
                     self.mark_dirty();
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
@@ -1926,13 +1890,12 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_AUTO_UPDATE)
-            && ui
-                .checkbox(
-                    &mut self.settings.auto_update_check,
-                    "Check for updates on startup",
-                )
-                .on_hover_text(ht::SET_UPDATE_CHECK)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.auto_update_check,
+                "Check for updates on startup",
+                ht::SET_UPDATE_CHECK,
+            )
         {
             self.mark_dirty();
         }
@@ -1966,13 +1929,12 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_PRERELEASE)
-            && ui
-                .checkbox(
-                    &mut self.settings.update_include_prerelease,
-                    "Include pre-release versions",
-                )
-                .on_hover_text(ht::SET_UPDATE_PRERELEASE)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.update_include_prerelease,
+                "Include pre-release versions",
+                ht::SET_UPDATE_PRERELEASE,
+            )
         {
             self.mark_dirty();
         }
@@ -2378,44 +2340,46 @@ impl SettingsUi {
         section_hit: bool,
     ) {
         if setting_visible(q, section_hit, SETTING_COMPACT_HEADERS)
-            && ui
-                .checkbox(
-                    &mut self.settings.compact_program_headers,
-                    "Compact program headers with icons",
-                )
-                .on_hover_text(ht::SET_ICON_HEADERS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.compact_program_headers,
+                "Compact program headers with icons",
+                ht::SET_ICON_HEADERS,
+            )
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_EMPTY_HEADERS)
-            && ui
-                .checkbox(
-                    &mut self.settings.show_empty_program_headers,
-                    "Show empty program headers",
-                )
-                .on_hover_text(ht::SET_KEEP_HEADERS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.show_empty_program_headers,
+                "Show empty program headers",
+                ht::SET_KEEP_HEADERS,
+            )
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
-            && ui
-                .checkbox(&mut self.settings.window_border, "Window border")
-                .on_hover_text(ht::SET_WIN_OUTLINE)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.window_border,
+                "Window border",
+                ht::SET_WIN_OUTLINE,
+            )
         {
             self.mark_dirty();
         }
 
         #[cfg(not(target_arch = "wasm32"))]
         if setting_visible(q, section_hit, SETTING_WINDOW_DECORATIONS)
-            && ui
-                .checkbox(&mut self.settings.window_decorations, "OS title bar")
-                .on_hover_text(ht::SET_WIN_DECORATIONS)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.window_decorations,
+                "OS title bar",
+                ht::SET_WIN_DECORATIONS,
+            )
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(
                 self.settings.window_decorations,
@@ -2426,22 +2390,23 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
-            && ui
-                .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
-                .on_hover_text(ht::SET_RUN_GLOW)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.run_button_glow,
+                "Glowing Run button",
+                ht::SET_RUN_GLOW,
+            )
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_PREVIEW_OUTLINE)
-            && ui
-                .checkbox(
-                    &mut self.settings.preview_desktop_outline,
-                    "Outline preview locations on the desktop",
-                )
-                .on_hover_text(ht::SET_PREVIEW_OUTLINE)
-                .changed()
+            && dirty_checkbox(
+                ui,
+                &mut self.settings.preview_desktop_outline,
+                "Outline preview locations on the desktop",
+                ht::SET_PREVIEW_OUTLINE,
+            )
         {
             self.mark_dirty();
         }
@@ -2591,11 +2556,12 @@ impl SettingsUi {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
-                if ui
-                    .checkbox(&mut self.settings.auto_compact_density, "Auto-compact")
-                    .on_hover_text(ht::SET_AUTO_COMPACT)
-                    .changed()
-                {
+                if dirty_checkbox(
+                    ui,
+                    &mut self.settings.auto_compact_density,
+                    "Auto-compact",
+                    ht::SET_AUTO_COMPACT,
+                ) {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -3153,6 +3119,34 @@ fn query_matches(q: &str, keywords: &[&str]) -> bool {
 
 fn setting_visible(q: &str, section_hit: bool, keywords: &[&str]) -> bool {
     q.is_empty() || section_hit || query_matches(q, keywords)
+}
+
+/// Checkbox that reports whether the caller should [`SettingsUi::mark_dirty`].
+fn dirty_checkbox(
+    ui: &mut egui::Ui,
+    value: &mut bool,
+    label: impl Into<egui::WidgetText>,
+    tip: &str,
+) -> bool {
+    ui.checkbox(value, label).on_hover_text(tip).changed()
+}
+
+/// Integer `num_entry` that writes back and reports whether to mark dirty.
+fn dirty_i32(
+    ui: &mut egui::Ui,
+    value: &mut i32,
+    tip: &str,
+    configure: impl FnOnce(crate::widgets::NumEntry<'_, i32>) -> crate::widgets::NumEntry<'_, i32>,
+) -> bool {
+    let mut v = *value;
+    let changed = ui
+        .add(configure(crate::widgets::num_entry(&mut v)))
+        .on_hover_text(tip)
+        .changed();
+    if changed {
+        *value = v;
+    }
+    changed
 }
 
 fn section_visible(q: &str, section_keywords: &[&str], settings: &[&[&str]]) -> bool {

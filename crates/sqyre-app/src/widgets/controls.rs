@@ -720,6 +720,25 @@ pub fn mouse_button_picker(
     response.on_hover_text(tip)
 }
 
+/// Up / toggle / Tap / Down column used beside Click and Key editors.
+pub fn press_state_column(
+    ui: &mut egui::Ui,
+    state: &mut sqyre_domain::PressState,
+    help_text: &str,
+) {
+    ui.vertical(|ui| {
+        crate::action_tooltip::help::tip(ui.small("Up"), help_text);
+        ui.horizontal(|ui| {
+            crate::action_tooltip::help::tip(
+                crate::widgets::press_state_toggle(ui, state),
+                help_text,
+            );
+            crate::action_tooltip::help::tip(ui.small("Tap"), help_text);
+        });
+        crate::action_tooltip::help::tip(ui.small("Down"), help_text);
+    });
+}
+
 /// Vertical up / tap / down switch for Click/Key press state.
 ///
 /// Top = up, middle = tap, bottom = down. Click a zone to set; arrows cycle when focused.
@@ -1140,13 +1159,13 @@ mod tests {
         let mut state = PressState::Up;
 
         run_ui(&ctx, RawInput::default(), |ui| {
-            press_state_toggle(ui, &mut state).request_focus();
+            crate::widgets::press_state_toggle(ui, &mut state).request_focus();
         });
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowDown));
         run_ui(&ctx, input, |ui| {
-            let r = press_state_toggle(ui, &mut state);
+            let r = crate::widgets::press_state_toggle(ui, &mut state);
             assert!(r.has_focus());
             assert!(r.changed());
         });
@@ -1155,7 +1174,7 @@ mod tests {
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowDown));
         run_ui(&ctx, input, |ui| {
-            assert!(press_state_toggle(ui, &mut state).changed());
+            assert!(crate::widgets::press_state_toggle(ui, &mut state).changed());
         });
         assert_eq!(state, PressState::Down);
     }

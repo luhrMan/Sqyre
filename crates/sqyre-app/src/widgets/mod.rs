@@ -29,8 +29,9 @@ pub use context_menu::{
 pub use controls::{
     add_button, cancel_icon_button, clear_icon_button, confirm_icon_button, dirty_action_button,
     entity_pick_button, error_badge, error_icon, icon_btn_side, icon_button, icon_toggle,
-    mouse_button_picker, pick_icon_button, press_state_toggle, record_icon_button,
-    remove_icon_button, warn_badge, warn_icon, IconButton, IconToggle, PHOSPHOR_FILL_FAMILY,
+    mouse_button_picker, pick_icon_button, press_state_column, press_state_toggle,
+    record_icon_button, remove_icon_button, warn_badge, warn_icon, IconButton, IconToggle,
+    PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
     clamp_row_right_to_clip, confirm_cancel_row, confirm_choice_row, confirm_window,
@@ -43,9 +44,10 @@ pub use dialogs::{
 pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyCta, EmptyStateAction};
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
-    drag_field_enabled, fill_row, name_edit_width, num_text_edit, num_text_field_opts,
-    reset_focus_search, search_field, searchable_combo, text_field, text_field_opts, NumFieldOpts,
-    SearchFieldOpts, SearchTrailing, SearchableComboOpts, TextFieldOpts, W_TEXT, W_VAR,
+    drag_field_enabled, fill_row, labeled_searchable_combo, name_edit_width, num_text_edit,
+    num_text_field_opts, reset_focus_search, search_field, searchable_combo, text_field,
+    text_field_opts, NumFieldOpts, SearchFieldOpts, SearchTrailing, SearchableComboOpts,
+    TextFieldOpts, W_TEXT, W_VAR,
 };
 pub use headers::{count_suffix, count_text, heading_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
@@ -64,8 +66,8 @@ pub use scroll::{
     show_overflow, show_scroll_edge, show_scroll_edge_fit, SCROLL_SOURCE_NO_DRAG,
 };
 pub use sections::{
-    advanced_section, collapsible_header, collapsible_section, float_bottom_right,
-    frame_outer_rect, section_separator, split_view, tinted_section, SplitView,
+    advanced_section, collapsible_header, collapsible_section, collapsing_state,
+    float_bottom_right, frame_outer_rect, section_separator, split_view, tinted_section, SplitView,
 };
 pub(crate) use spinner::{brand_spinner, loading_line};
 pub use tags::{tag_chip_editor, tag_chip_list, tag_draft_editor, TagChipOptions};

@@ -11,6 +11,24 @@ pub const PANE_PAD: f32 = SPACE_4;
 /// How far a [`tinted_section`] fill reaches past its content on each side.
 const TINT_PAD: f32 = SPACE_4;
 
+/// Load a collapsing section and open it when `force_open` (scroll-to a hidden child).
+///
+/// Returns the state so the caller can `show_header` / `body` without building both
+/// closures in one call — header and body often share a mutable icon cache.
+pub fn collapsing_state(
+    ui: &egui::Ui,
+    id: egui::Id,
+    force_open: bool,
+) -> egui::collapsing_header::CollapsingState {
+    let mut state =
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    if force_open && !state.is_open() {
+        state.set_open(true);
+        state.store(ui.ctx());
+    }
+    state
+}
+
 /// Sidebar | content panes with a vertical splitter between them.
 pub struct SplitView {
     pub left: egui::Ui,

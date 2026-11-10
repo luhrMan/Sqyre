@@ -69,6 +69,38 @@ pub struct PickerScrollOpts<'a> {
     pub id_salt: Option<&'static str>,
     /// Placeholder text inside the search field.
     pub hint_text: Option<&'a str>,
+    /// Red eraser that clears the query.
+    pub clearable: bool,
+    /// Stable edit id so a sibling eraser does not drop keyboard focus.
+    pub stable_id: Option<egui::Id>,
+    /// Viewport height. `None` uses the footer/pane rule.
+    pub max_height: Option<f32>,
+    /// Use [`popup_scroll_max_height`] even when [`Self::footer_reserve`] is 0
+    /// (dialogs that cap to the visible window, not the leftover ui height).
+    pub use_visible_cap: bool,
+}
+
+/// Search row plus the scroll under it.
+pub struct PickerScrollOutput {
+    pub search_changed: bool,
+    /// The search field, when the row drew one. Callers that focus on open
+    /// request focus here in addition to [`crate::widgets::focus_search_once`].
+    #[expect(
+        dead_code,
+        reason = "returned for callers that request focus after paint; unused while focus_id covers it"
+    )]
+    pub search_response: Option<egui::Response>,
+    #[expect(
+        dead_code,
+        reason = "content size for callers measuring list overflow; reserved with the scroll shell"
+    )]
+    pub content_size: egui::Vec2,
+    /// Height of the search row and the below-search widgets.
+    #[expect(
+        dead_code,
+        reason = "chrome height for pane layout; reserved with the scroll shell"
+    )]
+    pub chrome_height: f32,
 }
 
 impl PickerScrollOpts<'_> {
@@ -82,6 +114,10 @@ impl PickerScrollOpts<'_> {
             below_search: None,
             id_salt: None,
             hint_text: Some(HINT_LIST),
+            clearable: false,
+            stable_id: None,
+            max_height: None,
+            use_visible_cap: false,
         }
     }
 
@@ -93,6 +129,10 @@ impl PickerScrollOpts<'_> {
             below_search: None,
             id_salt: None,
             hint_text: Some(HINT_PANE),
+            clearable: false,
+            stable_id: None,
+            max_height: None,
+            use_visible_cap: false,
         }
     }
 
@@ -115,7 +155,7 @@ pub fn picker_searchable_scroll(
     search: &mut String,
     opts: PickerScrollOpts<'_>,
     body: impl FnMut(&mut egui::Ui, &str),
-) -> bool {
+) -> PickerScrollOutput {
     picker_searchable_scroll_ex(ui, search, opts, None, body)
 }
 
@@ -126,13 +166,17 @@ pub fn picker_searchable_scroll_ex(
     mut opts: PickerScrollOpts<'_>,
     focus_id: Option<egui::Id>,
     mut body: impl FnMut(&mut egui::Ui, &str),
-) -> bool {
+) -> PickerScrollOutput {
     let mut search_changed = false;
+    let mut search_response = None;
+    let chrome_start = ui.min_rect().height();
     // Run trailing / below-search in a scope so their borrows end before `body`
     // (body often needs the same locals, e.g. data-editor tag priority).
     {
         let mut trailing = opts.trailing.take();
         let mut below_search = opts.below_search.take();
+        let clearable = opts.clearable;
+        let stable_id = opts.stable_id;
         // `hint_text: None` hides the search field (query still filters); the
         // row then exists only for the trailing buttons.
         let has_search = opts.hint_text.is_some();
@@ -157,14 +201,15 @@ pub fn picker_searchable_scroll_ex(
                             crate::widgets::SearchFieldOpts {
                                 hint: opts.hint_text.unwrap_or_default(),
                                 focus_id,
-                                clearable: false,
-                                stable_id: None,
+                                clearable,
+                                stable_id,
                                 trailing: None,
                             },
                         );
                         if out.changed {
                             search_changed = true;
                         }
+                        search_response = Some(out.response);
                     },
                 );
             });
@@ -175,18 +220,21 @@ pub fn picker_searchable_scroll_ex(
             });
         }
     }
+    let chrome_height = ui.min_rect().height() - chrome_start;
     let q = search.trim().to_ascii_lowercase();
-    // Fixed panes (footer_reserve == 0) use remaining height only — no popup screen cap.
-    let pane = opts.footer_reserve <= 0.0;
-    let max_h = if pane {
-        ui.available_height().max(40.0)
-    } else {
+    // Fixed panes use remaining height. Dialogs that pass `use_visible_cap`
+    // (or a real footer) cap to the visible window instead.
+    let max_h = if let Some(h) = opts.max_height {
+        h
+    } else if opts.use_visible_cap || opts.footer_reserve > 0.0 {
         popup_scroll_max_height(ui, opts.footer_reserve)
+    } else {
+        ui.available_height().max(40.0)
     };
     // Bidirectional: vertical-only + auto_shrink(false) expands to content width
     // and can push dialog edges off-screen when the pane is narrow.
     let max_w = ui.available_width().max(1.0);
-    crate::widgets::show_dialog_scroll_mod(
+    let scroll = crate::widgets::show_dialog_scroll_mod(
         ui,
         max_w,
         max_h,
@@ -200,7 +248,12 @@ pub fn picker_searchable_scroll_ex(
             body(ui, &q);
         },
     );
-    search_changed
+    PickerScrollOutput {
+        search_changed,
+        search_response,
+        content_size: scroll.content_size,
+        chrome_height,
+    }
 }
 
 /// Finite height for scroll panes inside popup / dialog windows.
