@@ -20,8 +20,8 @@ use std::collections::HashMap;
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
 /// Pill inner padding (4×2).
-const PILL_MARGIN_X: i8 = 4;
-const PILL_MARGIN_Y: i8 = 2;
+const PILL_MARGIN_X: i8 = crate::theme::SPACE_4 as i8;
+const PILL_MARGIN_Y: i8 = crate::theme::SPACE_2 as i8;
 const PILL_RADIUS: f32 = 5.0;
 /// Item thumbnail max height — match action cell so rows stay uniform.
 const TARGET_THUMB_MAX_H: f32 = ICON_SIZE;

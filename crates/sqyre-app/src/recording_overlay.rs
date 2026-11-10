@@ -36,7 +36,7 @@ use sqyre_capture::{FrozenFrame, FrozenSelectionOverlay};
 
 const POLL_MS: u64 = 16;
 const HUD_ID: &str = "sqyre_recording_coords_hud";
-const HUD_MARGIN: f32 = 12.0;
+const HUD_MARGIN: f32 = crate::theme::SPACE_12;
 const HUD_PAD_X: f32 = 24.0;
 const HUD_PAD_Y: f32 = 16.0;
 const HUD_MIN_W: f32 = 200.0;
