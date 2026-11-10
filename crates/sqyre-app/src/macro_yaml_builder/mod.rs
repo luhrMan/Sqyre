@@ -375,7 +375,13 @@ impl MacroYamlBuilderUi {
                 "A saved draft no longer matches the current macro. Choose which to load.",
             );
             ui.horizontal(|ui| {
-                if ui.small_button("Reload from Tree").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::ARROW_CLOCKWISE,
+                    ht::YAML_RELOAD_TREE,
+                )
+                .clicked()
+                {
                     self.yaml = self.base_yaml.clone();
                     self.draft_choice = DraftChoice::None;
                     self.stale_draft = None;
@@ -383,7 +389,13 @@ impl MacroYamlBuilderUi {
                         self.drafts.remove(name);
                     }
                 }
-                if ui.small_button("Restore Draft").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::CLOCK_COUNTER_CLOCKWISE,
+                    ht::YAML_RESTORE_DRAFT,
+                )
+                .clicked()
+                {
                     if let Some(entry) = self.stale_draft.take() {
                         self.yaml = entry.yaml;
                         self.base_yaml = entry.base_yaml;
@@ -402,7 +414,9 @@ impl MacroYamlBuilderUi {
         } else {
             0.0
         };
-        let footer_h = button_h + status_h + spacing * 3.0 + crate::theme::SPACE_8;
+        // Separator spends one section_gap; button row + optional status use element gaps.
+        let footer_h =
+            button_h + status_h + crate::theme::section_gap(ui) + crate::theme::element_gap(ui);
         let avail = ui.available_height();
         let room = (avail - footer_h).max(0.0);
         // Keep the button row on screen. The 120px floor only applies when the
@@ -428,7 +442,13 @@ impl MacroYamlBuilderUi {
         crate::widgets::section_separator(ui);
         crate::widgets::show_overflow(ui, "yaml_footer", 1.0, |ui| {
             ui.horizontal_wrapped(|ui| {
-                if ui.small_button("Validate").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::LIST_CHECKS,
+                    ht::YAML_VALIDATE,
+                )
+                .clicked()
+                {
                     self.last_report = report_macro_yaml(&self.yaml);
                     self.last_validated_yaml = self.yaml.clone();
                     if self.last_report.is_ok() {
@@ -443,12 +463,12 @@ impl MacroYamlBuilderUi {
                 if ui
                     .add_enabled(
                         has_yaml,
-                        egui::Button::new(
-                            egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
-                        )
-                        .small(),
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::PLUS,
+                            ht::YAML_IMPORT_NEW,
+                            Some(crate::theme::MACRO_START),
+                        ),
                     )
-                    .on_hover_text(ht::YAML_IMPORT_NEW)
                     .clicked()
                 {
                     match prepare_import_macro_yaml(&self.yaml, &existing) {
@@ -460,15 +480,16 @@ impl MacroYamlBuilderUi {
                 }
                 let can_apply =
                     !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
+                let apply_disabled = if running {
+                    "Cannot apply while a macro is running"
+                } else if self.bound_name.is_none() {
+                    "No macro selected — use Import as New"
+                } else {
+                    "No unapplied changes"
+                };
                 if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
                     .on_hover_text(ht::YAML_IMPORT_REPLACE)
-                    .on_disabled_hover_text(if running {
-                        "Cannot apply while a macro is running"
-                    } else if self.bound_name.is_none() {
-                        "No macro selected — use Import as New"
-                    } else {
-                        "No unapplied changes"
-                    })
+                    .on_disabled_hover_text(apply_disabled)
                     .clicked()
                 {
                     match prepare_macro_yaml(&self.yaml) {
