@@ -288,9 +288,20 @@ pub fn fit_in_box(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
     Vec2::new(w.max(1.0) * scale, h.max(1.0) * scale)
 }
 
+/// Shortest painted side for catalog thumbs. Hairline sources (e.g. 80×2 UI
+/// chrome) otherwise collapse below a pixel at fractional `pixels_per_point`
+/// and AA into white noise.
+pub const ICON_THUMB_MIN_SIDE: f32 = 4.0;
+
 /// Letterbox an item icon inside a thumb cell (always show the full image).
+///
+/// Floors the short side to [`ICON_THUMB_MIN_SIDE`] (clamped to the cell) so
+/// extreme-aspect strips stay visible instead of sub-pixel sparkle.
 pub fn fit_icon_thumb(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
-    fit_in_box(w, h, max_w, max_h)
+    let size = fit_in_box(w, h, max_w, max_h);
+    let min_x = ICON_THUMB_MIN_SIDE.min(max_w);
+    let min_y = ICON_THUMB_MIN_SIDE.min(max_h);
+    Vec2::new(size.x.clamp(min_x, max_w), size.y.clamp(min_y, max_h))
 }
 
 /// Fit `w`×`h` inside a `max_w`×`max_h` box, preserving aspect ratio, without
@@ -415,6 +426,18 @@ mod tests {
         let square = fit_icon_thumb(64.0, 64.0, 18.0, 18.0);
         assert!((square.x - 18.0).abs() < 0.01);
         assert!((square.y - 18.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn fit_icon_thumb_floors_hairline_strips() {
+        // 80×2 chrome strip in a 12×12 tip cell: natural fit is 12×0.3.
+        let tip = fit_icon_thumb(80.0, 2.0, 12.0, 12.0);
+        assert!((tip.x - 12.0).abs() < 0.01);
+        assert!((tip.y - ICON_THUMB_MIN_SIDE).abs() < 0.01);
+
+        let tall = fit_icon_thumb(2.0, 80.0, 12.0, 12.0);
+        assert!((tall.x - ICON_THUMB_MIN_SIDE).abs() < 0.01);
+        assert!((tall.y - 12.0).abs() < 0.01);
     }
 
     #[test]
