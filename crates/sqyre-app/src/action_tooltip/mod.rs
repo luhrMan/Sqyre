@@ -1423,8 +1423,10 @@ mod tests {
             out.drop_without_applying_deltas();
         }
         assert!(bar_seen, "fields scroll never showed a vertical bar");
+        // Stroke may sit outside the bar by ~1pt; anything larger is a
+        // margin gap (fill_resize clip must not block scroll_edge_expand).
         assert!(
-            gap <= 20.0,
+            gap <= 2.0,
             "scrollbar floats {gap:.1}pt left of the window edge"
         );
     }
