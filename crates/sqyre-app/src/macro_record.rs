@@ -301,7 +301,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         screen.center().y - default_h * 0.5,
     );
 
-    crate::widgets::fit_dialog_window(
+    crate::widgets::fit_dialog_popup(
         egui::Window::new("Recorded actions")
             .collapsible(false)
             .resizable(true)
@@ -313,6 +313,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         pending_scale,
     )
     .show(ctx, |ui| {
+        crate::widgets::fill_resize_body(ui, |ui| {
             is_dark = ui.visuals().dark_mode;
             ui.label(
                 "Hover for view tip, middle-click or double-click to edit, right-click for Edit / Delete. Copy and paste into a macro.",
@@ -439,6 +440,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 close = true;
             }
         });
+    });
 
     if let Some((i, coord_ref, name)) = adopt_nearby {
         if let Some(pt) = points.get_mut(i) {

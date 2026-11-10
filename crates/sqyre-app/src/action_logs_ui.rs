@@ -197,7 +197,7 @@ pub fn show_logs_window(
     let mut open = true;
     let mut hovered_now: Option<(usize, usize)> = None;
     let id = egui::Id::new(("sqyre_logs", action_id.as_str()));
-    crate::widgets::fit_dialog_window(
+    crate::widgets::fit_dialog_popup(
         egui::Window::new(title)
             .open(&mut open)
             .default_size([640.0, 560.0])
@@ -208,173 +208,178 @@ pub fn show_logs_window(
         pending_scale,
     )
     .show(ctx, |ui| {
-        // ── Toolbar ─────────────────────────────────────────────────────
-        ui.horizontal(|ui| {
-            if ui
-                .button("Copy text")
-                .on_hover_text(ht::LOGS_COPY_FILTERED)
-                .clicked()
-            {
-                let filtered: Vec<ActionLogEntry> =
-                    visible.iter().map(|&i| entries[i].clone()).collect();
-                ui.ctx().copy_text(lines_for(&filtered).join("\n"));
-            }
-            if crate::widgets::clear_icon_button(ui, "Clear this action's log entries").clicked() {
-                action_log.clear_for(action_id);
-            }
-            crate::widgets::icon_toggle(
+        crate::widgets::fill_resize_body(ui, |ui| {
+            // ── Toolbar ─────────────────────────────────────────────────────
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Copy text")
+                    .on_hover_text(ht::LOGS_COPY_FILTERED)
+                    .clicked()
+                {
+                    let filtered: Vec<ActionLogEntry> =
+                        visible.iter().map(|&i| entries[i].clone()).collect();
+                    ui.ctx().copy_text(lines_for(&filtered).join("\n"));
+                }
+                if crate::widgets::clear_icon_button(ui, "Clear this action's log entries")
+                    .clicked()
+                {
+                    action_log.clear_for(action_id);
+                }
+                crate::widgets::icon_toggle(
+                    ui,
+                    &mut state.follow,
+                    "Keep scrolled to the newest entries while the macro runs",
+                    egui_phosphor::regular::ARROW_DOWN,
+                    egui_phosphor::fill::ARROW_DOWN,
+                );
+                ui.weak(&counts);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
+                        nav = LogsNav::Close;
+                    }
+                });
+            });
+
+            // ── Search + kind toggles ───────────────────────────────────────
+            let search_out = crate::widgets::search_field(
                 ui,
-                &mut state.follow,
-                "Keep scrolled to the newest entries while the macro runs",
-                egui_phosphor::regular::ARROW_DOWN,
-                egui_phosphor::fill::ARROW_DOWN,
+                &mut state.search,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Filter logs…  ( / )",
+                    focus_id: None,
+                    clearable: true,
+                    stable_id: Some(egui::Id::new("action_logs_search")),
+                    trailing: None,
+                },
             );
-            ui.weak(&counts);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
-                    nav = LogsNav::Close;
+            let search_resp = search_out.response;
+            ui.horizontal(|ui| {
+                if ui.selectable_label(state.kinds.text, "Text").clicked() {
+                    state.kinds.text = !state.kinds.text;
+                }
+                if ui.selectable_label(state.kinds.images, "Images").clicked() {
+                    state.kinds.images = !state.kinds.images;
+                }
+                if ui.selectable_label(state.kinds.items, "Items").clicked() {
+                    state.kinds.items = !state.kinds.items;
                 }
             });
-        });
+            crate::widgets::section_separator(ui);
 
-        // ── Search + kind toggles ───────────────────────────────────────
-        let search_out = crate::widgets::search_field(
-            ui,
-            &mut state.search,
-            crate::widgets::SearchFieldOpts {
-                hint: "Filter logs…  ( / )",
-                focus_id: None,
-                clearable: true,
-                stable_id: Some(egui::Id::new("action_logs_search")),
-                trailing: None,
-            },
-        );
-        let search_resp = search_out.response;
-        ui.horizontal(|ui| {
-            if ui.selectable_label(state.kinds.text, "Text").clicked() {
-                state.kinds.text = !state.kinds.text;
-            }
-            if ui.selectable_label(state.kinds.images, "Images").clicked() {
-                state.kinds.images = !state.kinds.images;
-            }
-            if ui.selectable_label(state.kinds.items, "Items").clicked() {
-                state.kinds.items = !state.kinds.items;
-            }
-        });
-        crate::widgets::section_separator(ui);
-
-        // ── Keys (top-layer only) ───────────────────────────────────────
-        let top = crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id());
-        if top {
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Slash))
-                || ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F))
-            {
-                search_resp.request_focus();
-            }
-            if !search_resp.has_focus() && state.zoom.is_none() && state.selected_item.is_none() {
-                let down = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown));
-                let up = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp));
-                if down || up {
-                    state.focused_item =
-                        step_item(&items, state.focused_item, if down { 1 } else { -1 });
-                    state.scroll_to_focused = true;
+            // ── Keys (top-layer only) ───────────────────────────────────────
+            let top = crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id());
+            if top {
+                if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Slash))
+                    || ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F))
+                {
+                    search_resp.request_focus();
                 }
-                if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
-                    if let Some(f) = state.focused_item {
-                        state.selected_item = Some(f);
+                if !search_resp.has_focus() && state.zoom.is_none() && state.selected_item.is_none()
+                {
+                    let down = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown));
+                    let up = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp));
+                    if down || up {
+                        state.focused_item =
+                            step_item(&items, state.focused_item, if down { 1 } else { -1 });
+                        state.scroll_to_focused = true;
+                    }
+                    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
+                        if let Some(f) = state.focused_item {
+                            state.selected_item = Some(f);
+                        }
                     }
                 }
             }
-        }
 
-        // ── Esc cascade: inspect tip → zoom → detail → search → unpin → close
-        if crate::widgets::consume_escape(ui) {
-            if state.inspect.is_some() {
-                state.inspect = None;
-            } else if state.zoom.is_some() {
-                state.zoom = None;
-            } else if state.selected_item.is_some() {
-                state.selected_item = None;
-            } else if search_resp.has_focus() || !state.search.is_empty() {
-                state.search.clear();
-                search_resp.surrender_focus();
-            } else if state.pinned_find.is_some() {
-                state.pinned_find = None;
-            } else {
-                nav = LogsNav::Close;
+            // ── Esc cascade: inspect tip → zoom → detail → search → unpin → close
+            if crate::widgets::consume_escape(ui) {
+                if state.inspect.is_some() {
+                    state.inspect = None;
+                } else if state.zoom.is_some() {
+                    state.zoom = None;
+                } else if state.selected_item.is_some() {
+                    state.selected_item = None;
+                } else if search_resp.has_focus() || !state.search.is_empty() {
+                    state.search.clear();
+                    search_resp.surrender_focus();
+                } else if state.pinned_find.is_some() {
+                    state.pinned_find = None;
+                } else {
+                    nav = LogsNav::Close;
+                }
             }
-        }
 
-        // ── Body ────────────────────────────────────────────────────────
-        let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
-        if state.zoom.is_some() {
-            show_zoom_view(ui, action_id, state, &entries, list_h, top);
-        } else {
-            let list_w = crate::widgets::visible_width(ui);
-            let stick = state.follow && is_running;
-            crate::widgets::show_dialog_scroll_mod(
-                ui,
-                list_w,
-                list_h,
-                |s| s.stick_to_bottom(stick),
-                |ui| {
-                    ui.set_max_width(list_w);
-                    if entries.is_empty() {
-                        ui.label("No logs yet — run the macro.");
-                    } else if let Some(sel) = state.selected_item {
-                        if let Some(ActionLogEntry::ItemPipeline {
-                            title,
-                            summary,
-                            steps,
-                            details,
-                            finds,
-                            ..
-                        }) = entries.get(sel)
-                        {
-                            show_item_detail(
+            // ── Body ────────────────────────────────────────────────────────
+            let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
+            if state.zoom.is_some() {
+                show_zoom_view(ui, action_id, state, &entries, list_h, top);
+            } else {
+                let list_w = crate::widgets::visible_width(ui);
+                let stick = state.follow && is_running;
+                crate::widgets::show_dialog_scroll_mod(
+                    ui,
+                    list_w,
+                    list_h,
+                    |s| s.stick_to_bottom(stick),
+                    |ui| {
+                        ui.set_max_width(list_w);
+                        if entries.is_empty() {
+                            ui.label("No logs yet — run the macro.");
+                        } else if let Some(sel) = state.selected_item {
+                            if let Some(ActionLogEntry::ItemPipeline {
+                                title,
+                                summary,
+                                steps,
+                                details,
+                                finds,
+                                ..
+                            }) = entries.get(sel)
+                            {
+                                show_item_detail(
+                                    ui,
+                                    action_id,
+                                    state,
+                                    &entries,
+                                    &items,
+                                    outlines_ok,
+                                    sel,
+                                    title,
+                                    summary,
+                                    details,
+                                    finds,
+                                    steps,
+                                    &mut hovered_now,
+                                );
+                            }
+                        } else {
+                            show_list(
                                 ui,
                                 action_id,
                                 state,
                                 &entries,
-                                &items,
+                                &visible,
                                 outlines_ok,
-                                sel,
-                                title,
-                                summary,
-                                details,
-                                finds,
-                                steps,
                                 &mut hovered_now,
                             );
                         }
-                    } else {
-                        show_list(
-                            ui,
-                            action_id,
-                            state,
-                            &entries,
-                            &visible,
-                            outlines_ok,
-                            &mut hovered_now,
-                        );
-                    }
-                },
-            );
-        }
+                    },
+                );
+            }
 
-        // ── Desktop outline feed (hover wins over pinned) ───────────────
-        if outlines_ok {
-            if let Some(loc) = hovered_now {
-                if let Some(f) = find_at(&entries, loc) {
-                    previews.request_outline_abs_hover(f.screen);
-                }
-            } else if let Some(loc) = state.pinned_find {
-                if let Some(f) = find_at(&entries, loc) {
-                    previews.request_outline_abs(f.screen);
+            // ── Desktop outline feed (hover wins over pinned) ───────────────
+            if outlines_ok {
+                if let Some(loc) = hovered_now {
+                    if let Some(f) = find_at(&entries, loc) {
+                        previews.request_outline_abs_hover(f.screen);
+                    }
+                } else if let Some(loc) = state.pinned_find {
+                    if let Some(f) = find_at(&entries, loc) {
+                        previews.request_outline_abs(f.screen);
+                    }
                 }
             }
-        }
-        state.hovered_prev = hovered_now;
+            state.hovered_prev = hovered_now;
+        });
     });
 
     if !open && nav == LogsNav::Stay {

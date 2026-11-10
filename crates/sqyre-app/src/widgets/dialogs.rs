@@ -1,7 +1,6 @@
 //! Shared dialog chrome: Save/Cancel, Confirm/Cancel, and dismiss-only rows.
 
 use eframe::egui::{self, Key, Modifiers};
-use egui::containers::scroll_area::{DragScroll, ScrollBarVisibility};
 
 /// Keep floating dialogs at least this fraction of the viewport away from each edge.
 pub const DIALOG_EDGE_MARGIN_FRAC: f32 = 0.025;
@@ -29,7 +28,7 @@ pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
 
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
-/// Floating dialogs apply this via [`fit_dialog_popup`] / [`fit_dialog_window`] so
+/// Floating dialogs apply this via [`fit_dialog_popup`] so
 /// their size and position keep the same fraction of the viewport.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewportScaleEvent {
@@ -146,7 +145,7 @@ fn fit_dialog_common<'a>(
 /// Visible layout budget for a Ui — not leftover room toward a Window `max_size`.
 ///
 /// egui [`Window`]s auto-expand to content `min_size` and do not shrink. Dialogs
-/// use [`fit_dialog_window`] / [`fit_dialog_popup`], which set `max_size` to the
+/// use [`fit_dialog_popup`], which sets `max_size` to the
 /// screen constrain rect. Widgets that treat `available_width()` as a **minimum**
 /// (`set_width` / `set_min_width` / `TextEdit::desired_width` / column counts /
 /// `ScrollArea::auto_shrink([false, _])` without a max) therefore grow the window
@@ -254,8 +253,8 @@ pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
 /// reports a shrinking `min_size` and the window stair-steps toward its final
 /// size a few points per frame.
 ///
-/// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
-/// scroll makes `available_size` track `max_size` and defeats this.
+/// Use with [`fit_dialog_popup`]: an outer Window scroll would make
+/// `available_size` track `max_size` and defeat this.
 pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) -> egui::Response {
     let cap = dialog_constrain_rect(ui.ctx()).size();
     let avail = ui.available_size();
@@ -272,31 +271,14 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
     resp
 }
 
-/// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
-/// on **both** axes when content is larger than the window.
-///
-/// Prefer this only when the body is one scroll region and has no
-/// [`fill_resize_body`] / inner [`crate::widgets::show_dialog_scroll`]. Nested
-/// outer+inner scrolls steal the wheel and defeat resize fill — use
-/// [`fit_dialog_popup`] for those (Add Action, defaults edit, Variables,
-/// Settings, Data Editor, pickers).
-pub fn fit_dialog_window<'a>(
-    window: egui::Window<'a>,
-    ctx: &egui::Context,
-    id: egui::Id,
-    pending_scale: Option<&ViewportScaleEvent>,
-) -> egui::Window<'a> {
-    fit_dialog_common(window, ctx, id, pending_scale)
-        .scroll([true, true])
-        .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
-        .drag_to_scroll(DragScroll::Never)
-}
-
-/// No outer scroll — for compact auto-sized confirms / record modals, and for
-/// panes that allocate their own body/footer and inner [`ScrollArea`]s.
+/// Keep a floating dialog inside [`dialog_constrain_rect`] with **no** outer
+/// scroll — for compact auto-sized confirms / record modals, and for panes that
+/// allocate their own body/footer and inner [`ScrollArea`]s.
 ///
 /// Pair with [`fill_resize_body`] when the window is resizable and owns an
-/// inner scroll (Add Action, defaults edit, Variables, Settings, Data Editor).
+/// inner scroll (Add Action, defaults edit, Variables, Settings, Data Editor,
+/// pickers, action logs, recorded-actions review). An outer Window scroll
+/// nests badly with those and defeats resize fill.
 pub fn fit_dialog_popup<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
