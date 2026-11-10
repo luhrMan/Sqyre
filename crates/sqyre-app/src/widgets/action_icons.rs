@@ -19,6 +19,21 @@ pub(crate) fn action_glyph_font(side: f32, family: FontFamily) -> FontId {
     FontId::new(side * 0.85, family)
 }
 
+/// Outline width for vector action icons.
+///
+/// Kept thin relative to `side` so hollow features (Image Search lens, mouse
+/// body) stay open. The old `(side * 0.09).max(1.0)` made the magnifier stroke
+/// ~half its radius, so at fractional UI scales (Ctrl+/-) AA filled the lens
+/// into a solid white blob.
+fn icon_stroke_width(side: f32) -> f32 {
+    let side = side.max(1.0);
+    (side * 0.055).clamp(0.5, side * 0.08)
+}
+
+fn icon_stroke(side: f32, color: Color32) -> Stroke {
+    Stroke::new(icon_stroke_width(side), color)
+}
+
 /// Painted action icon; per-action variants carry the button / key they show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum VectorIcon {
@@ -121,10 +136,11 @@ fn paint_image_search(painter: &Painter, rect: Rect, color: Color32) {
     let s = rect.width().min(rect.height());
     let c = rect.center();
     let p = |x: f32, y: f32| pos2(c.x + s * x, c.y + s * y);
-    let stroke = Stroke::new((s * 0.09).max(1.0), color);
-
+    let stroke = icon_stroke(s, color);
+    // Lens radius in icon units; keep it well above stroke/2 so Middle-stroked
+    // circles stay hollow after AA at fractional pixels_per_point.
+    let lens_r = image_search_lens_radius_units();
     let (left, top, right, bottom) = (-0.42, -0.38, 0.22, 0.18);
-    let lens_r = 0.17;
     // Frame stops at the lens edge so its corner does not show through the glass.
     painter.add(Shape::line(
         vec![
@@ -140,7 +156,7 @@ fn paint_image_search(painter: &Painter, rect: Rect, color: Color32) {
         vec![p(-0.36, 0.12), p(-0.2, -0.1), p(-0.06, 0.06)],
         stroke,
     ));
-    painter.circle_filled(p(0.06, -0.22), s * 0.06, color);
+    painter.circle_filled(p(0.06, -0.22), s * 0.05, color);
 
     let lens = p(right, bottom);
     painter.circle_stroke(lens, s * lens_r, stroke);
@@ -148,17 +164,22 @@ fn paint_image_search(painter: &Painter, rect: Rect, color: Color32) {
     painter.line_segment(
         [
             lens + vec2(d, d) * s * lens_r,
-            lens + vec2(d, d) * s * (lens_r + 0.17),
+            lens + vec2(d, d) * s * (lens_r + 0.15),
         ],
         stroke,
     );
+}
+
+/// Magnifier lens radius as a fraction of the icon side (see [`paint_image_search`]).
+fn image_search_lens_radius_units() -> f32 {
+    0.20
 }
 
 /// Mouse outline with motion lines trailing to the left.
 fn paint_mouse_drag(painter: &Painter, rect: Rect, color: Color32) {
     let s = rect.width().min(rect.height());
     let c = rect.center();
-    let stroke = Stroke::new((s * 0.09).max(1.0), color);
+    let stroke = icon_stroke(s, color);
     let body = Rect::from_center_size(pos2(c.x + s * 0.18, c.y), vec2(s * 0.42, s * 0.64));
     painter.rect_stroke(body, body.width() * 0.5, stroke, StrokeKind::Middle);
     painter.line_segment(
@@ -178,7 +199,7 @@ fn paint_mouse_drag(painter: &Painter, rect: Rect, color: Color32) {
 /// 3×3 cell grid.
 fn paint_grid(painter: &Painter, rect: Rect, color: Color32) {
     let s = rect.width().min(rect.height());
-    let stroke = Stroke::new((s * 0.09).max(1.0), color);
+    let stroke = icon_stroke(s, color);
     let grid = Rect::from_center_size(rect.center(), vec2(s * 0.8, s * 0.8));
     painter.rect_stroke(grid, s * 0.08, stroke, StrokeKind::Middle);
     for t in [1.0 / 3.0, 2.0 / 3.0] {
@@ -204,7 +225,7 @@ fn paint_mouse_button(painter: &Painter, rect: Rect, color: Color32, button: Mou
 
     let s = rect.width().min(rect.height());
     let c = rect.center();
-    let stroke = Stroke::new((s * 0.09).max(1.0), color);
+    let stroke = icon_stroke(s, color);
     let body = Rect::from_center_size(c, vec2(s * 0.6, s * 0.92));
     let r = body.width() * 0.5;
     let top_c = pos2(c.x, body.top() + r);
@@ -261,7 +282,7 @@ fn paint_keycap(painter: &Painter, rect: Rect, color: Color32, label: &str, pres
         painter.rect_filled(cap, rounding, color);
         crate::theme::contrast_fg(color)
     } else {
-        let stroke = Stroke::new((s * 0.09).max(1.0), color);
+        let stroke = icon_stroke(s, color);
         painter.rect_stroke(cap, rounding, stroke, StrokeKind::Inside);
         color
     };
@@ -287,6 +308,7 @@ fn paint_keycap(painter: &Painter, rect: Rect, color: Color32, label: &str, pres
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui;
     use sqyre_domain::blank_action;
 
     fn key(key: &str, state: PressState) -> Action {
@@ -294,6 +316,48 @@ mod tests {
             key: key.into(),
             state,
         })
+    }
+
+    #[test]
+    fn icon_stroke_keeps_image_search_lens_hollow() {
+        for side in [8.0_f32, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0] {
+            let stroke = icon_stroke_width(side);
+            let lens_r = side * image_search_lens_radius_units();
+            assert!(
+                stroke * 0.5 + lens_r * 0.35 < lens_r,
+                "side={side}: stroke {stroke} fills lens radius {lens_r}"
+            );
+        }
+    }
+
+    #[test]
+    fn image_search_paints_stroked_lens_not_filled() {
+        let ctx = egui::Context::default();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(16.0, 16.0));
+            VectorIcon::ImageSearch.paint(ui.painter(), rect, Color32::WHITE);
+        });
+        let lenses: Vec<_> = out
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Circle(c)
+                    if c.fill == Color32::TRANSPARENT && c.stroke.width > 0.0 =>
+                {
+                    Some(c)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(lenses.len(), 1, "expected one stroked magnifier lens");
+        let lens = lenses[0];
+        assert!(
+            lens.stroke.width * 0.5 + lens.radius * 0.35 < lens.radius,
+            "painted lens stroke {} fills radius {}",
+            lens.stroke.width,
+            lens.radius
+        );
+        out.drop_without_applying_deltas();
     }
 
     #[test]
