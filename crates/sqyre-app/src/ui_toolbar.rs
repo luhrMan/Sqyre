@@ -26,9 +26,8 @@ fn toolbar_icon_colored(
 }
 
 /// Full-width window header above the macro list and central panel:
-/// top row is the Sqyre command palette (left) with name/tags and window chrome;
-/// second row puts Data Editor / Settings under the brand and the macro-list
-/// toggle on the right.
+/// Sqyre brand with Data Editor / Settings stacked under it (tag-row plane),
+/// name/tags in the mid gap, macro-list toggle on that same plane at the right.
 /// Must be shown before the side panel so it spans the whole window width.
 pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::top("app_top_bar")
@@ -42,119 +41,133 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
 fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    ui.vertical(|ui| {
-        // Row 1: brand / command palette, name+tags mid, window chrome right.
-        ui.horizontal(|ui| {
-            let hit_rect = paint_brand_button(app, ui);
-
-            // Right-to-left: first added is rightmost. Painted before the middle
-            // zone so its left edge bounds where the name/tag editor may reach.
-            // Native-only: wasm has no update banner.
-            #[cfg(not(target_arch = "wasm32"))]
-            let mid_right = {
-                let right =
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Extends leftward into the mid gap when an update is pending.
-                        show_update_banner(app, ui);
-                    });
-                let gap = ui.spacing().item_spacing.x;
-                if right.response.rect.width() > 0.0 {
-                    right.response.rect.left() - gap
-                } else {
-                    ui.max_rect().right()
-                }
-            };
-            #[cfg(target_arch = "wasm32")]
-            let mid_right = ui.max_rect().right();
-
-            // Selected macro name + tag field fill the gap between the brand icon
-            // and the right-side chrome; an explicit child rect keeps them clear
-            // of both (the rtl block's bounding box is its widget span). Created
-            // tags wrap under that row, so the region is at least two rows tall
-            // when the macro has tags — reserve the *painted* height (remembered
-            // like `show_overflow` does): a fixed estimate under-reserves the
-            // TextEdit's frame margin and the tag row's bottom pixels clip.
-            let gap = ui.spacing().item_spacing.x;
-            let stack_id = ui.make_persistent_id("name_tag_stack_h");
-            let estimate = ui.spacing().interact_size.y * 2.0
-                + ui.spacing().item_spacing.y
-                + crate::theme::SPACE_4;
-            let stack_h = ui
-                .ctx()
-                .data(|d| d.get_temp::<f32>(stack_id))
-                .unwrap_or(estimate);
-            let mid_rect = egui::Rect::from_min_max(
-                egui::pos2(hit_rect.right() + gap, ui.max_rect().top()),
-                egui::pos2(mid_right, ui.max_rect().top() + stack_h),
-            );
-            if mid_rect.width() > 40.0 {
-                if !app.workspace.macros.is_empty() {
-                    // Reserve the stacked rows' height in this header row so the
-                    // bar grows instead of clipping the second row.
-                    ui.allocate_space(egui::vec2(0.0, stack_h));
-                }
-                let mut mid = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(mid_rect)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                );
-                mid.set_clip_rect(mid_rect);
-                if let Some(idx) = app.workspace.selected_macro_index() {
-                    paint_name_and_tags(app, &mut mid, idx, !running);
-                    let painted = mid.min_rect().height().max(1.0);
-                    if (painted - stack_h).abs() > 0.5 {
-                        ui.ctx().data_mut(|d| d.insert_temp(stack_id, painted));
-                        ui.ctx().request_repaint();
-                    }
-                }
-            }
+    // Top-align so the brand lines up with the name row and the chrome icons
+    // sit on the tag-chip plane instead of adding a separate full-width strip.
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        let left = ui.vertical(|ui| {
+            paint_brand_button(app, ui);
+            // Same horizontal plane as the macro tag row.
+            paint_left_chrome(app, ui);
         });
 
-        // Row 2: Data Editor / Settings under the brand; macro-list toggle right.
-        // One horizontal so both sides can mutate `app` (fill_row's twin
-        // closures double-borrow on wasm when import/export call methods).
-        ui.horizontal(|ui| {
-            if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-                app.data_editor.request_open(ui.ctx());
-            }
-            let permissions_missing = app.settings_ui.permissions_missing();
-            let settings_tip = if permissions_missing {
-                "Settings: a permission is missing"
-            } else {
-                "Settings"
-            };
-            let settings_btn = toolbar_icon(ui, "⚙", settings_tip, true);
-            if permissions_missing {
-                crate::widgets::warn_badge(ui, settings_btn.rect);
-            }
-            if settings_btn.clicked() {
-                app.settings_ui.request_open(ui.ctx());
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true)
-                    .clicked()
-                {
-                    app.export_db_yaml();
-                }
-                if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true)
-                    .clicked()
-                {
-                    app.request_db_import();
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let (list_glyph, list_tip) = if app.macro_list_open {
-                    ("▷", "Hide macro list")
-                } else {
-                    ("☰", "Show macro list")
-                };
-                if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
-                    app.macro_list_open = !app.macro_list_open;
-                }
+        let gap = ui.spacing().item_spacing.x;
+        let list_side = crate::widgets::icon_btn_side(ui);
+        // Reserve the list toggle's width on the right so mid content
+        // (and the top-right window chrome) stay clear of it.
+        let list_reserve = list_side + gap;
+
+        // Top-right update banner (native only).
+        #[cfg(not(target_arch = "wasm32"))]
+        let mid_right = {
+            let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.add_space(list_reserve);
+                // Extends leftward into the mid gap when an update is pending.
+                show_update_banner(app, ui);
             });
-        });
+            if right.response.rect.width() > list_reserve {
+                right.response.rect.left() - gap
+            } else {
+                ui.max_rect().right() - list_reserve
+            }
+        };
+        #[cfg(target_arch = "wasm32")]
+        let mid_right = ui.max_rect().right() - list_reserve;
+
+        // Name + tags fill the gap; height tracks the painted stack so the bar
+        // grows with wrapped tags instead of clipping them.
+        let stack_id = ui.make_persistent_id("name_tag_stack_h");
+        let estimate = ui.spacing().interact_size.y * 2.0
+            + ui.spacing().item_spacing.y
+            + crate::theme::SPACE_4;
+        let stack_h = ui
+            .ctx()
+            .data(|d| d.get_temp::<f32>(stack_id))
+            .unwrap_or(estimate);
+        let header_h = left.response.rect.height().max(stack_h);
+        let mid_rect = egui::Rect::from_min_max(
+            egui::pos2(left.response.rect.right() + gap, ui.max_rect().top()),
+            egui::pos2(mid_right, ui.max_rect().top() + header_h),
+        );
+        if mid_rect.width() > 40.0 {
+            if !app.workspace.macros.is_empty() {
+                ui.allocate_space(egui::vec2(0.0, header_h));
+            }
+            let mut mid = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(mid_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Min)),
+            );
+            mid.set_clip_rect(mid_rect);
+            if let Some(idx) = app.workspace.selected_macro_index() {
+                paint_name_and_tags(app, &mut mid, idx, !running);
+                let painted = mid.min_rect().height().max(1.0);
+                if (painted - stack_h).abs() > 0.5 {
+                    ui.ctx().data_mut(|d| d.insert_temp(stack_id, painted));
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+
+        // Macro-list toggle: bottom-right of the header, sharing the tag plane
+        // with Data Editor / Settings under the brand.
+        let list_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                ui.max_rect().right() - list_side,
+                left.response.rect.bottom() - list_side,
+            ),
+            egui::Vec2::splat(list_side),
+        );
+        let mut list_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(list_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        paint_list_toggle(app, &mut list_ui);
     });
+}
+
+/// Data Editor / Settings (and wasm import/export) under the brand icon.
+fn paint_left_chrome(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+            app.data_editor.request_open(ui.ctx());
+        }
+        let permissions_missing = app.settings_ui.permissions_missing();
+        let settings_tip = if permissions_missing {
+            "Settings: a permission is missing"
+        } else {
+            "Settings"
+        };
+        let settings_btn = toolbar_icon(ui, "⚙", settings_tip, true);
+        if permissions_missing {
+            crate::widgets::warn_badge(ui, settings_btn.rect);
+        }
+        if settings_btn.clicked() {
+            app.settings_ui.request_open(ui.ctx());
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true).clicked()
+            {
+                app.export_db_yaml();
+            }
+            if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true).clicked()
+            {
+                app.request_db_import();
+            }
+        }
+    });
+}
+
+fn paint_list_toggle(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let (list_glyph, list_tip) = if app.macro_list_open {
+        ("▷", "Hide macro list")
+    } else {
+        ("☰", "Show macro list")
+    };
+    if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
+        app.macro_list_open = !app.macro_list_open;
+    }
 }
 
 /// Brand / command palette hit target at the top-left of the window.
