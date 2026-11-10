@@ -1,6 +1,6 @@
 use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
-use super::scroll::{maybe_scroll_to, popup_scroll_max_height};
+use super::scroll::maybe_scroll_to;
 use super::types::{CollectionCellPick, CoordKind};
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
@@ -59,7 +59,9 @@ pub fn paint_coord_ref_list(
     };
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
-    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_ACTION);
+    // Fill remaining height — Save floats over the list via float_bottom_right
+    // (same as the data-editor form chip; no reserved footer strip).
+    let list_h = ui.available_height().max(40.0);
     let list_w = crate::widgets::visible_width(ui);
     let entity_plural = match kind {
         CoordKind::Point => "points",
@@ -243,5 +245,59 @@ pub fn paint_coord_ref_list(
     if *scroll_to_selection && !did_scroll {
         // Selection not visible under current filter — don't keep retrying every frame.
         *scroll_to_selection = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui::{self, RawInput};
+
+    /// The coord list must fill the remaining body — a reserved
+    /// [`crate::widgets::FOOTER_RESERVE_ACTION`] band under a floating Save
+    /// left a large empty footer in the search-area / point pickers.
+    #[test]
+    fn coord_list_height_fills_remaining_body() {
+        let ctx = egui::Context::default();
+        let body_h = 460.0_f32;
+        let mut list_h = 0.0_f32;
+        let mut after_search = 0.0_f32;
+        ctx.run_ui(
+            RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(560.0, body_h),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(560.0, body_h), egui::Sense::hover());
+                let mut body = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                body.set_max_size(rect.size());
+                // Search row (same placement as the coord picker header).
+                let _ = body.label("Search…");
+                after_search = body.available_height();
+                // Mirror paint_coord_ref_list's height choice.
+                list_h = body.available_height().max(40.0);
+                let list_w = body.available_width();
+                crate::widgets::show_dialog_scroll(&mut body, list_w, list_h, |ui| {
+                    ui.label("row");
+                });
+            },
+        )
+        .drop_without_applying_deltas();
+
+        assert!(
+            (list_h - after_search).abs() < 1.0,
+            "list height must equal remaining body ({list_h} vs {after_search})"
+        );
+        assert!(
+            list_h > body_h - crate::widgets::FOOTER_RESERVE_ACTION - 40.0,
+            "list must not leave a FOOTER_RESERVE_ACTION dead band (list_h={list_h}, body_h={body_h})"
+        );
     }
 }
