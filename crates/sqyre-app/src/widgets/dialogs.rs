@@ -275,10 +275,11 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
 /// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
 /// on **both** axes when content is larger than the window.
 ///
-/// Prefer this for simple dialogs whose body is mostly one scroll region.
-/// Panels that allocate their own split/scroll layout should use
-/// [`fit_dialog_popup`] plus [`fill_resize_body`] and an inner
-/// [`crate::widgets::show_dialog_scroll`].
+/// Prefer this only when the body is one scroll region and has no
+/// [`fill_resize_body`] / inner [`crate::widgets::show_dialog_scroll`]. Nested
+/// outer+inner scrolls steal the wheel and defeat resize fill — use
+/// [`fit_dialog_popup`] for those (Add Action, defaults edit, Variables,
+/// Settings, Data Editor, pickers).
 pub fn fit_dialog_window<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -291,9 +292,11 @@ pub fn fit_dialog_window<'a>(
         .drag_to_scroll(DragScroll::Never)
 }
 
-/// Like [`fit_dialog_window`] but without an outer scroll area — for compact
-/// auto-sized confirms / record modals, and for panes that allocate their own
-/// body/footer and inner [`ScrollArea`]s (data editor, settings).
+/// No outer scroll — for compact auto-sized confirms / record modals, and for
+/// panes that allocate their own body/footer and inner [`ScrollArea`]s.
+///
+/// Pair with [`fill_resize_body`] when the window is resizable and owns an
+/// inner scroll (Add Action, defaults edit, Variables, Settings, Data Editor).
 pub fn fit_dialog_popup<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
