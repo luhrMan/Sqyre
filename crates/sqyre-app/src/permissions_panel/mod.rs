@@ -16,7 +16,7 @@ pub use desktop::PermissionsPanel;
 /// Card around one permission row — shared `section_frame` styling so the
 /// panel matches other framed groups in the app.
 fn row_frame(ui: &egui::Ui) -> egui::Frame {
-    crate::theme::section_frame(ui.style())
+    crate::theme::section_frame(ui)
 }
 
 /// Row title (hover shows `tip`) with the status icon right-aligned; the status

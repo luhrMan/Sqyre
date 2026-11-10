@@ -625,16 +625,14 @@ mod tests {
                 let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(400.0, 600.0));
                 let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
                 pane_ui.set_clip_rect(pane);
-                egui::Frame::popup(pane_ui.style())
-                    .inner_margin(egui::Margin::symmetric(8, 6))
-                    .show(&mut pane_ui, |ui| {
-                        ui.set_max_height(200.0);
-                        show_scroll_edge_fit(ui, scroll_vertical().max_height(200.0), |ui| {
-                            ui.label("narrow");
-                            // Tall content so the v-bar paints.
-                            ui.allocate_space(egui::vec2(80.0, 500.0));
-                        });
+                crate::theme::popup_frame(&pane_ui).show(&mut pane_ui, |ui| {
+                    ui.set_max_height(200.0);
+                    show_scroll_edge_fit(ui, scroll_vertical().max_height(200.0), |ui| {
+                        ui.label("narrow");
+                        // Tall content so the v-bar paints.
+                        ui.allocate_space(egui::vec2(80.0, 500.0));
                     });
+                });
                 fit_w = pane_ui.min_rect().width();
             })
             .drop_without_applying_deltas();
@@ -642,15 +640,13 @@ mod tests {
                 let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(400.0, 600.0));
                 let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
                 pane_ui.set_clip_rect(pane);
-                egui::Frame::popup(pane_ui.style())
-                    .inner_margin(egui::Margin::symmetric(8, 6))
-                    .show(&mut pane_ui, |ui| {
-                        ui.set_max_height(200.0);
-                        show_scroll_edge(ui, scroll_vertical().max_height(200.0), |ui| {
-                            ui.label("narrow");
-                            ui.allocate_space(egui::vec2(80.0, 500.0));
-                        });
+                crate::theme::popup_frame(&pane_ui).show(&mut pane_ui, |ui| {
+                    ui.set_max_height(200.0);
+                    show_scroll_edge(ui, scroll_vertical().max_height(200.0), |ui| {
+                        ui.label("narrow");
+                        ui.allocate_space(egui::vec2(80.0, 500.0));
                     });
+                });
                 edge_w = pane_ui.min_rect().width();
             })
             .drop_without_applying_deltas();
