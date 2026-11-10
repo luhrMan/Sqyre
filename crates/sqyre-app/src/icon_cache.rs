@@ -21,7 +21,9 @@ const FALLBACK_PX: u32 = 128;
 pub const PROCESS_ICON_SIDE: f32 = 16.0;
 
 fn icon_texture_options() -> TextureOptions {
-    TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
+    // NEAREST, no mipmaps: LINEAR+mipmap washout turns hairline catalog icons
+    // (e.g. 80×2 Item Top strips) into white blobs at fractional UI scales.
+    TextureOptions::NEAREST
 }
 
 #[cfg(not(target_arch = "wasm32"))]
