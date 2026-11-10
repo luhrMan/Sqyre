@@ -92,8 +92,9 @@ fn new_macro_button_adds_macro() {
     );
 }
 
-/// Top-bar chrome: Data Editor / Settings sit under the Sqyre brand; the
-/// macro-list toggle shares that second row on the right.
+/// Top-bar chrome shares the tag-row plane: Data Editor / Settings under the
+/// brand, macro-list toggle on the right at the same height — not a second
+/// full-width strip below the header.
 #[test]
 fn top_bar_chrome_row_under_brand() {
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
@@ -105,6 +106,10 @@ fn top_bar_chrome_row_under_brand() {
     let data_editor = harness.get_by_label("Data Editor").rect();
     let settings = harness.get_by_label("Settings").rect();
     let list_toggle = harness.get_by_label("Hide macro list").rect();
+    let bar_h =
+        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+            .map(|s| s.outer_rect.height())
+            .unwrap_or(0.0);
 
     assert!(
         data_editor.top() > brand.bottom() - 2.0,
@@ -117,11 +122,17 @@ fn top_bar_chrome_row_under_brand() {
     let chrome_mid_y = (data_editor.center().y + settings.center().y) * 0.5;
     assert!(
         (list_toggle.center().y - chrome_mid_y).abs() < data_editor.height(),
-        "macro-list toggle should share the chrome row (list={list_toggle:?}, chrome_y={chrome_mid_y})"
+        "macro-list toggle should share the tag-row plane (list={list_toggle:?}, chrome_y={chrome_mid_y})"
     );
     assert!(
         list_toggle.left() > settings.right(),
         "macro-list toggle should be on the right of the chrome row"
+    );
+    // Brand + chrome share one header with the name/tag stack — not brand
+    // height plus a second full chrome strip.
+    assert!(
+        bar_h < brand.height() + data_editor.height() * 2.5,
+        "chrome should not add a full extra strip (bar_h={bar_h}, brand={brand:?}, data={data_editor:?})"
     );
 
     // Click each chrome control from a clean top bar (open dialogs steal
