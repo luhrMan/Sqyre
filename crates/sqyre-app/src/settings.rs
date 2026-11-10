@@ -1273,18 +1273,20 @@ impl SettingsUi {
                     self.settings.panic_key.trim().to_string()
                 };
                 ui.label(egui::RichText::new(label).monospace());
-                if ui
-                    .small_button("Record…")
-                    .on_hover_text(ht::SET_PANIC_KEY)
-                    .clicked()
-                {
+                if crate::widgets::record_icon_button(ui, ht::SET_PANIC_KEY, true).clicked() {
                     self.panic_record.open(macro_hotkeys);
                 }
-                if ui.small_button("Reset").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                    "Reset panic key to Esc",
+                )
+                .clicked()
+                {
                     self.settings.panic_key = "esc".to_string();
                     self.mark_dirty();
                 }
-                if ui.small_button("Disable").clicked() {
+                if crate::widgets::clear_icon_button(ui, "Disable panic/stop key").clicked() {
                     self.settings.panic_key.clear();
                     self.mark_dirty();
                 }

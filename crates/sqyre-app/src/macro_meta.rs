@@ -278,13 +278,31 @@ impl MacroMetaUi {
         )
         .show(ui.ctx(), |ui| {
             ui.add_enabled_ui(enabled, |ui| {
-                if delay_row(ui, "Global (ms)", &mut m.global_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::TIMER,
+                    "Global",
+                    "Pause after every action (ms).",
+                    &mut m.global_delay,
+                ) {
                     out.persist = true;
                 }
-                if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::KEYBOARD,
+                    "Keyboard",
+                    "Extra pause after keyboard actions (ms).",
+                    &mut m.keyboard_delay,
+                ) {
                     out.persist = true;
                 }
-                if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::MOUSE,
+                    "Mouse",
+                    "Extra pause after mouse actions (ms).",
+                    &mut m.mouse_delay,
+                ) {
                     out.persist = true;
                 }
             });
@@ -300,18 +318,12 @@ impl MacroMetaUi {
     }
 }
 
-fn delay_row(ui: &mut egui::Ui, label: &str, value: &mut i32) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let resp = ui.add(
-            crate::widgets::num_entry(value)
-                .range(DELAY_MIN..=DELAY_MAX)
-                .speed(1),
-        );
-        changed = resp.changed();
+fn delay_row(ui: &mut egui::Ui, icon: &str, name: &str, tip: &str, value: &mut i32) -> bool {
+    let before = *value;
+    crate::widgets::drag_field(ui, icon, name, tip, value, |d| {
+        d.range(DELAY_MIN..=DELAY_MAX).speed(1).suffix(" ms")
     });
-    changed
+    *value != before
 }
 
 fn format_delay_tooltip(m: &Macro) -> String {
