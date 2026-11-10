@@ -1,7 +1,8 @@
 //! Add Action picker dialog.
 //!
-//! Hover a tile ~1s for a **view** tip of that type’s defaults; right-click opens
-//! **edit** (persisted in user settings). Left-click inserts a clone into the tree.
+//! Hover a tile ~1s for a **view** tip of that type’s defaults. Pencil (or
+//! right-click a tile) opens **edit** (persisted in user settings). Left-click
+//! inserts a clone into the tree.
 
 use crate::action_tooltip::{
     apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
@@ -28,9 +29,12 @@ use web_time::{Duration, Instant};
 /// How long a tile must be hovered before the defaults **view** tip opens.
 const DEFAULTS_HOVER_DELAY: Duration = Duration::from_secs(1);
 
-/// Picker chrome hint — discoverability for the delayed defaults preview.
-/// Keep in sync with [`DEFAULTS_HOVER_DELAY`] (asserted in tests).
-const HOVER_DELAY_HINT: &str = "Hover ~1s to preview defaults · Right-click to edit";
+/// Tip for the hover-preview help glyph. Keep in sync with [`DEFAULTS_HOVER_DELAY`].
+const HOVER_DELAY_HINT: &str = "Hover a tile ~1s to preview its defaults";
+
+/// Tip / AccessKit name for the Edit-defaults chrome control.
+const EDIT_DEFAULTS_TIP: &str =
+    "Edit the selected action's default fields (also right-click a tile)";
 
 /// Modal state for the blank-action picker grid.
 #[derive(Debug, Default)]
@@ -234,7 +238,7 @@ impl AddActionPicker {
         let mut dismiss = false;
         let editing = self.tip.as_ref().is_some_and(|t| t.is_editing());
 
-        crate::widgets::fit_dialog_window(
+        crate::widgets::fit_dialog_popup(
             egui::Window::new("Add Action")
                 .open(&mut open)
                 .collapsible(false)
@@ -246,122 +250,146 @@ impl AddActionPicker {
             tip.pending_scale,
         )
         .show(ctx, |ui| {
-            let focus_id = egui::Id::new("Add Action");
-            let nav = if !editing {
-                pickers::poll_list_nav(ui)
-            } else {
-                pickers::ListNavAction::None
-            };
-            if nav == pickers::ListNavAction::Cancel {
-                dismiss = true;
-                return;
-            }
-
-            let is_dark = ui.visuals().dark_mode;
-            let templates = action_templates();
-            let q = self.filter.trim().to_ascii_lowercase();
-            let filtered: Vec<&ActionTemplate> = templates
-                .iter()
-                .filter(|t| {
-                    if q.is_empty() {
-                        return true;
-                    }
-                    let label = action_type_label(t.action_type).to_ascii_lowercase();
-                    pickers::fuzzy_match_fold(&q, t.action_type)
-                        || pickers::fuzzy_match_fold(&q, &label)
-                })
-                .collect();
-            let ordered = ordered_action_templates(&filtered, self.sort);
-            if pickers::apply_list_nav(&mut self.selected, ordered.len(), nav) {
-                if let Some(t) = ordered.get(self.selected) {
-                    picked = self.create_action(t.action_type);
-                }
-            }
-
-            let search_out = crate::widgets::search_field(
-                ui,
-                &mut self.filter,
-                crate::widgets::SearchFieldOpts {
-                    hint: "Search actions…",
-                    focus_id: Some(focus_id),
-                    clearable: false,
-                    stable_id: None,
-                    trailing: None,
-                },
-            );
-            // One shot per open. Requesting again every frame interrupts IME.
-            if self.focus_search {
-                search_out.response.request_focus();
-                self.focus_search = false;
-            }
-            if search_out.changed {
-                self.selected = 0;
-            }
-            ui.horizontal_wrapped(|ui| {
-                ui.weak(HOVER_DELAY_HINT);
-                crate::widgets::combo_enum(
-                    ui,
-                    egui_phosphor::regular::SORT_ASCENDING,
-                    "Sort",
-                    "Order of tiles in this picker.",
-                    &mut self.sort,
-                    ActionPickerSort::ALL,
-                    ActionPickerSort::label,
-                );
-            });
-            crate::widgets::section_separator(ui);
-
-            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-            let list_w = crate::widgets::visible_width(ui);
-            crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
-                // Bound to the viewport so rows wrap instead of clipping off-screen.
-                ui.set_max_width(list_w);
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                if ordered.is_empty() {
-                    crate::widgets::list_vacancy(ui, &q, 0, "actions");
+            crate::widgets::fill_resize_body(ui, |ui| {
+                let focus_id = egui::Id::new("Add Action");
+                let nav = if !editing {
+                    pickers::poll_list_nav(ui)
+                } else {
+                    pickers::ListNavAction::None
+                };
+                if nav == pickers::ListNavAction::Cancel {
+                    dismiss = true;
                     return;
                 }
-                // Uniform tile width: wrapped rows land as an aligned grid
-                // instead of ragged content-sized chips.
-                let font = egui::TextStyle::Small.resolve(ui.style());
-                let icon_side = crate::widgets::action_icon_side(font.size);
-                let lead = icon_side + font.size * 0.5;
-                let tile_w = ordered
+
+                let is_dark = ui.visuals().dark_mode;
+                let templates = action_templates();
+                let q = self.filter.trim().to_ascii_lowercase();
+                let filtered: Vec<&ActionTemplate> = templates
                     .iter()
-                    .map(|t| {
-                        ui.painter()
-                            .layout_no_wrap(t.label.to_string(), font.clone(), Color32::WHITE)
-                            .size()
-                            .x
-                    })
-                    .fold(0.0f32, f32::max)
-                    + lead
-                    + PICKER_TILE_PAD_X * 2.0;
-                ui.horizontal_wrapped(|ui| {
-                    for (flat_i, tmpl) in ordered.iter().enumerate() {
-                        let selected = flat_i == self.selected;
-                        let sample = self
-                            .prototype_for(tmpl.action_type)
-                            .unwrap_or_else(|| tmpl.create());
-                        let resp = picker_tile(ui, tmpl, &sample, is_dark, tile_w);
-                        if selected {
-                            ui.painter().rect_stroke(
-                                resp.rect.expand(2.0),
-                                4.0,
-                                egui::Stroke::new(1.5, crate::theme::accent()),
-                                egui::StrokeKind::Outside,
-                            );
+                    .filter(|t| {
+                        if q.is_empty() {
+                            return true;
                         }
-                        if resp.secondary_clicked() {
-                            edit_request =
-                                Some((tmpl.action_type.to_string(), resp.rect.right_top()));
-                        } else if resp.clicked() {
-                            picked = self.create_action(tmpl.action_type);
-                        } else if resp.hovered() {
-                            hover_type =
-                                Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                        let label = action_type_label(t.action_type).to_ascii_lowercase();
+                        pickers::fuzzy_match_fold(&q, t.action_type)
+                            || pickers::fuzzy_match_fold(&q, &label)
+                    })
+                    .collect();
+                let ordered = ordered_action_templates(&filtered, self.sort);
+                if pickers::apply_list_nav(&mut self.selected, ordered.len(), nav) {
+                    if let Some(t) = ordered.get(self.selected) {
+                        picked = self.create_action(t.action_type);
+                    }
+                }
+
+                let search_out = crate::widgets::search_field(
+                    ui,
+                    &mut self.filter,
+                    crate::widgets::SearchFieldOpts {
+                        hint: "Search actions…",
+                        focus_id: Some(focus_id),
+                        clearable: false,
+                        stable_id: None,
+                        trailing: None,
+                    },
+                );
+                // One shot per open. Requesting again every frame interrupts IME.
+                if self.focus_search {
+                    search_out.response.request_focus();
+                    self.focus_search = false;
+                }
+                if search_out.changed {
+                    self.selected = 0;
+                }
+                ui.horizontal_wrapped(|ui| {
+                    crate::widgets::icon_button(
+                        ui,
+                        egui_phosphor::regular::QUESTION,
+                        HOVER_DELAY_HINT,
+                    );
+                    let edit_enabled = !ordered.is_empty() && !editing;
+                    if ui
+                        .add_enabled(
+                            edit_enabled,
+                            crate::widgets::IconButton::new(
+                                egui_phosphor::regular::PENCIL_SIMPLE,
+                                EDIT_DEFAULTS_TIP,
+                                None,
+                            ),
+                        )
+                        .clicked()
+                    {
+                        if let Some(t) = ordered.get(self.selected) {
+                            // Anchor near the dialog center-right; exact tile rect is unknown here.
+                            let anchor = ui.max_rect().right_top();
+                            edit_request = Some((t.action_type.to_string(), anchor));
                         }
                     }
+                    crate::widgets::combo_enum(
+                        ui,
+                        egui_phosphor::regular::SORT_ASCENDING,
+                        "Sort",
+                        "Order of tiles in this picker.",
+                        &mut self.sort,
+                        ActionPickerSort::ALL,
+                        ActionPickerSort::label,
+                    );
+                });
+                crate::widgets::section_separator(ui);
+
+                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+                let list_w = crate::widgets::visible_width(ui);
+                crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
+                    // Bound to the viewport so rows wrap instead of clipping off-screen.
+                    ui.set_max_width(list_w);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    if ordered.is_empty() {
+                        crate::widgets::list_vacancy(ui, &q, 0, "actions");
+                        return;
+                    }
+                    // Uniform tile width: wrapped rows land as an aligned grid
+                    // instead of ragged content-sized chips.
+                    let font = egui::TextStyle::Small.resolve(ui.style());
+                    let icon_side = crate::widgets::action_icon_side(font.size);
+                    let lead = icon_side + font.size * 0.5;
+                    let tile_w = ordered
+                        .iter()
+                        .map(|t| {
+                            ui.painter()
+                                .layout_no_wrap(t.label.to_string(), font.clone(), Color32::WHITE)
+                                .size()
+                                .x
+                        })
+                        .fold(0.0f32, f32::max)
+                        + lead
+                        + PICKER_TILE_PAD_X * 2.0;
+                    ui.horizontal_wrapped(|ui| {
+                        for (flat_i, tmpl) in ordered.iter().enumerate() {
+                            let selected = flat_i == self.selected;
+                            let sample = self
+                                .prototype_for(tmpl.action_type)
+                                .unwrap_or_else(|| tmpl.create());
+                            let resp = picker_tile(ui, tmpl, &sample, is_dark, tile_w);
+                            if selected {
+                                ui.painter().rect_stroke(
+                                    resp.rect.expand(2.0),
+                                    4.0,
+                                    egui::Stroke::new(1.5, crate::theme::accent()),
+                                    egui::StrokeKind::Outside,
+                                );
+                            }
+                            if resp.secondary_clicked() {
+                                edit_request =
+                                    Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                            } else if resp.clicked() {
+                                picked = self.create_action(tmpl.action_type);
+                            } else if resp.hovered() {
+                                hover_type =
+                                    Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                            }
+                        }
+                    });
                 });
             });
         });
@@ -545,7 +573,7 @@ impl AddActionPicker {
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
         let edit_id = default_edit_id(&type_key);
-        crate::widgets::fit_dialog_window(
+        crate::widgets::fit_dialog_popup(
             egui::Window::new(format!("Default: {label}"))
                 .open(&mut open)
                 .title_bar(true)
@@ -559,42 +587,44 @@ impl AddActionPicker {
             *pending_scale,
         )
         .show(ctx, |ui| {
-            match paint_action_edit_header(
-                ui,
-                label,
-                pastel,
-                Some("New actions of this type start with these values"),
-                err_msg.as_deref(),
-                save_enabled,
-                false,
-            ) {
-                SaveCancel::Cancel => cancel = true,
-                SaveCancel::Save => save = true,
-                SaveCancel::None => {}
-            }
-            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-            let list_w = crate::widgets::visible_width(ui);
-            crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
-                ui.set_max_width(list_w);
-                if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
-                    let mut fields = EditFieldsCtx {
-                        paint: CatalogPaint {
-                            catalog: paint.catalog,
-                            icons: paint.icons,
-                            previews: paint.previews,
-                        },
-                        bridges: RecordBridges {
-                            key_record: bridges.key_record,
-                            hotkey_record: bridges.hotkey_record,
-                            macro_hotkeys: bridges.macro_hotkeys,
-                            screen_click: bridges.screen_click,
-                        },
-                        theme: *theme,
-                        macros,
-                        active_macro: None,
-                    };
-                    paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
+            crate::widgets::fill_resize_body(ui, |ui| {
+                match paint_action_edit_header(
+                    ui,
+                    label,
+                    pastel,
+                    Some("New actions of this type start with these values"),
+                    err_msg.as_deref(),
+                    save_enabled,
+                    false,
+                ) {
+                    SaveCancel::Cancel => cancel = true,
+                    SaveCancel::Save => save = true,
+                    SaveCancel::None => {}
                 }
+                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+                let list_w = crate::widgets::visible_width(ui);
+                crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
+                    ui.set_max_width(list_w);
+                    if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                        let mut fields = EditFieldsCtx {
+                            paint: CatalogPaint {
+                                catalog: paint.catalog,
+                                icons: paint.icons,
+                                previews: paint.previews,
+                            },
+                            bridges: RecordBridges {
+                                key_record: bridges.key_record,
+                                hotkey_record: bridges.hotkey_record,
+                                macro_hotkeys: bridges.macro_hotkeys,
+                                screen_click: bridges.screen_click,
+                            },
+                            theme: *theme,
+                            macros,
+                            active_macro: None,
+                        };
+                        paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
+                    }
+                });
             });
         });
 
@@ -730,9 +760,11 @@ mod tests {
             hint.contains("preview"),
             "hint must mention defaults preview"
         );
+        let edit = EDIT_DEFAULTS_TIP.to_ascii_lowercase();
+        assert!(edit.contains("edit"), "edit tip must name the action");
         assert!(
-            hint.contains("right-click"),
-            "hint must mention right-click edit"
+            edit.contains("right-click"),
+            "edit tip must mention right-click secondary path"
         );
     }
 
