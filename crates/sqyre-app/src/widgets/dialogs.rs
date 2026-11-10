@@ -30,34 +30,52 @@ pub struct ViewportScaleEvent {
     pub new_content: egui::Rect,
 }
 
+fn viewport_size_changed(a: egui::Rect, b: egui::Rect) -> bool {
+    (a.width() - b.width()).abs() > VIEWPORT_SIZE_EPSILON
+        || (a.height() - b.height()).abs() > VIEWPORT_SIZE_EPSILON
+}
+
 /// Track OS window size; set [`ViewportScaleEvent`] for one frame when it changes.
 ///
-/// Steady-state (size unchanged): clear any stale pending event and return — no
-/// allocations, no layer scans.
+/// Steady-state (size unchanged): clear any stale pending event and return.
+///
+/// While the primary button is held (client-side `BeginResize` after OS title
+/// bar is off), suppress mid-drag scale events and keep the pre-resize origin
+/// so open floaters are not relayout'd on every configure. The coalesced event
+/// fires on the first size delta after release. WM-driven size changes without
+/// a held click (tiling, maximize, harness zoom) still emit immediately.
 pub fn sync_viewport_window_scale(
     ctx: &egui::Context,
     last_content: &mut Option<egui::Rect>,
     pending: &mut Option<ViewportScaleEvent>,
 ) {
     let content = ctx.content_rect();
-    let Some(prev) = *last_content else {
+    let Some(applied) = *last_content else {
         *last_content = Some(content);
         *pending = None;
         return;
     };
-    let dw = (content.width() - prev.width()).abs();
-    let dh = (content.height() - prev.height()).abs();
-    if dw <= VIEWPORT_SIZE_EPSILON && dh <= VIEWPORT_SIZE_EPSILON {
+
+    if !viewport_size_changed(content, applied) {
         *pending = None;
         return;
     }
-    if prev.width() <= 1.0 || prev.height() <= 1.0 {
+
+    if applied.width() <= 1.0 || applied.height() <= 1.0 {
         *last_content = Some(content);
         *pending = None;
         return;
     }
+
+    // BeginResize keeps primary_down true for the whole gesture; CSD/WM
+    // resizes that never pressed inside the egui surface are unaffected.
+    if ctx.input(|i| i.pointer.primary_down()) {
+        *pending = None;
+        return;
+    }
+
     *pending = Some(ViewportScaleEvent {
-        old_content: prev,
+        old_content: applied,
         new_content: content,
     });
     *last_content = Some(content);
@@ -752,5 +770,107 @@ mod tests {
         assert_eq!(FLOATER_MIN_PICKER, [400.0, 280.0]);
         assert_eq!(FLOATER_MIN_PALETTE, [400.0, 200.0]);
         assert_eq!(FLOATER_MIN_EDITOR, [520.0, 280.0]);
+    }
+
+    fn screen(w: f32, h: f32) -> RawInput {
+        RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(w, h),
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn screen_with_primary_down(w: f32, h: f32) -> RawInput {
+        let mut input = screen(w, h);
+        input.events.push(Event::PointerButton {
+            pos: egui::pos2(w * 0.5, h * 0.5),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        input
+    }
+
+    /// Client-side BeginResize (primary held) must not emit a scale event every
+    /// configure — only once after release, from the pre-drag origin.
+    #[test]
+    fn viewport_scale_coalesces_while_primary_held() {
+        let ctx = egui::Context::default();
+        let mut last = None;
+        let mut pending = None;
+
+        ctx.run_ui(screen(800.0, 600.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        assert!(pending.is_none(), "first frame only seeds origin");
+        let origin = last.expect("origin seeded");
+
+        for (w, h) in [(780.0, 590.0), (760.0, 580.0), (740.0, 570.0)] {
+            ctx.run_ui(screen_with_primary_down(w, h), |ui| {
+                assert!(
+                    ui.input(|i| i.pointer.primary_down()),
+                    "test setup must hold primary"
+                );
+                sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+            })
+            .drop_without_applying_deltas();
+            assert!(
+                pending.is_none(),
+                "mid-drag frame must not scale floaters ({w}x{h})"
+            );
+            assert_eq!(last, Some(origin), "applied origin stays put mid-drag");
+        }
+
+        let mut release = screen(740.0, 570.0);
+        release.events.push(Event::PointerButton {
+            pos: egui::pos2(370.0, 285.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        ctx.run_ui(release, |ui| {
+            assert!(
+                !ui.input(|i| i.pointer.primary_down()),
+                "release frame must clear primary_down"
+            );
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        let event = pending.expect("release emits one scale event");
+        assert_eq!(event.old_content, origin);
+        assert!(
+            (event.new_content.width() - 740.0).abs() < 0.5
+                && (event.new_content.height() - 570.0).abs() < 0.5,
+            "new_content should be the post-drag size, got {:?}",
+            event.new_content
+        );
+        assert_eq!(last.map(|r| (r.width(), r.height())), Some((740.0, 570.0)));
+    }
+
+    /// Size changes without a held click (tiling / harness zoom) still emit
+    /// immediately so dialogs track the viewport without an extra settle frame.
+    #[test]
+    fn viewport_scale_emits_immediately_without_pointer() {
+        let ctx = egui::Context::default();
+        let mut last = None;
+        let mut pending = None;
+
+        ctx.run_ui(screen(800.0, 600.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(screen(640.0, 480.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        let event = pending.expect("pointer-up size change emits immediately");
+        assert!(
+            (event.old_content.width() - 800.0).abs() < 0.5
+                && (event.new_content.width() - 640.0).abs() < 0.5
+        );
     }
 }

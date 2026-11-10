@@ -1006,6 +1006,16 @@ impl eframe::App for SqyreApp {
         {
             let _ = (ctx, frame);
         }
+        // Earliest chance to hand the pointer serial to xdg_toplevel.resize —
+        // before tray/hotkey work and before any paint. Late BeginResize is what
+        // made the window lurch, then sit still, then catch up.
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.settings_ui.settings().window_decorations {
+            window_frame::poll_borderless_resize_start(ctx);
+            if window_frame::is_borderless_resize_active() {
+                return;
+            }
+        }
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         crate::mem_diag::tick(ctx);
         #[cfg(not(target_arch = "wasm32"))]
@@ -1091,6 +1101,26 @@ impl eframe::App for SqyreApp {
             ui.ctx()
                 .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let borderless = !self.settings_ui.settings().window_decorations;
+        #[cfg(not(target_arch = "wasm32"))]
+        let resizing = borderless && window_frame::is_borderless_resize_active();
+        #[cfg(target_arch = "wasm32")]
+        let resizing = false;
+
+        // Live client-side resize: solid opaque fill only. Relaying out panels /
+        // floaters on every configure makes the chrome slide and hitch before
+        // the next buffer lands — the compositor already moves the window;
+        // we just need a cheap opaque present until the pointer is released.
+        if resizing {
+            ui.painter()
+                .rect_filled(ui.ctx().viewport_rect(), 0.0, ui.visuals().panel_fill);
+            #[cfg(not(target_arch = "wasm32"))]
+            window_frame::handle_borderless_resize(ui.ctx());
+            return;
+        }
+
         // Re-fit spacing when the viewport crosses the auto-compact threshold.
         SettingsUi::sync_density(ui.ctx(), self.settings_ui.settings());
         self.take_pending_db_import();
@@ -1114,6 +1144,7 @@ impl eframe::App for SqyreApp {
         if self.tray.application_hidden() {
             return;
         }
+
         action_tooltip::claim_view_tip_scroll(ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
 
@@ -1142,7 +1173,7 @@ impl eframe::App for SqyreApp {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        if !self.settings_ui.settings().window_decorations {
+        if borderless {
             window_frame::handle_borderless_resize(ui.ctx());
         }
 
@@ -1161,15 +1192,21 @@ impl eframe::App for SqyreApp {
     /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
     /// don't paint eframe's default dark plate behind the gold chrome.
     ///
-    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
-    /// panic/blank frame from looking like the page body color bleeding through.
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+    /// During a client-side borderless resize the clear is opaque panel fill —
+    /// a transparent clear + wgpu surface recreate flashes the desktop each
+    /// configure. On wasm there are no transparent OS overlay windows — an
+    /// opaque clear keeps a panic/blank frame from looking like the page body
+    /// color bleeding through.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = visuals;
             egui::Rgba::from(crate::theme::window_clear_color()).to_array()
         }
         #[cfg(not(target_arch = "wasm32"))]
-        {
+        if window_frame::is_borderless_resize_active() {
+            egui::Rgba::from(visuals.panel_fill).to_array()
+        } else {
             [0.0, 0.0, 0.0, 0.0]
         }
     }
