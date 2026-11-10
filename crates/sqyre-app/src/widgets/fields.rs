@@ -145,7 +145,7 @@ pub fn num_text_field_opts(
 ) {
     super::pair_labeled(ui, icon, label, |ui| {
         help::tip(
-            num_text_edit(ui, value, opts.width, opts.range.clone()),
+            crate::widgets::num_text_edit(ui, value, opts.width, opts.range.clone()),
             help_text,
         );
     });
@@ -584,6 +584,55 @@ pub struct SearchableComboOpts<'a> {
     pub option_label: Option<&'a mut ComboOptionLabel<'a>>,
 }
 
+/// Labeled [`searchable_combo`]: icon pair, hover tip, optional trailing control.
+///
+/// Writes `value` in place. Returns whether the selection changed.
+/// `trailing` is the add button on atlas membership; omit when unused.
+///
+/// [`super::wrap_unit`] may probe the pair body before painting it, so `opts`
+/// is rebuilt each call (callbacks re-borrowed) and `id_salt` must be `Copy`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "label chrome + SearchableComboOpts + optional trailing slot"
+)]
+pub fn labeled_searchable_combo(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    help_text: &str,
+    id_salt: impl Hash + std::fmt::Debug + Copy,
+    value: &mut String,
+    opts: SearchableComboOpts<'_>,
+    mut trailing: Option<&mut dyn FnMut(&mut egui::Ui)>,
+) -> bool {
+    let before = value.clone();
+    let mut opts = Some(opts);
+    super::pair_labeled(ui, icon, label, |ui| {
+        // wrap_unit probes with an invisible child before the real paint. Keep
+        // callback slots for the visible pass; the probe only needs sizing.
+        let pass = if !ui.is_visible() {
+            let o = opts.as_ref().expect("labeled_searchable_combo opts");
+            SearchableComboOpts {
+                options: o.options,
+                empty_text: o.empty_text,
+                none_label: o.none_label,
+                width: o.width,
+                on_option_hover: None,
+                option_icon: None,
+                closed_icon: o.closed_icon,
+                option_label: None,
+            }
+        } else {
+            opts.take().expect("labeled_searchable_combo visible pass")
+        };
+        help::tip(searchable_combo(ui, id_salt, value, pass), help_text);
+        if let Some(slot) = trailing.as_mut() {
+            slot(ui);
+        }
+    });
+    *value != before
+}
+
 /// Searchable combo for unbounded / growing option lists (programs, masks, macros, …).
 ///
 /// Uses fuzzy subsequence matching. Returns the combo button response;
@@ -886,7 +935,7 @@ mod tests {
             .with_size([200.0, 60.0])
             .build_ui_state(
                 |ui, v: &mut String| {
-                    num_text_edit(ui, v, 80.0, 1..=9);
+                    crate::widgets::num_text_edit(ui, v, 80.0, 1..=9);
                 },
                 "8".to_owned(),
             );
@@ -1084,7 +1133,7 @@ mod tests {
                 .with_size([200.0, 60.0])
                 .build_ui_state(
                     |ui, v: &mut String| {
-                        num_text_edit(ui, v, 80.0, 1..=9);
+                        crate::widgets::num_text_edit(ui, v, 80.0, 1..=9);
                     },
                     value.to_owned(),
                 );
