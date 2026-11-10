@@ -207,6 +207,8 @@ impl SqyreApp {
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             permissions_intro: None,
         };
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        app.settings_ui.suppress_permission_probe_for_docs();
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);
         }

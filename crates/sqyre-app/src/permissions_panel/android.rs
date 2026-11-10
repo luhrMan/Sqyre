@@ -71,6 +71,9 @@ pub struct PermissionsPanel {
 }
 
 impl PermissionsPanel {
+    /// No-op on Android (docs harnesses are desktop-only).
+    pub fn suppress_for_docs(&mut self) {}
+
     /// Keeps [`Self::has_missing`] current while Settings is closed.
     pub fn tick(&mut self, _ctx: &egui::Context) {
         self.refresh_system_rows(false);

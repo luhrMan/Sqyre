@@ -205,6 +205,12 @@ impl SettingsUi {
         self.permissions.tick(ctx);
     }
 
+    /// Docs / kittest: skip the background permission probe so harness frames settle.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub fn suppress_permission_probe_for_docs(&mut self) {
+        self.permissions.suppress_for_docs();
+    }
+
     /// At least one permission in Settings → Permissions needs the user's action.
     pub fn permissions_missing(&self) -> bool {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -537,7 +543,7 @@ impl SettingsUi {
         }
 
         let search_focused = crate::widgets::show_overflow(ui, "settings_search", 1.0, |ui| {
-            // Pinned id so focus survives the Clear ✕ appearing and disappearing.
+            // Pinned id so focus survives the clear eraser appearing and disappearing.
             let out = crate::widgets::search_field(
                 ui,
                 &mut self.search,
