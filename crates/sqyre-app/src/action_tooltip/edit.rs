@@ -342,7 +342,7 @@ pub fn paint_edit_fields(
                             );
                         },
                         |ui| {
-                            if pick_icon_btn(ui, crate::model_icons::WINDOW).clicked() {
+                            if pick_icon_btn(ui).clicked() {
                                 pick = true;
                             }
                         },
@@ -816,7 +816,7 @@ fn targets_editor(
                 );
             }
         });
-        if crate::widgets::icon_button(ui, crate::model_icons::ITEM, h::IS_ITEMS).clicked() {
+        if crate::widgets::pick_icon_button(ui, h::IS_ITEMS).clicked() {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -1003,8 +1003,8 @@ fn item_tag_suggestions(
     tags
 }
 
-fn pick_icon_btn(ui: &mut egui::Ui, icon: &str) -> egui::Response {
-    crate::widgets::icon_button(ui, icon, "Pick…")
+fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
+    crate::widgets::pick_icon_button(ui, "Pick…")
 }
 
 /// Soft-wrap row count for a process path in the Focus Window tip.
@@ -1034,7 +1034,7 @@ fn picker_display_row(
             }),
             help_text,
         );
-        if pick_icon_btn(ui, icon).clicked() {
+        if pick_icon_btn(ui).clicked() {
             clicked = true;
         }
     });
@@ -1167,7 +1167,7 @@ fn coord_picker_row(
             help::tip(resp, help_text);
         }
         var_pills::paint_entry_validation_icon(ui, &validation);
-        if pick_icon_btn(ui, icon).clicked() {
+        if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
                 search: String::new(),
@@ -1659,7 +1659,7 @@ fn coords_editor(
 ) {
     var_pills::var_name_text_edit(
         ui,
-        egui_phosphor::regular::CROSSHAIR,
+        egui_phosphor::regular::ARROWS_HORIZONTAL,
         "Output X",
         &mut coords.output_x_variable,
         known_vars,
@@ -1669,7 +1669,7 @@ fn coords_editor(
     );
     var_pills::var_name_text_edit(
         ui,
-        egui_phosphor::regular::CROSSHAIR,
+        egui_phosphor::regular::ARROWS_VERTICAL,
         "Output Y",
         &mut coords.output_y_variable,
         known_vars,

@@ -290,14 +290,14 @@ impl DataEditor {
                     };
                 numeric(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "Center X %",
                     &mut self.form_center_x,
                     "Horizontal center of the shape (0–100%).",
                 );
                 numeric(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_VERTICAL,
                     "Center Y %",
                     &mut self.form_center_y,
                     "Vertical center of the shape (0–100%).",
