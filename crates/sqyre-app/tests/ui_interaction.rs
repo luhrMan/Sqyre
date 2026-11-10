@@ -92,32 +92,29 @@ fn new_macro_button_adds_macro() {
     );
 }
 
-/// Top-bar chrome shares the tag-row plane: Data Editor / Settings under the
-/// brand, macro-list toggle on the right at the same height — not a second
-/// full-width strip below the header.
+/// Top-bar chrome floats onto the lower name/tag band under the brand (list
+/// toggle on the right) — not a third strip below the chips.
 #[test]
 fn top_bar_chrome_row_under_brand() {
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.open_macro_list_for_docs();
     });
-    harness.run();
+    // Settle stack-height memory so the chip band exists before we measure.
+    harness.run_steps(4);
 
     let brand = harness.get_by_label("Sqyre").rect();
     let data_editor = harness.get_by_label("Data Editor").rect();
     let settings = harness.get_by_label("Settings").rect();
     let list_toggle = harness.get_by_label("Hide macro list").rect();
-    let bar_h =
+    let bar_rect =
         egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
-            .map(|s| s.outer_rect.height())
-            .unwrap_or(0.0);
+            .map(|s| s.outer_rect)
+            .unwrap_or(egui::Rect::NOTHING);
+    let bar_h = bar_rect.height();
 
     assert!(
-        data_editor.top() > brand.bottom() - 2.0,
+        data_editor.top() > brand.center().y,
         "Data Editor should sit under the brand (brand={brand:?}, data={data_editor:?})"
-    );
-    assert!(
-        settings.top() > brand.bottom() - 2.0,
-        "Settings should sit under the brand (brand={brand:?}, settings={settings:?})"
     );
     let chrome_mid_y = (data_editor.center().y + settings.center().y) * 0.5;
     assert!(
@@ -128,11 +125,19 @@ fn top_bar_chrome_row_under_brand() {
         list_toggle.left() > settings.right(),
         "macro-list toggle should be on the right of the chrome row"
     );
-    // Brand + chrome share one header with the name/tag stack — not brand
-    // height plus a second full chrome strip.
+    // Chrome must sit inside the bar's lower half (chip band), not hang below
+    // the bar as a third strip.
     assert!(
-        bar_h < brand.height() + data_editor.height() * 2.5,
-        "chrome should not add a full extra strip (bar_h={bar_h}, brand={brand:?}, data={data_editor:?})"
+        data_editor.bottom() <= bar_rect.bottom() + 1.0,
+        "chrome should stay inside the top bar (data={data_editor:?}, bar={bar_rect:?})"
+    );
+    assert!(
+        chrome_mid_y > bar_rect.top() + bar_h * 0.35,
+        "chrome should sit on the lower tag band (chrome_y={chrome_mid_y}, bar={bar_rect:?})"
+    );
+    assert!(
+        bar_h < brand.height() + data_editor.height() * 2.4,
+        "chrome should not add a third strip (bar_h={bar_h}, brand={brand:?}, data={data_editor:?})"
     );
 
     // Click each chrome control from a clean top bar (open dialogs steal
