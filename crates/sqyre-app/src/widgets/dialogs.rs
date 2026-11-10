@@ -20,12 +20,6 @@ pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
 pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
 /// Command palette floor.
 pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
-/// Space reserved below a scroll for a laid-out footer (status, tag filters).
-/// Floating Save chips use [`crate::widgets::float_bottom_right`] with no reserve —
-/// prefer [`crate::widgets::footer_reserve_action`] only when content must clear
-/// a painted chip and cannot fill under it.
-pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
-
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
 /// Floating dialogs apply this via [`fit_dialog_popup`] so
@@ -118,15 +112,6 @@ fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egu
     window.constrain_to(rect).max_size(rect.size())
 }
 
-/// egui's default title frame inherits `window_margin` (6pt) on every side,
-/// which inflates the bar well past the Heading row it already has to hold.
-/// Dialogs get a slim bar: horizontal margins match the window, vertical 2pt.
-/// Applies to every `fit_dialog_*` window; ignored where `title_bar` is false.
-fn compact_title_frame(style: &egui::Style) -> egui::Frame {
-    let m = style.spacing.window_margin;
-    egui::Frame::window(style).inner_margin(egui::Margin::symmetric(m.left, 2))
-}
-
 fn fit_dialog_common<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -135,7 +120,10 @@ fn fit_dialog_common<'a>(
 ) -> egui::Window<'a> {
     let window = window.id(id);
     let window = apply_dialog_bounds(window, ctx);
-    let window = window.title_frame(compact_title_frame(ctx.global_style().as_ref()));
+    // Title chrome SSOT lives next to `popup_frame` / `chrome_inner_margin`.
+    let window = window.title_frame(crate::theme::compact_title_frame(
+        ctx.global_style().as_ref(),
+    ));
     match pending_scale {
         Some(pending) => apply_pending_viewport_scale(window, ctx, id, pending),
         None => window,
