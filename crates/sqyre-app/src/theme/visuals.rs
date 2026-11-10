@@ -99,6 +99,16 @@ pub fn popup_frame_ctx(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::popup(ctx.global_style().as_ref()).inner_margin(chrome_inner_margin_ctx(ctx))
 }
 
+/// Slim window title bar for [`crate::widgets::fit_dialog_popup`].
+///
+/// egui's default title frame inherits `window_margin` on every side, which
+/// inflates the bar past the Heading row. Horizontal margins stay matched to
+/// the window; vertical uses [`SPACE_2`].
+pub fn compact_title_frame(style: &egui::Style) -> egui::Frame {
+    let m = style.spacing.window_margin;
+    egui::Frame::window(style).inner_margin(egui::Margin::symmetric(m.left, SPACE_2 as i8))
+}
+
 /// Rounded group frame with a faint Sqyre fill + dim gold stroke.
 ///
 /// Inner margin tracks density element gap, clamped to [`SPACE_2`]…[`SPACE_4`]
@@ -163,6 +173,18 @@ mod tests {
         assert_eq!(style.visuals.window_stroke.color, PRIMARY);
         assert_eq!(inner_stroke().color, accent_dim());
         assert_eq!(panel_split_stroke().color.a(), 0x80);
+    }
+
+    #[test]
+    fn compact_title_frame_is_slim() {
+        let style = egui::Style {
+            visuals: dark_visuals(),
+            ..Default::default()
+        };
+        let title = compact_title_frame(&style);
+        assert_eq!(title.inner_margin.top, SPACE_2 as i8);
+        assert_eq!(title.inner_margin.bottom, SPACE_2 as i8);
+        assert_eq!(title.inner_margin.left, style.spacing.window_margin.left);
     }
 
     #[test]
