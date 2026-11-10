@@ -72,10 +72,12 @@ pub struct PickerScrollOpts<'a> {
 }
 
 impl PickerScrollOpts<'_> {
-    /// Popup list with Save/Cancel (or similar) below the scroll.
+    /// Popup list that fills remaining height; Save floats over the scroll
+    /// via [`crate::widgets::float_bottom_right`] (no reserved footer strip).
+    /// Override [`Self::footer_reserve`] when real content is laid out below.
     pub fn list(_ui: &egui::Ui) -> Self {
         Self {
-            footer_reserve: crate::widgets::FOOTER_RESERVE_ACTION,
+            footer_reserve: 0.0,
             trailing: None,
             below_search: None,
             id_salt: None,
