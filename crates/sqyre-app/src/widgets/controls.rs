@@ -64,10 +64,21 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response 
     icon_button_inner(ui, glyph, tip, None)
 }
 
-/// Browse/open a catalog picker. Always uses [`crate::model_icons::PICK`] —
-/// never the entity glyph (the field label already shows that).
+/// Browse/open a picker when there is **no** entity-kind glyph on the field
+/// (Settings path Choose, section chrome, …). Catalog ref rows use
+/// [`entity_pick_button`] as the leading pair slot instead — never twin a
+/// kind glyph with this trailing browse icon.
 pub fn pick_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     icon_button(ui, crate::model_icons::PICK, tip)
+}
+
+/// Leading affordance for a catalog / entity ref field: the kind glyph **is**
+/// the pick button (extreme minimalism — no trailing [`pick_icon_button`] twin).
+///
+/// `tip` is AccessKit name + hover ("Pick point…", …). Put this in
+/// [`super::pair_leading`] / [`super::pair_icon`]'s leading slot.
+pub fn entity_pick_button(ui: &mut egui::Ui, entity_icon: &str, tip: &str) -> egui::Response {
+    icon_button(ui, entity_icon, tip)
 }
 
 /// Red `✕` — cancel / dismiss / abort (dialog no, close a floater, disarm a
