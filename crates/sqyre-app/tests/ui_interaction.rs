@@ -695,10 +695,13 @@ fn data_editor_scope_all_programs_restores_group_headers() {
 }
 
 /// All-programs expand/collapse-all must open groups when collapsed and close
-/// them when expanded (and flip its tip/glyph with that state).
+/// them when expanded (and flip its tip/glyph with that state). The toggle
+/// trails the header search row — same slot as item/coord pickers.
 #[test]
 fn data_editor_all_programs_expand_collapse_all() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        // Macro list also has Expand/Collapse all — close it so labels stay unique.
+        app.set_macro_list_open_for_docs(false);
         app.open_data_editor_tab_for_docs("points");
     });
     harness.run();
@@ -709,8 +712,15 @@ fn data_editor_all_programs_expand_collapse_all() {
     harness.get_by_label("All programs").click();
     harness.run();
 
+    let search_right = harness.get_by_label("Search Points…").rect().right();
     // Selection scroll opens the demo group, so the toggle starts as Collapse.
-    harness.get_by_label("Collapse all").click();
+    let collapse = harness.get_by_label("Collapse all");
+    assert!(
+        collapse.rect().left() + 1.0 >= search_right,
+        "expand/collapse must trail the search field (collapse={:?}, search_right={search_right})",
+        collapse.rect()
+    );
+    collapse.click();
     harness.run();
     harness.get_by_label("Expand all");
     assert!(
@@ -722,6 +732,50 @@ fn data_editor_all_programs_expand_collapse_all() {
     harness.run();
     harness.get_by_label("Collapse all");
     harness.get_by_label("center");
+}
+
+/// Macro-list expand/collapse-all trails the search bar and toggles every
+/// tag group (same control as item/coord pickers and the Data Editor).
+#[test]
+fn macro_list_expand_collapse_all_trails_search() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+
+    // The search field's AccessKit name is the magnifier ("Search"); place the
+    // toggle relative to the in-pair New macro icon which sits just left of it.
+    let new_macro_right = harness.get_by_label("New macro").rect().right();
+    // Docs macros ship under collapsed tag groups, so the toggle starts Expand.
+    let expand = harness.get_by_label("Expand all");
+    assert!(
+        expand.rect().left() + 1.0 >= new_macro_right,
+        "expand/collapse must trail the search pair (expand={:?}, new_macro_right={new_macro_right})",
+        expand.rect()
+    );
+    assert!(
+        harness.query_by_label("Demo Macro").is_none(),
+        "tag groups start collapsed"
+    );
+
+    expand.click();
+    harness.run();
+    // Tip flips once every tag group is open.
+    harness.get_by_label("Collapse all");
+    // AccessKit labels include the hotkey line under the name.
+    assert!(
+        harness.query_by_label("Quick Pause\nf8").is_some()
+            || harness.query_by_label("Quick Pause").is_some(),
+        "expand-all should reveal macros under tag groups"
+    );
+    harness.get_by_label("Collapse all").click();
+    harness.run();
+    harness.get_by_label("Expand all");
+    assert!(
+        harness.query_by_label("Quick Pause\nf8").is_none()
+            && harness.query_by_label("Quick Pause").is_none(),
+        "collapse-all should hide macros under closed tag groups"
+    );
 }
 
 /// The header search and program selector share one toggle cluster: both
