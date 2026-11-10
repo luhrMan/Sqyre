@@ -479,6 +479,13 @@ impl SqyreApp {
         self.workspace.macro_meta.open_delay_for_docs();
     }
 
+    /// Clear tags on the selected macro (docs / interaction harnesses).
+    pub fn clear_selected_macro_tags_for_docs(&mut self) {
+        if let Some(macro_) = self.workspace.macros.get_mut(self.workspace.selected_macro) {
+            macro_.tags.clear();
+        }
+    }
+
     /// Show the macro list panel (docs / interaction harnesses).
     pub fn open_macro_list_for_docs(&mut self) {
         self.macro_list_open = true;
