@@ -414,7 +414,9 @@ fn right_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(h);
 }
 
-/// Cancel-only footer for record / dismiss-only dialogs.
+/// Cancel-only footer for record / dismiss-only dialogs **without** a title-bar
+/// close control (borderless / viewport chrome). Titled `fit_dialog_popup`
+/// windows use the title-bar ✕ plus Esc instead — do not paint a Cancel twin.
 ///
 /// Right-aligned like [`confirm_cancel_row`] (Cancel at the right edge). When
 /// `esc_dismisses`, Esc is consumed as Cancel (same path as confirms). Pass
