@@ -374,7 +374,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
 
     let id = egui::Id::new("sqyre_projection_run_gate");
     let bounds = crate::widgets::dialog_constrain_rect(ctx);
-    let frame = egui::Frame::popup(&ctx.global_style());
+    let frame = crate::theme::popup_frame_ctx(ctx);
     let margin = frame.total_margin().sum();
     let body_w = (bounds.width() - margin.x).clamp(0.0, 440.0);
     let mut request = false;

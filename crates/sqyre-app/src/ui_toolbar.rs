@@ -562,7 +562,7 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         // key toggle, delay — the same left-to-right order the footer strip had.
         paint_builder_menu(app, ui);
         if app.workspace.macro_meta.hotkey_open {
-            theme::section_frame(ui.style())
+            theme::section_frame(ui)
                 .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));

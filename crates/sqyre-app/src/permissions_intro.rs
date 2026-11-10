@@ -66,7 +66,7 @@ impl PermissionsIntro {
         let mut confirmed = false;
         let id = egui::Id::new("sqyre_permissions_intro");
         let bounds = crate::widgets::dialog_constrain_rect(ctx);
-        let frame = egui::Frame::popup(&ctx.global_style());
+        let frame = crate::theme::popup_frame_ctx(ctx);
         let margin = frame.total_margin().sum();
         let body_w = (bounds.width() - margin.x).clamp(0.0, MAX_BODY_WIDTH);
         let area = egui::Modal::default_area(id)

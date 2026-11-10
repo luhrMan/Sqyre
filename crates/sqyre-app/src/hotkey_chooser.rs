@@ -343,7 +343,7 @@ impl SqyreApp {
         let mut dismiss = false;
         ctx.show_viewport_immediate(id, builder, |ctx, _class| {
             egui::CentralPanel::default()
-                .frame(egui::Frame::popup(ctx.style()).inner_margin(PAD))
+                .frame(crate::theme::popup_frame_ctx(ctx))
                 .show(ctx, |ui| {
                     paint_chooser_body(
                         ui,
