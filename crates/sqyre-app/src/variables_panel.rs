@@ -227,8 +227,8 @@ impl VariablesPanelUi {
                 ("Waiting for variables…", None)
             } else {
                 (
-                    "No runtime snapshot yet",
-                    Some("Run a macro to capture live values."),
+                    "No runtime values yet",
+                    Some("Run a macro to capture them."),
                 )
             };
             let _ = crate::widgets::empty_state(ui, title, body, None, None);
@@ -254,7 +254,8 @@ impl VariablesPanelUi {
                     || value.to_ascii_lowercase().contains(&q)
             })
             .collect();
-        let list_h = (max_h - crate::widgets::FOOTER_RESERVE_ACTION).max(60.0);
+        // No footer chip under this list — fill the pane (A4).
+        let list_h = max_h.max(60.0);
         let list_w = crate::widgets::visible_width(ui);
         let chrome = ui.min_rect().height() - start;
         // Dense name=value rows: Extend so long values H-scroll instead of wrap/clip.
