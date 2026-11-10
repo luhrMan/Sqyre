@@ -285,7 +285,8 @@ pub fn ordered_item_targets(
 }
 
 /// Simple single-key order for Data Editor / catalog item grids.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CatalogItemSort {
     #[default]
     NameAsc,
