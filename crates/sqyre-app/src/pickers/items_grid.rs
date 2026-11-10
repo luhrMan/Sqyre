@@ -38,9 +38,9 @@ pub fn set_collapsing_openness(
     }
 }
 
-/// Expand/collapse-all toggle for program-header lists — one button matching
-/// the macro tree / entity list convention: Expand all while any group is
-/// closed, Collapse all once every group is open.
+/// Expand/collapse-all toggle for grouped model lists — trails the search row
+/// (pickers, Data Editor, macro list). Expand all while any group is closed;
+/// Collapse all once every group is open.
 pub fn collapse_all_button(
     ui: &mut egui::Ui,
     ids: impl IntoIterator<Item = egui::Id>,
@@ -235,14 +235,8 @@ pub fn paint_items_icon_grid(
         let prog_selected = selected_program == Some(prog.as_str());
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = items_icon_grid_collapse_id(prog);
-        let mut state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
         let want_scroll = scroll_to_selected_program.as_ref().is_some_and(|s| **s) && prog_selected;
-        if want_scroll && !state.is_open() {
-            state.set_open(true);
-            state.store(ui.ctx());
-        }
-        state
+        crate::widgets::collapsing_state(ui, id, want_scroll)
             .show_header(ui, |ui| {
                 let resp = crate::icon_cache::paint_program_label(
                     ui,

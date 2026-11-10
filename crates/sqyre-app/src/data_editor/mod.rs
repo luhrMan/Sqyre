@@ -996,9 +996,10 @@ impl DataEditor {
         just_opened
     }
 
-    /// The expanded search pair: query field → scope dropdown → item sort.
-    /// The query is kept (and keeps filtering only while visible) when the
-    /// field hides.
+    /// The expanded search pair: query field → scope → item sort → expand/collapse.
+    /// Expand/collapse-all trails the row when the list is grouped by program
+    /// (All programs), matching item/coord pickers. The query is kept (and
+    /// keeps filtering only while visible) when the field hides.
     fn ui_search_controls(
         &mut self,
         ui: &mut egui::Ui,
@@ -1147,6 +1148,8 @@ impl DataEditor {
                 }
             }
         }
+        // Right end of the search row — same slot pickers use for expand/collapse.
+        self.paint_search_expand_collapse(ui, catalog);
     }
 
     /// Every section's subtab buttons in one row — the subsection buttons are

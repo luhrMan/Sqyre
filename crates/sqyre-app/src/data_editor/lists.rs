@@ -16,6 +16,47 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 impl DataEditor {
+    /// Expand/collapse-all for All-programs entity lists — trailing control on
+    /// the header search row (same placement as item/coord pickers).
+    pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+        let grouped = matches!(self.search_scope, SearchScope::AllPrograms)
+            && self.tab != EditorTab::Programs;
+        if !grouped {
+            return;
+        }
+        let program_names: Vec<String> = editor_program_names(catalog).cloned().collect();
+        if program_names.is_empty() {
+            return;
+        }
+        let tab = self.tab;
+        let ids: Vec<egui::Id> = match tab {
+            EditorTab::Items | EditorTab::PixelCheck => program_names
+                .iter()
+                .map(|n| pickers::items_icon_grid_collapse_id(n))
+                .collect(),
+            _ => program_names
+                .iter()
+                .map(|n| data_editor_list_collapse_id(tab, n))
+                .collect(),
+        };
+        pickers::collapse_all_button(ui, ids.iter().copied(), |ctx, open| match tab {
+            EditorTab::Items | EditorTab::PixelCheck => {
+                pickers::set_items_icon_grid_openness(
+                    ctx,
+                    program_names.iter().map(|n| n.as_str()),
+                    open,
+                );
+            }
+            _ => pickers::set_collapsing_openness(
+                ctx,
+                program_names
+                    .iter()
+                    .map(|n| data_editor_list_collapse_id(tab, n)),
+                open,
+            ),
+        });
+    }
+
     pub(crate) fn draw_left_list(
         &mut self,
         ui: &mut egui::Ui,
@@ -40,13 +81,6 @@ impl DataEditor {
         // programs scope brings back the collapsible program sections.
         let grouped =
             matches!(self.search_scope, SearchScope::AllPrograms) && tab != EditorTab::Programs;
-        // Owned names so the expand/collapse toggle does not borrow `catalog`
-        // across the list body.
-        let program_names_for_collapse: Vec<String> = if grouped {
-            editor_program_names(catalog).cloned().collect()
-        } else {
-            Vec::new()
-        };
         let mut opts = PickerScrollOpts::pane();
         opts.id_salt = Some(id_salt);
         // The query field lives in the window header, not the pane.
@@ -88,39 +122,6 @@ impl DataEditor {
         let running_pending = self.add_running_programs_pending();
         pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
             let mut visible = 0usize;
-            // Expand/collapse-all sits at the top of the list (no row above
-            // the scroll) and only makes sense over program groups.
-            if grouped {
-                // Shared single toggle (macro tree / pickers use the same helper).
-                let ids: Vec<egui::Id> = match tab {
-                    EditorTab::Items | EditorTab::PixelCheck => program_names_for_collapse
-                        .iter()
-                        .map(|n| pickers::items_icon_grid_collapse_id(n))
-                        .collect(),
-                    _ => program_names_for_collapse
-                        .iter()
-                        .map(|n| data_editor_list_collapse_id(tab, n))
-                        .collect(),
-                };
-                if !ids.is_empty() {
-                    pickers::collapse_all_button(ui, ids.iter().copied(), |ctx, open| match tab {
-                        EditorTab::Items | EditorTab::PixelCheck => {
-                            pickers::set_items_icon_grid_openness(
-                                ctx,
-                                program_names_for_collapse.iter().map(|n| n.as_str()),
-                                open,
-                            );
-                        }
-                        _ => pickers::set_collapsing_openness(
-                            ctx,
-                            program_names_for_collapse
-                                .iter()
-                                .map(|n| data_editor_list_collapse_id(tab, n)),
-                            open,
-                        ),
-                    });
-                }
-            }
             let entity = match self.tab {
                 EditorTab::Programs => "programs",
                 EditorTab::Items | EditorTab::PixelCheck => "items",
@@ -972,13 +973,7 @@ fn program_group_section(
     body: impl FnOnce(&mut egui::Ui, &mut IconCache),
 ) {
     let id = data_editor_list_collapse_id(tab, prog);
-    let mut state =
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-    if scroll_to.get() && prog_selected && !state.is_open() {
-        state.set_open(true);
-        state.store(ui.ctx());
-    }
-    state
+    crate::widgets::collapsing_state(ui, id, scroll_to.get() && prog_selected)
         .show_header(ui, |ui| {
             let resp = crate::icon_cache::paint_program_label(
                 ui,

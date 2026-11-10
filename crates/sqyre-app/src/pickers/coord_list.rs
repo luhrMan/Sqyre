@@ -147,14 +147,8 @@ pub fn paint_coord_ref_list(
 
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = coord_list_collapse_id(kind, prog);
-        let mut state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
         // Open the group that holds the current selection so scroll-to can find it.
-        if *scroll_to_selection && contains_selection && !state.is_open() {
-            state.set_open(true);
-            state.store(ui.ctx());
-        }
-        state
+        crate::widgets::collapsing_state(ui, id, *scroll_to_selection && contains_selection)
             .show_header(ui, |ui| {
                 crate::icon_cache::paint_program_label(
                     ui,
