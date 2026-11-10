@@ -266,7 +266,10 @@ impl MacroMetaUi {
 
         let mut close = false;
         // Avoid `.auto_sized()`: egui paints the title Frame at title+close width
-        // without allocating it, so the header stroke outruns the body.
+        // without allocating it, so the header stroke outruns the body. Content
+        // `set_min_width` matches the title on the first paint (window-level
+        // min_width grows across frames and trips the layout ratchet).
+        let delay_w = crate::widgets::FLOATER_MIN_COMPACT[0];
         crate::widgets::fit_dialog_popup(
             egui::Window::new("Delay between actions")
                 .collapsible(false)
@@ -277,6 +280,7 @@ impl MacroMetaUi {
             pending_scale,
         )
         .show(ui.ctx(), |ui| {
+            ui.set_min_width(delay_w);
             ui.add_enabled_ui(enabled, |ui| {
                 if delay_row(
                     ui,
