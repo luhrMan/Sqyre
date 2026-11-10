@@ -412,8 +412,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                         .small(),
                     );
                     ui.horizontal(|ui| {
-                        request = ui
-                            .button("Continue")
+                        request = crate::widgets::confirm_icon_button(ui, "Continue")
                             .on_hover_text(ht::OVL_REC_PROMPT)
                             .clicked();
                         cancel = crate::widgets::consume_escape(ui)
@@ -436,10 +435,13 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                             .small(),
                     );
                     ui.horizontal(|ui| {
-                        request = ui
-                            .small_button("Try again")
-                            .on_hover_text(ht::OVL_REC_PROMPT_AGAIN)
-                            .clicked();
+                        request = crate::widgets::icon_button(
+                            ui,
+                            egui_phosphor::regular::ARROW_CLOCKWISE,
+                            "Try again",
+                        )
+                        .on_hover_text(ht::OVL_REC_PROMPT_AGAIN)
+                        .clicked();
                         cancel = crate::widgets::consume_escape(ui)
                             || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                     });

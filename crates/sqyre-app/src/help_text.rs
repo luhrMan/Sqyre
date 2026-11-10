@@ -88,9 +88,6 @@ pub const YAML_IMPORT_REPLACE: &str = "Replace the selected macro with this YAML
 
 // --- Permissions ---
 
-/// "Show prompts" button in the intro panel.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-pub const PERM_SHOW_PROMPTS: &str = "Show the system permission prompts now.";
 /// Refresh button in the desktop panel.
 #[cfg(all(
     not(target_arch = "wasm32"),
