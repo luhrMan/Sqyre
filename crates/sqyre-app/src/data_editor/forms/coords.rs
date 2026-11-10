@@ -72,30 +72,7 @@ impl DataEditor {
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
         let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
-        self.paint_preview_controls(
-            ui,
-            rect,
-            screen_click,
-            ht::ED_REC_POINT,
-            "Recording… left-click to capture.",
-            ScreenClickBridge::arm_point,
-        );
-        paint_coord_chips(
-            ui,
-            rect,
-            known,
-            is_dark,
-            active_macro,
-            &mut [
-                (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
-                (
-                    &mut self.form_y,
-                    CardinalEdge::Bottom,
-                    "Y",
-                    help::DE_POINT_Y,
-                ),
-            ],
-        );
+        self.paint_point_tail(ui, rect, screen_click, known, is_dark, active_macro);
     }
 
     pub(super) fn draw_search_areas_form(
@@ -128,22 +105,17 @@ impl DataEditor {
         let force = std::mem::take(&mut self.preview_force);
         let (rect, preview_image_size) =
             previews.paint_search_area_panel(ui, lx, ty, rx, by, force, &mut self.coord_preview);
-        self.paint_preview_controls(
+        self.paint_search_area_tail(
             ui,
             rect,
+            preview_image_size,
+            (lx, ty, rx, by),
             screen_click,
             ht::ED_REC_AREA,
             "Recording… click two corners.",
-            ScreenClickBridge::arm_search_area,
-        );
-        paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
-        paint_coord_chips(
-            ui,
-            rect,
             known,
             is_dark,
             active_macro,
-            &mut self.area_edge_fields(),
         );
     }
 
@@ -469,22 +441,17 @@ impl DataEditor {
                     force,
                     &mut self.coord_preview,
                 );
-                self.paint_preview_controls(
+                self.paint_search_area_tail(
                     ui,
                     rect,
+                    preview_image_size,
+                    (lx, ty, rx, by),
                     screen_click,
                     ht::ED_REC_CAPTURE,
                     "Recording… click two corners.",
-                    ScreenClickBridge::arm_search_area,
-                );
-                paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
-                paint_coord_chips(
-                    ui,
-                    rect,
                     known,
                     is_dark,
                     active_macro,
-                    &mut self.area_edge_fields(),
                 );
             },
         );

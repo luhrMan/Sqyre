@@ -44,7 +44,6 @@ impl DataEditor {
                         .unwrap_or_default()
                 })
                 .unwrap_or_default();
-            let mut current = self.form_search_area.clone();
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
@@ -55,48 +54,49 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
-            crate::widgets::pair_labeled(
+            let _ = crate::widgets::labeled_searchable_combo(
                 ui,
                 crate::model_icons::SEARCH_AREA,
                 "Search area",
-                |ui| {
-                    help::tip(
-                        searchable_combo(
-                            ui,
-                            "collection_sa",
-                            &mut current,
-                            SearchableComboOpts {
-                                options: &areas,
-                                empty_text: sqyre_domain::EMPTY_NONE,
-                                none_label: None,
-                                width: None,
-                                on_option_hover: Some(&mut on_hover),
-                                option_icon: None,
-                                closed_icon: true,
-                                option_label: None,
-                            },
-                        ),
-                        help::DE_COLLECTION_AREA,
-                    );
+                help::DE_COLLECTION_AREA,
+                "collection_sa",
+                &mut self.form_search_area,
+                SearchableComboOpts {
+                    options: &areas,
+                    empty_text: sqyre_domain::EMPTY_NONE,
+                    none_label: None,
+                    width: None,
+                    on_option_hover: Some(&mut on_hover),
+                    option_icon: None,
+                    closed_icon: true,
+                    option_label: None,
+                },
+                None,
+            );
+        }
+        crate::widgets::wrapped_row(ui, |ui| {
+            crate::widgets::num_text_field_opts(
+                ui,
+                egui_phosphor::regular::ROWS,
+                "Rows",
+                help::DE_COLLECTION_ROWS,
+                &mut self.form_rows,
+                crate::widgets::NumFieldOpts {
+                    width: 80.0,
+                    range: 1..=i32::MAX,
                 },
             );
-            if current != self.form_search_area {
-                self.form_search_area = current;
-            }
-        }
-        ui.horizontal_wrapped(|ui| {
-            crate::widgets::pair_labeled(ui, egui_phosphor::regular::ROWS, "Rows", |ui| {
-                help::tip(
-                    crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
-                    help::DE_COLLECTION_ROWS,
-                );
-            });
-            crate::widgets::pair_labeled(ui, egui_phosphor::regular::COLUMNS, "Cols", |ui| {
-                help::tip(
-                    crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
-                    help::DE_COLLECTION_COLS,
-                );
-            });
+            crate::widgets::num_text_field_opts(
+                ui,
+                egui_phosphor::regular::COLUMNS,
+                "Cols",
+                help::DE_COLLECTION_COLS,
+                &mut self.form_cols,
+                crate::widgets::NumFieldOpts {
+                    width: 80.0,
+                    range: 1..=i32::MAX,
+                },
+            );
         });
         if let (Some(prog), Some(col_name)) =
             (self.selected_program.clone(), self.selected_entity.clone())
@@ -154,7 +154,7 @@ impl DataEditor {
                     .collect()
             })
             .unwrap_or_default();
-        crate::widgets::pair_labeled(ui, crate::model_icons::COLLECTION, "Collections", |ui| {
+        {
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
@@ -165,38 +165,40 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
-            help::tip(
-                searchable_combo(
-                    ui,
-                    "atlas_add_member",
-                    &mut self.form_atlas_add,
-                    SearchableComboOpts {
-                        options: &available,
-                        empty_text: "(add collection)",
-                        none_label: None,
-                        width: None,
-                        on_option_hover: Some(&mut on_hover),
-                        option_icon: None,
-                        closed_icon: true,
-                        option_label: None,
-                    },
-                ),
-                help::DE_ATLAS_MEMBERS,
-            );
-            if crate::widgets::add_button(
+            let can_add = !self.form_atlas_add.trim().is_empty();
+            let mut add_clicked = false;
+            let mut trailing = |ui: &mut egui::Ui| {
+                if crate::widgets::add_button(ui, "Add collection", can_add).clicked() {
+                    add_clicked = true;
+                }
+            };
+            let _ = crate::widgets::labeled_searchable_combo(
                 ui,
-                "Add collection",
-                !self.form_atlas_add.trim().is_empty(),
-            )
-            .clicked()
-            {
+                crate::model_icons::COLLECTION,
+                "Collections",
+                help::DE_ATLAS_MEMBERS,
+                "atlas_add_member",
+                &mut self.form_atlas_add,
+                SearchableComboOpts {
+                    options: &available,
+                    empty_text: "(add collection)",
+                    none_label: None,
+                    width: None,
+                    on_option_hover: Some(&mut on_hover),
+                    option_icon: None,
+                    closed_icon: true,
+                    option_label: None,
+                },
+                Some(&mut trailing),
+            );
+            if add_clicked {
                 let name = self.form_atlas_add.trim().to_string();
                 if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {
                     self.form_atlas_members.push(name);
                 }
                 self.form_atlas_add.clear();
             }
-        });
+        }
         let mut remove_at: Option<usize> = None;
         for (i, member) in self.form_atlas_members.iter().enumerate() {
             let label = ui.label(format!("• {member}"));
