@@ -577,7 +577,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            // New macro sits inside the search pair, after the clear ✕.
+            // New macro sits inside the search pair, after the clear eraser.
             let search = crate::widgets::search_field(
                 ui,
                 &mut app.macro_list_filter,
