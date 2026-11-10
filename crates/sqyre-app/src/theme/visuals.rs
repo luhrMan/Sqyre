@@ -187,14 +187,13 @@ mod tests {
     #[test]
     fn popup_and_section_frames_use_shared_margins() {
         let ctx = egui::Context::default();
-        ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let popup = popup_frame(ui);
-                assert_eq!(popup.inner_margin, chrome_inner_margin(ui));
-                assert_eq!(section_frame(ui).stroke.color, accent_dim());
-                let m = section_frame(ui).inner_margin;
-                assert!(m.left >= SPACE_2 as i8 && m.left <= SPACE_4 as i8);
-            });
-        });
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let popup = popup_frame(ui);
+            assert_eq!(popup.inner_margin, chrome_inner_margin(ui));
+            assert_eq!(section_frame(ui).stroke.color, accent_dim());
+            let m = section_frame(ui).inner_margin;
+            assert!(m.left >= SPACE_2 as i8 && m.left <= SPACE_4 as i8);
+        })
+        .drop_without_applying_deltas();
     }
 }
