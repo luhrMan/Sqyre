@@ -487,6 +487,45 @@ fn paint_live(btn: &mut LiveButton) {
     blit_layered(btn.hwnd, btn.spec.face.x, btn.spec.face.y, w, h, &btn.bgra);
 }
 
+fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
+    let rects = sqyre_capture::preferred_monitor_rects();
+    for r in &rects {
+        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
+            return (r.x, r.y, r.w, r.h);
+        }
+    }
+    if let Some(r) = rects.first() {
+        return (r.x, r.y, r.w, r.h);
+    }
+    (0, 0, 1920, 1080)
+}
+
+struct TipPlace {
+    btn_x: i32,
+    btn_y: i32,
+    btn_w: i32,
+    btn_h: i32,
+    tip_w: i32,
+    tip_h: i32,
+    mon: (i32, i32, i32, i32),
+}
+
+fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
+    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
+    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
+    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
+    let mon_right = mon_x.saturating_add(mon_w);
+    let mon_bottom = mon_y.saturating_add(mon_h);
+    if tip_y.saturating_add(p.tip_h) > mon_bottom {
+        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
+    }
+    let max_x = (mon_right - p.tip_w).max(mon_x);
+    let max_y = (mon_bottom - p.tip_h).max(mon_y);
+    tip_x = tip_x.clamp(mon_x, max_x);
+    tip_y = tip_y.clamp(mon_y, max_y);
+    (tip_x, tip_y)
+}
+
 fn show_tip(state: &mut HostState, id: &str) {
     if state.relocate || state.drag.is_some() {
         hide_tip(state);
@@ -518,8 +557,17 @@ fn show_tip(state: &mut HostState, id: &str) {
         return;
     }
     let bgra = rgba_to_bgra(&rgba);
-    let tip_x = x;
-    let tip_y = y + h as i32 + TIP_GAP_PX;
+    let btn_w = btn.spec.face.w as i32;
+    let mon = monitor_rect_for_point(x + btn_w / 2, y + h as i32 / 2);
+    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
+        btn_x: x,
+        btn_y: y,
+        btn_w,
+        btn_h: h as i32,
+        tip_w: tw as i32,
+        tip_h: th as i32,
+        mon,
+    });
     if state.tip.is_none() {
         // SAFETY: same class and module as the buttons; destroyed in `destroy_all`.
         let hwnd = unsafe {
@@ -629,9 +677,17 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
         "SQYRE_OVERLAY",
         &[("click", "press"), ("id", id), ("name", name.as_str())],
     );
-    state.pending.lock().push(name);
+    {
+        let mut q = state.pending.lock();
+        if name.trim() == sqyre_persist::QUICK_ACCESS_HUB_ID && q.iter().any(|n| n == &name) {
+            note("overlay-win: coalesce hub toggle (already queued)");
+            event_log("SQYRE_OVERLAY", &[("click", "coalesce"), ("id", id)]);
+        } else {
+            q.push(name);
+        }
+    }
     if let Some(ctx) = &state.wake {
-        ctx.request_repaint();
+        crate::pending_wake::wake_until_drained(ctx, &state.pending);
     }
 }
 

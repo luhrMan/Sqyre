@@ -65,6 +65,10 @@ impl SqyreApp {
             if self.dispatch_quick_access_token(&name, ctx) {
                 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                 sqyre_capture::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
+                // Push hub fan map/unmap to the overlay host in this same drain —
+                // don't wait for the later paint-path sync (lags under game focus).
+                #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+                crate::ui_overlays::sync_macro_overlay(self, ctx);
                 continue;
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
