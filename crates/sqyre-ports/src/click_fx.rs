@@ -2,7 +2,6 @@
 //! shell can flash a marker on screen (Settings → Macros → click effect).
 
 use parking_lot::Mutex;
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,15 +11,16 @@ pub trait ClickFxSink: Send + Sync {
     fn click_at(&self, x: i32, y: i32);
 }
 
-/// Queued positions beyond this are dropped oldest-first — presses inside a run
-/// are serialized, so only the newest flash matters anyway.
-const MAX_PENDING: usize = 64;
+type OnClick = Arc<dyn Fn(i32, i32) + Send + Sync>;
 
-/// Thread-safe click-effect queue for the egui shell.
+/// Thread-safe click-effect sink for the shell.
+///
+/// Presses are forwarded immediately to an optional [`Self::set_on_click`]
+/// listener (dedicated outline worker) so the marker does not wait for egui.
 #[derive(Clone)]
 pub struct SharedClickFx {
     enabled: Arc<AtomicBool>,
-    pending: Arc<Mutex<VecDeque<(i32, i32)>>>,
+    on_click: Arc<Mutex<Option<OnClick>>>,
 }
 
 impl Default for SharedClickFx {
@@ -33,28 +33,26 @@ impl SharedClickFx {
     pub fn new() -> Self {
         Self {
             enabled: Arc::new(AtomicBool::new(true)),
-            pending: Arc::new(Mutex::new(VecDeque::new())),
+            on_click: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::SeqCst);
-        if !enabled {
-            self.clear();
-        }
     }
 
     pub fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
     }
 
-    /// Take every queued position (newest last).
-    pub fn drain(&self) -> Vec<(i32, i32)> {
-        std::mem::take(&mut *self.pending.lock()).into()
+    /// Direct listener invoked from the executor thread on each press.
+    pub fn set_on_click(&self, on_click: Option<impl Fn(i32, i32) + Send + Sync + 'static>) {
+        *self.on_click.lock() = on_click.map(|f| Arc::new(f) as OnClick);
     }
 
-    pub fn clear(&self) {
-        self.pending.lock().clear();
+    /// Drop the listener (worker stopped / setting off).
+    pub fn clear_on_click(&self) {
+        *self.on_click.lock() = None;
     }
 }
 
@@ -63,45 +61,53 @@ impl ClickFxSink for SharedClickFx {
         if !self.enabled.load(Ordering::SeqCst) {
             return;
         }
-        let mut g = self.pending.lock();
-        if g.len() >= MAX_PENDING {
-            g.pop_front();
+        if let Some(on_click) = self.on_click.lock().clone() {
+            on_click(x, y);
         }
-        g.push_back((x, y));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
-    fn queued_positions_drain_in_order() {
+    fn on_click_fires_when_enabled() {
         let fx = SharedClickFx::new();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits2 = Arc::clone(&hits);
+        fx.set_on_click(Some(move |x, y| {
+            assert_eq!((x, y), (10, 20));
+            hits2.fetch_add(1, Ordering::SeqCst);
+        }));
         fx.click_at(10, 20);
-        fx.click_at(30, 40);
-        assert_eq!(fx.drain(), vec![(10, 20), (30, 40)]);
-        assert!(fx.drain().is_empty());
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn disabled_drops_events_and_clears() {
+    fn disabled_skips_listener() {
         let fx = SharedClickFx::new();
-        fx.click_at(1, 2);
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits2 = Arc::clone(&hits);
+        fx.set_on_click(Some(move |_, _| {
+            hits2.fetch_add(1, Ordering::SeqCst);
+        }));
         fx.set_enabled(false);
-        assert!(fx.drain().is_empty());
-        fx.click_at(3, 4);
-        assert!(fx.drain().is_empty());
+        fx.click_at(1, 2);
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
     }
 
     #[test]
-    fn queue_is_capped_oldest_first() {
+    fn clear_on_click_stops_delivery() {
         let fx = SharedClickFx::new();
-        for i in 0..(MAX_PENDING as i32 + 5) {
-            fx.click_at(i, i);
-        }
-        let drained = fx.drain();
-        assert_eq!(drained.len(), MAX_PENDING);
-        assert_eq!(drained.first().copied(), Some((5, 5)));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits2 = Arc::clone(&hits);
+        fx.set_on_click(Some(move |_, _| {
+            hits2.fetch_add(1, Ordering::SeqCst);
+        }));
+        fx.clear_on_click();
+        fx.click_at(1, 2);
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
     }
 }

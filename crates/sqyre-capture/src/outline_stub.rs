@@ -33,3 +33,17 @@ impl PointMarkerOverlay {
 
     pub fn clear(&mut self) {}
 }
+
+/// No-op click-marker host where there is no desktop overlay backend.
+#[derive(Clone, Debug, Default)]
+pub struct ClickFxHost;
+
+impl ClickFxHost {
+    pub fn start() -> Result<Self, CaptureError> {
+        Err(CaptureError::UnsupportedPlatform)
+    }
+
+    pub fn set_flash_ms(&self, _ms: i32) {}
+
+    pub fn flash(&self, _x: i32, _y: i32) {}
+}

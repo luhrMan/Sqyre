@@ -1152,9 +1152,9 @@ impl eframe::App for SqyreApp {
         self.sync_recording_overlay(ui.ctx());
         #[cfg(feature = "native-runtime")]
         self.click_fx_overlay.sync(
-            ui.ctx(),
             &self.run_session.click_fx,
             self.settings_ui.settings().click_flash_ms,
+            self.settings_ui.settings().click_effect,
         );
 
         if self.settings_ui.settings().window_border {

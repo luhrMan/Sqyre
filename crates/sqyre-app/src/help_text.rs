@@ -192,7 +192,7 @@ pub const SET_LOG_CAP: &str =
 pub const SET_RUN_ROW_HL: &str = "Scroll and tint the tree row of the action running now.";
 /// Gold click marker on the desktop.
 pub const SET_CLICK_MARKER: &str =
-    "During a run, a shrinking gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).";
+    "During a run, a gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).";
 /// Release held keys/buttons on run end.
 pub const SET_RELEASE_KEYS: &str =
     "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.";

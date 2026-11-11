@@ -1,31 +1,20 @@
-//! Click-effect feedback: a shrinking gold square on the desktop where each
-//! automated mouse press lands (Settings → Macros → "Flash a marker where
-//! clicks land").
+//! Click-effect feedback: a gold outline on the desktop where each automated
+//! mouse press lands (Settings → Macros → "Flash a marker where clicks land").
 //!
-//! Draws through [`sqyre_capture::SelectionOutline`] — the same click-through
-//! edge windows as the recording rubber-band — because deferred egui viewports
-//! cannot be positioned on GNOME/Wayland. Presses inside a run are serialized,
-//! so one outline chasing the newest press is enough.
+//! The outline lives on a [`sqyre_capture::ClickFxHost`] worker thread so a
+//! press places the marker immediately — it does not wait for an egui frame,
+//! and `ConfigureWindow` never blocks the UI under fullscreen XWayland games.
 
-use eframe::egui;
-use sqyre_capture::{mark_site, SelectionOutline};
+use sqyre_capture::ClickFxHost;
 use sqyre_ports::SharedClickFx;
-use std::time::{Duration, Instant};
 
-/// Square edge at flash start / end (virtual-desktop pixels).
-const FLASH_START_PX: i32 = 72;
-const FLASH_END_PX: i32 = 20;
-/// Repaint pace while a flash animates.
-const FRAME_MS: u64 = 16;
-
-/// Owns the outline window and the running animation. UI thread only.
+/// Owns the background click-marker host. UI thread only for start/stop.
 #[derive(Default)]
 pub struct ClickFxOverlay {
-    /// Created lazily on the first flash; never touched off the UI thread.
-    outline: Option<SelectionOutline>,
-    outline_failed: bool,
-    /// `(x, y, started)` of the visible flash; the newest press replaces it.
-    active: Option<(i32, i32, Instant)>,
+    host: Option<ClickFxHost>,
+    host_failed: bool,
+    /// Listener already wired onto [`SharedClickFx`].
+    bound: bool,
 }
 
 impl ClickFxOverlay {
@@ -33,42 +22,36 @@ impl ClickFxOverlay {
         Self::default()
     }
 
-    /// Drain queued press positions and advance the flash; call once per UI frame.
+    /// Keep the worker / listener in sync with the setting. Call once per UI frame.
     /// `flash_ms` is the marker lifetime in milliseconds (Settings → Playback).
-    pub fn sync(&mut self, ctx: &egui::Context, fx: &SharedClickFx, flash_ms: i32) {
-        for (x, y) in fx.drain() {
-            self.active = Some((x, y, Instant::now()));
-        }
-        let Some((x, y, started)) = self.active else {
-            return;
-        };
-        let duration = Duration::from_millis(flash_ms.max(1) as u64);
-        let t = started.elapsed().as_secs_f32() / duration.as_secs_f32();
-        if t >= 1.0 {
-            self.active = None;
-            if let Some(outline) = self.outline.as_mut() {
-                if outline.is_active() {
-                    outline.clear();
-                }
+    pub fn sync(&mut self, fx: &SharedClickFx, flash_ms: i32, enabled: bool) {
+        if !enabled {
+            if self.host.take().is_some() || self.bound {
+                fx.clear_on_click();
+                self.bound = false;
             }
             return;
         }
-        if self.outline.is_none() && !self.outline_failed {
-            mark_site("clickfx:open");
-            match SelectionOutline::open() {
-                Ok(outline) => self.outline = Some(outline),
+
+        if self.host.is_none() && !self.host_failed {
+            match ClickFxHost::start() {
+                Ok(host) => self.host = Some(host),
                 Err(e) => {
-                    self.outline_failed = true;
-                    crate::log::warn(format_args!("click effect outline unavailable: {e}"));
+                    self.host_failed = true;
+                    crate::log::warn(format_args!("click effect host unavailable: {e}"));
                     return;
                 }
             }
         }
-        if let Some(outline) = self.outline.as_mut() {
-            let size = FLASH_START_PX as f32 + (FLASH_END_PX - FLASH_START_PX) as f32 * t;
-            let half = (size * 0.5).round().max(2.0) as i32;
-            outline.set_rect(x - half, y - half, x + half, y + half);
+
+        let Some(host) = self.host.as_ref() else {
+            return;
+        };
+        host.set_flash_ms(flash_ms);
+        if !self.bound {
+            let host = host.clone();
+            fx.set_on_click(Some(move |x, y| host.flash(x, y)));
+            self.bound = true;
         }
-        ctx.request_repaint_after(Duration::from_millis(FRAME_MS));
     }
 }

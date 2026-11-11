@@ -414,7 +414,6 @@ mod native_run {
             action_log.clear();
             runtime_vars.clear();
             highlighter.clear_all();
-            click_fx.clear();
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = macros
                     .iter()
