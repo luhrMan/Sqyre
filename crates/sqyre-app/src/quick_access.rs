@@ -285,6 +285,7 @@ impl SqyreApp {
     }
 
     fn quick_access_new_entity(&mut self, tab: EditorTab, ctx: &egui::Context) {
+        self.refresh_focused_program_hint();
         let pending = self.pending_viewport_scale;
         self.data_editor.open_new(
             tab,
@@ -303,16 +304,36 @@ impl SqyreApp {
     }
 
     fn quick_access_screen_cap(&mut self, ctx: &egui::Context) {
+        self.refresh_focused_program_hint();
         self.data_editor.open_tab(
             ctx,
             EditorTab::ScreenCap,
             &self.workspace.catalog,
             self.settings_ui.settings(),
         );
+        self.data_editor
+            .prefer_focused_program_for_new(&self.workspace.catalog, self.settings_ui.settings());
         if !self.screen_click.is_armed() {
             self.screen_click.arm_search_area();
             self.data_editor
                 .set_ok("Screen Cap: click two corners to capture.");
+        }
+    }
+
+    /// Snapshot the focused catalog program for New / Screen Cap targeting.
+    pub(crate) fn refresh_focused_program_hint(&mut self) {
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        {
+            let hint = self.macro_overlay.last_foreign_focus();
+            let program = crate::hotkey_focus_tags::focused_editor_program(
+                &self.workspace.catalog,
+                hint.as_ref(),
+            );
+            self.data_editor.set_focused_program_hint(program);
+        }
+        #[cfg(any(not(feature = "native-runtime"), target_arch = "wasm32"))]
+        {
+            self.data_editor.set_focused_program_hint(None);
         }
     }
 

@@ -179,6 +179,7 @@ impl DataEditor {
         } = env;
         self.clear_status();
         self.save_after_record = false;
+        self.prefer_focused_program_for_new(catalog, settings);
         let created = match self.tab {
             EditorTab::Programs => {
                 let requested = self.form_name.trim();

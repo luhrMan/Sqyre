@@ -216,6 +216,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     let pending = app.pending_viewport_scale;
     let pending_scale = pending.as_ref();
     show_logs_window(app, ctx, pending_scale);
+    app.refresh_focused_program_hint();
     app.data_editor.show(
         &mut DataEditorCtx {
             ctx,
