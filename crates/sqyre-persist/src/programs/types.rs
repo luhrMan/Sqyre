@@ -102,9 +102,8 @@ impl Default for ProgramMask {
 
 #[derive(Debug, Clone, Default)]
 pub struct ProgramCollection {
+    /// Same as the linked search-area name in this program.
     pub name: String,
-    /// Search area name in the same program.
-    pub search_area: String,
     pub rows: i32,
     pub cols: i32,
 }

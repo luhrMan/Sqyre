@@ -146,6 +146,20 @@ fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) ->
     unique_name(base, exists)
 }
 
+/// First search-area name in `program` that does not already have a collection.
+fn first_free_search_area(catalog: &ProgramCatalog, program: &str) -> Option<String> {
+    let p = catalog.get(program)?;
+    let res = catalog.resolution_key();
+    let areas = p
+        .search_areas
+        .get(res)
+        .or_else(|| p.search_areas.values().next())?;
+    areas
+        .keys()
+        .find(|sa| !p.collections.contains_key(sa.as_str()))
+        .cloned()
+}
+
 impl DataEditor {
     /// Selected program name as a `PersistError` when unset.
     fn selected_program_persist(&self) -> Result<String, sqyre_persist::PersistError> {
@@ -292,36 +306,29 @@ impl DataEditor {
                 let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
-                let name = new_entity_name(&self.form_name, "New Collection", |n| {
-                    catalog
-                        .get(&prog)
-                        .and_then(|p| p.collections.get(n))
-                        .is_some()
-                });
-                let default_sa = catalog
-                    .get(&prog)
-                    .and_then(|p| {
-                        let res = catalog.resolution_key();
-                        p.search_areas
-                            .get(res)
-                            .or_else(|| p.search_areas.values().next())
-                            .and_then(|m| m.keys().next().cloned())
-                    })
-                    .unwrap_or_default();
-                let search_area = if !self.form_search_area.trim().is_empty() {
+                // Collection name == search-area name.
+                let name = if !self.form_search_area.trim().is_empty() {
                     self.form_search_area.trim().to_string()
                 } else {
-                    default_sa
+                    first_free_search_area(catalog, &prog).unwrap_or_default()
                 };
-                if search_area.is_empty() {
+                if name.is_empty() {
                     self.set_err("Create a search area before capturing a collection image.");
+                    return;
+                }
+                if catalog
+                    .get(&prog)
+                    .is_some_and(|p| p.collections.contains_key(&name))
+                {
+                    self.set_err(format!(
+                        "A collection already exists for search area {name:?}."
+                    ));
                     return;
                 }
                 let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
                 let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
                 let col = ProgramCollection {
                     name: name.clone(),
-                    search_area,
                     rows,
                     cols,
                 };
@@ -520,6 +527,7 @@ impl DataEditor {
             EditorTab::Collections => {
                 let prog = self.selected_program.as_deref()?;
                 let old = self.selected_entity.as_deref()?;
+                let new = self.form_search_area.trim();
                 if old != new
                     && catalog
                         .get(prog)
@@ -562,7 +570,12 @@ impl DataEditor {
             self.apply_overlay_update(settings);
             return;
         }
-        let new_name = self.form_name.trim().to_string();
+        // Collections take the search-area name; other tabs use the Name field.
+        let new_name = if self.tab == EditorTab::Collections {
+            self.form_search_area.trim().to_string()
+        } else {
+            self.form_name.trim().to_string()
+        };
         if let Err(e) = validate_entity_name(&new_name) {
             self.set_err(format!("Invalid name: {e}"));
             return;
@@ -790,14 +803,31 @@ impl DataEditor {
             right_x: ScalarValue::parse_edit(&self.form_right),
             bottom_y: ScalarValue::parse_edit(&self.form_bottom),
         };
+        let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
-                    let _ = catalog.delete_search_area(&prog, new_name);
+                    if let Ok(w) = catalog.delete_search_area(&prog, new_name) {
+                        merge_fs_warning(&mut fs_warn, w);
+                    }
                 }
-                catalog.rename_search_area(&prog, &old, new_name)?;
+                let had_collection = catalog
+                    .get(&prog)
+                    .is_some_and(|p| p.collections.contains_key(&old));
+                merge_fs_warning(
+                    &mut fs_warn,
+                    catalog.rename_search_area(&prog, &old, new_name)?,
+                );
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::SearchArea, &prog, &old, new_name);
+                    if had_collection {
+                        m.rename_program_entity(
+                            ProgramEntityKind::Collection,
+                            &prog,
+                            &old,
+                            new_name,
+                        );
+                    }
                 }
                 if settings.rename_overlay_search_area_entity(&prog, &old, new_name) {
                     *overlay_settings_dirty = true;
@@ -809,7 +839,7 @@ impl DataEditor {
             catalog.upsert_search_area(&prog, sa)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(None)
+        Ok(fs_warn)
     }
 
     pub(crate) fn update_mask(
@@ -865,7 +895,6 @@ impl DataEditor {
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
         let col = ProgramCollection {
             name: new_name.to_string(),
-            search_area: self.form_search_area.trim().to_string(),
             rows,
             cols,
         };
@@ -1028,13 +1057,12 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_search_area(&prog, &name).map(|()| {
+                catalog.delete_search_area(&prog, &name).inspect(|_| {
                     if settings.clear_overlay_search_area_refs(&prog, &name) {
                         let _ = self.persist_overlay_settings(settings);
                     }
                     self.selected_entity = None;
                     self.form_name.clear();
-                    None
                 })
             }
             EditorTab::Masks => {
@@ -1253,7 +1281,8 @@ mod tests {
 
         let e = editor(EditorTab::Masks, "Game", "other", "circle");
         assert_eq!(e.would_overwrite(&cat), Some(("Mask", "circle".into())));
-        let e = editor(EditorTab::Collections, "Game", "other", "bag");
+        let mut e = editor(EditorTab::Collections, "Game", "other", "");
+        e.form_search_area = "bag".into();
         assert_eq!(e.would_overwrite(&cat), Some(("Collection", "bag".into())));
         let e = editor(EditorTab::Atlases, "Game", "other", "inv");
         assert_eq!(e.would_overwrite(&cat), Some(("Atlas", "inv".into())));

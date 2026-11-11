@@ -48,13 +48,10 @@ pub fn resolve_collection_capture_rect(
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(i32, i32, i32, i32), String> {
-    if collection.search_area.is_empty() {
+    if collection.name.is_empty() {
         return Err("collection has no search area".into());
     }
-    let sa_ref = CoordinateRef(format!(
-        "{program}{PROGRAM_DELIMITER}{}",
-        collection.search_area
-    ));
+    let sa_ref = CoordinateRef(format!("{program}{PROGRAM_DELIMITER}{}", collection.name));
     // Data-editor capture uses literal coords only (no macro variable scope).
     let empty = Macro::new("", 0, vec![]);
     catalog
@@ -118,8 +115,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let cat = catalog_with_sa(tmp.path().to_path_buf());
         let col = ProgramCollection {
-            name: "Bag".into(),
-            search_area: "Box".into(),
+            name: "Box".into(),
             rows: 2,
             cols: 3,
         };
@@ -133,7 +129,7 @@ mod tests {
             },
         };
         capture_and_save_collection_image_with(&mut capturer, &cat, "Demo", &col).unwrap();
-        let path = cat.collection_image_path("Demo", "Bag");
+        let path = cat.collection_image_path("Demo", "Box");
         assert!(path.is_file(), "expected {}", path.display());
         let img = image::open(&path).unwrap().into_rgba8();
         assert_eq!((img.width(), img.height()), (100, 60));
@@ -145,8 +141,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let cat = catalog_with_sa(tmp.path().to_path_buf());
         let col = ProgramCollection {
-            name: "Bag".into(),
-            search_area: String::new(),
+            name: String::new(),
             rows: 1,
             cols: 1,
         };

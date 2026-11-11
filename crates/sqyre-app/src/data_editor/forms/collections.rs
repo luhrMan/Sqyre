@@ -26,22 +26,30 @@ impl DataEditor {
         });
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-        paint_name_field(ui, &mut self.form_name);
         {
+            // Collection name == search-area name; offer areas that are free or
+            // the currently selected collection (so retarget/rename still works).
+            let selected = self.selected_entity.clone();
             let areas: Vec<String> = self
                 .selected_program
                 .as_deref()
                 .map(|p| {
                     let res = catalog.resolution_key();
-                    catalog
-                        .get(p)
-                        .and_then(|prog| {
-                            prog.search_areas
-                                .get(res)
-                                .or_else(|| prog.search_areas.values().next())
+                    let Some(prog) = catalog.get(p) else {
+                        return Vec::new();
+                    };
+                    let keys = prog
+                        .search_areas
+                        .get(res)
+                        .or_else(|| prog.search_areas.values().next())
+                        .map(|m| m.keys().cloned().collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    keys.into_iter()
+                        .filter(|sa| {
+                            selected.as_deref() == Some(sa.as_str())
+                                || !prog.collections.contains_key(sa)
                         })
-                        .map(|m| m.keys().cloned().collect())
-                        .unwrap_or_default()
+                        .collect()
                 })
                 .unwrap_or_default();
             let prog = self.selected_program.clone();
@@ -123,7 +131,6 @@ impl DataEditor {
             if replace && !capturing {
                 let col = ProgramCollection {
                     name: col_name.clone(),
-                    search_area: self.form_search_area.trim().to_string(),
                     rows,
                     cols,
                 };

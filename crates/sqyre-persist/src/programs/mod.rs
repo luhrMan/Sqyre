@@ -312,9 +312,8 @@ Game:
       radius: "10"
       inverse: true
   collections:
-    Bag:
-      name: Bag
-      searcharea: Box
+    Box:
+      name: Box
       rows: 2
       cols: 3
 "#;
@@ -363,8 +362,8 @@ Game:
         assert_eq!(mask.shape, sqyre_domain::MaskShape::Circle);
         assert!(mask.inverse);
         assert_eq!(mask.radius, "10");
-        let col = &reparsed.get("Game").unwrap().collections["Bag"];
-        assert_eq!(col.search_area, "Box");
+        let col = &reparsed.get("Game").unwrap().collections["Box"];
+        assert_eq!(col.name, "Box");
         assert_eq!((col.rows, col.cols), (2, 3));
     }
 
@@ -386,20 +385,19 @@ Demo:
           bottomy: 100
   masks: {}
   collections:
-    grid:
-      name: grid
-      searcharea: inv
+    inv:
+      name: inv
       rows: 2
       cols: 2
 "#;
         let cat = catalog_yaml(yaml);
         let m = Macro::new("t", 0, vec![]);
         let rect = cat
-            .resolve_search_area(&CoordinateRef("Demo~grid@1,1-1,1".into()), &m)
+            .resolve_search_area(&CoordinateRef("Demo~inv@1,1-1,1".into()), &m)
             .unwrap();
         assert_eq!(rect, (0, 0, 50, 50));
         let center = cat
-            .resolve_point(&CoordinateRef("Demo~grid@1,1-1,1".into()), &m)
+            .resolve_point(&CoordinateRef("Demo~inv@1,1-1,1".into()), &m)
             .unwrap();
         assert_eq!(center, (25, 25));
     }
@@ -428,51 +426,57 @@ Game:
           bottomy: 100
   masks: {}
   collections:
-    Bag:
-      name: Bag
-      searcharea: BagArea
+    BagArea:
+      name: BagArea
       rows: 2
       cols: 2
-    Equip:
-      name: Equip
-      searcharea: EquipArea
+    EquipArea:
+      name: EquipArea
       rows: 2
       cols: 2
   atlases:
     Inventory:
       name: Inventory
       collections:
-        - Bag
-        - Equip
+        - BagArea
+        - EquipArea
 "#;
         let mut cat = catalog_yaml(yaml);
         let atlas = cat.lookup_atlas("Game", "Inventory").unwrap();
-        assert_eq!(atlas.collections, vec!["Bag", "Equip"]);
+        assert_eq!(atlas.collections, vec!["BagArea", "EquipArea"]);
 
         let encoded = cat.to_yaml_value(&Value::Mapping(Mapping::new()));
         let reparsed = ProgramCatalog::from_yaml_value(&encoded).unwrap();
         let atlas = reparsed.lookup_atlas("Game", "Inventory").unwrap();
         assert_eq!(atlas.name, "Inventory");
-        assert_eq!(atlas.collections, vec!["Bag", "Equip"]);
+        assert_eq!(atlas.collections, vec!["BagArea", "EquipArea"]);
 
-        cat.rename_collection("Game", "Bag", "Satchel").unwrap();
+        cat.rename_collection("Game", "BagArea", "Satchel").unwrap();
         assert_eq!(
             cat.lookup_atlas("Game", "Inventory").unwrap().collections,
-            vec!["Satchel", "Equip"]
+            vec!["Satchel", "EquipArea"]
         );
-        assert_eq!(
-            cat.get("Game").unwrap().collections["Satchel"].search_area,
-            "BagArea"
-        );
+        assert!(cat.get("Game").unwrap().collections.contains_key("Satchel"));
 
-        cat.rename_search_area("Game", "BagArea", "PackArea")
+        // Renaming the search area renames the matching collection (name == area).
+        cat.rename_search_area("Game", "EquipArea", "GearArea")
             .unwrap();
+        assert!(cat
+            .get("Game")
+            .unwrap()
+            .collections
+            .contains_key("GearArea"));
+        assert!(!cat
+            .get("Game")
+            .unwrap()
+            .collections
+            .contains_key("EquipArea"));
         assert_eq!(
-            cat.get("Game").unwrap().collections["Satchel"].search_area,
-            "PackArea"
+            cat.lookup_atlas("Game", "Inventory").unwrap().collections,
+            vec!["Satchel", "GearArea"]
         );
 
-        cat.delete_collection("Game", "Equip").unwrap();
+        cat.delete_collection("Game", "GearArea").unwrap();
         assert_eq!(
             cat.lookup_atlas("Game", "Inventory").unwrap().collections,
             vec!["Satchel"]
@@ -1082,7 +1086,6 @@ Game:
             "Alpha",
             ProgramCollection {
                 name: "Bag".into(),
-                search_area: "Zone".into(),
                 rows: 2,
                 cols: 2,
             },

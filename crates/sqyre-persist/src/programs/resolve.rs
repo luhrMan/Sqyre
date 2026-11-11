@@ -250,15 +250,12 @@ impl ProgramCatalog {
         macro_: &Macro,
     ) -> std::result::Result<CollectionArea, PortError> {
         let col = self.lookup_collection(r)?;
-        if col.search_area.is_empty() {
-            return Err(PortError::invalid(format!(
-                "collection {:?} has no search area",
-                col.name
-            )));
+        if col.name.is_empty() {
+            return Err(PortError::invalid("collection has no search area name"));
         }
         let sa_ref = match r.program() {
-            Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.search_area)),
-            None => CoordinateRef(col.search_area.clone()),
+            Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.name)),
+            None => CoordinateRef(col.name.clone()),
         };
         let (left, top, right, bottom) = self.resolve_search_area(&sa_ref, macro_)?;
         Ok(CollectionArea {

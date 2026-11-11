@@ -439,17 +439,6 @@ fn theme_accent(tag: &str) -> [u8; 3] {
     }
 }
 
-fn theme_collection_name(tag: &str) -> &'static str {
-    match tag {
-        "mmorpg" => "Bag slots",
-        "strategy" => "Build grid",
-        "creative" => "Layer stack",
-        "productivity" => "Thread list",
-        "puzzle" => "Board cells",
-        _ => "Demo grid",
-    }
-}
-
 /// Extra `{item}~{variant}` placeholders for items used in demo image-searches.
 const DEMO_ITEM_VARIANTS: &[(&str, &str, &[&str])] = &[
     ("Eldoria Online", "Health potion stack", &["glow", "empty"]),
@@ -606,14 +595,13 @@ fn seed_program_from_theme(
         demo_icons::register_item(theme.name, theme.items[i], accent, i + program_idx);
     }
 
-    let collection = theme_collection_name(theme.item_tag);
-    let search_area = theme.search_areas.first().copied().unwrap_or("Main");
+    // Collection name == search-area name.
+    let collection = theme.search_areas.first().copied().unwrap_or("Main");
     catalog
         .upsert_collection(
             theme.name,
             ProgramCollection {
                 name: collection.into(),
-                search_area: search_area.into(),
                 rows: 4,
                 cols: 6,
             },
@@ -1133,11 +1121,11 @@ mod tests {
             let eldoria = catalog.get("Eldoria Online").expect("Eldoria Online");
             assert_eq!(eldoria.items.len(), 6);
             assert!(eldoria.items.contains_key("Health potion stack"));
-            assert!(eldoria.collections.contains_key("Bag slots"));
-            assert!(eldoria.atlases.contains_key("Bag slots atlas"));
+            assert!(eldoria.collections.contains_key("Bag inventory grid"));
+            assert!(eldoria.atlases.contains_key("Bag inventory grid atlas"));
             assert_eq!(
-                eldoria.atlases["Bag slots atlas"].collections,
-                vec!["Bag slots".to_string()]
+                eldoria.atlases["Bag inventory grid atlas"].collections,
+                vec!["Bag inventory grid".to_string()]
             );
             assert!(
                 demo_icons::path_for_item_target("Eldoria Online~Health potion stack").is_some()
@@ -1149,7 +1137,7 @@ mod tests {
             );
             assert!(demo_icons::contains(&demo_icons::collection_icon_path(
                 "Eldoria Online",
-                "Bag slots",
+                "Bag inventory grid",
             )));
 
             let m = macros

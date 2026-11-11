@@ -403,7 +403,7 @@ impl ProgramCatalog {
         upsert_resolution_entity(self, program, key, area, |p| &mut p.search_areas)
     }
 
-    pub fn rename_search_area(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
+    pub fn rename_search_area(&mut self, program: &str, old: &str, new: &str) -> Result<FsWarn> {
         rename_resolution_entity(
             self,
             program,
@@ -413,27 +413,30 @@ impl ProgramCatalog {
             |p| &mut p.search_areas,
             |sa, n| sa.name = n,
         )?;
-        // Propagate to collection.search_area references within this program.
+        // Collection name == search-area name; rename the matching collection too.
+        let mut fs_warn = None;
         if old != new {
-            let p = self.program_mut(program)?;
-            for col in p.collections.values_mut() {
-                if col.search_area == old {
-                    col.search_area = new.to_string();
-                }
+            let has_col = self
+                .get(program)
+                .is_some_and(|p| p.collections.contains_key(old));
+            if has_col {
+                merge_fs_warning(&mut fs_warn, self.rename_collection(program, old, new)?);
             }
         }
-        Ok(())
+        Ok(fs_warn)
     }
 
-    pub fn delete_search_area(&mut self, program: &str, name: &str) -> Result<()> {
+    pub fn delete_search_area(&mut self, program: &str, name: &str) -> Result<FsWarn> {
         delete_resolution_entity(self, program, name, "search area", |p| &mut p.search_areas)?;
-        let p = self.program_mut(program)?;
-        for col in p.collections.values_mut() {
-            if col.search_area == name {
-                col.search_area.clear();
-            }
+        // Collection name == search-area name; drop the matching collection too.
+        let has_col = self
+            .get(program)
+            .is_some_and(|p| p.collections.contains_key(name));
+        if has_col {
+            self.delete_collection(program, name)
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     pub fn upsert_mask(&mut self, program: &str, mask: ProgramMask) -> Result<()> {

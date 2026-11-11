@@ -234,16 +234,15 @@ Game:
           rightx: 100
           bottomy: 80
   collections:
-    Bag:
-      name: Bag
-      searcharea: Arena
+    Arena:
+      name: Arena
       rows: 4
       cols: 5
   atlases:
     Inventory:
       name: Inventory
       collections:
-        - Bag
+        - Arena
 "#;
         let v: Value = serde_yaml::from_str(yaml).unwrap();
         let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
@@ -269,15 +268,15 @@ Game:
                 .unwrap(),
             (0, 0, 100, 80)
         );
-        assert_eq!(resolver.collection_grid("Game", "Bag").unwrap(), (4, 5));
-        let bag_area = resolver
-            .collection_area(&CoordinateRef("Game~Bag@1,1-1,1".into()), &m)
+        assert_eq!(resolver.collection_grid("Game", "Arena").unwrap(), (4, 5));
+        let arena_area = resolver
+            .collection_area(&CoordinateRef("Game~Arena@1,1-1,1".into()), &m)
             .unwrap();
-        assert_eq!(bag_area.bounds(), (0, 0, 100, 80));
-        assert_eq!((bag_area.rows, bag_area.cols), (4, 5));
+        assert_eq!(arena_area.bounds(), (0, 0, 100, 80));
+        assert_eq!((arena_area.rows, arena_area.cols), (4, 5));
         assert_eq!(
             resolver.atlas_members("Game", "Inventory").unwrap(),
-            vec!["Bag".to_string()]
+            vec!["Arena".to_string()]
         );
     }
 
