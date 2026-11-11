@@ -77,6 +77,7 @@ mod preview_tooltip;
 #[cfg(not(feature = "native-runtime"))]
 #[path = "preview_tooltip_stub.rs"]
 mod preview_tooltip;
+mod quick_access;
 mod recorded_action;
 #[cfg(feature = "native-runtime")]
 mod recording_overlay;
@@ -519,6 +520,8 @@ pub struct SqyreApp {
     hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
     /// Near-cursor menu when multiple macros share a hotkey chord.
     hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
+    /// Edge hub radial fan is open (satellites visible).
+    quick_access_expanded: bool,
     /// Macro to start once the current run stops (chooser pick while busy).
     start_when_idle: Option<String>,
     /// Live panic-key name shared with the global hotkey hook; synced from
@@ -802,6 +805,7 @@ impl SqyreApp {
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
+            quick_access_expanded: false,
             start_when_idle: None,
             panic_key_slot,
             macro_list_open: true,
@@ -1059,6 +1063,7 @@ impl eframe::App for SqyreApp {
             self.start_chosen_macro(name, ctx);
         }
         self.poll_hotkey_chooser_escape(ctx);
+        self.poll_quick_access_escape(ctx);
         self.start_deferred_pick(ctx);
         self.apply_picked_file(ctx);
         // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown

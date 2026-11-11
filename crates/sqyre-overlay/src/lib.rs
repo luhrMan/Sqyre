@@ -32,6 +32,8 @@ pub struct ButtonFace {
     pub icon_glyph: char,
     pub icon: [u8; 4],
     pub icon_hover: [u8; 4],
+    /// Paint the static Sqyre brand S instead of [`Self::icon_glyph`].
+    pub brand: bool,
 }
 
 #[cfg(feature = "runtime")]

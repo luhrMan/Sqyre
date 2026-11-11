@@ -104,6 +104,25 @@ impl SystemTray {
         set_application_visible(ctx, self.root_window.as_ref(), visible);
     }
 
+    /// Toggle main-window visibility like the tray Hide/Show item.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn toggle_visible(&self, ctx: &Context) {
+        let show = self.application_hidden();
+        set_application_visible(ctx, self.root_window.as_ref(), show);
+        self.application_hidden.store(!show, Ordering::SeqCst);
+        if show {
+            self.stop_wake_poller();
+        } else {
+            self.start_wake_poller(ctx);
+        }
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        sqyre_capture::event_log(
+            "SQYRE_TRAY",
+            &[("visible", if show { "yes" } else { "no" }), ("via", "hub")],
+        );
+        ctx.request_repaint();
+    }
+
     /// Apply tray menu actions on the egui/UI thread (`App::logic`, including while hidden).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn poll_commands(&self, ctx: &Context, frame: &eframe::Frame) {
