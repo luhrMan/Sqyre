@@ -101,6 +101,7 @@ pub struct ButtonPaint {
     pub icon_glyph: char,
     pub icon: [u8; 4],
     pub icon_hover: [u8; 4],
+    pub brand: bool,
     pub hovered: bool,
     pub busy: bool,
     pub busy_phase: f32,
@@ -119,6 +120,7 @@ impl ButtonPaint {
             icon_glyph: face.icon_glyph,
             icon: face.icon,
             icon_hover: face.icon_hover,
+            brand: face.brand,
             hovered,
             busy,
             busy_phase,
@@ -645,7 +647,7 @@ pub fn rasterize_argb(paint: &ButtonPaint) -> Vec<u8> {
     rgba
 }
 
-/// Icon glyph or busy spinner composited onto the painted face.
+/// Icon glyph, brand S, or busy spinner composited onto the painted face.
 fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: InkMode) {
     // Icon: the busy spinner replaces it outright (no dimmed ghost behind).
     let icon_c = if paint.hovered {
@@ -654,7 +656,11 @@ fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: In
         paint.icon
     };
     let mut canvas = Canvas { rgba, w, h };
-    if !paint.busy && paint.icon_glyph != '\0' && icon_c[3] > 0 {
+    if paint.busy {
+        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, mode);
+    } else if paint.brand && icon_c[3] > 0 {
+        draw_brand_mark(&mut canvas, icon_c, mode);
+    } else if paint.icon_glyph != '\0' && icon_c[3] > 0 {
         blit_glyph(
             &mut canvas,
             paint.icon_glyph,
@@ -662,10 +668,6 @@ fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: In
             icon_c,
             mode,
         );
-    }
-
-    if paint.busy {
-        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, mode);
     }
 }
 
@@ -817,6 +819,15 @@ fn s_coverage(cov: &mut Vec<f32>, w: u32, h: u32, weight: impl Fn(f32, f32) -> f
             &weight,
         );
     }
+}
+
+/// Static Sqyre brand S (full ink, no sweep).
+fn draw_brand_mark(canvas: &mut Canvas<'_>, color: [u8; 4], mode: InkMode) {
+    SPIN_COV.with(|cov| {
+        let mut cov = cov.borrow_mut();
+        s_coverage(&mut cov, canvas.w, canvas.h, |_px, _py| 1.0);
+        stamp_spinner(canvas, cov.as_slice(), color, mode);
+    });
 }
 
 /// Brand spinner: the two S half-strokes drawn as themselves, gated by a
@@ -971,6 +982,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            brand: false,
             hovered: false,
             busy: true,
             busy_phase: 0.0,
@@ -1004,6 +1016,7 @@ mod tip_tests {
             icon_glyph: egui_phosphor::regular::PLAY.chars().next().unwrap(),
             icon: [0xf5, 0xe6, 0xc0, 0xff],
             icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            brand: false,
             hovered: false,
             busy: true,
             busy_phase: 0.0,
@@ -1057,6 +1070,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0, 0, 0, 0],
+            brand: false,
             hovered: false,
             busy: false,
             busy_phase: 0.0,
@@ -1121,6 +1135,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0, 0, 0, 0],
+            brand: false,
             hovered: false,
             busy: false,
             busy_phase: 0.0,

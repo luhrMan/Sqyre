@@ -31,13 +31,9 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     app.macro_overlay
         .set_visibility_map(app.overlay_visibility.found_map());
     let moves = app.macro_overlay.drain_moves();
-    if !moves.is_empty() {
-        app.data_editor.apply_overlay_relocations(
-            app.settings_ui.settings_mut(),
-            moves.into_iter().map(|m| (m.id, m.x, m.y)),
-        );
-    }
+    apply_overlay_and_hub_moves(app, moves);
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
+        app.quick_access_expanded = false;
         // Comment above: hidden while recording — clear native buttons (do not leave last sync).
         app.macro_overlay.sync(
             ctx,
@@ -46,10 +42,38 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             &app.workspace.catalog,
             &app.pending_hotkey_macros,
             None,
+            &[],
             false,
         );
         return;
     }
+
+    let hub_relocate = app.settings_ui.quick_access_relocate;
+    let hub_settings = app.settings_ui.settings().quick_access_hub.clone();
+    let hub_btns = if hub_relocate {
+        app.quick_access_expanded = false;
+        crate::quick_access::hub_overlay_buttons(&hub_settings, false)
+    } else if app.data_editor.overlay_relocate_mode() {
+        app.quick_access_expanded = false;
+        Vec::new()
+    } else {
+        crate::quick_access::hub_overlay_buttons(&hub_settings, app.quick_access_expanded)
+    };
+    if hub_relocate {
+        // Only the hub is hosted while dragging to a new edge.
+        app.macro_overlay.sync(
+            ctx,
+            &[],
+            None,
+            &app.workspace.catalog,
+            &app.pending_hotkey_macros,
+            None,
+            &hub_btns,
+            true,
+        );
+        return;
+    }
+
     let relocate = app.data_editor.overlay_relocate_mode();
     let relocate_program = app.data_editor.overlay_relocate_program();
     // Overlay editor: only host buttons for the selected program (drag-relocate).
@@ -93,10 +117,47 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.workspace.catalog,
         &app.pending_hotkey_macros,
         running_macro,
+        &hub_btns,
         relocate,
     );
     #[cfg(target_os = "android")]
     crate::app_run::refresh_android_overlay_kit(app, ctx);
+}
+
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn apply_overlay_and_hub_moves(app: &mut SqyreApp, moves: Vec<sqyre_overlay::OverlayButtonMove>) {
+    if moves.is_empty() {
+        return;
+    }
+    let mut macro_moves = Vec::new();
+    for m in moves {
+        if m.id == sqyre_persist::QUICK_ACCESS_HUB_ID {
+            apply_hub_relocate(app, m.x as f32, m.y as f32);
+        } else {
+            macro_moves.push(m);
+        }
+    }
+    if !macro_moves.is_empty() {
+        app.data_editor.apply_overlay_relocations(
+            app.settings_ui.settings_mut(),
+            macro_moves.into_iter().map(|m| (m.id, m.x, m.y)),
+        );
+    }
+}
+
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn apply_hub_relocate(app: &mut SqyreApp, x: f32, y: f32) {
+    let size = app.settings_ui.settings().quick_access_hub.size;
+    let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(x, y);
+    let (edge, offset) = sqyre_persist::snap_hub_to_monitor(x, y, size, mon_x, mon_y, mon_w, mon_h);
+    {
+        let hub = &mut app.settings_ui.settings_mut().quick_access_hub;
+        hub.edge = edge;
+        hub.offset = offset;
+        hub.sanitize();
+    }
+    app.settings_ui.quick_access_relocate = false;
+    let _ = app.settings_ui.settings_mut().save_default();
 }
 
 #[cfg(all(feature = "native-runtime", not(feature = "overlay-buttons")))]

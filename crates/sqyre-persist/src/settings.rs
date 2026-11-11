@@ -307,6 +307,172 @@ impl HotkeyWhileRunning {
     }
 }
 
+/// Which screen edge the quick-access hub docks to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HubEdge {
+    Left,
+    #[default]
+    Right,
+    Top,
+    Bottom,
+}
+
+impl HubEdge {
+    /// All selectable values.
+    pub const ALL: [Self; 4] = [Self::Left, Self::Right, Self::Top, Self::Bottom];
+
+    /// Short label for settings / diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+            Self::Top => "Top",
+            Self::Bottom => "Bottom",
+        }
+    }
+}
+
+/// Reserved overlay id and fire token for the quick-access hub button.
+pub const QUICK_ACCESS_HUB_ID: &str = "__sqyre_hub";
+/// Default hub face / brand opacity (0–255).
+pub const DEFAULT_QUICK_ACCESS_OPACITY: u8 = 220;
+
+/// Always-on-top edge hub that opens Sqyre quick actions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuickAccessHubSettings {
+    /// When false the hub button is not drawn.
+    #[serde(default = "default_quick_access_enabled")]
+    pub enabled: bool,
+    /// Docked edge on the monitor under the hub.
+    #[serde(default)]
+    pub edge: HubEdge,
+    /// Position along the edge (`0`…`1`: top→bottom for left/right, left→right for top/bottom).
+    #[serde(default = "default_quick_access_offset")]
+    pub offset: f32,
+    /// Button size in points.
+    #[serde(default = "default_overlay_button_size")]
+    pub size: f32,
+    /// Face / brand-icon opacity (`0`…`255`).
+    #[serde(default = "default_quick_access_opacity")]
+    pub opacity: u8,
+}
+
+fn default_quick_access_enabled() -> bool {
+    true
+}
+
+fn default_quick_access_offset() -> f32 {
+    0.5
+}
+
+fn default_quick_access_opacity() -> u8 {
+    DEFAULT_QUICK_ACCESS_OPACITY
+}
+
+impl Default for QuickAccessHubSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            edge: HubEdge::Right,
+            offset: 0.5,
+            size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            opacity: DEFAULT_QUICK_ACCESS_OPACITY,
+        }
+    }
+}
+
+impl QuickAccessHubSettings {
+    /// Clamp offset/size to valid ranges.
+    pub fn sanitize(&mut self) {
+        if !self.offset.is_finite() {
+            self.offset = 0.5;
+        }
+        self.offset = self.offset.clamp(0.0, 1.0);
+        if !self.size.is_finite() || self.size <= 0.0 {
+            self.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+        }
+        self.size = self
+            .size
+            .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+    }
+
+    /// Top-left desktop position for the hub face on a monitor rect (points).
+    pub fn position_on_monitor(
+        &self,
+        mon_x: f32,
+        mon_y: f32,
+        mon_w: f32,
+        mon_h: f32,
+    ) -> (f32, f32) {
+        let size = self
+            .size
+            .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+        let o = self.offset.clamp(0.0, 1.0);
+        let max_x = (mon_w - size).max(0.0);
+        let max_y = (mon_h - size).max(0.0);
+        match self.edge {
+            HubEdge::Left => (mon_x, mon_y + o * max_y),
+            HubEdge::Right => (mon_x + max_x, mon_y + o * max_y),
+            HubEdge::Top => (mon_x + o * max_x, mon_y),
+            HubEdge::Bottom => (mon_x + o * max_x, mon_y + max_y),
+        }
+    }
+}
+
+/// Snap a dragged hub top-left to the nearest edge of `monitor`; returns edge + offset.
+pub fn snap_hub_to_monitor(
+    x: f32,
+    y: f32,
+    size: f32,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+) -> (HubEdge, f32) {
+    let size = size.clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+    let cx = x + size * 0.5;
+    let cy = y + size * 0.5;
+    let dist_left = (cx - mon_x).abs();
+    let dist_right = (cx - (mon_x + mon_w)).abs();
+    let dist_top = (cy - mon_y).abs();
+    let dist_bottom = (cy - (mon_y + mon_h)).abs();
+    let max_x = (mon_w - size).max(0.0);
+    let max_y = (mon_h - size).max(0.0);
+
+    let edge = if dist_left <= dist_right && dist_left <= dist_top && dist_left <= dist_bottom {
+        HubEdge::Left
+    } else if dist_right <= dist_top && dist_right <= dist_bottom {
+        HubEdge::Right
+    } else if dist_top <= dist_bottom {
+        HubEdge::Top
+    } else {
+        HubEdge::Bottom
+    };
+
+    let offset = match edge {
+        HubEdge::Left | HubEdge::Right => {
+            if max_y <= f32::EPSILON {
+                0.5
+            } else {
+                ((y - mon_y) / max_y).clamp(0.0, 1.0)
+            }
+        }
+        HubEdge::Top | HubEdge::Bottom => {
+            if max_x <= f32::EPSILON {
+                0.5
+            } else {
+                ((x - mon_x) / max_x).clamp(0.0, 1.0)
+            }
+        }
+    };
+    (edge, offset)
+}
+
+fn is_default_quick_access(v: &QuickAccessHubSettings) -> bool {
+    *v == QuickAccessHubSettings::default()
+}
+
 /// Proportional font family used for UI text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -735,6 +901,9 @@ pub struct UserSettings {
     /// [`Self::overlay_buttons_over_sqyre`] is on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
+    /// Edge-docked quick-access hub (New Point / Search Area / Screen Cap / Show-Hide).
+    #[serde(default, skip_serializing_if = "is_default_quick_access")]
+    pub quick_access_hub: QuickAccessHubSettings,
     /// Automatically zip the data directory on a schedule.
     #[serde(default)]
     pub backup_enabled: bool,
@@ -1082,6 +1251,7 @@ impl Default for UserSettings {
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
             overlay_buttons: Vec::new(),
+            quick_access_hub: QuickAccessHubSettings::default(),
             backup_enabled: false,
             backup_interval_hours: DEFAULT_BACKUP_INTERVAL_HOURS,
             backup_max_keep: DEFAULT_BACKUP_MAX_KEEP,
@@ -1510,6 +1680,7 @@ impl UserSettings {
         if self.window_pos_y.is_some_and(|v| !v.is_finite()) {
             self.window_pos_y = None;
         }
+        self.quick_access_hub.sanitize();
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -1703,6 +1874,52 @@ mod tests {
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
         );
+        assert_eq!(loaded.quick_access_hub, QuickAccessHubSettings::default());
+    }
+
+    #[test]
+    fn quick_access_hub_roundtrip() {
+        let s = UserSettings {
+            quick_access_hub: QuickAccessHubSettings {
+                enabled: false,
+                edge: HubEdge::Bottom,
+                offset: 0.25,
+                size: 40.0,
+                opacity: 128,
+            },
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&s).unwrap();
+        assert!(yaml.contains("quick_access_hub"));
+        assert!(yaml.contains("bottom"));
+        let back: UserSettings = serde_yaml::from_str(&yaml).unwrap();
+        assert!(!back.quick_access_hub.enabled);
+        assert_eq!(back.quick_access_hub.edge, HubEdge::Bottom);
+        assert!((back.quick_access_hub.offset - 0.25).abs() < f32::EPSILON);
+        assert!((back.quick_access_hub.size - 40.0).abs() < f32::EPSILON);
+        assert_eq!(back.quick_access_hub.opacity, 128);
+    }
+
+    #[test]
+    fn snap_hub_prefers_nearest_edge() {
+        let (edge, offset) = snap_hub_to_monitor(0.0, 200.0, 26.0, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Left);
+        assert!((offset - 200.0 / (1080.0 - 26.0)).abs() < 0.01);
+
+        let (edge, offset) = snap_hub_to_monitor(1894.0, 540.0, 26.0, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Right);
+        assert!((offset - 540.0 / (1080.0 - 26.0)).abs() < 0.01);
+
+        let hub = QuickAccessHubSettings {
+            edge: HubEdge::Right,
+            offset: 0.5,
+            size: 26.0,
+            enabled: true,
+            opacity: DEFAULT_QUICK_ACCESS_OPACITY,
+        };
+        let (x, y) = hub.position_on_monitor(0.0, 0.0, 1920.0, 1080.0);
+        assert!((x - (1920.0 - 26.0)).abs() < f32::EPSILON);
+        assert!((y - 0.5 * (1080.0 - 26.0)).abs() < f32::EPSILON);
     }
 
     #[test]

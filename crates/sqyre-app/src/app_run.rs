@@ -62,6 +62,11 @@ impl SqyreApp {
         let (groups, direct) =
             crate::hotkey_chooser::partition_pending(&pending, &self.workspace.macros);
         for name in direct {
+            if self.dispatch_quick_access_token(&name, ctx) {
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                sqyre_capture::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
+                continue;
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             sqyre_capture::event_log(
                 "SQYRE_OVERLAY",

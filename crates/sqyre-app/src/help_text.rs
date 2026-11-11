@@ -205,6 +205,19 @@ pub const SET_CAPTURE_BUTTONS: &str =
 /// Button visibility while Sqyre is focused.
 pub const SET_BUTTONS_FRONT: &str =
     "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.";
+/// Edge quick-access hub enable.
+pub const SET_QUICK_ACCESS: &str =
+    "Shows the Sqyre mark on the edge of the screen. Click it to fan out New Point, New Search Area, Screen Cap, and Show/Hide. Turn on Move below, then drag the button to another edge.";
+/// Hub face opacity.
+pub const SET_QUICK_ACCESS_OPACITY: &str =
+    "How see-through the hub and its action buttons are (0 = invisible, 255 = solid).";
+/// Enter drag-relocate for the quick-access hub.
+#[cfg_attr(
+    not(all(feature = "native-runtime", feature = "overlay-buttons")),
+    expect(dead_code, reason = "Move hub checkbox is overlay-buttons only")
+)]
+pub const SET_QUICK_ACCESS_MOVE: &str =
+    "When on, drag the hub button to a new screen edge. It snaps on release and this toggle turns off.";
 /// While-loop safety budget.
 pub const SET_WHILE_BUDGET: &str =
     "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.";

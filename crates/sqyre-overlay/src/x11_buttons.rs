@@ -863,6 +863,7 @@ fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
             || old.face.icon_glyph != new.face.icon_glyph
             || old.face.icon != new.face.icon
             || old.face.icon_hover != new.face.icon_hover
+            || old.face.brand != new.face.brand
             || old.tip != new.tip
             || old.busy != new.busy,
     }
@@ -3851,6 +3852,7 @@ mod tests {
                 icon_glyph: '+',
                 icon: [255, 255, 255, 255],
                 icon_hover: [200, 200, 200, 255],
+                brand: false,
             },
             tip: "run m".into(),
             busy: false,

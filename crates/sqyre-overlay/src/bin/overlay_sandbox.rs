@@ -71,6 +71,7 @@ impl eframe::App for SandboxApp {
             &self.catalog,
             &self.pending,
             None,
+            &[],
             false,
         );
         let drained: Vec<String> = self.pending.lock().drain(..).collect();

@@ -119,6 +119,7 @@ mod tests {
                 icon_glyph: '▶',
                 icon: [255, 255, 255, 255],
                 icon_hover: [255, 200, 0, 255],
+                brand: false,
             },
             focus_gated: gated,
             visibility_gated: false,

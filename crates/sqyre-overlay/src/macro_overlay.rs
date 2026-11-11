@@ -25,7 +25,7 @@ use sqyre_capture::{
     window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::GENERAL_PROGRAM;
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_ID};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
 use sqyre_persist::{
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
@@ -390,12 +390,16 @@ impl MacroOverlay {
         catalog: &ProgramCatalog,
         pending_macros: &Arc<Mutex<Vec<String>>>,
         running_macro: Option<&str>,
+        hub_buttons: &[OverlayButtonConfig],
         relocate: bool,
     ) {
         let any_enabled = buttons
             .iter()
             .any(|b| b.enabled && !b.macro_name.trim().is_empty());
-        if preview.is_none() && !any_enabled {
+        let hub_enabled = hub_buttons
+            .iter()
+            .any(|b| b.enabled && !b.macro_name.trim().is_empty());
+        if preview.is_none() && !any_enabled && !hub_enabled {
             self.stop_focus_poller();
             #[cfg(target_os = "linux")]
             {
@@ -478,6 +482,21 @@ impl MacroOverlay {
             shown += 1;
         }
 
+        // Hub (+ radial satellites) are Sqyre chrome: no focus / over-Sqyre gate.
+        for btn in hub_buttons
+            .iter()
+            .filter(|b| b.enabled && !b.macro_name.trim().is_empty())
+        {
+            let mut drawn = btn.clone();
+            drawn.x = btn.x;
+            drawn.y = btn.y;
+            specs.push(ButtonDraw {
+                cfg: drawn,
+                busy: false,
+            });
+            shown += 1;
+        }
+
         // Raise OR buttons above Sqyre while editing unless a foreign/game window
         // owns focus (MapRaised over fullscreen XWayland latches a drag freeze).
         let foreign_focus = focus
@@ -543,7 +562,7 @@ impl MacroOverlay {
         #[cfg(target_os = "android")]
         {
             let _ = (pending_macros, specs, keep_above);
-            self.sync_android(ctx, buttons, preview, catalog, relocate);
+            self.sync_android(ctx, buttons, preview, hub_buttons, catalog, relocate);
         }
 
         #[cfg(target_os = "windows")]
@@ -635,6 +654,7 @@ impl MacroOverlay {
         ctx: &egui::Context,
         buttons: &[OverlayButtonConfig],
         preview: Option<&OverlayButtonConfig>,
+        hub_buttons: &[OverlayButtonConfig],
         catalog: &ProgramCatalog,
         relocate: bool,
     ) {
@@ -654,6 +674,12 @@ impl MacroOverlay {
             let mut spec = android_spec(btn, catalog, ppp, true);
             spec.editor_pinned = true;
             native.push(spec);
+        }
+        for btn in hub_buttons
+            .iter()
+            .filter(|b| b.enabled && !b.macro_name.trim().is_empty())
+        {
+            native.push(android_spec(btn, catalog, ppp, true));
         }
         if native.is_empty() {
             if let Some(host) = self.android_host.take() {
@@ -952,8 +978,16 @@ fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
     }
     .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
     let style = overlay_icons::OverlayPaintStyle::from_config(btn);
-    let icon = overlay_icons::resolve(&btn.icon);
-    let glyph = icon.glyph.chars().next().unwrap_or('\u{0}');
+    let brand = btn.id == QUICK_ACCESS_HUB_ID || btn.icon.trim() == "sqyre-brand";
+    let glyph = if brand {
+        '\u{0}'
+    } else {
+        overlay_icons::resolve(&btn.icon)
+            .glyph
+            .chars()
+            .next()
+            .unwrap_or('\u{0}')
+    };
     let ppp = ppp.max(0.01);
     let phys = (size * ppp).round().max(1.0);
     ButtonFace {
@@ -983,6 +1017,21 @@ fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
             style.icon_hover.b(),
             style.icon_hover.a(),
         ],
+        brand,
+    }
+}
+
+fn overlay_button_tip(btn: &OverlayButtonConfig) -> String {
+    let id = btn.id.as_str();
+    if id == QUICK_ACCESS_HUB_ID || btn.macro_name.trim() == QUICK_ACCESS_HUB_ID {
+        return sqyre_ports::APP_NAME.to_string();
+    }
+    match id {
+        "__sqyre_hub_new_point" => "New Point".into(),
+        "__sqyre_hub_new_area" => "New Search Area".into(),
+        "__sqyre_hub_screen_cap" => "Screen Cap".into(),
+        "__sqyre_hub_toggle" => "Show / Hide Sqyre".into(),
+        _ => btn.macro_name.trim().to_string(),
     }
 }
 
@@ -993,9 +1042,9 @@ fn win_spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> WinB
         id: btn.id.clone(),
         macro_name: btn.macro_name.clone(),
         face,
-        tip: btn.macro_name.trim().to_string(),
+        tip: overlay_button_tip(btn),
         busy,
-        visibility_gated: btn.visibility_gate.is_active(),
+        visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
     }
 }
 
@@ -1006,9 +1055,9 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
         id: btn.id.clone(),
         macro_name: btn.macro_name.clone(),
         face,
-        tip: btn.macro_name.trim().to_string(),
+        tip: overlay_button_tip(btn),
         busy,
-        visibility_gated: btn.visibility_gate.is_active(),
+        visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
     }
 }
 

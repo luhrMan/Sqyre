@@ -357,6 +357,7 @@ fn update_button(state: &mut HostState, spec: WinButtonSpec) {
         || live.spec.face.border != spec.face.border
         || live.spec.face.icon != spec.face.icon
         || live.spec.face.icon_glyph != spec.face.icon_glyph
+        || live.spec.face.brand != spec.face.brand
         || live.spec.busy != spec.busy;
     live.spec = spec;
     live.spec.face.x = x;
