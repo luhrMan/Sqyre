@@ -83,18 +83,21 @@ pub(crate) fn hub_overlay_buttons(
             sqyre_persist::MIN_OVERLAY_BUTTON_SIZE,
             sqyre_persist::MAX_OVERLAY_BUTTON_SIZE,
         );
-        let radius = hub.size * 2.15;
+        let layout = SatelliteLayout {
+            hub_x: hx,
+            hub_y: hy,
+            hub_size: hub.size,
+            sat_size,
+            edge: hub.edge,
+            radius: hub.size * 2.15,
+            mon_x,
+            mon_y,
+            mon_w,
+            mon_h,
+            count: ACTIONS.len(),
+        };
         for (i, action) in ACTIONS.iter().enumerate() {
-            let (sx, sy) = satellite_top_left(SatelliteLayout {
-                hub_x: hx,
-                hub_y: hy,
-                hub_size: hub.size,
-                sat_size,
-                edge: hub.edge,
-                radius,
-                index: i,
-                count: ACTIONS.len(),
-            });
+            let (sx, sy) = satellite_top_left(layout, i);
             out.push(satellite_face(action, sx, sy, sat_size, opacity));
         }
     }
@@ -102,6 +105,7 @@ pub(crate) fn hub_overlay_buttons(
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+#[derive(Clone, Copy)]
 struct SatelliteLayout {
     hub_x: f32,
     hub_y: f32,
@@ -109,7 +113,10 @@ struct SatelliteLayout {
     sat_size: f32,
     edge: HubEdge,
     radius: f32,
-    index: usize,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
     count: usize,
 }
 
@@ -170,27 +177,103 @@ fn satellite_face(
     }
 }
 
-/// Top-left of satellite `i` on an inward half-circle from the hub.
+/// Top-left of satellite `i` on an inward fan that stays inside the monitor.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-fn satellite_top_left(layout: SatelliteLayout) -> (f32, f32) {
+fn satellite_top_left(layout: SatelliteLayout, index: usize) -> (f32, f32) {
     let cx = layout.hub_x + layout.hub_size * 0.5;
     let cy = layout.hub_y + layout.hub_size * 0.5;
-    let (start, sweep) = match layout.edge {
-        // Inward = toward screen center.
-        HubEdge::Right => (std::f32::consts::FRAC_PI_2, std::f32::consts::PI), // up → left → down
-        HubEdge::Left => (-std::f32::consts::FRAC_PI_2, std::f32::consts::PI), // down → right → up
-        HubEdge::Top => (0.0, std::f32::consts::PI), // right → down → left
-        HubEdge::Bottom => (std::f32::consts::PI, std::f32::consts::PI), // left → up → right
+    let half = layout.sat_size * 0.5;
+    let room_left = (cx - layout.mon_x - half).max(0.0);
+    let room_right = (layout.mon_x + layout.mon_w - cx - half).max(0.0);
+    let room_up = (cy - layout.mon_y - half).max(0.0);
+    let room_down = (layout.mon_y + layout.mon_h - cy - half).max(0.0);
+    let room_in = match layout.edge {
+        HubEdge::Right => room_left,
+        HubEdge::Left => room_right,
+        HubEdge::Top => room_down,
+        HubEdge::Bottom => room_up,
     };
+    // Keep the fan radius inside the inward room; tangent room trims the sweep.
+    let radius = layout
+        .radius
+        .min(room_in)
+        .max((layout.hub_size * 0.75).min(room_in.max(1.0)));
+    let (start, sweep) = inward_fan_range(
+        layout.edge,
+        radius,
+        room_left,
+        room_right,
+        room_up,
+        room_down,
+    );
     let t = if layout.count <= 1 {
         0.5
     } else {
-        layout.index as f32 / (layout.count as f32 - 1.0)
+        index as f32 / (layout.count as f32 - 1.0)
     };
     let angle = start + sweep * t;
-    let sx = cx + layout.radius * angle.cos() - layout.sat_size * 0.5;
-    let sy = cy + layout.radius * angle.sin() - layout.sat_size * 0.5;
-    (sx, sy)
+    let sx = cx + radius * angle.cos() - half;
+    let sy = cy + radius * angle.sin() - half;
+    clamp_rect_to_monitor(
+        sx,
+        sy,
+        layout.sat_size,
+        layout.mon_x,
+        layout.mon_y,
+        layout.mon_w,
+        layout.mon_h,
+    )
+}
+
+/// Inward half-circle, trimmed when the hub sits near a corner.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn inward_fan_range(
+    edge: HubEdge,
+    radius: f32,
+    room_left: f32,
+    room_right: f32,
+    room_up: f32,
+    room_down: f32,
+) -> (f32, f32) {
+    let r = radius.max(1.0);
+    let max_left = (room_left / r).clamp(0.0, 1.0).asin();
+    let max_right = (room_right / r).clamp(0.0, 1.0).asin();
+    let max_up = (room_up / r).clamp(0.0, 1.0).asin();
+    let max_down = (room_down / r).clamp(0.0, 1.0).asin();
+    match edge {
+        // Inward π: start = π - max_down → end = π + max_up (full: π/2 → 3π/2).
+        HubEdge::Right => (
+            std::f32::consts::PI - max_down,
+            (max_down + max_up).max(0.01),
+        ),
+        // Inward 0: start = -max_up → end = max_down (full: -π/2 → π/2).
+        HubEdge::Left => (-max_up, (max_up + max_down).max(0.01)),
+        // Inward π/2: start = π/2 - max_right → end = π/2 + max_left (full: 0 → π).
+        HubEdge::Top => (
+            std::f32::consts::FRAC_PI_2 - max_right,
+            (max_right + max_left).max(0.01),
+        ),
+        // Inward 3π/2: start = 3π/2 - max_left → end = 3π/2 + max_right (full: π → 2π).
+        HubEdge::Bottom => (
+            3.0 * std::f32::consts::FRAC_PI_2 - max_left,
+            (max_left + max_right).max(0.01),
+        ),
+    }
+}
+
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn clamp_rect_to_monitor(
+    x: f32,
+    y: f32,
+    size: f32,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+) -> (f32, f32) {
+    let max_x = (mon_x + mon_w - size).max(mon_x);
+    let max_y = (mon_y + mon_h - size).max(mon_y);
+    (x.clamp(mon_x, max_x), y.clamp(mon_y, max_y))
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -357,26 +440,49 @@ mod tests {
 
     #[test]
     fn satellites_fan_inward_from_right_edge() {
-        let hub_x = 1894.0;
-        let hub_y = 500.0;
-        let hub_size = 26.0;
-        let sat = 24.0;
-        let layout = |index| SatelliteLayout {
-            hub_x,
-            hub_y,
-            hub_size,
-            sat_size: sat,
+        let layout = SatelliteLayout {
+            hub_x: 1894.0,
+            hub_y: 500.0,
+            hub_size: 26.0,
+            sat_size: 24.0,
             edge: HubEdge::Right,
             radius: 56.0,
-            index,
+            mon_x: 0.0,
+            mon_y: 0.0,
+            mon_w: 1920.0,
+            mon_h: 1080.0,
             count: 4,
         };
-        let (_x0, y0) = satellite_top_left(layout(0));
-        let (x1, _y1) = satellite_top_left(layout(1));
-        let (_x2, y2) = satellite_top_left(layout(3));
-        // Screen Y grows downward: start angle π/2 is below, end 3π/2 is above.
-        assert!(y0 > hub_y + hub_size * 0.5);
-        assert!(y2 < hub_y + hub_size * 0.5);
-        assert!(x1 < hub_x);
+        let (_x0, y0) = satellite_top_left(layout, 0);
+        let (x1, _y1) = satellite_top_left(layout, 1);
+        let (_x2, y2) = satellite_top_left(layout, 3);
+        // Screen Y grows downward: start is below, end is above.
+        assert!(y0 > layout.hub_y + layout.hub_size * 0.5);
+        assert!(y2 < layout.hub_y + layout.hub_size * 0.5);
+        assert!(x1 < layout.hub_x);
+    }
+
+    #[test]
+    fn satellites_stay_on_monitor_near_corner() {
+        let layout = SatelliteLayout {
+            hub_x: 1894.0,
+            hub_y: 0.0,
+            hub_size: 26.0,
+            sat_size: 24.0,
+            edge: HubEdge::Right,
+            radius: 56.0,
+            mon_x: 0.0,
+            mon_y: 0.0,
+            mon_w: 1920.0,
+            mon_h: 1080.0,
+            count: 4,
+        };
+        for i in 0..4 {
+            let (x, y) = satellite_top_left(layout, i);
+            assert!(x >= layout.mon_x, "sat {i} x={x}");
+            assert!(y >= layout.mon_y, "sat {i} y={y}");
+            assert!(x + layout.sat_size <= layout.mon_x + layout.mon_w + 0.5);
+            assert!(y + layout.sat_size <= layout.mon_y + layout.mon_h + 0.5);
+        }
     }
 }
