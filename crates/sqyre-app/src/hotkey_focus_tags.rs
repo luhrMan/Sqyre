@@ -85,8 +85,8 @@ fn resolve(focus: Option<&WindowInfo>) -> FocusResolve<'_> {
     FocusResolve::Window(active)
 }
 
-/// Prefer process-bound Programs; skip General.
-fn find_focused_program(
+/// Catalog program that owns `win`, if any (skips General). Prefer process bindings.
+pub(crate) fn find_focused_program(
     catalog: &ProgramCatalog,
     win: &WindowInfo,
 ) -> Option<(String, Vec<String>)> {
@@ -125,10 +125,58 @@ fn find_focused_program(
     bound.or(fuzzy)
 }
 
+/// Editor program for a focus hint / active window, when the catalog knows it.
+///
+/// Prefer `hint` (e.g. overlay `last_foreign`) so Sqyre-owned focus after a hub
+/// click still targets the game. Falls back to the OS active window when it is
+/// a foreign client.
+pub(crate) fn focused_editor_program(
+    catalog: &ProgramCatalog,
+    hint: Option<&WindowInfo>,
+) -> Option<String> {
+    let win = hint
+        .filter(|w| !window_is_our_process(w) && !window_is_transient_shell_focus(w))
+        .cloned()
+        .or_else(|| {
+            get_active_window()
+                .ok()
+                .flatten()
+                .filter(|w| !window_is_our_process(w) && !window_is_transient_shell_focus(w))
+        })?;
+    find_focused_program(catalog, &win).map(|(name, _)| name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqyre_persist::ProgramCatalog;
+
+    #[test]
+    fn focused_editor_program_skips_our_process() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Game").unwrap();
+        cat.set_process_binding("Game", "/games/game", "").unwrap();
+        let ours = WindowInfo {
+            title: "Sqyre".into(),
+            process_name: "sqyre".into(),
+            process_path: std::env::current_exe()
+                .ok()
+                .and_then(|p| p.to_str().map(str::to_string))
+                .unwrap_or_else(|| "/bin/sqyre".into()),
+            icon: None,
+        };
+        assert!(focused_editor_program(&cat, Some(&ours)).is_none());
+        let game = WindowInfo {
+            title: "Game".into(),
+            process_name: "game".into(),
+            process_path: "/games/game".into(),
+            icon: None,
+        };
+        assert_eq!(
+            focused_editor_program(&cat, Some(&game)).as_deref(),
+            Some("Game")
+        );
+    }
 
     #[test]
     fn find_prefers_process_binding() {

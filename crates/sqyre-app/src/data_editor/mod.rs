@@ -262,6 +262,9 @@ pub struct DataEditor {
     split_key_moved: bool,
     /// Selected program name (all tabs).
     selected_program: Option<String>,
+    /// Focused catalog program (from overlay last-foreign / active window).
+    /// When set, New entity actions target this program.
+    focused_program_hint: Option<String>,
     /// Selected entity within program (items / points / search areas).
     selected_entity: Option<String>,
     /// Expand + scroll the left list to [`Self::selected_program`] (armed on tab switch).
@@ -415,6 +418,7 @@ impl Default for DataEditor {
             left_width: 0.0,
             split_key_moved: false,
             selected_program: None,
+            focused_program_hint: None,
             selected_entity: None,
             scroll_left_list_to_selection: false,
             form_name: String::new(),
@@ -731,9 +735,36 @@ impl DataEditor {
         }
     }
 
+    /// Prefer the focused application when creating a new model, if known.
+    pub(crate) fn set_focused_program_hint(&mut self, program: Option<String>) {
+        self.focused_program_hint = program.filter(|p| is_editor_listed_program(p));
+    }
+
+    /// Select [`Self::focused_program_hint`] when creating under an entity tab.
+    pub(crate) fn prefer_focused_program_for_new(
+        &mut self,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        if matches!(self.tab, EditorTab::Programs) {
+            return;
+        }
+        let Some(name) = self.focused_program_hint.clone() else {
+            return;
+        };
+        if catalog.get(&name).is_none() {
+            return;
+        }
+        if self.selected_program.as_deref() == Some(name.as_str()) {
+            return;
+        }
+        self.select_program(&name, catalog, settings);
+    }
+
     /// Open on `tab`, ensure a program is selected, then create a new entity.
     pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
         self.open_tab(env.ctx, tab, env.catalog, env.settings);
+        self.prefer_focused_program_for_new(env.catalog, env.settings);
         self.form_name.clear();
         self.on_new(env);
     }
