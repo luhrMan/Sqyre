@@ -200,10 +200,6 @@ pub(super) fn encode_collection(col: &ProgramCollection) -> Value {
         Value::String("name".into()),
         Value::String(col.name.clone()),
     );
-    map.insert(
-        Value::String("searcharea".into()),
-        Value::String(col.search_area.clone()),
-    );
     map.insert(Value::String("rows".into()), Value::Number(col.rows.into()));
     map.insert(Value::String("cols".into()), Value::Number(col.cols.into()));
     Value::Mapping(map)

@@ -378,7 +378,6 @@ impl DataEditor {
     }
 
     pub(crate) fn reset_collection_form(&mut self) {
-        self.form_name.clear();
         self.form_search_area.clear();
         self.form_rows = "1".into();
         self.form_cols = "1".into();

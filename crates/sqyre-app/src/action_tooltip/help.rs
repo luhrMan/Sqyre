@@ -260,7 +260,8 @@ pub const DE_SCREENCAP_NEW_ITEM: &str =
 #[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_BOUNDS: &str =
     "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
-pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
+pub const DE_COLLECTION_AREA: &str =
+    "Search area this collection covers. The collection takes the same name.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";
 pub const DE_ATLAS_MEMBERS: &str =
