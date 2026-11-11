@@ -1214,6 +1214,9 @@ mod tests {
         let mut backend = RecordingBackend::default();
         let resolver = RUN_RESOLVER;
         let fx = sqyre_ports::SharedClickFx::new();
+        let hits = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits2 = std::sync::Arc::clone(&hits);
+        fx.set_on_click(Some(move |x, y| hits2.lock().unwrap().push((x, y))));
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.mouse_delay = 0;
         macro_.root = root_loop(vec![
@@ -1236,7 +1239,7 @@ mod tests {
                 .click_fx(&fx),
         )
         .unwrap();
-        assert_eq!(fx.drain(), vec![(42, 99)]);
+        assert_eq!(*hits.lock().unwrap(), vec![(42, 99)]);
     }
 
     #[test]
@@ -1246,12 +1249,15 @@ mod tests {
             ..RecordingBackend::default()
         };
         let fx = sqyre_ports::SharedClickFx::new();
+        let hits = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits2 = std::sync::Arc::clone(&hits);
+        fx.set_on_click(Some(move |x, y| hits2.lock().unwrap().push((x, y))));
         let mut macro_ = macro_of(vec![Action::new(ActionKind::Click {
             button: "left".into(),
             state: PressState::Down,
         })]);
         execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).click_fx(&fx)).unwrap();
-        assert_eq!(fx.drain(), vec![(5, 6)]);
+        assert_eq!(*hits.lock().unwrap(), vec![(5, 6)]);
     }
 
     #[test]
