@@ -22,41 +22,63 @@ impl DataEditor {
         if self.selected_program.is_none() || self.selected_entity.is_none() {
             return false;
         }
+        let hub = self
+            .selected_entity
+            .as_deref()
+            .is_some_and(sqyre_persist::is_quick_access_hub_id);
         let icon = overlay_icons::resolve(&self.form_overlay_icon);
         crate::widgets::pair_labeled(ui, egui_phosphor::regular::SMILEY, icon.label, |ui| {
             let mut preview_cfg = OverlayButtonConfig::new("preview", "");
             self.apply_overlay_style_to_config(&mut preview_cfg);
+            if hub {
+                preview_cfg.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+                preview_cfg.border_width = 0.0;
+                preview_cfg.border_alpha = 0;
+                preview_cfg.bg_alpha = 0;
+            }
             let style = overlay_icons::OverlayPaintStyle::from_config(&preview_cfg);
             let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style)
-                .on_hover_text(help::DE_OVERLAY_ICON);
-            if preview.clicked() {
+                .on_hover_text(if hub {
+                    help::DE_OVERLAY_HUB
+                } else {
+                    help::DE_OVERLAY_ICON
+                });
+            if !hub && preview.clicked() {
                 if let Some(id) = self.selected_entity.clone() {
                     self.overlay_icon_search.clear();
                     self.overlay_icon_picker_for = Some(id);
                 }
             }
         });
-        let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-        let _ = crate::widgets::labeled_searchable_combo(
-            ui,
-            crate::model_icons::MACRO,
-            "Macro",
-            help::DE_OVERLAY_MACRO,
-            "overlay_form_macro",
-            &mut self.form_overlay_macro,
-            crate::widgets::SearchableComboOpts {
-                options: &macro_names,
-                empty_text: "(pick macro)",
-                none_label: Some(sqyre_domain::EMPTY_NONE),
-                width: Some(220.0),
-                on_option_hover: None,
-                option_icon: None,
-                closed_icon: true,
-                option_label: None,
-            },
-            None,
-        );
-        {
+        if hub {
+            help::tip(
+                ui.label(sqyre_persist::QUICK_ACCESS_HUB_LABEL),
+                help::DE_OVERLAY_HUB,
+            );
+            ui.weak("Drag on screen to move; snaps to a screen edge.");
+        } else {
+            let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
+            let _ = crate::widgets::labeled_searchable_combo(
+                ui,
+                crate::model_icons::MACRO,
+                "Macro",
+                help::DE_OVERLAY_MACRO,
+                "overlay_form_macro",
+                &mut self.form_overlay_macro,
+                crate::widgets::SearchableComboOpts {
+                    options: &macro_names,
+                    empty_text: "(pick macro)",
+                    none_label: Some(sqyre_domain::EMPTY_NONE),
+                    width: Some(220.0),
+                    on_option_hover: None,
+                    option_icon: None,
+                    closed_icon: true,
+                    option_label: None,
+                },
+                None,
+            );
+        }
+        if !hub {
             use crate::pickers::CoordKind;
             use sqyre_domain::CoordinateRef;
             let point_val = self.form_overlay_point.clone();
@@ -102,14 +124,18 @@ impl DataEditor {
                 self.form_overlay_point.clear();
             }
         }
-        let point_set = !self.form_overlay_point.trim().is_empty();
+        let point_set = !hub && !self.form_overlay_point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
                     egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "X",
-                    help::DE_OVERLAY_X,
+                    if hub {
+                        help::DE_OVERLAY_HUB
+                    } else {
+                        help::DE_OVERLAY_X
+                    },
                     &mut self.form_overlay_x,
                     |d| d.speed(1.0).suffix(" px"),
                 );
@@ -117,7 +143,11 @@ impl DataEditor {
                     ui,
                     egui_phosphor::regular::ARROWS_VERTICAL,
                     "Y",
-                    help::DE_OVERLAY_Y,
+                    if hub {
+                        help::DE_OVERLAY_HUB
+                    } else {
+                        help::DE_OVERLAY_Y
+                    },
                     &mut self.form_overlay_y,
                     |d| d.speed(1.0).suffix(" px"),
                 );
@@ -130,6 +160,23 @@ impl DataEditor {
             loc.y = self.form_overlay_y;
             let (rx, ry) = loc.resolved_position(catalog);
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
+        }
+        if hub {
+            crate::widgets::drag_field(
+                ui,
+                egui_phosphor::regular::RULER,
+                "Size",
+                help::DE_OVERLAY_SIZE,
+                &mut self.form_overlay_size,
+                |d| {
+                    d.speed(1)
+                        .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
+                },
+            );
+            ui.horizontal(|ui| {
+                color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
+            });
+            return false;
         }
         crate::widgets::collapsible_section(
             ui,

@@ -138,9 +138,6 @@ pub struct SettingsUi {
     panic_record: crate::key_record::KeyRecordUi,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     permissions: crate::permissions_panel::PermissionsPanel,
-    /// Transient: drag-relocate the quick-access hub until the next drop.
-    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-    pub quick_access_relocate: bool,
 }
 
 impl SettingsUi {
@@ -911,9 +908,6 @@ impl SettingsUi {
         let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
         let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
         let show_overlay_over = setting_visible(q, hit, SETTING_OVERLAY_OVER_SQYRE);
-        let show_quick_access = setting_visible(q, hit, SETTING_QUICK_ACCESS);
-        let show_quick_access_opacity = setting_visible(q, hit, SETTING_QUICK_ACCESS_OPACITY);
-        let show_quick_access_move = setting_visible(q, hit, SETTING_QUICK_ACCESS_MOVE);
         let show_cursor = setting_visible(q, hit, SETTING_RESTORE_CURSOR);
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
@@ -925,9 +919,6 @@ impl SettingsUi {
             || show_overlay_stop
             || show_overlay_detect
             || show_overlay_over
-            || show_quick_access
-            || show_quick_access_opacity
-            || show_quick_access_move
             || show_while
             || show_depth
             || show_flash_ms)
@@ -1012,50 +1003,6 @@ impl SettingsUi {
             )
         {
             self.mark_dirty();
-        }
-
-        if show_quick_access
-            && dirty_checkbox(
-                ui,
-                &mut self.settings.quick_access_hub.enabled,
-                "Show quick-access hub on screen edge",
-                ht::SET_QUICK_ACCESS,
-            )
-        {
-            self.mark_dirty();
-        }
-
-        if show_quick_access_opacity {
-            let hub_on = self.settings.quick_access_hub.enabled;
-            ui.add_enabled_ui(hub_on, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Hub opacity")
-                        .on_hover_text(ht::SET_QUICK_ACCESS_OPACITY);
-                    let mut opacity = i32::from(self.settings.quick_access_hub.opacity);
-                    if dirty_i32(ui, &mut opacity, ht::SET_QUICK_ACCESS_OPACITY, |d| {
-                        d.range(0..=255).speed(1)
-                    }) {
-                        self.settings.quick_access_hub.opacity = opacity.clamp(0, 255) as u8;
-                        self.mark_dirty();
-                    }
-                });
-            });
-        }
-
-        #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-        if show_quick_access_move {
-            if !self.settings.quick_access_hub.enabled {
-                self.quick_access_relocate = false;
-            }
-            let hub_on = self.settings.quick_access_hub.enabled;
-            ui.add_enabled_ui(hub_on, |ui| {
-                dirty_checkbox(
-                    ui,
-                    &mut self.quick_access_relocate,
-                    "Move quick-access hub",
-                    ht::SET_QUICK_ACCESS_MOVE,
-                );
-            });
         }
 
         if show_while || show_depth || show_flash_ms {
@@ -2785,19 +2732,6 @@ const SETTING_OVERLAY_OVER_SQYRE: &[&str] = &[
     "show overlay",
     "sqyre window",
 ];
-const SETTING_QUICK_ACCESS: &[&str] = &[
-    "quick access",
-    "hub",
-    "edge",
-    "overlay",
-    "new point",
-    "search area",
-    "screen cap",
-];
-const SETTING_QUICK_ACCESS_OPACITY: &[&str] =
-    &["quick access", "hub", "opacity", "alpha", "transparency"];
-const SETTING_QUICK_ACCESS_MOVE: &[&str] =
-    &["quick access", "hub", "move", "drag", "edge", "relocate"];
 const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
     "hotkey",
     "hotkeys",
@@ -3117,10 +3051,6 @@ const MACROS_SETTINGS: &[&[&str]] = &[
     SETTING_OVERLAY_PRESS_STOPS,
     SETTING_OVERLAY_IN_DETECTION,
     SETTING_OVERLAY_OVER_SQYRE,
-    SETTING_QUICK_ACCESS,
-    SETTING_QUICK_ACCESS_OPACITY,
-    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-    SETTING_QUICK_ACCESS_MOVE,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_CLICK_FLASH_MS,

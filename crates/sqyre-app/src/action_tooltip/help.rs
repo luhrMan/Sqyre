@@ -283,6 +283,8 @@ pub const VARS_DECLARED: &str =
     "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.";
 pub const DE_COLLECTION_CELL_ZOOM: &str =
     "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
+pub const DE_OVERLAY_HUB: &str =
+    "Built-in edge hub for New Point, New Search Area, Screen Cap, and Show/Hide. Drag it while this Overlay tab is open; it snaps to the nearest screen edge on release. Disable it from the list if you do not want it.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =

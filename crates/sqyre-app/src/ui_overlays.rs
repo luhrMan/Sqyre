@@ -51,51 +51,61 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         return;
     }
 
-    let hub_relocate = app.settings_ui.quick_access_relocate;
-    let hub_settings = app.settings_ui.settings().quick_access_hub.clone();
-    let hub_btns = if hub_relocate {
-        app.snap_quick_access_fan_closed();
-        app.macro_overlay.set_hub_fan_interactive(false);
-        app.macro_overlay.set_hub_fan_dismiss(false);
-        crate::quick_access::hub_overlay_buttons(&hub_settings, 0.0, ppp)
-    } else if app.data_editor.overlay_relocate_mode() {
-        app.snap_quick_access_fan_closed();
-        app.macro_overlay.set_hub_fan_interactive(false);
-        app.macro_overlay.set_hub_fan_dismiss(false);
-        Vec::new()
-    } else {
-        app.tick_quick_access_fan(ctx);
-        let fan_open = app.quick_access_expanded || app.quick_access_fan_t > 0.001;
-        let fan_interactive =
-            app.quick_access_expanded && (app.quick_access_fan_t - 1.0).abs() <= 0.001;
-        app.macro_overlay.set_hub_fan_interactive(fan_interactive);
-        app.macro_overlay.set_hub_fan_dismiss(fan_open);
-        crate::quick_access::hub_overlay_buttons(&hub_settings, app.quick_access_fan_t, ppp)
-    };
-    if hub_relocate {
-        // Only the hub is hosted while dragging to a new edge.
-        app.macro_overlay.sync(
-            ctx,
-            &[],
-            None,
-            &app.workspace.catalog,
-            &app.pending_hotkey_macros,
-            None,
-            &hub_btns,
-            true,
-        );
-        return;
-    }
-
     let relocate = app.data_editor.overlay_relocate_mode();
-    let relocate_program = app.data_editor.overlay_relocate_program();
+    let relocate_program = app
+        .data_editor
+        .overlay_relocate_program()
+        .map(str::to_owned);
+    let hub_cfg = app
+        .settings_ui
+        .settings()
+        .overlay_buttons
+        .iter()
+        .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
+        .cloned();
+    let hub_btns = match (&hub_cfg, relocate_program.as_deref()) {
+        (Some(hub), Some(prog)) if relocate => {
+            app.snap_quick_access_fan_closed();
+            app.macro_overlay.set_hub_fan_interactive(false);
+            app.macro_overlay.set_hub_fan_dismiss(false);
+            // Hub is a General overlay button — relocatable with that program only.
+            if prog == sqyre_domain::GENERAL_PROGRAM {
+                crate::quick_access::hub_overlay_buttons(hub, 0.0, ppp)
+            } else {
+                Vec::new()
+            }
+        }
+        (Some(_), _) if relocate => {
+            app.snap_quick_access_fan_closed();
+            app.macro_overlay.set_hub_fan_interactive(false);
+            app.macro_overlay.set_hub_fan_dismiss(false);
+            Vec::new()
+        }
+        (Some(hub), _) => {
+            app.tick_quick_access_fan(ctx);
+            let fan_open = app.quick_access_expanded || app.quick_access_fan_t > 0.001;
+            let fan_interactive =
+                app.quick_access_expanded && (app.quick_access_fan_t - 1.0).abs() <= 0.001;
+            app.macro_overlay.set_hub_fan_interactive(fan_interactive);
+            app.macro_overlay.set_hub_fan_dismiss(fan_open);
+            crate::quick_access::hub_overlay_buttons(hub, app.quick_access_fan_t, ppp)
+        }
+        (None, _) => Vec::new(),
+    };
+
     // Overlay editor: only host buttons for the selected program (drag-relocate).
+    // Hub face is hosted via `hub_btns` so it is excluded from the macro list.
     let buttons: Vec<_> = {
-        let all = &app.settings_ui.settings().overlay_buttons;
-        match relocate_program {
-            Some(prog) => all.iter().filter(|b| b.program == prog).cloned().collect(),
+        let all = app
+            .settings_ui
+            .settings()
+            .overlay_buttons
+            .iter()
+            .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id));
+        match relocate_program.as_deref() {
+            Some(prog) => all.filter(|b| b.program == prog).cloned().collect(),
             None if relocate => Vec::new(),
-            None => all.clone(),
+            None => all.cloned().collect(),
         }
     };
     let close_dist = app
@@ -146,37 +156,34 @@ fn apply_overlay_and_hub_moves(
     if moves.is_empty() {
         return;
     }
-    let mut macro_moves = Vec::new();
+    let ppp = ppp.max(0.01);
+    let mut relocated = Vec::new();
     for m in moves {
-        if m.id == sqyre_persist::QUICK_ACCESS_HUB_ID {
-            apply_hub_relocate(app, m.x as f32, m.y as f32, ppp);
+        if sqyre_persist::is_quick_access_hub_id(&m.id) {
+            let size_pt = app
+                .settings_ui
+                .settings()
+                .overlay_buttons
+                .iter()
+                .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
+                .map(|b| b.size)
+                .unwrap_or(sqyre_persist::DEFAULT_OVERLAY_BUTTON_SIZE);
+            let size_px = (size_pt * ppp).round().max(1.0);
+            let x = m.x as f32;
+            let y = m.y as f32;
+            let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(x, y);
+            let (edge, offset) =
+                sqyre_persist::snap_hub_to_monitor(x, y, size_px, mon_x, mon_y, mon_w, mon_h);
+            let (sx, sy) = sqyre_persist::hub_position_on_monitor(
+                edge, offset, mon_x, mon_y, mon_w, mon_h, size_px,
+            );
+            relocated.push((m.id, sx.round() as i32, sy.round() as i32));
         } else {
-            macro_moves.push(m);
+            relocated.push((m.id, m.x, m.y));
         }
     }
-    if !macro_moves.is_empty() {
-        app.data_editor.apply_overlay_relocations(
-            app.settings_ui.settings_mut(),
-            macro_moves.into_iter().map(|m| (m.id, m.x, m.y)),
-        );
-    }
-}
-
-#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-fn apply_hub_relocate(app: &mut SqyreApp, x: f32, y: f32, ppp: f32) {
-    let size_pt = app.settings_ui.settings().quick_access_hub.size;
-    let size_px = (size_pt * ppp.max(0.01)).round().max(1.0);
-    let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(x, y);
-    let (edge, offset) =
-        sqyre_persist::snap_hub_to_monitor(x, y, size_px, mon_x, mon_y, mon_w, mon_h);
-    {
-        let hub = &mut app.settings_ui.settings_mut().quick_access_hub;
-        hub.edge = edge;
-        hub.offset = offset;
-        hub.sanitize();
-    }
-    app.settings_ui.quick_access_relocate = false;
-    let _ = app.settings_ui.settings_mut().save_default();
+    app.data_editor
+        .apply_overlay_relocations(app.settings_ui.settings_mut(), relocated);
 }
 
 #[cfg(all(feature = "native-runtime", not(feature = "overlay-buttons")))]

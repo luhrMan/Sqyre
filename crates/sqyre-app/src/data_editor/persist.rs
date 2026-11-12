@@ -994,6 +994,10 @@ impl DataEditor {
             let Some(id) = self.selected_entity.clone() else {
                 return;
             };
+            if sqyre_persist::is_quick_access_hub_id(&id) {
+                self.set_err("The Quick Access hub cannot be deleted. Disable it instead.");
+                return;
+            }
             settings.overlay_buttons.retain(|b| b.id != id);
             if self.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
                 self.overlay_icon_picker_for = None;
