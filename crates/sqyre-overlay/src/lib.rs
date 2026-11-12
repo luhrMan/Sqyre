@@ -42,6 +42,11 @@ mod context_menu;
 mod hub_fan;
 #[cfg(feature = "runtime")]
 mod macro_overlay;
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "windows", test)
+))]
+mod os_popup;
 #[cfg(all(feature = "runtime", any(target_os = "linux", target_os = "windows")))]
 mod pending_wake;
 
@@ -69,6 +74,14 @@ pub use context_menu::{
 };
 #[cfg(feature = "runtime")]
 pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult, OverlayButtonMove};
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "windows", test)
+))]
+pub use os_popup::{
+    clamp_popup_origin, monitor_for_point, place_cursor_popup, place_tip_near_button,
+    point_in_popup, MonitorRect, TIP_GAP_PX,
+};
 
 pub use icons::{
     catalog, glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,

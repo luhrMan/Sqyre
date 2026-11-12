@@ -1,7 +1,9 @@
 //! Shared labels and action DTO for the overlay-button context menu.
 //!
-//! Desktop hosts paint a chooser at the cursor; Android uses a long-press
-//! `PopupMenu`. Both enqueue [`OverlayButtonContextAction`] for the app to drain.
+//! Desktop hosts paint a chooser at the cursor with `os_popup::place_cursor_popup`
+//! (keeps the menu on-screen); Android uses a long-press `PopupMenu`. Outside
+//! click / Cancel / Esc dismiss without an action. Both enqueue
+//! [`OverlayButtonContextAction`] for the app to drain.
 
 /// Menu row: open this button in the Data Editor Overlay tab.
 pub const CTX_OPEN_SETTINGS: &str = "Open settings";

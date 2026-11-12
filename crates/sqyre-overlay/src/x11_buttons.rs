@@ -77,7 +77,6 @@ const PASSTHROUGH_TIP_DWELL: Duration = Duration::from_millis(300);
 const CLICK_THROUGH_ENTER_PAD: i32 = 128;
 /// Once click-through, keep it until the pointer is this far outside (no edge flicker).
 const CLICK_THROUGH_EXIT_PAD: i32 = 192;
-const TIP_GAP_PX: i32 = 6;
 /// X11 cursorfont fleur (four-way move arrow).
 const XC_FLEUR: c_uint = 52;
 /// X11 cursorfont left pointer (normal arrow).
@@ -348,6 +347,9 @@ struct ChooserWindow {
     /// `InputOnly` hit cover: XWayland gives InputOnly windows no Wayland surface,
     /// so the compositor would only route clicks to it over another X window.
     win: Window,
+    /// Root-space top-left after [`crate::os_popup::place_cursor_popup`].
+    root_x: i32,
+    root_y: i32,
     w: u32,
     h: u32,
     title: String,
@@ -476,6 +478,8 @@ struct HostState {
     hub_fan_dismiss: bool,
     /// Previous left-button sample for [`Self::hub_fan_dismiss`] edge detect.
     last_hub_dismiss_btn1: bool,
+    /// Previous left-button sample for chooser outside-click dismiss (grab may fail).
+    last_chooser_dismiss_btn1: bool,
     /// Satellite travel progress (host-owned; does not wait on egui frames).
     hub_fan: crate::hub_fan::HubFanState,
 }
@@ -632,6 +636,7 @@ fn host_loop(
         passthrough_hover: None,
         hub_fan_dismiss: false,
         last_hub_dismiss_btn1: false,
+        last_chooser_dismiss_btn1: false,
         hub_fan: crate::hub_fan::HubFanState::default(),
     };
 
@@ -775,7 +780,9 @@ fn host_loop(
                 last_btn1 = btn1;
                 last_btn3 = sqyre_hotkeys::right_button_down();
             }
-            if state.hub_fan_dismiss && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
+            if state.chooser.as_ref().is_some_and(|c| c.mapped) {
+                poll_chooser_outside_dismiss(&mut state, ptr);
+            } else if state.hub_fan_dismiss {
                 poll_hub_fan_outside_dismiss(&mut state, ptr);
             }
             if state.drag.is_some() {
@@ -2504,47 +2511,6 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
     }
 }
 
-/// Monitor containing `(x, y)`, or the primary / virtual desktop fallback.
-fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let rects = sqyre_capture::preferred_monitor_rects();
-    for r in &rects {
-        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
-            return (r.x, r.y, r.w, r.h);
-        }
-    }
-    if let Some(r) = rects.first() {
-        return (r.x, r.y, r.w, r.h);
-    }
-    (0, 0, 1920, 1080)
-}
-
-struct TipPlace {
-    btn_x: i32,
-    btn_y: i32,
-    btn_w: i32,
-    btn_h: i32,
-    tip_w: i32,
-    tip_h: i32,
-    mon: (i32, i32, i32, i32),
-}
-
-/// Center under the button; flip above and clamp into the monitor.
-fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
-    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
-    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
-    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
-    let mon_right = mon_x.saturating_add(mon_w);
-    let mon_bottom = mon_y.saturating_add(mon_h);
-    if tip_y.saturating_add(p.tip_h) > mon_bottom {
-        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
-    }
-    let max_x = (mon_right - p.tip_w).max(mon_x);
-    let max_y = (mon_bottom - p.tip_h).max(mon_y);
-    tip_x = tip_x.clamp(mon_x, max_x);
-    tip_y = tip_y.clamp(mon_y, max_y);
-    (tip_x, tip_y)
-}
-
 fn show_tip_for(state: &mut HostState, button_id: &str) {
     let Some(btn) = state.buttons.get(button_id) else {
         return;
@@ -2565,16 +2531,10 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
     }
     // Prefer centered under the button; flip above and clamp so the tip stays
     // on the button's monitor (edge-docked hub satellites especially).
-    let mon = monitor_rect_for_point(btn_x + btn_w / 2, btn_y + btn_h / 2);
-    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
-        btn_x,
-        btn_y,
-        btn_w,
-        btn_h,
-        tip_w: tw as i32,
-        tip_h: th as i32,
-        mon,
-    });
+    let mon = crate::os_popup::monitor_for_point(btn_x + btn_w / 2, btn_y + btn_h / 2);
+    let (tip_x, tip_y) = crate::os_popup::place_tip_near_button(
+        btn_x, btn_y, btn_w, btn_h, tw as i32, th as i32, mon,
+    );
 
     let need_new = state
         .tip
@@ -2796,7 +2756,9 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
         note("overlay-x11: chooser raster empty");
         return;
     }
-    let Ok(win) = create_chooser_window(state, spec.x, spec.y, tw, th) else {
+    let (place_x, place_y) =
+        crate::os_popup::place_cursor_popup(spec.x, spec.y, tw as i32, th as i32);
+    let Ok(win) = create_chooser_window(state, place_x, place_y, tw, th) else {
         note("overlay-x11: chooser create failed");
         return;
     };
@@ -2817,8 +2779,9 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
     } else {
         0
     };
-    // Grab on the hit cover so outside clicks dismiss under fullscreen games.
-    // SAFETY: HostState display invariant; `hit` was just created and mapped on it.
+    // Grab so outside clicks dismiss under fullscreen games. On Wayland the grab
+    // often fails — [`poll_chooser_outside_dismiss`] covers that path.
+    // SAFETY: HostState display invariant; `win` was just created and mapped on it.
     let grab_status = unsafe {
         XGrabPointer(
             state.display,
@@ -2834,8 +2797,13 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
     };
     let grab_ok = grab_status == Success as c_int;
     let row_n = rows.len();
+    // Arm so the press that opened the menu (or a still-held button) is not
+    // treated as an outside dismiss on the next poll.
+    state.last_chooser_dismiss_btn1 = true;
     state.chooser = Some(ChooserWindow {
         win,
+        root_x: place_x,
+        root_y: place_y,
         w: tw,
         h: th,
         title: spec.title,
@@ -2853,8 +2821,10 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
         x_flush(state.display);
     }
     note(&format!(
-        "overlay-x11: chooser shown names={} at {},{} grab_status={} grab_ok={}",
+        "overlay-x11: chooser shown names={} at {},{} (wanted {},{}) grab_status={} grab_ok={}",
         row_n.saturating_sub(1),
+        place_x,
+        place_y,
         spec.x,
         spec.y,
         grab_status,
@@ -2879,6 +2849,7 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
         }
         return;
     };
+    state.last_chooser_dismiss_btn1 = false;
     let context_id = ch.context_button_id.take();
     if ch.grab_active {
         // SAFETY: matching XGrabPointer from show_chooser.
@@ -4297,6 +4268,51 @@ fn on_overlay_press(state: &mut HostState, id: &str) {
     }
 }
 
+/// Dismiss the chooser / context menu on a left-press outside its rect.
+///
+/// Same cancel path as the Cancel row / Esc. Needed when `XGrabPointer` fails
+/// (common under Wayland) so click-away still works over games.
+fn poll_chooser_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bool)>) {
+    let Some(ch) = state.chooser.as_ref() else {
+        state.last_chooser_dismiss_btn1 = false;
+        return;
+    };
+    if !ch.mapped {
+        state.last_chooser_dismiss_btn1 = false;
+        return;
+    }
+    let (x, y, btn1) = match ptr {
+        Some(p) => p,
+        None => {
+            let btn1 = sqyre_hotkeys::left_button_down();
+            let dpy = if !state.ptr_display.is_null() {
+                state.ptr_display
+            } else {
+                state.display
+            };
+            // SAFETY: quiet or host display is open on this thread.
+            let Some(p) = (unsafe { query_pointer_root(dpy) }) else {
+                state.last_chooser_dismiss_btn1 = btn1;
+                return;
+            };
+            (p.x, p.y, btn1 || p.button1)
+        }
+    };
+    let pressed = btn1 && !state.last_chooser_dismiss_btn1;
+    state.last_chooser_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    if crate::os_popup::point_in_popup(x, y, ch.root_x, ch.root_y, ch.w as i32, ch.h as i32) {
+        return;
+    }
+    note(&format!(
+        "overlay-x11: chooser dismiss (poll outside) at {x},{y}"
+    ));
+    mark_site("overlay:chooser:dismiss=poll_outside");
+    hide_chooser(state, Some(HotkeyChooserResult::Dismissed));
+}
+
 /// Collapse the hub fan when a global left-press misses every hub chrome button.
 ///
 /// Runs on the overlay host thread so dismiss still works while a game owns
@@ -4683,26 +4699,16 @@ mod tests {
 
     #[test]
     fn tip_flips_above_and_clamps_to_monitor() {
-        let (x, y) = place_overlay_tip(TipPlace {
-            btn_x: 100,
-            btn_y: 1000,
-            btn_w: 40,
-            btn_h: 40,
-            tip_w: 120,
-            tip_h: 28,
-            mon: (0, 0, 1920, 1080),
-        });
+        let mon = crate::os_popup::MonitorRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let (x, y) = crate::os_popup::place_tip_near_button(100, 1000, 40, 40, 120, 28, mon);
         assert!(y + 28 <= 1080, "below would clip → flip/clamp y={y}");
         assert!(x >= 0 && x + 120 <= 1920);
-        let (x2, _) = place_overlay_tip(TipPlace {
-            btn_x: 1900,
-            btn_y: 100,
-            btn_w: 40,
-            btn_h: 40,
-            tip_w: 120,
-            tip_h: 28,
-            mon: (0, 0, 1920, 1080),
-        });
+        let (x2, _) = crate::os_popup::place_tip_near_button(1900, 100, 40, 40, 120, 28, mon);
         assert!(x2 + 120 <= 1920, "right-edge tip clamped x={x2}");
     }
 

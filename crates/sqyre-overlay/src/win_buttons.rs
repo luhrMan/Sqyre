@@ -44,7 +44,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const CLASS_NAME: windows::core::PCWSTR = w!("SqyreOverlayButton");
-const TIP_GAP_PX: i32 = 6;
 const POLL_MS: u64 = 16;
 /// `WM_MOUSELEAVE` is declared under `Win32_UI_Controls` in the windows crate.
 const WM_MOUSELEAVE: u32 = 675;
@@ -252,6 +251,8 @@ struct HostState {
     hub_fan: crate::hub_fan::HubFanState,
     /// Rising-edge detect for Esc while the context menu is open.
     last_escape_down: bool,
+    /// Previous left-button sample for context-menu outside-click dismiss.
+    last_context_dismiss_btn1: bool,
 }
 
 #[expect(
@@ -307,6 +308,7 @@ fn host_loop(
         last_hub_dismiss_btn1: false,
         hub_fan: crate::hub_fan::HubFanState::default(),
         last_escape_down: false,
+        last_context_dismiss_btn1: false,
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
@@ -358,7 +360,9 @@ fn host_loop(
         tick_hub_fan(&mut state);
         apply_visibility(&mut state);
         poll_context_menu_escape(&mut state);
-        if state.hub_fan_dismiss {
+        if state.context.as_ref().is_some_and(|m| m.mapped) {
+            poll_context_menu_outside_dismiss(&mut state);
+        } else if state.hub_fan_dismiss {
             poll_hub_fan_outside_dismiss(&mut state);
         }
         thread::sleep(Duration::from_millis(POLL_MS));
@@ -672,45 +676,6 @@ fn paint_live(btn: &mut LiveButton) {
     blit_layered(btn.hwnd, btn.spec.face.x, btn.spec.face.y, w, h, &btn.bgra);
 }
 
-fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let rects = sqyre_capture::preferred_monitor_rects();
-    for r in &rects {
-        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
-            return (r.x, r.y, r.w, r.h);
-        }
-    }
-    if let Some(r) = rects.first() {
-        return (r.x, r.y, r.w, r.h);
-    }
-    (0, 0, 1920, 1080)
-}
-
-struct TipPlace {
-    btn_x: i32,
-    btn_y: i32,
-    btn_w: i32,
-    btn_h: i32,
-    tip_w: i32,
-    tip_h: i32,
-    mon: (i32, i32, i32, i32),
-}
-
-fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
-    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
-    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
-    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
-    let mon_right = mon_x.saturating_add(mon_w);
-    let mon_bottom = mon_y.saturating_add(mon_h);
-    if tip_y.saturating_add(p.tip_h) > mon_bottom {
-        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
-    }
-    let max_x = (mon_right - p.tip_w).max(mon_x);
-    let max_y = (mon_bottom - p.tip_h).max(mon_y);
-    tip_x = tip_x.clamp(mon_x, max_x);
-    tip_y = tip_y.clamp(mon_y, max_y);
-    (tip_x, tip_y)
-}
-
 fn show_tip(state: &mut HostState, id: &str) {
     if state.relocate || state.drag.is_some() {
         hide_tip(state);
@@ -743,16 +708,9 @@ fn show_tip(state: &mut HostState, id: &str) {
     }
     let bgra = rgba_to_bgra(&rgba);
     let btn_w = btn.spec.face.w as i32;
-    let mon = monitor_rect_for_point(x + btn_w / 2, y + h as i32 / 2);
-    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
-        btn_x: x,
-        btn_y: y,
-        btn_w,
-        btn_h: h as i32,
-        tip_w: tw as i32,
-        tip_h: th as i32,
-        mon,
-    });
+    let mon = crate::os_popup::monitor_for_point(x + btn_w / 2, y + h as i32 / 2);
+    let (tip_x, tip_y) =
+        crate::os_popup::place_tip_near_button(x, y, btn_w, h as i32, tw as i32, th as i32, mon);
     if state.tip.is_none() {
         // SAFETY: same class and module as the buttons; destroyed in `destroy_all`.
         let hwnd = unsafe {
@@ -843,7 +801,7 @@ fn open_overlay_context_menu(state: &mut HostState, id: &str) {
     if unsafe { GetCursorPos(&mut pt) }.is_err() {
         return;
     }
-    let (x, y) = (pt.x, pt.y);
+    let (x, y) = crate::os_popup::place_cursor_popup(pt.x, pt.y, tw as i32, th as i32);
     // SAFETY: same class/module as buttons; destroyed in hide/destroy_all.
     let hwnd = unsafe {
         match CreateWindowExW(
@@ -878,6 +836,8 @@ fn open_overlay_context_menu(state: &mut HostState, id: &str) {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let _ = SetCapture(hwnd);
     }
+    // Arm so the press that opened the menu is not an outside dismiss.
+    state.last_context_dismiss_btn1 = true;
     state.context = Some(ContextMenuWindow {
         hwnd,
         button_id: id.to_string(),
@@ -904,6 +864,7 @@ fn hide_context_menu(state: &mut HostState, action: Option<crate::OverlayButtonC
     let Some(menu) = state.context.take() else {
         return;
     };
+    state.last_context_dismiss_btn1 = false;
     // SAFETY: release capture taken in open_overlay_context_menu.
     unsafe {
         if GetCapture() == menu.hwnd {
@@ -1037,6 +998,40 @@ fn poll_context_menu_escape(state: &mut HostState) {
     if rising {
         hide_context_menu(state, None);
     }
+}
+
+/// Cancel the context menu on a left-press outside its rect (same as Cancel).
+///
+/// Complements `SetCapture` for cases where the game eats mouse messages.
+fn poll_context_menu_outside_dismiss(state: &mut HostState) {
+    let Some(menu) = state.context.as_ref() else {
+        state.last_context_dismiss_btn1 = false;
+        return;
+    };
+    if !menu.mapped {
+        state.last_context_dismiss_btn1 = false;
+        return;
+    }
+    let btn1 = sqyre_hotkeys::left_button_down();
+    let pressed = btn1 && !state.last_context_dismiss_btn1;
+    state.last_context_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    let mut pt = POINT::default();
+    // SAFETY: `pt` is a valid out-param for the cursor position.
+    if unsafe { GetCursorPos(&mut pt) }.is_err() {
+        return;
+    }
+    if crate::os_popup::point_in_popup(pt.x, pt.y, menu.x, menu.y, menu.w as i32, menu.h as i32) {
+        return;
+    }
+    note(&format!(
+        "overlay-win: context menu dismiss (poll outside) at {},{}",
+        pt.x, pt.y
+    ));
+    mark_site("overlay-win:context-dismiss=poll_outside");
+    hide_context_menu(state, None);
 }
 
 fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
