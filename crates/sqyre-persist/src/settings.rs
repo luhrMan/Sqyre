@@ -343,16 +343,19 @@ pub const QUICK_ACCESS_HUB_LABEL: &str = "Quick Access";
 pub const DEFAULT_QUICK_ACCESS_OPACITY: u8 = 220;
 /// Brand icon id for the hub face.
 pub const QUICK_ACCESS_HUB_ICON: &str = "sqyre-brand";
+/// Max fraction of the hub face that may sit outside the monitor when docked.
+pub const HUB_MAX_EDGE_OVERHANG: f32 = 0.75;
 
 /// True when `id` is the reserved quick-access hub overlay button.
 pub fn is_quick_access_hub_id(id: &str) -> bool {
     id == QUICK_ACCESS_HUB_ID
 }
 
-/// Top-left desktop position for a hub face docked to `edge` at `offset`.
+/// Top-left desktop position for a hub face docked flush to `edge` at `offset`.
 ///
 /// `size_px` and the monitor rect share units (physical desktop pixels when
-/// the rect comes from capture monitor metrics).
+/// the rect comes from capture monitor metrics). Prefer
+/// [`snap_hub_xy_to_monitor`] when preserving drag overhang.
 pub fn hub_position_on_monitor(
     edge: HubEdge,
     offset: f32,
@@ -390,6 +393,9 @@ fn hub_layout_size_px(size_px: f32, mon_w: f32, mon_h: f32) -> f32 {
 }
 
 /// Snap a dragged hub top-left to the nearest edge of `monitor`; returns edge + offset.
+///
+/// Offset is along the flush on-screen span (ignores overhang). Prefer
+/// [`snap_hub_xy_to_monitor`] when writing desktop coordinates.
 ///
 /// `size` is the on-screen button edge in the same units as the monitor rect
 /// (physical pixels when relocating a native overlay face).
@@ -441,6 +447,49 @@ pub fn snap_hub_to_monitor(
     (edge, offset)
 }
 
+/// Snap hub top-left to the nearest monitor edge, keeping up to
+/// [`HUB_MAX_EDGE_OVERHANG`] of the face outside the monitor.
+///
+/// Along the docked edge the face may hang outward from flush to 75% off-screen
+/// (25% remains visible). Along the edge, the same overhang is allowed at the
+/// corners so the icon can sit partially past the monitor bounds.
+pub fn snap_hub_xy_to_monitor(
+    x: f32,
+    y: f32,
+    size: f32,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+) -> (HubEdge, f32, f32) {
+    let size = hub_layout_size_px(size, mon_w, mon_h);
+    let (edge, _) = snap_hub_to_monitor(x, y, size, mon_x, mon_y, mon_w, mon_h);
+    let max_out = size * HUB_MAX_EDGE_OVERHANG;
+    let min_in = size * (1.0 - HUB_MAX_EDGE_OVERHANG);
+    // Along-edge span: flush on-screen through 75% past either end.
+    let y_lo = mon_y - max_out;
+    let y_hi = mon_y + mon_h - min_in;
+    let x_lo = mon_x - max_out;
+    let x_hi = mon_x + mon_w - min_in;
+    let (nx, ny) = match edge {
+        HubEdge::Left => {
+            // Flush at mon_x; hang left down to mon_x - max_out.
+            (x.clamp(mon_x - max_out, mon_x), y.clamp(y_lo, y_hi))
+        }
+        HubEdge::Right => {
+            let flush = mon_x + mon_w - size;
+            // Flush at right; hang right up to flush + max_out.
+            (x.clamp(flush, flush + max_out), y.clamp(y_lo, y_hi))
+        }
+        HubEdge::Top => (x.clamp(x_lo, x_hi), y.clamp(mon_y - max_out, mon_y)),
+        HubEdge::Bottom => {
+            let flush = mon_y + mon_h - size;
+            (x.clamp(x_lo, x_hi), y.clamp(flush, flush + max_out))
+        }
+    };
+    (edge, nx, ny)
+}
+
 /// Write edge-docked `x`/`y` onto `btn` after snapping its current top-left.
 ///
 /// `size_px` must match the units used for `btn.x`/`btn.y` and the monitor rect
@@ -453,8 +502,7 @@ pub fn snap_hub_button_to_monitor(
     mon_h: f32,
     size_px: f32,
 ) -> HubEdge {
-    let (edge, offset) = snap_hub_to_monitor(btn.x, btn.y, size_px, mon_x, mon_y, mon_w, mon_h);
-    let (x, y) = hub_position_on_monitor(edge, offset, mon_x, mon_y, mon_w, mon_h, size_px);
+    let (edge, x, y) = snap_hub_xy_to_monitor(btn.x, btn.y, size_px, mon_x, mon_y, mon_w, mon_h);
     btn.point.clear();
     btn.x = x;
     btn.y = y;
@@ -2037,6 +2085,24 @@ mod tests {
         assert_eq!(edge, HubEdge::Left);
         assert!((btn.x - 0.0).abs() < f32::EPSILON);
         assert!((btn.y - 400.0).abs() < 1.0);
+
+        // 75% of the face may hang past the right edge; 25% stays on-screen.
+        let size = 40.0;
+        let (edge, x, _) = snap_hub_xy_to_monitor(1900.0, 500.0, size, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Right);
+        let flush = 1920.0 - size;
+        let max_out = size * HUB_MAX_EDGE_OVERHANG;
+        assert!(x >= flush - 0.5 && x <= flush + max_out + 0.5, "x={x}");
+        // Dragged past 75%: clamp to max overhang (only 25% visible).
+        let (_, x_hang, _) = snap_hub_xy_to_monitor(1920.0, 500.0, size, 0.0, 0.0, 1920.0, 1080.0);
+        assert!((x_hang - (flush + max_out)).abs() < 1.0, "x_hang={x_hang}");
+
+        // Left edge: past left + past top; center still nearer Left than Top.
+        let (edge, x_l, y_l) =
+            snap_hub_xy_to_monitor(-100.0, -100.0, size, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Left);
+        assert!((x_l - (-max_out)).abs() < 1.0, "x_l={x_l}");
+        assert!((y_l - (-max_out)).abs() < 1.0, "y_l={y_l}");
     }
 
     #[test]
