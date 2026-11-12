@@ -157,7 +157,7 @@ sha2 = "0.11"
 ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
 rten = { version = "0.26", features = ["onnx_format"] }
 log = "0.4"
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 # async-io (not default tokio): keep zbus/tokio off accesskit's async-io thread.
 ashpd = { version = "0.13", default-features = false }
 pollster = "1.0"
