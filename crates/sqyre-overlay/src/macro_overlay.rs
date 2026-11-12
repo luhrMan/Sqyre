@@ -25,7 +25,9 @@ use sqyre_capture::{
     window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::GENERAL_PROGRAM;
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_ID};
+use sqyre_persist::{
+    OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_DISMISS, QUICK_ACCESS_HUB_ID,
+};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
 use sqyre_persist::{
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
@@ -92,6 +94,15 @@ pub struct MacroOverlay {
     /// Last [`X11ButtonHost::set_relocate_keep_above`] value sent (dedupe).
     #[cfg(target_os = "linux")]
     last_keep_above: Option<bool>,
+    /// Hub satellites accept presses (fan fully open).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    hub_fan_interactive: bool,
+    /// Host listens for outside left-press to dismiss the fan.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    hub_fan_dismiss: bool,
+    /// Last dismiss-listen value forwarded to the host (dedupe).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    last_hub_fan_dismiss: Option<bool>,
     /// Same [`sqyre_hotkeys::StopFlag`] the worker polls. A press during a run
     /// calls it directly so stop does not wait for an egui frame.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -190,6 +201,12 @@ impl MacroOverlay {
             last_relocate: None,
             #[cfg(target_os = "linux")]
             last_keep_above: None,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            hub_fan_interactive: false,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            hub_fan_dismiss: false,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            last_hub_fan_dismiss: None,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             run_stop: Arc::new(Mutex::new(sqyre_hotkeys::StopFlag::new())),
             #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
@@ -377,6 +394,49 @@ impl MacroOverlay {
         }
     }
 
+    /// Hub satellite presses: only when the fan is fully open (not traveling).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    pub fn set_hub_fan_interactive(&mut self, enabled: bool) {
+        if self.hub_fan_interactive == enabled {
+            return;
+        }
+        self.hub_fan_interactive = enabled;
+        // Force the next sync to rebuild specs so ShapeInput updates.
+        #[cfg(target_os = "linux")]
+        {
+            self.last_native_specs = None;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.last_win_specs = None;
+        }
+    }
+
+    /// Listen for a global left-press outside hub chrome and collapse the fan.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    pub fn set_hub_fan_dismiss(&mut self, enabled: bool) {
+        if self.last_hub_fan_dismiss == Some(enabled) {
+            return;
+        }
+        self.hub_fan_dismiss = enabled;
+        #[cfg(target_os = "linux")]
+        if let Some(host) = &self.x11_host {
+            host.set_hub_fan_dismiss(enabled);
+            self.last_hub_fan_dismiss = Some(enabled);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(host) = &self.win_host {
+            host.set_hub_fan_dismiss(enabled);
+            self.last_hub_fan_dismiss = Some(enabled);
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    pub fn set_hub_fan_interactive(&mut self, _enabled: bool) {}
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    pub fn set_hub_fan_dismiss(&mut self, _enabled: bool) {}
+
     /// Show/hide buttons from settings + focus gate; drain native clicks into `pending_macros`.
     #[expect(
         clippy::too_many_arguments,
@@ -544,7 +604,12 @@ impl MacroOverlay {
                 let native: Vec<NativeButtonSpec> = specs
                     .iter()
                     .map(|d| {
-                        let mut spec = spec_from_config(&d.cfg, d.busy, ctx.pixels_per_point());
+                        let mut spec = spec_from_config(
+                            &d.cfg,
+                            d.busy,
+                            ctx.pixels_per_point(),
+                            self.hub_fan_interactive,
+                        );
                         // Preview and Overlay-editor relocate: never gate-map hide.
                         if relocate || preview_id == Some(spec.id.as_str()) {
                             spec.visibility_gated = false;
@@ -555,6 +620,11 @@ impl MacroOverlay {
                 if self.last_native_specs.as_ref() != Some(&native) {
                     host.set_buttons(native.clone());
                     self.last_native_specs = Some(native);
+                }
+                // Host may have been created after the first dismiss flag was set.
+                if self.last_hub_fan_dismiss != Some(self.hub_fan_dismiss) {
+                    host.set_hub_fan_dismiss(self.hub_fan_dismiss);
+                    self.last_hub_fan_dismiss = Some(self.hub_fan_dismiss);
                 }
             }
         }
@@ -578,7 +648,12 @@ impl MacroOverlay {
                 let native: Vec<WinButtonSpec> = specs
                     .iter()
                     .map(|d| {
-                        let mut spec = win_spec_from_config(&d.cfg, d.busy, ctx.pixels_per_point());
+                        let mut spec = win_spec_from_config(
+                            &d.cfg,
+                            d.busy,
+                            ctx.pixels_per_point(),
+                            self.hub_fan_interactive,
+                        );
                         if relocate || preview_id == Some(spec.id.as_str()) {
                             spec.visibility_gated = false;
                         }
@@ -588,6 +663,10 @@ impl MacroOverlay {
                 if self.last_win_specs.as_ref() != Some(&native) {
                     host.set_buttons(native.clone());
                     self.last_win_specs = Some(native);
+                }
+                if self.last_hub_fan_dismiss != Some(self.hub_fan_dismiss) {
+                    host.set_hub_fan_dismiss(self.hub_fan_dismiss);
+                    self.last_hub_fan_dismiss = Some(self.hub_fan_dismiss);
                 }
             }
         }
@@ -1002,7 +1081,16 @@ fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
             style.border.b(),
             style.border.a(),
         ],
-        border_width: (style.border_width * ppp).max(0.0),
+        // Round to whole physical pixels so high-DPI borders stay a single crisp
+        // ring instead of a soft double fringe from fractional coverage.
+        border_width: {
+            let w = (style.border_width * ppp).max(0.0);
+            if w <= 0.0 {
+                0.0
+            } else {
+                w.round().max(1.0)
+            }
+        },
         corner_radius: (style.corner_radius * ppp).max(0.0),
         icon_glyph: glyph,
         icon: [
@@ -1036,7 +1124,12 @@ fn overlay_button_tip(btn: &OverlayButtonConfig) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn win_spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> WinButtonSpec {
+fn win_spec_from_config(
+    btn: &OverlayButtonConfig,
+    busy: bool,
+    ppp: f32,
+    hub_fan_interactive: bool,
+) -> WinButtonSpec {
     let face = button_face(btn, ppp);
     WinButtonSpec {
         id: btn.id.clone(),
@@ -1045,11 +1138,17 @@ fn win_spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> WinB
         tip: overlay_button_tip(btn),
         busy,
         visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
+        input_enabled: hub_button_input_enabled(&btn.id, hub_fan_interactive),
     }
 }
 
 #[cfg(target_os = "linux")]
-fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeButtonSpec {
+fn spec_from_config(
+    btn: &OverlayButtonConfig,
+    busy: bool,
+    ppp: f32,
+    hub_fan_interactive: bool,
+) -> NativeButtonSpec {
     let face = button_face(btn, ppp);
     NativeButtonSpec {
         id: btn.id.clone(),
@@ -1058,7 +1157,21 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
         tip: overlay_button_tip(btn),
         busy,
         visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
+        input_enabled: hub_button_input_enabled(&btn.id, hub_fan_interactive),
     }
+}
+
+/// Hub face stays clickable; satellites only when the fan is fully open.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn hub_button_input_enabled(id: &str, hub_fan_interactive: bool) -> bool {
+    let id = id.trim();
+    if id == QUICK_ACCESS_HUB_ID || id == QUICK_ACCESS_HUB_DISMISS {
+        return true;
+    }
+    if id.starts_with("__sqyre_hub") {
+        return hub_fan_interactive;
+    }
+    true
 }
 
 #[cfg(target_os = "android")]

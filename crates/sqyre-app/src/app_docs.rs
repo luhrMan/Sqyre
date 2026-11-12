@@ -179,6 +179,7 @@ impl SqyreApp {
             hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
             quick_access_expanded: false,
+            quick_access_fan_t: 0.0,
             start_when_idle: None,
             panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
             // Match product default so main-window goldens include the Macros sidebar.
