@@ -166,16 +166,35 @@ impl DataEditor {
                 ui,
                 egui_phosphor::regular::RULER,
                 "Size",
-                help::DE_OVERLAY_SIZE,
+                help::DE_OVERLAY_HUB_SIZE,
                 &mut self.form_overlay_size,
                 |d| {
                     d.speed(1)
                         .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
                 },
             );
-            ui.horizontal(|ui| {
-                color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
-            });
+            // Full-color logo: only alpha is applied on the face.
+            {
+                let mut opacity = i32::from(self.form_overlay_icon_color.a());
+                let before = opacity;
+                crate::widgets::drag_field(
+                    ui,
+                    egui_phosphor::regular::DROP,
+                    "Opacity",
+                    help::DE_OVERLAY_HUB_OPACITY,
+                    &mut opacity,
+                    |d| d.range(0..=255).speed(1),
+                );
+                if opacity != before {
+                    let c = self.form_overlay_icon_color;
+                    self.form_overlay_icon_color = egui::Color32::from_rgba_unmultiplied(
+                        c.r(),
+                        c.g(),
+                        c.b(),
+                        opacity.clamp(0, 255) as u8,
+                    );
+                }
+            }
             return false;
         }
         crate::widgets::collapsible_section(

@@ -56,13 +56,10 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         .data_editor
         .overlay_relocate_program()
         .map(str::to_owned);
-    let hub_cfg = app
-        .settings_ui
-        .settings()
-        .overlay_buttons
-        .iter()
-        .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
-        .cloned();
+    // Prefer the live Overlay form when the hub is selected (same WYSIWYG as
+    // other overlay buttons). Hub chrome is forced so form border/bg cannot
+    // leak onto the brand face.
+    let hub_cfg = resolve_hub_overlay_config(app);
     let hub_btns = match (&hub_cfg, relocate_program.as_deref()) {
         (Some(hub), Some(prog)) if relocate => {
             app.snap_quick_access_fan_closed();
@@ -121,7 +118,11 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         close_dist,
         app.macro_overlay.last_foreign_focus(),
     );
-    let preview = app.data_editor.overlay_edit_preview();
+    // Hub is hosted via `hub_btns` only — never also as the generic preview.
+    let preview = app
+        .data_editor
+        .overlay_edit_preview()
+        .filter(|btn| !sqyre_persist::is_quick_access_hub_id(&btn.id));
     let running_macro = app
         .run_session
         .state
@@ -145,6 +146,38 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     );
     #[cfg(target_os = "android")]
     crate::app_run::refresh_android_overlay_kit(app, ctx);
+}
+
+/// Saved hub button, with live Overlay-form size/position/opacity when selected.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn resolve_hub_overlay_config(app: &SqyreApp) -> Option<sqyre_persist::OverlayButtonConfig> {
+    let mut hub = app
+        .settings_ui
+        .settings()
+        .overlay_buttons
+        .iter()
+        .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
+        .cloned()?;
+    if let Some(preview) = app.data_editor.overlay_edit_preview() {
+        if sqyre_persist::is_quick_access_hub_id(&preview.id) {
+            hub.enabled = preview.enabled;
+            hub.x = preview.x;
+            hub.y = preview.y;
+            hub.size = preview.size;
+            hub.icon_color = preview.icon_color;
+            hub.icon_alpha = preview.icon_alpha;
+            hub.icon_hover_color = preview.icon_hover_color;
+        }
+    }
+    hub.program = sqyre_domain::GENERAL_PROGRAM.into();
+    hub.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
+    hub.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+    hub.point.clear();
+    hub.border_width = 0.0;
+    hub.border_alpha = 0;
+    hub.bg_alpha = 0;
+    hub.visibility_gate = Default::default();
+    Some(hub)
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]

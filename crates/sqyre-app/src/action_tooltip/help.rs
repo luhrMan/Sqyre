@@ -284,7 +284,11 @@ pub const VARS_DECLARED: &str =
 pub const DE_COLLECTION_CELL_ZOOM: &str =
     "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
 pub const DE_OVERLAY_HUB: &str =
-    "Built-in edge hub for New Point, New Search Area, Screen Cap, and Show/Hide. Drag it while this Overlay tab is open; it snaps to the nearest screen edge on release. Disable it from the list if you do not want it.";
+    "Built-in edge hub for New Point, New Search Area, Screen Cap, and Show/Hide. Drag it while this Overlay tab is open; it snaps to the nearest screen edge on release. Size and opacity update live. Disable it from the list if you do not want it.";
+pub const DE_OVERLAY_HUB_SIZE: &str =
+    "Hub face size (points). Satellites scale with it. Updates live while this Overlay tab is open.";
+pub const DE_OVERLAY_HUB_OPACITY: &str =
+    "How see-through the hub logo and its action buttons are (0 = invisible, 255 = solid). The logo keeps its own colors.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =
