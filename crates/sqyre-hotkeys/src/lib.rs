@@ -17,7 +17,7 @@ pub use macro_hotkeys::{
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
 pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
-pub use pointer_buttons::left_button_down;
+pub use pointer_buttons::{left_button_down, right_button_down};
 pub use popup_escape::{claim_popup_escape, take_popup_escape};
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{

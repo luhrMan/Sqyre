@@ -48,10 +48,10 @@ use x11::xfixes::{
     XFixesSetWindowShapeRegion,
 };
 use x11::xlib::{
-    AllocNone, Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
-    CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect,
-    CWSibling, CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask, Expose,
-    ExposureMask, False, GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify,
+    AllocNone, Below, Button1Mask, Button3Mask, ButtonPress, ButtonPressMask, ButtonRelease,
+    ButtonReleaseMask, CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask,
+    CWOverrideRedirect, CWSibling, CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask,
+    Expose, ExposureMask, False, GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify,
     LeaveWindowMask, MotionNotify, PointerMotionMask, StructureNotifyMask, Success, True,
     TrueColor, WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow,
     XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
@@ -656,6 +656,7 @@ fn host_loop(
     let mut stall_raised = false;
     let mut last_relocate_raise = Instant::now();
     let mut last_btn1 = false;
+    let mut last_btn3 = false;
     let mut last_running: Option<String> = None;
 
     while !stop.load(Ordering::Relaxed) {
@@ -767,9 +768,12 @@ fn host_loop(
                     last_btn1 = btn1;
                 }
             } else if state.passthrough_hits && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
-                last_btn1 = poll_click_through(&mut state, last_btn1);
+                let (b1, b3) = poll_click_through(&mut state, last_btn1, last_btn3);
+                last_btn1 = b1;
+                last_btn3 = b3;
             } else if let Some((_, _, btn1)) = ptr {
                 last_btn1 = btn1;
+                last_btn3 = sqyre_hotkeys::right_button_down();
             }
             if state.hub_fan_dismiss && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
                 poll_hub_fan_outside_dismiss(&mut state, ptr);
@@ -1853,17 +1857,18 @@ fn sync_relocate_shield(state: &mut HostState) {
     }
 }
 
-/// `XQueryPointer` on the root: position, Button1, and the child under the pointer.
+/// `XQueryPointer` on the root: position, Button1/3, and the child under the pointer.
 #[derive(Clone, Copy)]
 struct RootPointer {
     x: i32,
     y: i32,
     button1: bool,
+    button3: bool,
     /// Direct child of the root that contains the pointer, or 0 when none does.
     child: Window,
 }
 
-/// Root pointer + Button1 on `display`. Round-trip — prefer quiet connection.
+/// Root pointer + Button1/3 on `display`. Round-trip — prefer quiet connection.
 ///
 /// # Safety
 /// `display` is null or an open Display used only on the calling thread.
@@ -1900,6 +1905,7 @@ unsafe fn query_pointer_root(display: *mut Display) -> Option<RootPointer> {
             x: root_x,
             y: root_y,
             button1: mask & Button1Mask != 0,
+            button3: mask & Button3Mask != 0,
             child,
         })
     }
@@ -3272,7 +3278,15 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 let id = button_id_for_event_win(state, win)
                     .or_else(|| button_id_at_root(state, root_x, root_y));
                 if let Some(id) = id {
+                    note(&format!(
+                        "overlay-x11: ButtonPress-context id={id} at {root_x},{root_y}"
+                    ));
+                    mark_site(&format!("overlay:btn3-context:{id}"));
                     open_overlay_context_menu(state, &id, root_x, root_y);
+                } else {
+                    note(&format!(
+                        "overlay-x11: ButtonPress-context miss win={win} at {root_x},{root_y}"
+                    ));
                 }
                 continue;
             }
@@ -3909,9 +3923,8 @@ fn seed_passthrough_hover_from_x_hover(state: &mut HostState) {
 /// foreign window near a button, and poll hover/clicks from that sample.
 ///
 /// Portal desktop coords match X root on GNOME, but not always on Cosmic — we
-/// only use portal for hit tests after seeing them agree. Returns the latest
-/// left-button state.
-fn poll_click_through(state: &mut HostState, last_btn1: bool) -> bool {
+/// only use portal for hit tests after seeing them agree. Returns `(btn1, btn3)`.
+fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -> (bool, bool) {
     let (x11, portal) = sample_pointer_seat(state);
     note_passthrough_sample_once(x11, portal);
     let x11_pos = x11.map(|p| (p.x, p.y));
@@ -3950,16 +3963,17 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool) -> bool {
         );
         set_click_through(state, next);
         let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
+        let btn3 = p.button3 || sqyre_hotkeys::right_button_down();
         if state.click_through {
-            poll_passthrough_pointer(state, hx, hy, btn1, last_btn1);
+            poll_passthrough_pointer(state, hx, hy, btn1, last_btn1, btn3, last_btn3);
         }
-        return btn1;
+        return (btn1, btn3);
     }
     // No X sample at all (rare): portal motion alone means we left XWayland.
     if portal_moved {
         set_click_through(state, false);
     }
-    last_btn1
+    (last_btn1, last_btn3)
 }
 
 /// When both seats move, learn whether portal desktop space matches X root.
@@ -4133,8 +4147,19 @@ fn next_click_through(
     near_button
 }
 
-/// Sample hover and the left-button edge while hit windows are click-through.
-fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, was_btn1: bool) {
+/// Sample hover and left/right button edges while hit windows are click-through.
+///
+/// Wayland empties ShapeInput in click-through mode, so OR windows get no
+/// `ButtonPress` — left-click fire and right-click context menus both rise here.
+fn poll_passthrough_pointer(
+    state: &mut HostState,
+    x: i32,
+    y: i32,
+    btn1: bool,
+    was_btn1: bool,
+    btn3: bool,
+    was_btn3: bool,
+) {
     let id = state
         .buttons
         .values()
@@ -4154,6 +4179,19 @@ fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, w
         }
     }
     sync_passthrough_hover(state, id.as_deref());
+    // Right-click before left so a chorded press opens the menu instead of firing.
+    if btn3 && !was_btn3 {
+        if let Some(id) = id.as_ref() {
+            note(&format!(
+                "overlay-x11: passthrough-context id={id} at {x},{y}"
+            ));
+            mark_site(&format!("overlay:passthrough-context:{id}"));
+            open_overlay_context_menu(state, id, x, y);
+        } else {
+            note(&format!("overlay-x11: passthrough-context miss at {x},{y}"));
+        }
+        return;
+    }
     if btn1 && !was_btn1 {
         if let Some(id) = id {
             on_overlay_press(state, &id);

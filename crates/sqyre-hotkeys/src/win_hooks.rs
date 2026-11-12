@@ -381,6 +381,9 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     if button == RecordMouseButton::Left {
         crate::pointer_buttons::set_left_button_down(pressed);
     }
+    if button == RecordMouseButton::Right {
+        crate::pointer_buttons::set_right_button_down(pressed);
+    }
     ctx.macro_record.set_last_pos(mouse.pt.x, mouse.pt.y);
     ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
     ctx.macro_record.on_button(button, pressed);
