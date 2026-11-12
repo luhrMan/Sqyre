@@ -6,9 +6,8 @@ use eframe::egui;
 use sqyre_persist::QUICK_ACCESS_HUB_ID;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 use sqyre_persist::{
-    hub_position_on_monitor, snap_hub_to_monitor, HubEdge, OverlayButtonConfig,
-    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX,
-    QUICK_ACCESS_HUB_ICON,
+    snap_hub_xy_to_monitor, HubEdge, OverlayButtonConfig, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX, QUICK_ACCESS_HUB_ICON,
 };
 
 /// Fire tokens for radial satellites (also used as overlay button ids).
@@ -112,8 +111,8 @@ pub(crate) fn hub_overlay_buttons(
         return vec![hub_face(hub, hub.x, hub.y, size_pt)];
     }
     let (mon_x, mon_y, mon_w, mon_h) = monitor_for_point(hub.x, hub.y);
-    let (edge, offset) = snap_hub_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
-    let (hx, hy) = hub_position_on_monitor(edge, offset, mon_x, mon_y, mon_w, mon_h, size_px);
+    // Preserve up to 75% edge overhang from the stored desktop position.
+    let (edge, hx, hy) = snap_hub_xy_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
     let mut out = vec![hub_face(hub, hx, hy, size_pt)];
     // Always emit satellites while the hub is enabled so the overlay host keeps
     // their windows warm. Creating four face+hit windows on first open stalled
@@ -592,7 +591,15 @@ mod tests {
 
     fn test_hub_button() -> OverlayButtonConfig {
         let mut hub = sqyre_persist::default_quick_access_hub_button();
-        let (x, y) = hub_position_on_monitor(HubEdge::Right, 0.5, 0.0, 0.0, 1920.0, 1080.0, 26.0);
+        let (x, y) = sqyre_persist::hub_position_on_monitor(
+            HubEdge::Right,
+            0.5,
+            0.0,
+            0.0,
+            1920.0,
+            1080.0,
+            26.0,
+        );
         hub.x = x;
         hub.y = y;
         hub.size = 26.0;

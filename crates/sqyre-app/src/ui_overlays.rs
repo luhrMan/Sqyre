@@ -211,11 +211,8 @@ fn apply_overlay_and_hub_moves(
             let x = m.x as f32;
             let y = m.y as f32;
             let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(x, y);
-            let (edge, offset) =
-                sqyre_persist::snap_hub_to_monitor(x, y, size_px, mon_x, mon_y, mon_w, mon_h);
-            let (sx, sy) = sqyre_persist::hub_position_on_monitor(
-                edge, offset, mon_x, mon_y, mon_w, mon_h, size_px,
-            );
+            let (_edge, sx, sy) =
+                sqyre_persist::snap_hub_xy_to_monitor(x, y, size_px, mon_x, mon_y, mon_w, mon_h);
             relocated.push((m.id, sx.round() as i32, sy.round() as i32));
         } else {
             relocated.push((m.id, m.x, m.y));
