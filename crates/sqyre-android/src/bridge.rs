@@ -726,3 +726,24 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayMoved(
         })
     });
 }
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayContextAction(
+    mut env: EnvUnowned,
+    _class: JClass,
+    id: JString,
+    action: JString,
+) {
+    guard("nativeOnOverlayContextAction", || {
+        run_native(&mut env, |env| {
+            let id: String = id.mutf8_chars(env)?.into();
+            let action: String = action.mutf8_chars(env)?.into();
+            crate::overlay_input::overlay_context_action(&id, &action);
+            Ok(())
+        })
+    });
+}

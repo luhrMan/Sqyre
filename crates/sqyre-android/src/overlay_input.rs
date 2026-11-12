@@ -1,18 +1,20 @@
 //! Overlay button taps and relocate drags, delivered from the accessibility windows.
 //!
-//! The Kotlin shell calls [`overlay_clicked`] / [`overlay_moved`] on the main thread.
-//! Handlers are installed by the overlay host and the app; both run after the lock
-//! is released.
+//! The Kotlin shell calls [`overlay_clicked`] / [`overlay_moved`] /
+//! [`overlay_context_action`] on the main thread. Handlers are installed by the
+//! overlay host and the app; both run after the lock is released.
 
 use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub type OverlayClickHandler = Arc<dyn Fn(&str) + Send + Sync>;
 pub type OverlayMoveHandler = Arc<dyn Fn(&str, i32, i32) + Send + Sync>;
+pub type OverlayContextHandler = Arc<dyn Fn(&str, &str) + Send + Sync>;
 pub type OverlayRunHandler = Arc<dyn Fn(&str) + Send + Sync>;
 
 static CLICK: Mutex<Option<OverlayClickHandler>> = Mutex::new(None);
 static MOVED: Mutex<Option<OverlayMoveHandler>> = Mutex::new(None);
+static CONTEXT: Mutex<Option<OverlayContextHandler>> = Mutex::new(None);
 static RUN: Mutex<Option<OverlayRunHandler>> = Mutex::new(None);
 
 pub fn set_overlay_click_handler(handler: OverlayClickHandler) {
@@ -23,9 +25,14 @@ pub fn set_overlay_move_handler(handler: OverlayMoveHandler) {
     *MOVED.lock() = Some(handler);
 }
 
+pub fn set_overlay_context_handler(handler: OverlayContextHandler) {
+    *CONTEXT.lock() = Some(handler);
+}
+
 pub fn clear_overlay_input_handlers() {
     *CLICK.lock() = None;
     *MOVED.lock() = None;
+    *CONTEXT.lock() = None;
 }
 
 pub fn clear_overlay_run_handler() {
@@ -48,6 +55,14 @@ pub fn overlay_moved(id: &str, x: i32, y: i32) {
     let handler = MOVED.lock().clone();
     if let Some(handler) = handler {
         handler(id, x, y);
+    }
+}
+
+/// Long-press menu pick: `action` is `open_settings` or `disable`.
+pub fn overlay_context_action(id: &str, action: &str) {
+    let handler = CONTEXT.lock().clone();
+    if let Some(handler) = handler {
+        handler(id, action);
     }
 }
 

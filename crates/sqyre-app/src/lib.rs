@@ -62,6 +62,8 @@ mod overlay_icons {
     };
 }
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+mod overlay_context;
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 mod overlay_visibility;
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -522,9 +524,10 @@ pub struct SqyreApp {
     hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
     /// Edge hub radial fan is open (satellites travel toward rested slots).
     quick_access_expanded: bool,
-    /// Fan open amount (`0` closed … `1` fully open); animated toward
-    /// [`Self::quick_access_expanded`].
-    quick_access_fan_t: f32,
+    /// Fan progress at the start of the current open/close transition.
+    quick_access_fan_from: f32,
+    /// When the current fan transition started (`None` = settled at target).
+    quick_access_fan_anim_start: Option<std::time::Instant>,
     /// Macro to start once the current run stops (chooser pick while busy).
     start_when_idle: Option<String>,
     /// Live panic-key name shared with the global hotkey hook; synced from
@@ -809,7 +812,8 @@ impl SqyreApp {
             hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
             quick_access_expanded: false,
-            quick_access_fan_t: 0.0,
+            quick_access_fan_from: 0.0,
+            quick_access_fan_anim_start: None,
             start_when_idle: None,
             panic_key_slot,
             macro_list_open: true,
@@ -1050,6 +1054,8 @@ impl eframe::App for SqyreApp {
         self.add_action_picker
             .sync_from_settings(self.settings_ui.settings());
         self.drain_pending_hotkey_macros(ctx);
+        #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+        self.drain_overlay_context_actions(ctx);
         #[cfg(all(target_os = "android", feature = "native-runtime"))]
         if let Some(name) = crate::app_run::take_android_overlay_started() {
             if let Some(idx) = self

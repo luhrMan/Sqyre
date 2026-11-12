@@ -96,6 +96,9 @@ object SqyreBridge {
 
     @JvmStatic external fun nativeOnOverlayMoved(id: String, x: Int, y: Int)
 
+    /** Long-press menu: [action] is `open_settings` or `disable`. */
+    @JvmStatic external fun nativeOnOverlayContextAction(id: String, action: String)
+
     @JvmStatic
     fun press(x: Int, y: Int, durationMs: Long): Int = guarded("press") {
         val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF

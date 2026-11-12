@@ -32,17 +32,17 @@ const TIP_BORDER: [u8; 4] = [0xdc, 0x9d, 0x2e, 0xa0];
 /// Cream text `#f5e6c0`.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_FG: [u8; 4] = [0xf5, 0xe6, 0xc0, 0xff];
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_ROW_H: f32 = 28.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_PAD_X: f32 = 12.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_PAD_Y: f32 = 8.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_TITLE_H: f32 = 22.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_MAX_W: f32 = 360.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const MENU_MIN_W: f32 = 180.0;
 
 #[cfg(target_os = "linux")]
@@ -81,7 +81,7 @@ impl Canvas<'_> {
 
 /// One selectable chooser row: `(name, x, y, w, h)` in window coordinates.
 /// An empty `name` marks the Cancel row.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub type ChooserRow = (String, i32, i32, u32, u32);
 
 /// Style + content needed to paint one button face.
@@ -242,9 +242,9 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
     downsample_box(&hi, hi_w, hi_h, TIP_SSAA)
 }
 
-/// Opaque hotkey-conflict menu: `(w, h, rgba, row_hits)` in physical pixels.
+/// Opaque hotkey-conflict / overlay context menu: `(w, h, rgba, row_hits)` in physical pixels.
 /// `hover` / `pressed` are optional row indices (including Cancel).
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub fn rasterize_chooser(
     title: &str,
     names: &[String],
@@ -337,14 +337,14 @@ pub fn rasterize_chooser(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 enum ChipState {
     Idle,
     Hover,
     Pressed,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> ChipState {
     if pressed == Some(i) {
         ChipState::Pressed
@@ -355,7 +355,7 @@ fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> Chi
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn fill_row_chip(
     canvas: &mut Canvas<'_>,
     (x, y, rw, rh): (i32, i32, u32, u32),
@@ -402,7 +402,7 @@ fn fill_row_chip(
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn draw_line_text(
     canvas: &mut Canvas<'_>,
     font: &Font,

@@ -71,6 +71,7 @@ impl Drop for AndroidButtonHost {
 impl AndroidButtonHost {
     pub fn start(
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+        pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
         running_macro: Arc<Mutex<Option<String>>>,
         visibility: Arc<Mutex<HashMap<String, bool>>>,
         press_stops: Arc<AtomicBool>,
@@ -84,6 +85,7 @@ impl AndroidButtonHost {
             Arc::clone(&specs),
             Arc::clone(&running_macro),
             pending_moves,
+            pending_context,
             Arc::clone(&press_stops),
         );
         let stop_t = Arc::clone(&stop);
@@ -161,6 +163,7 @@ fn install_input_handlers(
     specs: Arc<Mutex<Vec<AndroidButtonSpec>>>,
     running_macro: Arc<Mutex<Option<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
     press_stops: Arc<AtomicBool>,
 ) {
     let specs_click = Arc::clone(&specs);
@@ -211,6 +214,26 @@ fn install_input_handlers(
             y,
         });
         note(&format!("overlay-android: move id={id} x={x} y={y}"));
+    }));
+    overlay_input::set_overlay_context_handler(Arc::new(move |id, action| {
+        let row = match action {
+            "open_settings" => crate::CTX_OPEN_SETTINGS,
+            "disable" => crate::CTX_DISABLE,
+            other => {
+                note(&format!(
+                    "overlay-android: unknown context action={other} id={id}"
+                ));
+                return;
+            }
+        };
+        let Some(ctx_action) = crate::action_from_context_pick(id, row) else {
+            return;
+        };
+        note(&format!("overlay-android: context id={id} action={action}"));
+        pending_context.lock().push(ctx_action);
+        // Bring the shell forward so App::logic can drain (activity pauses when
+        // another app is in front).
+        bridge::show_shell();
     }));
 }
 

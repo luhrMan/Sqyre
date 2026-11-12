@@ -104,6 +104,15 @@ impl SystemTray {
         set_application_visible(ctx, self.root_window.as_ref(), visible);
     }
 
+    /// Show and focus the main window (overlay context menu → Open settings).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn show(&self, ctx: &Context) {
+        set_application_visible(ctx, self.root_window.as_ref(), true);
+        self.application_hidden.store(false, Ordering::SeqCst);
+        self.stop_wake_poller();
+        ctx.request_repaint();
+    }
+
     /// Toggle main-window visibility like the tray Hide/Show item.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn toggle_visible(&self, ctx: &Context) {

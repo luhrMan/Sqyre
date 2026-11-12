@@ -2,7 +2,7 @@
 
 use egui::{self, Color32, FontFamily, FontId};
 use egui_phosphor::regular::ICONS as PHOSPHOR_ICONS;
-use sqyre_persist::OverlayButtonConfig;
+use sqyre_persist::{OverlayButtonConfig, QUICK_ACCESS_HUB_ICON, QUICK_ACCESS_HUB_ID};
 use std::sync::OnceLock;
 
 /// Resolved paint style for an overlay button (from [`OverlayButtonConfig`]).
@@ -14,10 +14,13 @@ pub struct OverlayPaintStyle {
     pub bg: Color32,
     pub icon: Color32,
     pub icon_hover: Color32,
+    /// Paint the Sqyre shield logo instead of a Phosphor glyph (hub / `sqyre-brand`).
+    pub brand: bool,
 }
 
 impl OverlayPaintStyle {
     pub fn from_config(btn: &OverlayButtonConfig) -> Self {
+        let icon_id = btn.icon.trim();
         Self {
             corner_radius: btn.corner_radius.clamp(
                 sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
@@ -31,6 +34,7 @@ impl OverlayPaintStyle {
             bg: sqyre_ui_theme::rgba(btn.bg_rgba()),
             icon: sqyre_ui_theme::rgba(btn.icon_rgba()),
             icon_hover: sqyre_ui_theme::rgba(btn.icon_hover_rgba()),
+            brand: btn.id == QUICK_ACCESS_HUB_ID || icon_id == QUICK_ACCESS_HUB_ICON,
         }
     }
 }
@@ -167,6 +171,16 @@ pub(crate) fn paint_glyph_contents(
             icon_rect.size() * crate::brand_s::FACE_FILL,
         );
         paint_trace_spinner(ui, spin_rect, style.icon_hover);
+    } else if style.brand {
+        paint_brand_mark(
+            ui,
+            icon_rect,
+            if hovered {
+                style.icon_hover
+            } else {
+                style.icon
+            },
+        );
     } else {
         let color = if hovered {
             style.icon_hover
@@ -181,6 +195,51 @@ pub(crate) fn paint_glyph_contents(
             color,
         );
     }
+}
+
+/// Full Sqyre shield logo (same PNG as native overlay faces), tinted by `color`'s alpha.
+fn paint_brand_mark(ui: &mut egui::Ui, rect: egui::Rect, color: Color32) {
+    let tex = brand_logo_texture(ui.ctx());
+    let side = rect.width().min(rect.height()) * crate::brand_s::FACE_FILL;
+    let logo = egui::Rect::from_center_size(rect.center(), egui::vec2(side, side));
+    // Preserve logo colors; multiply by alpha only (matches native `draw_brand_mark`).
+    let tint = Color32::from_white_alpha(color.a());
+    ui.painter().image(
+        tex.id(),
+        logo,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        tint,
+    );
+}
+
+fn brand_logo_texture(ctx: &egui::Context) -> egui::TextureHandle {
+    let id = egui::Id::new("sqyre_overlay_brand_logo");
+    if let Some(tex) = ctx.data_mut(|d| d.get_persisted::<egui::TextureHandle>(id)) {
+        return tex;
+    }
+    let (w, h, rgba) = brand_logo_rgba();
+    let image = if *w == 0 || *h == 0 || rgba.is_empty() {
+        egui::ColorImage::from_rgba_unmultiplied([1, 1], &[0, 0, 0, 0])
+    } else {
+        egui::ColorImage::from_rgba_unmultiplied([*w as usize, *h as usize], rgba)
+    };
+    let tex = ctx.load_texture("sqyre-overlay-brand", image, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_persisted(id, tex.clone()));
+    tex
+}
+
+fn brand_logo_rgba() -> &'static (u32, u32, Vec<u8>) {
+    static LOGO: OnceLock<(u32, u32, Vec<u8>)> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        let bytes = include_bytes!("../assets/sqyre.png");
+        match image::load_from_memory(bytes) {
+            Ok(img) => {
+                let rgba = img.into_rgba8();
+                (rgba.width(), rgba.height(), rgba.into_raw())
+            }
+            Err(_) => (0, 0, Vec::new()),
+        }
+    })
 }
 
 /// Draw the brand trace spinner from `ui.input.time` (no per-frame
@@ -494,5 +553,53 @@ mod tests {
         assert_eq!(s.bg.a(), 0);
         assert_eq!(s.icon, Color32::from_rgb(0xf5, 0xe6, 0xc0));
         assert_eq!(s.icon_hover, sqyre_ui_theme::PRIMARY);
+        assert!(!s.brand);
+    }
+
+    #[test]
+    fn paint_style_brand_for_hub_and_sqyre_icon() {
+        let mut hub = OverlayButtonConfig::new(QUICK_ACCESS_HUB_ID, "");
+        hub.icon = QUICK_ACCESS_HUB_ICON.into();
+        assert!(OverlayPaintStyle::from_config(&hub).brand);
+
+        let mut branded = OverlayButtonConfig::new("other", "");
+        branded.icon = QUICK_ACCESS_HUB_ICON.into();
+        assert!(OverlayPaintStyle::from_config(&branded).brand);
+
+        let mut plain = OverlayButtonConfig::new("macro_btn", "");
+        plain.icon = "play".into();
+        assert!(!OverlayPaintStyle::from_config(&plain).brand);
+    }
+
+    #[test]
+    fn style_preview_paints_brand_image_not_phosphor_glyph() {
+        let ctx = egui::Context::default();
+        let mut hub = OverlayButtonConfig::new(QUICK_ACCESS_HUB_ID, "");
+        hub.icon = QUICK_ACCESS_HUB_ICON.into();
+        hub.border_width = 0.0;
+        hub.border_alpha = 0;
+        hub.bg_alpha = 0;
+        let style = OverlayPaintStyle::from_config(&hub);
+        assert!(style.brand);
+        let icon = resolve(QUICK_ACCESS_HUB_ICON); // phosphor fallback id
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(200.0, 200.0),
+            )),
+            ..Default::default()
+        };
+        let out = ctx.run_ui(input, |ui| {
+            style_preview_button(ui, icon, 48.0, &style);
+        });
+        let has_textured_mesh = out.shapes.iter().any(|c| match &c.shape {
+            egui::Shape::Mesh(mesh) => mesh.texture_id != egui::TextureId::default(),
+            _ => false,
+        });
+        assert!(
+            has_textured_mesh,
+            "hub style preview should blit the brand logo texture"
+        );
+        out.drop_without_applying_deltas();
     }
 }

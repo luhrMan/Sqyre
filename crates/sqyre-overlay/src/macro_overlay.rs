@@ -103,6 +103,12 @@ pub struct MacroOverlay {
     /// Last dismiss-listen value forwarded to the host (dedupe).
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     last_hub_fan_dismiss: Option<bool>,
+    /// Desired hub fan expanded flag (app-facing).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    hub_fan_expanded: bool,
+    /// Last expanded value the host acknowledged (dedupe / late host wire-up).
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    last_hub_fan_expanded: Option<bool>,
     /// Same [`sqyre_hotkeys::StopFlag`] the worker polls. A press during a run
     /// calls it directly so stop does not wait for an egui frame.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -128,6 +134,9 @@ pub struct MacroOverlay {
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     /// Image-gate found map shared with the native button host.
     visibility: Arc<Mutex<HashMap<String, bool>>>,
+    /// Right-click / long-press menu picks (Open settings / Disable).
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+    pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
 }
 
 struct FocusSlot {
@@ -208,6 +217,10 @@ impl MacroOverlay {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             last_hub_fan_dismiss: None,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
+            hub_fan_expanded: false,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            last_hub_fan_expanded: None,
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             run_stop: Arc::new(Mutex::new(sqyre_hotkeys::StopFlag::new())),
             #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
             press_stops: Arc::new(AtomicBool::new(true)),
@@ -227,6 +240,20 @@ impl MacroOverlay {
             #[cfg(target_os = "windows")]
             pending_moves: Arc::new(Mutex::new(Vec::new())),
             visibility: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+            pending_context: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Context-menu picks from native overlay hosts (Open settings / Disable).
+    pub fn drain_context_actions(&self) -> Vec<crate::OverlayButtonContextAction> {
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+        {
+            std::mem::take(&mut *self.pending_context.lock())
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "windows")))]
+        {
+            Vec::new()
         }
     }
 
@@ -431,11 +458,38 @@ impl MacroOverlay {
         }
     }
 
+    /// Drive hub fan expand/collapse on the overlay host clock.
+    ///
+    /// `snap` skips travel (Overlay editor / recording). The host MoveResizes
+    /// satellites itself so travel stays smooth while the egui window is
+    /// backgrounded.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    pub fn set_hub_fan(&mut self, expanded: bool, snap: bool) {
+        self.hub_fan_expanded = expanded;
+        let send = snap || self.last_hub_fan_expanded != Some(expanded);
+        if !send {
+            return;
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(host) = &self.x11_host {
+            host.set_hub_fan(expanded, snap);
+            self.last_hub_fan_expanded = Some(expanded);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(host) = &self.win_host {
+            host.set_hub_fan(expanded, snap);
+            self.last_hub_fan_expanded = Some(expanded);
+        }
+    }
+
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     pub fn set_hub_fan_interactive(&mut self, _enabled: bool) {}
 
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     pub fn set_hub_fan_dismiss(&mut self, _enabled: bool) {}
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    pub fn set_hub_fan(&mut self, _expanded: bool, _snap: bool) {}
 
     /// Show/hide buttons from settings + focus gate; drain native clicks into `pending_macros`.
     #[expect(
@@ -617,6 +671,11 @@ impl MacroOverlay {
                         spec
                     })
                     .collect();
+                // Fan target before button specs so first place uses the new t.
+                if self.last_hub_fan_expanded != Some(self.hub_fan_expanded) {
+                    host.set_hub_fan(self.hub_fan_expanded, false);
+                    self.last_hub_fan_expanded = Some(self.hub_fan_expanded);
+                }
                 if self.last_native_specs.as_ref() != Some(&native) {
                     host.set_buttons(native.clone());
                     self.last_native_specs = Some(native);
@@ -660,6 +719,10 @@ impl MacroOverlay {
                         spec
                     })
                     .collect();
+                if self.last_hub_fan_expanded != Some(self.hub_fan_expanded) {
+                    host.set_hub_fan(self.hub_fan_expanded, false);
+                    self.last_hub_fan_expanded = Some(self.hub_fan_expanded);
+                }
                 if self.last_win_specs.as_ref() != Some(&native) {
                     host.set_buttons(native.clone());
                     self.last_win_specs = Some(native);
@@ -686,6 +749,7 @@ impl MacroOverlay {
             Arc::clone(pending),
             Arc::clone(&self.pending_moves),
             Arc::clone(&self.running_macro),
+            Arc::clone(&self.pending_context),
             Arc::clone(&self.visibility),
             Arc::clone(&self.run_stop),
             Arc::clone(&self.press_stops),
@@ -707,6 +771,7 @@ impl MacroOverlay {
             Arc::clone(&self.pending_moves),
             Arc::clone(&self.running_macro),
             Arc::clone(&self.pending_chooser),
+            Arc::clone(&self.pending_context),
             Arc::clone(&self.visibility),
             Arc::clone(&self.run_stop),
             Arc::clone(&self.press_stops),
@@ -769,6 +834,7 @@ impl MacroOverlay {
         if self.android_host.is_none() {
             self.android_host = crate::android_buttons::AndroidButtonHost::start(
                 Arc::clone(&self.pending_moves),
+                Arc::clone(&self.pending_context),
                 Arc::clone(&self.running_macro),
                 Arc::clone(&self.visibility),
                 Arc::clone(&self.press_stops),
