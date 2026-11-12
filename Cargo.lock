@@ -5352,6 +5352,7 @@ dependencies = [
  "egui-phosphor",
  "epaint_default_fonts",
  "fontdue",
+ "image",
  "libc",
  "parking_lot 0.13.0",
  "sqyre-android",

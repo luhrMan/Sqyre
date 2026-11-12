@@ -32,6 +32,7 @@ sqyre-ports = { path = "../sqyre-ports" }
 web-time = { workspace = true }
 fontdue = "0.9"
 epaint_default_fonts = "0.36"
+image = { workspace = true }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys", optional = true }
 eframe = { workspace = true, optional = true, features = ["glow"] }

@@ -184,12 +184,13 @@ fn hub_face(x: f32, y: f32, size_pt: f32, opacity: u8) -> OverlayButtonConfig {
         x,
         y,
         size: size_pt,
+        // Hit disk only — the face paints the full Sqyre logo with no chrome.
         corner_radius: hub_disk_radius(size_pt),
-        border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
-        border_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
-        border_alpha: opacity,
-        bg_color: "#000000".into(),
-        bg_alpha: opacity.saturating_mul(180) / 255,
+        border_width: 0.0,
+        border_color: String::new(),
+        border_alpha: 0,
+        bg_color: String::new(),
+        bg_alpha: 0,
         icon_color: DEFAULT_OVERLAY_ICON_HEX.into(),
         icon_alpha: opacity,
         icon_hover_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
@@ -592,6 +593,12 @@ mod tests {
                 btn.size
             );
         }
+        let face = &btns[0];
+        assert_eq!(face.id, QUICK_ACCESS_HUB_ID);
+        assert_eq!(face.border_width, 0.0);
+        assert_eq!(face.bg_alpha, 0);
+        assert_eq!(face.border_alpha, 0);
+        assert_eq!(face.icon, "sqyre-brand");
     }
 
     #[test]
