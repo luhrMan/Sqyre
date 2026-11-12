@@ -615,6 +615,18 @@ mod tests {
     }
 
     #[test]
+    fn hub_size_and_opacity_follow_config() {
+        let mut hub = test_hub_button();
+        hub.size = 48.0;
+        hub.icon_alpha = 100;
+        let btns = hub_overlay_buttons(&hub, 1.0, 1.0);
+        assert_eq!(btns[0].size, 48.0);
+        assert_eq!(btns[0].icon_alpha, 100);
+        assert_eq!(btns[1].icon_alpha, 100);
+        assert!((btns[1].size - 48.0 * 0.92).abs() < 0.01);
+    }
+
+    #[test]
     fn high_dpi_satellites_do_not_overlap() {
         let hub = test_hub_button();
         let ppp = 2.0;

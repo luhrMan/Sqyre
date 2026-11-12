@@ -63,7 +63,7 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings) {
+    pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings, ppp: f32) {
         let Some(id) = self.selected_entity.clone() else {
             self.set_err("Select an overlay button first.");
             return;
@@ -98,6 +98,13 @@ impl DataEditor {
                 sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
                 sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
             );
+            // Persist edge-docked coords so form X/Y match what the face shows.
+            let size_px = (btn.size * ppp.max(0.01)).round().max(1.0);
+            let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(btn.x, btn.y);
+            let _ =
+                sqyre_persist::snap_hub_button_to_monitor(btn, mon_x, mon_y, mon_w, mon_h, size_px);
+            self.form_overlay_x = btn.x;
+            self.form_overlay_y = btn.y;
         } else {
             btn.program = prog;
             btn.macro_name = self.form_overlay_macro.trim().to_string();
