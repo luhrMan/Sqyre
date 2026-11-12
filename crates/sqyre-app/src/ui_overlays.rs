@@ -56,10 +56,10 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         .data_editor
         .overlay_relocate_program()
         .map(str::to_owned);
-    // Prefer the live Overlay form when the hub is selected (same WYSIWYG as
-    // other overlay buttons). Hub chrome is forced so form border/bg cannot
-    // leak onto the brand face.
-    let hub_cfg = resolve_hub_overlay_config(app);
+    // Prefer the live Overlay form when the hub is selected (size/opacity).
+    // During relocate, position comes from settings only — form X/Y must not
+    // fight the native drag (that left the face mid-desktop with a dead hit).
+    let hub_cfg = resolve_hub_overlay_config(app, relocate);
     let hub_btns = match (&hub_cfg, relocate_program.as_deref()) {
         (Some(hub), Some(prog)) if relocate => {
             app.snap_quick_access_fan_closed();
@@ -67,7 +67,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             app.macro_overlay.set_hub_fan_dismiss(false);
             // Hub is a General overlay button — relocatable with that program only.
             if prog == sqyre_domain::GENERAL_PROGRAM {
-                crate::quick_access::hub_overlay_buttons(hub, 0.0, ppp)
+                crate::quick_access::hub_overlay_buttons(hub, 0.0, ppp, true)
             } else {
                 Vec::new()
             }
@@ -85,7 +85,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.quick_access_expanded && (app.quick_access_fan_t - 1.0).abs() <= 0.001;
             app.macro_overlay.set_hub_fan_interactive(fan_interactive);
             app.macro_overlay.set_hub_fan_dismiss(fan_open);
-            crate::quick_access::hub_overlay_buttons(hub, app.quick_access_fan_t, ppp)
+            crate::quick_access::hub_overlay_buttons(hub, app.quick_access_fan_t, ppp, false)
         }
         (None, _) => Vec::new(),
     };
@@ -148,9 +148,15 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     crate::app_run::refresh_android_overlay_kit(app, ctx);
 }
 
-/// Saved hub button, with live Overlay-form size/position/opacity when selected.
+/// Saved hub button, with live Overlay-form size/opacity when selected.
+///
+/// `relocate`: keep settings `x`/`y` (drag owns position). Otherwise also apply
+/// live form position for WYSIWYG X/Y edits outside drag.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-fn resolve_hub_overlay_config(app: &SqyreApp) -> Option<sqyre_persist::OverlayButtonConfig> {
+fn resolve_hub_overlay_config(
+    app: &SqyreApp,
+    relocate: bool,
+) -> Option<sqyre_persist::OverlayButtonConfig> {
     let mut hub = app
         .settings_ui
         .settings()
@@ -161,12 +167,14 @@ fn resolve_hub_overlay_config(app: &SqyreApp) -> Option<sqyre_persist::OverlayBu
     if let Some(preview) = app.data_editor.overlay_edit_preview() {
         if sqyre_persist::is_quick_access_hub_id(&preview.id) {
             hub.enabled = preview.enabled;
-            hub.x = preview.x;
-            hub.y = preview.y;
             hub.size = preview.size;
             hub.icon_color = preview.icon_color;
             hub.icon_alpha = preview.icon_alpha;
             hub.icon_hover_color = preview.icon_hover_color;
+            if !relocate {
+                hub.x = preview.x;
+                hub.y = preview.y;
+            }
         }
     }
     hub.program = sqyre_domain::GENERAL_PROGRAM.into();
