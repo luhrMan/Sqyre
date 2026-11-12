@@ -950,6 +950,14 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                         spec.face.h,
                     );
                 }
+            } else if geom_changed && dragging {
+                // Size/radius edits during drag: resize the face in place. Hit
+                // stays empty + parked at the grab start until commit_drag.
+                let (keep_x, keep_y) = (live.spec.face.x, live.spec.face.y);
+                // SAFETY: HostState display invariant; face created on this display.
+                unsafe {
+                    x_move_resize(state.display, win, keep_x, keep_y, spec.face.w, spec.face.h);
+                }
             }
             let (keep_x, keep_y) = (live.spec.face.x, live.spec.face.y);
             live.spec = spec;
@@ -969,9 +977,12 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             Some((
                 // Hit input tracks geometry + arming. Paint re-derives the face
                 // Bounding from painted alpha, so style/fill flips need no
-                // separate shape pass.
-                geom_applied || radius_changed || input_changed,
-                style_changed || geom_applied,
+                // separate shape pass. Never re-arm hit while this id is mid
+                // drag — begin_relocate_drag emptied it; transparent faces
+                // (hub) used to restore a disk at the grab-start and freeze
+                // the drag (face mid-screen, clicks hitting the old spot).
+                !dragging && (geom_applied || radius_changed || input_changed),
+                style_changed || geom_applied || (dragging && geom_changed),
                 live.spec.face.w,
                 live.spec.face.h,
                 live.spec.face.corner_radius,
@@ -1013,7 +1024,10 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live, true);
-                    if live.spec.face.bg[3] == 0 {
+                    // Transparent faces re-derive hit after paint — but not while
+                    // this id is mid-relocate drag (hit must stay empty until commit).
+                    let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
+                    if live.spec.face.bg[3] == 0 && !dragging {
                         sync_hit_input(
                             state,
                             live.hit,
