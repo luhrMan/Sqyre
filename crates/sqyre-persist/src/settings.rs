@@ -1923,19 +1923,30 @@ mod tests {
         assert!(!loaded.image_search_variant_exit_early);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
-        assert_eq!(loaded.overlay_buttons.len(), 1);
-        assert!(loaded.overlay_buttons[0].enabled);
-        assert_eq!(loaded.overlay_buttons[0].program, "Demo Game");
-        assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
-        assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
-        assert!((loaded.overlay_buttons[0].size - 64.0).abs() < f32::EPSILON);
-        assert!((loaded.overlay_buttons[0].corner_radius - 12.0).abs() < f32::EPSILON);
-        assert_eq!(loaded.overlay_buttons[0].border_color, "#ff0000");
-        assert_eq!(loaded.overlay_buttons[0].border_alpha, 200);
-        assert_eq!(loaded.overlay_buttons[0].bg_color, "#112233");
-        assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
-        assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
-        assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+        assert!(
+            loaded
+                .overlay_buttons
+                .iter()
+                .any(|b| is_quick_access_hub_id(&b.id)),
+            "load clamps and seeds the hub"
+        );
+        let btn = loaded
+            .overlay_buttons
+            .iter()
+            .find(|b| b.id == "btn-1")
+            .expect("demo button");
+        assert!(btn.enabled);
+        assert_eq!(btn.program, "Demo Game");
+        assert_eq!(btn.macro_name, "demo");
+        assert_eq!(btn.icon, "bolt");
+        assert!((btn.size - 64.0).abs() < f32::EPSILON);
+        assert!((btn.corner_radius - 12.0).abs() < f32::EPSILON);
+        assert_eq!(btn.border_color, "#ff0000");
+        assert_eq!(btn.border_alpha, 200);
+        assert_eq!(btn.bg_color, "#112233");
+        assert_eq!(btn.bg_alpha, 128);
+        assert_eq!(btn.icon_color, "#abcdef");
+        assert_eq!(btn.icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert_eq!(loaded.ui_density, UiDensity::Spaced);
         assert_eq!(loaded.last_selected_macro, "farm loop");
@@ -1947,9 +1958,13 @@ mod tests {
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
         );
+    }
+
+    #[test]
+    fn default_settings_do_not_seed_hub_until_clamp() {
         assert!(
-            loaded.overlay_buttons.is_empty(),
-            "defaults do not seed the hub until sanitize"
+            UserSettings::default().overlay_buttons.is_empty(),
+            "defaults do not seed the hub until clamp"
         );
     }
 
@@ -2472,7 +2487,11 @@ overlay_buttons:
         )
         .unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
-        let btn = &loaded.overlay_buttons[0];
+        let btn = loaded
+            .overlay_buttons
+            .iter()
+            .find(|b| b.id == "btn-legacy")
+            .expect("legacy button");
         assert!(btn.enabled);
         assert!((btn.corner_radius - DEFAULT_OVERLAY_CORNER_RADIUS).abs() < f32::EPSILON);
         assert!((btn.border_width - DEFAULT_OVERLAY_BORDER_WIDTH).abs() < f32::EPSILON);
@@ -2484,6 +2503,10 @@ overlay_buttons:
             btn.border_rgba(),
             OverlayButtonConfig::resolve_rgba("", 255, DEFAULT_OVERLAY_ACCENT_HEX)
         );
+        assert!(loaded
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
     }
 
     #[test]
