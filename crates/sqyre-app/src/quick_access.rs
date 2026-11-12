@@ -7,7 +7,7 @@ use sqyre_persist::QUICK_ACCESS_HUB_ID;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 use sqyre_persist::{
     HubEdge, OverlayButtonConfig, QuickAccessHubSettings, DEFAULT_OVERLAY_ACCENT_HEX,
-    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_ICON_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX,
 };
 
 /// Fire tokens for radial satellites (also used as overlay button ids).
@@ -65,41 +65,85 @@ const ACTIONS: [QuickAccessAction; 4] = [
     QuickAccessAction::ToggleWindow,
 ];
 
+/// Fan open/close duration (seconds) for satellite travel.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+pub(crate) const HUB_FAN_ANIM_SECS: f32 = 0.18;
+
+/// Ease fan progress (`0`…`1`) with a smoothstep.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+pub(crate) fn hub_fan_ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 /// Build hub (+ optional radial satellites) for the overlay host.
+///
+/// `fan_t` is the open amount (`0` closed … `1` fully open). Satellites travel
+/// between the hub center and their rested fan slots (and stay in the list when
+/// closed so native overlay windows stay warm). `ppp` converts the settings
+/// size (points) into physical desktop pixels so high-DPI faces do not overlap
+/// when layout uses the same space as overlay window positions.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub(crate) fn hub_overlay_buttons(
     hub: &QuickAccessHubSettings,
-    expanded: bool,
+    fan_t: f32,
+    ppp: f32,
 ) -> Vec<OverlayButtonConfig> {
     if !hub.enabled {
         return Vec::new();
     }
+    let ppp = ppp.max(0.01);
+    let size_pt = hub.size.clamp(
+        sqyre_persist::MIN_OVERLAY_BUTTON_SIZE,
+        sqyre_persist::MAX_OVERLAY_BUTTON_SIZE,
+    );
+    let size_px = (size_pt * ppp).round().max(1.0);
     let (mon_x, mon_y, mon_w, mon_h) = primary_monitor_points();
-    let (hx, hy) = hub.position_on_monitor(mon_x, mon_y, mon_w, mon_h);
+    let (hx, hy) = hub.position_on_monitor(mon_x, mon_y, mon_w, mon_h, size_px);
     let opacity = hub.opacity;
-    let mut out = vec![hub_face(hub, hx, hy, opacity)];
-    if expanded {
-        let sat_size = (hub.size * 0.92).clamp(
-            sqyre_persist::MIN_OVERLAY_BUTTON_SIZE,
-            sqyre_persist::MAX_OVERLAY_BUTTON_SIZE,
-        );
-        let layout = SatelliteLayout {
-            hub_x: hx,
-            hub_y: hy,
-            hub_size: hub.size,
-            sat_size,
-            edge: hub.edge,
-            radius: hub.size * 2.15,
-            mon_x,
-            mon_y,
-            mon_w,
-            mon_h,
-            count: ACTIONS.len(),
+    let mut out = vec![hub_face(hx, hy, size_pt, opacity)];
+    // Always emit satellites while the hub is enabled so the overlay host keeps
+    // their windows warm. Creating four face+hit windows on first open stalled
+    // XWayland (~1s cursor/screen freeze). Closed satellites park off-desktop
+    // (no hit stealing); open only MoveResizes them along the fan.
+    let sat_size_pt = (size_pt * 0.92).clamp(
+        sqyre_persist::MIN_OVERLAY_BUTTON_SIZE,
+        sqyre_persist::MAX_OVERLAY_BUTTON_SIZE,
+    );
+    let sat_size_px = (sat_size_pt * ppp).round().max(1.0);
+    let layout = SatelliteLayout {
+        hub_x: hx,
+        hub_y: hy,
+        hub_size: size_px,
+        sat_size: sat_size_px,
+        edge: hub.edge,
+        radius: size_px * 2.15,
+        mon_x,
+        mon_y,
+        mon_w,
+        mon_h,
+        count: ACTIONS.len(),
+    };
+    // Collapsed origin: satellite centered on the hub face.
+    let origin_x = hx + (size_px - sat_size_px) * 0.5;
+    let origin_y = hy + (size_px - sat_size_px) * 0.5;
+    let eased = hub_fan_ease(fan_t);
+    // Park far off every monitor so a closed fan cannot sit under the pointer.
+    let park_x = mon_x - sat_size_px * 8.0 - 64.0;
+    let park_y = mon_y - sat_size_px * 8.0 - 64.0;
+    for (i, action) in ACTIONS.iter().enumerate() {
+        let (sx, sy) = satellite_top_left(layout, i);
+        let (ax, ay) = if eased <= 0.001 {
+            (park_x, park_y)
+        } else {
+            (
+                origin_x + (sx - origin_x) * eased,
+                origin_y + (sy - origin_y) * eased,
+            )
         };
-        for (i, action) in ACTIONS.iter().enumerate() {
-            let (sx, sy) = satellite_top_left(layout, i);
-            out.push(satellite_face(action, sx, sy, sat_size, opacity));
-        }
+        // Full opacity for the whole travel — fading forced a style repaint
+        // (and X shape refresh) on every animation frame.
+        out.push(satellite_face(action, ax, ay, sat_size_pt, opacity));
     }
     out
 }
@@ -121,7 +165,15 @@ struct SatelliteLayout {
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-fn hub_face(hub: &QuickAccessHubSettings, x: f32, y: f32, opacity: u8) -> OverlayButtonConfig {
+fn hub_disk_radius(size_pt: f32) -> f32 {
+    (size_pt * 0.5).clamp(
+        sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
+        sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
+    )
+}
+
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn hub_face(x: f32, y: f32, size_pt: f32, opacity: u8) -> OverlayButtonConfig {
     OverlayButtonConfig {
         id: QUICK_ACCESS_HUB_ID.into(),
         program: String::new(),
@@ -131,8 +183,8 @@ fn hub_face(hub: &QuickAccessHubSettings, x: f32, y: f32, opacity: u8) -> Overla
         point: String::new(),
         x,
         y,
-        size: hub.size,
-        corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+        size: size_pt,
+        corner_radius: hub_disk_radius(size_pt),
         border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
         border_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
         border_alpha: opacity,
@@ -164,7 +216,7 @@ fn satellite_face(
         x,
         y,
         size,
-        corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+        corner_radius: hub_disk_radius(size),
         border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
         border_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
         border_alpha: opacity,
@@ -331,9 +383,34 @@ impl SqyreApp {
         self.quick_access_expanded = false;
     }
 
+    /// Snap the fan shut without playing the collapse motion (mode switches).
+    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+    pub(crate) fn snap_quick_access_fan_closed(&mut self) {
+        self.quick_access_expanded = false;
+        self.quick_access_fan_t = 0.0;
+    }
+
+    /// Advance satellite travel toward the expanded/collapsed target.
+    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+    pub(crate) fn tick_quick_access_fan(&mut self, ctx: &egui::Context) {
+        let target = if self.quick_access_expanded { 1.0 } else { 0.0 };
+        if (self.quick_access_fan_t - target).abs() < 0.001 {
+            self.quick_access_fan_t = target;
+            return;
+        }
+        let dt = ctx.input(|i| i.stable_dt).clamp(1.0 / 240.0, 1.0 / 30.0);
+        let step = dt / HUB_FAN_ANIM_SECS;
+        if self.quick_access_fan_t < target {
+            self.quick_access_fan_t = (self.quick_access_fan_t + step).min(target);
+        } else {
+            self.quick_access_fan_t = (self.quick_access_fan_t - step).max(target);
+        }
+        ctx.request_repaint();
+    }
+
     /// Esc collapses an open fan.
     pub(crate) fn poll_quick_access_escape(&mut self, ctx: &egui::Context) {
-        if !self.quick_access_expanded {
+        if !self.quick_access_expanded && self.quick_access_fan_t <= 0.001 {
             return;
         }
         sqyre_hotkeys::claim_popup_escape(true);
@@ -348,9 +425,18 @@ impl SqyreApp {
             self.toggle_quick_access_fan(ctx);
             return true;
         }
+        if token.trim() == sqyre_persist::QUICK_ACCESS_HUB_DISMISS {
+            self.close_quick_access_fan();
+            ctx.request_repaint();
+            return true;
+        }
         let Some(action) = QuickAccessAction::from_token(token) else {
             return false;
         };
+        // Satellites fire only when the fan is fully open (host also empties hits).
+        if (self.quick_access_fan_t - 1.0).abs() > 0.001 || !self.quick_access_expanded {
+            return true;
+        }
         self.close_quick_access_fan();
         self.dispatch_quick_access(action, ctx);
         true
@@ -484,5 +570,119 @@ mod tests {
             assert!(x + layout.sat_size <= layout.mon_x + layout.mon_w + 0.5);
             assert!(y + layout.sat_size <= layout.mon_y + layout.mon_h + 0.5);
         }
+    }
+
+    #[test]
+    fn hub_buttons_are_disks() {
+        let hub = QuickAccessHubSettings {
+            enabled: true,
+            edge: HubEdge::Right,
+            offset: 0.5,
+            size: 26.0,
+            opacity: 220,
+        };
+        let btns = hub_overlay_buttons(&hub, 1.0, 1.0);
+        assert_eq!(btns.len(), 5);
+        for btn in &btns {
+            assert!(
+                (btn.corner_radius - btn.size * 0.5).abs() < f32::EPSILON,
+                "id={} r={} size={}",
+                btn.id,
+                btn.corner_radius,
+                btn.size
+            );
+        }
+    }
+
+    #[test]
+    fn high_dpi_satellites_do_not_overlap() {
+        let hub = QuickAccessHubSettings {
+            enabled: true,
+            edge: HubEdge::Right,
+            offset: 0.5,
+            size: 26.0,
+            opacity: 220,
+        };
+        let ppp = 2.0;
+        let btns = hub_overlay_buttons(&hub, 1.0, ppp);
+        assert_eq!(btns.len(), 5);
+        let sats: Vec<_> = btns
+            .iter()
+            .filter(|b| b.id != QUICK_ACCESS_HUB_ID)
+            .collect();
+        let phys = |b: &OverlayButtonConfig| (b.size * ppp).round();
+        for (i, a) in sats.iter().enumerate() {
+            for b in sats.iter().skip(i + 1) {
+                let ax = a.x + phys(a) * 0.5;
+                let ay = a.y + phys(a) * 0.5;
+                let bx = b.x + phys(b) * 0.5;
+                let by = b.y + phys(b) * 0.5;
+                let dist = ((ax - bx).hypot(ay - by)).max(0.0);
+                let min_sep = (phys(a) + phys(b)) * 0.5;
+                assert!(
+                    dist + 0.5 >= min_sep,
+                    "satellites overlap at {ppp}×: dist={dist} min={min_sep}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fan_animation_travels_out_from_hub() {
+        let hub = QuickAccessHubSettings {
+            enabled: true,
+            edge: HubEdge::Right,
+            offset: 0.5,
+            size: 26.0,
+            opacity: 220,
+        };
+        let closed = hub_overlay_buttons(&hub, 0.0, 1.0);
+        assert_eq!(closed.len(), 5, "closed fan keeps warm satellites");
+        for sat in closed.iter().skip(1) {
+            assert!(
+                sat.x < 0.0 && sat.y < 0.0,
+                "closed satellite parks off-desktop: {} @ {},{}",
+                sat.id,
+                sat.x,
+                sat.y
+            );
+            assert_eq!(
+                sat.border_alpha, hub.opacity,
+                "no opacity fade while traveling"
+            );
+        }
+        let mid = hub_overlay_buttons(&hub, 0.5, 1.0);
+        let open = hub_overlay_buttons(&hub, 1.0, 1.0);
+        assert_eq!(mid.len(), 5);
+        assert_eq!(open.len(), 5);
+        let hub_btn = &open[0];
+        let hub_cx = hub_btn.x + hub_btn.size * 0.5;
+        let hub_cy = hub_btn.y + hub_btn.size * 0.5;
+        for i in 1..5 {
+            let m = &mid[i];
+            let o = &open[i];
+            let m_cx = m.x + m.size * 0.5;
+            let m_cy = m.y + m.size * 0.5;
+            let o_cx = o.x + o.size * 0.5;
+            let o_cy = o.y + o.size * 0.5;
+            let mid_dist = (m_cx - hub_cx).hypot(m_cy - hub_cy);
+            let open_dist = (o_cx - hub_cx).hypot(o_cy - hub_cy);
+            assert!(
+                mid_dist + 0.5 < open_dist,
+                "sat {i} should travel outward: mid={mid_dist} open={open_dist}"
+            );
+        }
+        assert!(hub_fan_ease(0.0) == 0.0);
+        assert!((hub_fan_ease(1.0) - 1.0).abs() < f32::EPSILON);
+        assert!(hub_fan_ease(0.5) > 0.4 && hub_fan_ease(0.5) < 0.6);
+    }
+
+    #[test]
+    fn hub_dismiss_token_is_reserved() {
+        assert_eq!(
+            sqyre_persist::QUICK_ACCESS_HUB_DISMISS,
+            "__sqyre_hub_dismiss"
+        );
+        assert!(QuickAccessAction::from_token(sqyre_persist::QUICK_ACCESS_HUB_DISMISS).is_none());
     }
 }

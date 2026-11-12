@@ -73,6 +73,8 @@ pub struct WinButtonSpec {
     pub tip: String,
     pub busy: bool,
     pub visibility_gated: bool,
+    /// When false, hit-tests pass through and presses are ignored (hub fan travel).
+    pub input_enabled: bool,
 }
 
 enum HostCmd {
@@ -80,6 +82,7 @@ enum HostCmd {
     SetRelocate(bool),
     SetVisibility(Arc<Mutex<HashMap<String, bool>>>),
     SetWake(egui::Context),
+    SetHubFanDismiss(bool),
     Shutdown,
 }
 
@@ -157,6 +160,10 @@ impl WinButtonHost {
         let _ = self.cmd_tx.send(HostCmd::SetWake(ctx));
     }
 
+    pub fn set_hub_fan_dismiss(&self, enabled: bool) {
+        let _ = self.cmd_tx.send(HostCmd::SetHubFanDismiss(enabled));
+    }
+
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(HostCmd::Shutdown);
@@ -211,6 +218,8 @@ struct HostState {
     size_all: HCURSOR,
     module: HINSTANCE,
     last_busy: Instant,
+    hub_fan_dismiss: bool,
+    last_hub_dismiss_btn1: bool,
 }
 
 #[expect(
@@ -259,6 +268,8 @@ fn host_loop(
         size_all,
         module,
         last_busy: Instant::now(),
+        hub_fan_dismiss: false,
+        last_hub_dismiss_btn1: false,
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
@@ -279,6 +290,13 @@ fn host_loop(
                     apply_visibility(&mut state);
                 }
                 Ok(HostCmd::SetWake(ctx)) => state.wake = Some(ctx),
+                Ok(HostCmd::SetHubFanDismiss(enabled)) => {
+                    if state.hub_fan_dismiss != enabled {
+                        state.hub_fan_dismiss = enabled;
+                        state.last_hub_dismiss_btn1 = false;
+                        note(&format!("overlay-win: hub_fan_dismiss={enabled}"));
+                    }
+                }
                 Ok(HostCmd::Shutdown) => {
                     stop.store(true, Ordering::Relaxed);
                     break;
@@ -297,6 +315,9 @@ fn host_loop(
         unsafe { drain_messages() };
         tick_busy(&mut state);
         apply_visibility(&mut state);
+        if state.hub_fan_dismiss {
+            poll_hub_fan_outside_dismiss(&mut state);
+        }
         thread::sleep(Duration::from_millis(POLL_MS));
     }
     destroy_all(&mut state);
@@ -633,6 +654,50 @@ fn hide_tip(state: &mut HostState) {
     }
 }
 
+fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
+    let btn1 = sqyre_hotkeys::left_button_down();
+    let pressed = btn1 && !state.last_hub_dismiss_btn1;
+    state.last_hub_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    let mut pt = POINT::default();
+    // SAFETY: `pt` is a valid out-param for the cursor position.
+    if unsafe { GetCursorPos(&mut pt) }.is_err() {
+        return;
+    }
+    let over_hub = state.buttons.values().any(|btn| {
+        btn.mapped
+            && btn.spec.input_enabled
+            && btn.spec.id.starts_with("__sqyre_hub")
+            && inside_rounded(
+                pt.x - btn.spec.face.x,
+                pt.y - btn.spec.face.y,
+                btn.spec.face.w,
+                btn.spec.face.h,
+                btn.spec.face.corner_radius,
+            )
+    });
+    if over_hub {
+        return;
+    }
+    note(&format!(
+        "overlay-win: hub fan dismiss (outside) at {},{}",
+        pt.x, pt.y
+    ));
+    mark_site("overlay-win:hub-dismiss=outside");
+    let name = sqyre_persist::QUICK_ACCESS_HUB_DISMISS.to_string();
+    {
+        let mut q = state.pending.lock();
+        if !q.iter().any(|n| n == &name) {
+            q.push(name);
+        }
+    }
+    if let Some(ctx) = &state.wake {
+        crate::pending_wake::wake_until_drained(ctx, &state.pending);
+    }
+}
+
 fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32) {
     if state.relocate {
         state.drag = Some(Drag {
@@ -663,6 +728,10 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
     let Some(btn) = state.buttons.get(id) else {
         return;
     };
+    if !btn.spec.input_enabled {
+        note(&format!("overlay-win: press-disabled id={id}"));
+        return;
+    }
     if btn.spec.busy {
         note(&format!("overlay-win: press-busy-ignore id={id}"));
         return;
@@ -789,7 +858,8 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
         .lock()
         .as_deref()
         .is_some_and(|n| !n.trim().is_empty());
-    let pass = btn.spec.busy && running && !state.press_stops.load(Ordering::Relaxed);
+    let pass = !btn.spec.input_enabled
+        || (btn.spec.busy && running && !state.press_stops.load(Ordering::Relaxed));
     if pass {
         return LRESULT(HTTRANSPARENT as isize);
     }

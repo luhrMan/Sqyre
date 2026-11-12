@@ -335,6 +335,8 @@ impl HubEdge {
 
 /// Reserved overlay id and fire token for the quick-access hub button.
 pub const QUICK_ACCESS_HUB_ID: &str = "__sqyre_hub";
+/// Fire token that only collapses an open hub fan (outside click / dismiss).
+pub const QUICK_ACCESS_HUB_DISMISS: &str = "__sqyre_hub_dismiss";
 /// Default hub face / brand opacity (0–255).
 pub const DEFAULT_QUICK_ACCESS_OPACITY: u8 = 220;
 
@@ -397,17 +399,19 @@ impl QuickAccessHubSettings {
             .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
     }
 
-    /// Top-left desktop position for the hub face on a monitor rect (points).
+    /// Top-left desktop position for the hub face on a monitor rect.
+    ///
+    /// `size_px` and the monitor rect share units (physical desktop pixels when
+    /// the rect comes from [`sqyre_capture::preferred_monitor_rects`]).
     pub fn position_on_monitor(
         &self,
         mon_x: f32,
         mon_y: f32,
         mon_w: f32,
         mon_h: f32,
+        size_px: f32,
     ) -> (f32, f32) {
-        let size = self
-            .size
-            .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+        let size = hub_layout_size_px(size_px, mon_w, mon_h);
         let o = self.offset.clamp(0.0, 1.0);
         let max_x = (mon_w - size).max(0.0);
         let max_y = (mon_h - size).max(0.0);
@@ -420,7 +424,21 @@ impl QuickAccessHubSettings {
     }
 }
 
+/// On-screen hub edge length in the monitor's coordinate space.
+fn hub_layout_size_px(size_px: f32, mon_w: f32, mon_h: f32) -> f32 {
+    let fallback = DEFAULT_OVERLAY_BUTTON_SIZE;
+    let size = if size_px.is_finite() && size_px > 0.0 {
+        size_px
+    } else {
+        fallback
+    };
+    size.min(mon_w.max(1.0)).min(mon_h.max(1.0)).max(1.0)
+}
+
 /// Snap a dragged hub top-left to the nearest edge of `monitor`; returns edge + offset.
+///
+/// `size` is the on-screen button edge in the same units as the monitor rect
+/// (physical pixels when relocating a native overlay face).
 pub fn snap_hub_to_monitor(
     x: f32,
     y: f32,
@@ -430,7 +448,7 @@ pub fn snap_hub_to_monitor(
     mon_w: f32,
     mon_h: f32,
 ) -> (HubEdge, f32) {
-    let size = size.clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+    let size = hub_layout_size_px(size, mon_w, mon_h);
     let cx = x + size * 0.5;
     let cy = y + size * 0.5;
     let dist_left = (cx - mon_x).abs();
@@ -1917,9 +1935,13 @@ mod tests {
             enabled: true,
             opacity: DEFAULT_QUICK_ACCESS_OPACITY,
         };
-        let (x, y) = hub.position_on_monitor(0.0, 0.0, 1920.0, 1080.0);
+        let (x, y) = hub.position_on_monitor(0.0, 0.0, 1920.0, 1080.0, 26.0);
         assert!((x - (1920.0 - 26.0)).abs() < f32::EPSILON);
         assert!((y - 0.5 * (1080.0 - 26.0)).abs() < f32::EPSILON);
+
+        // Physical face size at 2× must not be clamped to the points max (128).
+        let (x2, _) = hub.position_on_monitor(0.0, 0.0, 3840.0, 2160.0, 52.0);
+        assert!((x2 - (3840.0 - 52.0)).abs() < f32::EPSILON);
     }
 
     #[test]
