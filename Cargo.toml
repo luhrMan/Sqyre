@@ -155,7 +155,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.11"
 # OCR engine: pure-Rust NN pipeline on the rten runtime; models are ONNX files.
 ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
-rten = { version = "0.26", features = ["onnx_format"] }
+rten = { version = "0.28", features = ["onnx_format"] }
 log = "0.4"
 jsonschema = { version = "0.60", default-features = false }
 # async-io (not default tokio): keep zbus/tokio off accesskit's async-io thread.
