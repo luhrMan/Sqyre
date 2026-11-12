@@ -1067,7 +1067,8 @@ fn overlay_button_rows(
                 {
                     enabled_updates.push((btn.id.clone(), enabled));
                 }
-                if crate::widgets::menu_item_danger(ui, "Delete", true) {
+                let can_delete = !sqyre_persist::is_quick_access_hub_id(&btn.id);
+                if can_delete && crate::widgets::menu_item_danger(ui, "Delete", true) {
                     *delete_target = Some((prog.to_string(), Some(btn.id.clone())));
                 }
             },

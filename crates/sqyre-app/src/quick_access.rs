@@ -6,8 +6,9 @@ use eframe::egui;
 use sqyre_persist::QUICK_ACCESS_HUB_ID;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 use sqyre_persist::{
-    HubEdge, OverlayButtonConfig, QuickAccessHubSettings, DEFAULT_OVERLAY_ACCENT_HEX,
-    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX,
+    hub_position_on_monitor, snap_hub_to_monitor, HubEdge, OverlayButtonConfig,
+    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX,
+    QUICK_ACCESS_HUB_ICON,
 };
 
 /// Fire tokens for radial satellites (also used as overlay button ids).
@@ -76,16 +77,18 @@ pub(crate) fn hub_fan_ease(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Build hub (+ optional radial satellites) for the overlay host.
+/// Build hub (+ radial satellites) for the overlay host from the seeded
+/// General overlay button.
 ///
 /// `fan_t` is the open amount (`0` closed … `1` fully open). Satellites travel
 /// between the hub center and their rested fan slots (and stay in the list when
-/// closed so native overlay windows stay warm). `ppp` converts the settings
-/// size (points) into physical desktop pixels so high-DPI faces do not overlap
-/// when layout uses the same space as overlay window positions.
+/// closed so native overlay windows stay warm). `ppp` converts the button size
+/// (points) into physical desktop pixels so high-DPI faces do not overlap when
+/// layout uses the same space as overlay window positions. Stored `x`/`y` are
+/// edge-snapped desktop coords; fan direction comes from the nearest edge.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub(crate) fn hub_overlay_buttons(
-    hub: &QuickAccessHubSettings,
+    hub: &OverlayButtonConfig,
     fan_t: f32,
     ppp: f32,
 ) -> Vec<OverlayButtonConfig> {
@@ -98,10 +101,11 @@ pub(crate) fn hub_overlay_buttons(
         sqyre_persist::MAX_OVERLAY_BUTTON_SIZE,
     );
     let size_px = (size_pt * ppp).round().max(1.0);
-    let (mon_x, mon_y, mon_w, mon_h) = primary_monitor_points();
-    let (hx, hy) = hub.position_on_monitor(mon_x, mon_y, mon_w, mon_h, size_px);
-    let opacity = hub.opacity;
-    let mut out = vec![hub_face(hx, hy, size_pt, opacity)];
+    let (mon_x, mon_y, mon_w, mon_h) = monitor_for_point(hub.x, hub.y);
+    let (edge, offset) = snap_hub_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
+    let (hx, hy) = hub_position_on_monitor(edge, offset, mon_x, mon_y, mon_w, mon_h, size_px);
+    let opacity = hub.icon_alpha;
+    let mut out = vec![hub_face(hub, hx, hy, size_pt)];
     // Always emit satellites while the hub is enabled so the overlay host keeps
     // their windows warm. Creating four face+hit windows on first open stalled
     // XWayland (~1s cursor/screen freeze). Closed satellites park off-desktop
@@ -116,7 +120,7 @@ pub(crate) fn hub_overlay_buttons(
         hub_y: hy,
         hub_size: size_px,
         sat_size: sat_size_px,
-        edge: hub.edge,
+        edge,
         radius: size_px * 2.15,
         mon_x,
         mon_y,
@@ -173,29 +177,27 @@ fn hub_disk_radius(size_pt: f32) -> f32 {
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-fn hub_face(x: f32, y: f32, size_pt: f32, opacity: u8) -> OverlayButtonConfig {
-    OverlayButtonConfig {
-        id: QUICK_ACCESS_HUB_ID.into(),
-        program: String::new(),
-        enabled: true,
-        macro_name: QUICK_ACCESS_HUB_ID.into(),
-        icon: "sqyre-brand".into(),
-        point: String::new(),
-        x,
-        y,
-        size: size_pt,
-        // Hit disk only — the face paints the full Sqyre logo with no chrome.
-        corner_radius: hub_disk_radius(size_pt),
-        border_width: 0.0,
-        border_color: String::new(),
-        border_alpha: 0,
-        bg_color: String::new(),
-        bg_alpha: 0,
-        icon_color: DEFAULT_OVERLAY_ICON_HEX.into(),
-        icon_alpha: opacity,
-        icon_hover_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
-        visibility_gate: Default::default(),
+fn hub_face(hub: &OverlayButtonConfig, x: f32, y: f32, size_pt: f32) -> OverlayButtonConfig {
+    let mut face = hub.clone();
+    face.id = QUICK_ACCESS_HUB_ID.into();
+    face.macro_name = QUICK_ACCESS_HUB_ID.into();
+    face.icon = QUICK_ACCESS_HUB_ICON.into();
+    face.point.clear();
+    face.x = x;
+    face.y = y;
+    face.size = size_pt;
+    // Hit disk only — the face paints the full Sqyre logo with no chrome.
+    face.corner_radius = hub_disk_radius(size_pt);
+    face.border_width = 0.0;
+    face.border_alpha = 0;
+    face.bg_alpha = 0;
+    if face.icon_color.trim().is_empty() {
+        face.icon_color = DEFAULT_OVERLAY_ICON_HEX.into();
     }
+    if face.icon_hover_color.trim().is_empty() {
+        face.icon_hover_color = DEFAULT_OVERLAY_ACCENT_HEX.into();
+    }
+    face
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -573,15 +575,19 @@ mod tests {
         }
     }
 
+    fn test_hub_button() -> OverlayButtonConfig {
+        let mut hub = sqyre_persist::default_quick_access_hub_button();
+        let (x, y) = hub_position_on_monitor(HubEdge::Right, 0.5, 0.0, 0.0, 1920.0, 1080.0, 26.0);
+        hub.x = x;
+        hub.y = y;
+        hub.size = 26.0;
+        hub.icon_alpha = 220;
+        hub
+    }
+
     #[test]
     fn hub_buttons_are_disks() {
-        let hub = QuickAccessHubSettings {
-            enabled: true,
-            edge: HubEdge::Right,
-            offset: 0.5,
-            size: 26.0,
-            opacity: 220,
-        };
+        let hub = test_hub_button();
         let btns = hub_overlay_buttons(&hub, 1.0, 1.0);
         assert_eq!(btns.len(), 5);
         for btn in &btns {
@@ -598,18 +604,19 @@ mod tests {
         assert_eq!(face.border_width, 0.0);
         assert_eq!(face.bg_alpha, 0);
         assert_eq!(face.border_alpha, 0);
-        assert_eq!(face.icon, "sqyre-brand");
+        assert_eq!(face.icon, QUICK_ACCESS_HUB_ICON);
+    }
+
+    #[test]
+    fn disabled_hub_emits_nothing() {
+        let mut hub = test_hub_button();
+        hub.enabled = false;
+        assert!(hub_overlay_buttons(&hub, 1.0, 1.0).is_empty());
     }
 
     #[test]
     fn high_dpi_satellites_do_not_overlap() {
-        let hub = QuickAccessHubSettings {
-            enabled: true,
-            edge: HubEdge::Right,
-            offset: 0.5,
-            size: 26.0,
-            opacity: 220,
-        };
+        let hub = test_hub_button();
         let ppp = 2.0;
         let btns = hub_overlay_buttons(&hub, 1.0, ppp);
         assert_eq!(btns.len(), 5);
@@ -636,13 +643,7 @@ mod tests {
 
     #[test]
     fn fan_animation_travels_out_from_hub() {
-        let hub = QuickAccessHubSettings {
-            enabled: true,
-            edge: HubEdge::Right,
-            offset: 0.5,
-            size: 26.0,
-            opacity: 220,
-        };
+        let hub = test_hub_button();
         let closed = hub_overlay_buttons(&hub, 0.0, 1.0);
         assert_eq!(closed.len(), 5, "closed fan keeps warm satellites");
         for sat in closed.iter().skip(1) {
@@ -654,7 +655,7 @@ mod tests {
                 sat.y
             );
             assert_eq!(
-                sat.border_alpha, hub.opacity,
+                sat.border_alpha, hub.icon_alpha,
                 "no opacity fade while traveling"
             );
         }
