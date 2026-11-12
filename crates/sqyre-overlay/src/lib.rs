@@ -37,9 +37,16 @@ pub struct ButtonFace {
 }
 
 #[cfg(feature = "runtime")]
+mod context_menu;
+#[cfg(feature = "runtime")]
+mod hub_fan;
+#[cfg(feature = "runtime")]
 mod macro_overlay;
 #[cfg(all(feature = "runtime", any(target_os = "linux", target_os = "windows")))]
 mod pending_wake;
+
+#[cfg(feature = "runtime")]
+pub use hub_fan::{hub_fan_ease, HUB_FAN_ANIM_SECS};
 
 #[cfg(all(feature = "runtime", target_os = "android"))]
 mod android_buttons;
@@ -55,6 +62,11 @@ mod win_buttons;
 #[cfg(all(feature = "runtime", target_os = "linux"))]
 mod x11_buttons;
 
+#[cfg(feature = "runtime")]
+pub use context_menu::{
+    action_from_context_pick, context_menu_row_names, OverlayButtonContextAction, CTX_DISABLE,
+    CTX_OPEN_SETTINGS,
+};
 #[cfg(feature = "runtime")]
 pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult, OverlayButtonMove};
 

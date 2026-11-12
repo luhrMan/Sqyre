@@ -35,6 +35,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     apply_overlay_and_hub_moves(app, moves, ppp);
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
         app.snap_quick_access_fan_closed();
+        app.macro_overlay.set_hub_fan(false, true);
         app.macro_overlay.set_hub_fan_interactive(false);
         app.macro_overlay.set_hub_fan_dismiss(false);
         // Comment above: hidden while recording — clear native buttons (do not leave last sync).
@@ -63,6 +64,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     let hub_cfg = resolve_hub_overlay_config(app);
     let (hub_btns, buttons) = if relocate {
         app.snap_quick_access_fan_closed();
+        app.macro_overlay.set_hub_fan(false, true);
         app.macro_overlay.set_hub_fan_interactive(false);
         app.macro_overlay.set_hub_fan_dismiss(false);
         let mut buttons: Vec<_> = {
@@ -88,13 +90,19 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     } else {
         let hub_btns = match &hub_cfg {
             Some(hub) => {
-                app.tick_quick_access_fan(ctx);
-                let fan_open = app.quick_access_expanded || app.quick_access_fan_t > 0.001;
-                let fan_interactive =
-                    app.quick_access_expanded && (app.quick_access_fan_t - 1.0).abs() <= 0.001;
-                app.macro_overlay.set_hub_fan_interactive(fan_interactive);
+                // Host owns satellite travel on its poll clock so the fan stays
+                // smooth while Sqyre is unfocused (egui ROOT starves on Wayland).
+                // Specs always carry rested slots; host lerps from park → rest.
+                app.macro_overlay
+                    .set_hub_fan(app.quick_access_expanded, false);
+                let fan_t = app.quick_access_fan_t();
+                let fan_open = app.quick_access_expanded || fan_t > 0.001;
+                // Host gates satellite hits until fully open; pass expanded so a
+                // late egui frame is not required to arm ShapeInput.
+                app.macro_overlay
+                    .set_hub_fan_interactive(app.quick_access_expanded);
                 app.macro_overlay.set_hub_fan_dismiss(fan_open);
-                crate::quick_access::hub_overlay_buttons(hub, app.quick_access_fan_t, ppp, false)
+                crate::quick_access::hub_overlay_buttons(hub, 1.0, ppp, false)
             }
             None => Vec::new(),
         };

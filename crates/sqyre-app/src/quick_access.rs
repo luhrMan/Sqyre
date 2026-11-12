@@ -68,13 +68,12 @@ const ACTIONS: [QuickAccessAction; 4] = [
 
 /// Fan open/close duration (seconds) for satellite travel.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-pub(crate) const HUB_FAN_ANIM_SECS: f32 = 0.18;
+pub(crate) const HUB_FAN_ANIM_SECS: f32 = sqyre_overlay::HUB_FAN_ANIM_SECS;
 
 /// Ease fan progress (`0`…`1`) with a smoothstep.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub(crate) fn hub_fan_ease(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    sqyre_overlay::hub_fan_ease(t)
 }
 
 /// Build hub (+ radial satellites) for the overlay host from the seeded
@@ -388,42 +387,48 @@ impl SqyreApp {
     }
 
     pub(crate) fn toggle_quick_access_fan(&mut self, ctx: &egui::Context) {
+        self.begin_quick_access_fan_anim();
         self.quick_access_expanded = !self.quick_access_expanded;
+        // Wake once so sync forwards the new expand flag; travel runs on the host.
         ctx.request_repaint();
     }
 
     pub(crate) fn close_quick_access_fan(&mut self) {
+        if self.quick_access_expanded {
+            self.begin_quick_access_fan_anim();
+        }
         self.quick_access_expanded = false;
     }
 
     /// Snap the fan shut without playing the collapse motion (mode switches).
-    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
     pub(crate) fn snap_quick_access_fan_closed(&mut self) {
         self.quick_access_expanded = false;
-        self.quick_access_fan_t = 0.0;
+        self.quick_access_fan_from = 0.0;
+        self.quick_access_fan_anim_start = None;
     }
 
-    /// Advance satellite travel toward the expanded/collapsed target.
-    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-    pub(crate) fn tick_quick_access_fan(&mut self, ctx: &egui::Context) {
+    /// Wall-clock fan progress (logic only — visuals are host-driven).
+    pub(crate) fn quick_access_fan_t(&self) -> f32 {
         let target = if self.quick_access_expanded { 1.0 } else { 0.0 };
-        if (self.quick_access_fan_t - target).abs() < 0.001 {
-            self.quick_access_fan_t = target;
-            return;
-        }
-        let dt = ctx.input(|i| i.stable_dt).clamp(1.0 / 240.0, 1.0 / 30.0);
-        let step = dt / HUB_FAN_ANIM_SECS;
-        if self.quick_access_fan_t < target {
-            self.quick_access_fan_t = (self.quick_access_fan_t + step).min(target);
-        } else {
-            self.quick_access_fan_t = (self.quick_access_fan_t - step).max(target);
-        }
-        ctx.request_repaint();
+        let Some(start) = self.quick_access_fan_anim_start else {
+            return target;
+        };
+        #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+        let secs = HUB_FAN_ANIM_SECS;
+        #[cfg(not(all(feature = "native-runtime", feature = "overlay-buttons")))]
+        let secs = 0.18_f32;
+        let u = (start.elapsed().as_secs_f32() / secs).clamp(0.0, 1.0);
+        self.quick_access_fan_from + (target - self.quick_access_fan_from) * u
+    }
+
+    fn begin_quick_access_fan_anim(&mut self) {
+        self.quick_access_fan_from = self.quick_access_fan_t();
+        self.quick_access_fan_anim_start = Some(std::time::Instant::now());
     }
 
     /// Esc collapses an open fan.
     pub(crate) fn poll_quick_access_escape(&mut self, ctx: &egui::Context) {
-        if !self.quick_access_expanded && self.quick_access_fan_t <= 0.001 {
+        if !self.quick_access_expanded && self.quick_access_fan_t() <= 0.001 {
             return;
         }
         sqyre_hotkeys::claim_popup_escape(true);
@@ -447,7 +452,7 @@ impl SqyreApp {
             return false;
         };
         // Satellites fire only when the fan is fully open (host also empties hits).
-        if (self.quick_access_fan_t - 1.0).abs() > 0.001 || !self.quick_access_expanded {
+        if (self.quick_access_fan_t() - 1.0).abs() > 0.001 || !self.quick_access_expanded {
             return true;
         }
         self.close_quick_access_fan();

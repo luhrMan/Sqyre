@@ -56,6 +56,25 @@ impl DataEditor {
         }
     }
 
+    /// Set `enabled` on an overlay button by id; syncs the open form when selected.
+    /// Returns whether a matching button was found.
+    #[cfg(any(all(feature = "native-runtime", feature = "overlay-buttons"), test))]
+    pub(crate) fn set_overlay_button_enabled(
+        &mut self,
+        settings: &mut UserSettings,
+        id: &str,
+        enabled: bool,
+    ) -> bool {
+        let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) else {
+            return false;
+        };
+        btn.enabled = enabled;
+        if self.selected_entity.as_deref() == Some(id) {
+            self.form_overlay_enabled = enabled;
+        }
+        true
+    }
+
     /// Keep the open overlay form in sync when a referenced macro is renamed.
     pub(crate) fn rename_overlay_form_macro(&mut self, old_name: &str, new_name: &str) {
         if self.form_overlay_macro == old_name {
@@ -64,6 +83,8 @@ impl DataEditor {
     }
 
     pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings, ppp: f32) {
+        #[cfg(not(all(feature = "native-runtime", feature = "overlay-buttons")))]
+        let _ = ppp;
         let Some(id) = self.selected_entity.clone() else {
             self.set_err("Select an overlay button first.");
             return;
@@ -99,12 +120,17 @@ impl DataEditor {
                 sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
             );
             // Persist edge-docked coords so form X/Y match what the face shows.
-            let size_px = (btn.size * ppp.max(0.01)).round().max(1.0);
-            let (mon_x, mon_y, mon_w, mon_h) = crate::quick_access::monitor_for_point(btn.x, btn.y);
-            let _ =
-                sqyre_persist::snap_hub_button_to_monitor(btn, mon_x, mon_y, mon_w, mon_h, size_px);
-            self.form_overlay_x = btn.x;
-            self.form_overlay_y = btn.y;
+            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+            {
+                let size_px = (btn.size * ppp.max(0.01)).round().max(1.0);
+                let (mon_x, mon_y, mon_w, mon_h) =
+                    crate::quick_access::monitor_for_point(btn.x, btn.y);
+                let _ = sqyre_persist::snap_hub_button_to_monitor(
+                    btn, mon_x, mon_y, mon_w, mon_h, size_px,
+                );
+                self.form_overlay_x = btn.x;
+                self.form_overlay_y = btn.y;
+            }
         } else {
             btn.program = prog;
             btn.macro_name = self.form_overlay_macro.trim().to_string();
@@ -189,5 +215,52 @@ impl DataEditor {
             self.overlay_icon_picker_for = None;
         }
         let _ = settings; // form-edited; persist via Save
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_editor::EditorTab;
+    use egui::Context;
+    use sqyre_persist::OverlayButtonConfig;
+
+    #[test]
+    fn set_overlay_button_enabled_syncs_form() {
+        let mut settings = UserSettings::default();
+        let mut btn = OverlayButtonConfig::new("b1", "Game");
+        btn.enabled = true;
+        settings.overlay_buttons.push(btn);
+
+        let mut ed = DataEditor {
+            selected_program: Some("Game".into()),
+            selected_entity: Some("b1".into()),
+            form_overlay_enabled: true,
+            ..Default::default()
+        };
+
+        assert!(ed.set_overlay_button_enabled(&mut settings, "b1", false));
+        assert!(!settings.overlay_buttons[0].enabled);
+        assert!(!ed.form_overlay_enabled);
+        assert!(!ed.set_overlay_button_enabled(&mut settings, "missing", false));
+    }
+
+    #[test]
+    fn open_entity_focuses_overlay_button() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Game").unwrap();
+        let mut settings = UserSettings::default();
+        let mut btn = OverlayButtonConfig::new("b1", "Game");
+        btn.macro_name = "Macro".into();
+        settings.overlay_buttons.push(btn);
+
+        let ctx = Context::default();
+        let mut ed = DataEditor::default();
+        ed.open_entity(&ctx, EditorTab::Overlay, "Game", "b1", &cat, &settings);
+        assert!(ed.open);
+        assert_eq!(ed.tab, EditorTab::Overlay);
+        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
+        assert_eq!(ed.selected_entity.as_deref(), Some("b1"));
     }
 }
