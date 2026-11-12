@@ -129,6 +129,9 @@ impl HookCtx {
                 if matches!(button, Button::Left) {
                     crate::pointer_buttons::set_left_button_down(true);
                 }
+                if matches!(button, Button::Right) {
+                    crate::pointer_buttons::set_right_button_down(true);
+                }
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, true);
                 }
@@ -142,6 +145,9 @@ impl HookCtx {
             EventType::ButtonRelease(button) => {
                 if matches!(button, Button::Left) {
                     crate::pointer_buttons::set_left_button_down(false);
+                }
+                if matches!(button, Button::Right) {
+                    crate::pointer_buttons::set_right_button_down(false);
                 }
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, false);
@@ -277,6 +283,7 @@ impl HotkeyService for RdevHotkeys {
     fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         crate::pointer_buttons::set_left_button_down(false);
+        crate::pointer_buttons::set_right_button_down(false);
         #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
         crate::linux_portal_shortcuts::stop(&self.macro_hotkeys);
         // Wayland evdev watch uses a short epoll timeout and can join. X11 `listen` blocks forever.
