@@ -431,8 +431,7 @@ fn place_hub_satellite_spec(state: &HostState, spec: &mut WinButtonSpec) {
     let rest = (spec.face.x, spec.face.y);
     let (hx, hy, hw, hh) = hub_face_geom(state);
     let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let park = crate::hub_fan::hub_park(hx, hy, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
     spec.face.x = x;
     spec.face.y = y;
     spec.input_enabled = state.hub_fan.fully_open();
@@ -447,6 +446,7 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
     if was_open != state.hub_fan.fully_open() {
         rearm_hub_satellite_input(state);
     }
+    apply_visibility(state);
     sync_hub_fan_dismiss_arm(state);
 }
 
@@ -474,8 +474,7 @@ fn place_all_hub_satellites(state: &mut HostState) {
         };
         let (w, h) = (live.spec.face.w.max(1), live.spec.face.h.max(1));
         let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let park = crate::hub_fan::hub_park(hx, hy, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
         if live.spec.face.x == x && live.spec.face.y == y {
             continue;
         }
@@ -501,9 +500,16 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 
 fn tick_hub_fan(state: &mut HostState) {
     let was_open = state.hub_fan.fully_open();
+    let was_traveling = state.hub_fan.open_or_traveling();
     if !state.hub_fan.tick() {
+        if was_traveling && !state.hub_fan.open_or_traveling() {
+            apply_visibility(state);
+        }
         sync_hub_fan_dismiss_arm(state);
         return;
+    }
+    if !was_traveling {
+        apply_visibility(state);
     }
     place_all_hub_satellites(state);
     if was_open != state.hub_fan.fully_open() {
@@ -637,7 +643,10 @@ fn apply_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
+        let fan_show =
+            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
         let show = !sqyre_capture::overlay_capture_omitted()
+            && fan_show
             && (relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false));
         if show == btn.mapped {
             continue;

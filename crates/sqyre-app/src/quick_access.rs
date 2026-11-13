@@ -136,26 +136,15 @@ pub(crate) fn hub_overlay_buttons(
         mon_h,
         count: ACTIONS.len(),
     };
-    // Collapsed origin: satellite centered on the hub face.
+    // Collapsed origin: satellite centered on the hub face. Hosts unmap when
+    // closed — do not park at extreme coords (compositors clamp them on-screen).
     let origin_x = hx + (size_px - sat_size_px) * 0.5;
     let origin_y = hy + (size_px - sat_size_px) * 0.5;
     let eased = hub_fan_ease(fan_t);
-    // Park far off every monitor so a closed fan cannot sit under the pointer.
-    // Host uses the same helper; a small hub/monitor-local offset still lands
-    // on-screen for right/bottom docks (and on the neighbor for multi-monitor).
-    let (park_x, park_y) = {
-        let (x, y) = sqyre_overlay::hub_park(
-            hx.round() as i32,
-            hy.round() as i32,
-            sat_size_px.round() as u32,
-            sat_size_px.round() as u32,
-        );
-        (x as f32, y as f32)
-    };
     for (i, action) in ACTIONS.iter().enumerate() {
         let (sx, sy) = satellite_top_left(layout, i);
         let (ax, ay) = if eased <= 0.001 {
-            (park_x, park_y)
+            (origin_x, origin_y)
         } else {
             (
                 origin_x + (sx - origin_x) * eased,
@@ -701,13 +690,18 @@ mod tests {
         let hub = test_hub_button();
         let closed = hub_overlay_buttons(&hub, 0.0, 1.0, false);
         assert_eq!(closed.len(), 5, "closed fan keeps warm satellites");
+        let hub_btn = &closed[0];
+        let origin_x = hub_btn.x + (hub_btn.size - closed[1].size) * 0.5;
+        let origin_y = hub_btn.y + (hub_btn.size - closed[1].size) * 0.5;
         for sat in closed.iter().skip(1) {
             assert!(
-                sat.x < -10_000.0 && sat.y < -10_000.0,
-                "closed satellite parks off-desktop: {} @ {},{}",
+                (sat.x - origin_x).abs() < 1.0 && (sat.y - origin_y).abs() < 1.0,
+                "closed satellite sits on hub origin: {} @ {},{} origin={},{}",
                 sat.id,
                 sat.x,
-                sat.y
+                sat.y,
+                origin_x,
+                origin_y
             );
             assert_eq!(
                 sat.border_alpha, hub.icon_alpha,

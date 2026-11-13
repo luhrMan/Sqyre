@@ -138,27 +138,15 @@ pub fn hub_origin(
     )
 }
 
-/// Off-desktop park for a closed fan (no paint, no hit stealing).
-///
-/// A small hub-relative offset is not enough: a right- or bottom-docked hub
-/// leaves `hub - 8×size` still on the same monitor, so collapsed satellites
-/// stay visible and can sit under the pointer. Use a coordinate well outside
-/// any practical virtual-desktop span (multi-4K walls, negative origins, …).
-pub fn hub_park(_hub_x: i32, _hub_y: i32, _sat_w: u32, _sat_h: u32) -> (i32, i32) {
-    const OFF: i32 = -100_000;
-    (OFF, OFF)
-}
-
 /// Visual top-left for a satellite at `fan_t`.
-pub fn satellite_pos(
-    fan_t: f32,
-    rest: (i32, i32),
-    origin: (i32, i32),
-    park: (i32, i32),
-) -> (i32, i32) {
+///
+/// When closed (`fan_t` ≈ 0) the position is the hub origin — hosts must
+/// **unmap/hide** satellites in that state rather than parking them off-desktop
+/// (compositors clamp extreme coords back on-screen and flash during relocate).
+pub fn satellite_pos(fan_t: f32, rest: (i32, i32), origin: (i32, i32)) -> (i32, i32) {
     let eased = hub_fan_ease(fan_t);
     if eased <= 0.001 {
-        return park;
+        return origin;
     }
     (
         origin.0 + ((rest.0 - origin.0) as f32 * eased).round() as i32,
@@ -212,30 +200,22 @@ mod tests {
     }
 
     #[test]
-    fn pos_parks_when_closed() {
+    fn pos_closed_sits_on_hub_origin() {
         let origin = (10, 20);
         let rest = (100, 200);
-        let park = (-50, -50);
-        assert_eq!(satellite_pos(0.0, rest, origin, park), park);
-        assert_eq!(satellite_pos(1.0, rest, origin, park), rest);
-        let mid = satellite_pos(0.5, rest, origin, park);
+        assert_eq!(satellite_pos(0.0, rest, origin), origin);
+        assert_eq!(satellite_pos(1.0, rest, origin), rest);
+        let mid = satellite_pos(0.5, rest, origin);
         assert!(mid.0 > origin.0 && mid.0 < rest.0);
     }
 
     #[test]
-    fn closed_park_is_off_desktop_for_edge_hub() {
-        // Right-edge hub on a 1920×1080 monitor — the old 8×size offset left
-        // satellites around x≈1500, still on-screen.
-        let hub_x = 1920 - 40;
-        let hub_y = 500;
-        let (px, py) = hub_park(hub_x, hub_y, 36, 36);
-        assert!(px < 0 && py < 0, "park on-desktop: ({px},{py})");
-        assert!(
-            px < -10_000 && py < -10_000,
-            "park must clear multi-monitor desktops: ({px},{py})"
-        );
-        let origin = hub_origin(hub_x, hub_y, 40, 40, 36, 36);
-        let rest = (hub_x - 80, hub_y);
-        assert_eq!(satellite_pos(0.0, rest, origin, (px, py)), (px, py));
+    fn closed_fan_is_not_open_or_traveling() {
+        let mut fan = HubFanState::default();
+        assert!(!fan.open_or_traveling());
+        fan.set_expanded(true, false);
+        assert!(fan.open_or_traveling());
+        fan.set_expanded(false, true);
+        assert!(!fan.open_or_traveling());
     }
 }
