@@ -27,7 +27,7 @@
 //! Thin `x_*` helpers carry a single `SAFETY` contract; larger blocks document
 //! the same invariant at the call boundary (see `x11_focus` for the same style).
 
-use crate::raster::{self, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
+use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
 use sqyre_capture::{
@@ -89,6 +89,8 @@ pub struct NativeButtonSpec {
     pub face: crate::ButtonFace,
     /// Hover tip text (label / display name). Empty = no tip.
     pub tip: String,
+    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
+    pub ui_scale: f32,
     pub busy: bool,
     /// When true, the host maps this button only while [`HostState`] visibility says found.
     pub visibility_gated: bool,
@@ -334,6 +336,7 @@ struct TipWindow {
     win: Window,
     for_id: String,
     text: String,
+    ui_scale: f32,
     w: u32,
     h: u32,
     mapped: bool,
@@ -1106,10 +1109,25 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                     // Do not XMapRaised here — restacking after busy/style updates
                     // broke hit-testing until windows were remapped (focus cycle).
                 }
-                // Tips disabled (see EnterNotify); never re-show from apply_specs.
+                // Tips disabled (see EnterNotify); never re-show from apply_specs
+                // except when tip text / UI scale changed on the hovered button.
             }
         }
     }
+    let tip_refresh = state.tip.as_ref().and_then(|tip| {
+        if !tip.mapped {
+            return None;
+        }
+        let btn = state.buttons.get(tip.for_id.as_str())?;
+        let text = btn.spec.tip.trim();
+        if text.is_empty() {
+            return Some((tip.for_id.clone(), false));
+        }
+        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
+            return Some((tip.for_id.clone(), true));
+        }
+        None
+    });
     let drop_ids: Vec<String> = state
         .buttons
         .keys()
@@ -1128,6 +1146,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             unsafe {
                 destroy_live_button(state.display, &live);
             }
+        }
+    }
+    if let Some((id, show)) = tip_refresh {
+        if show && state.buttons.contains_key(&id) {
+            show_tip_for(state, &id);
+        } else {
+            hide_tip(state);
         }
     }
     state.hub_fan.forget_missing(&keep);
@@ -2580,11 +2605,12 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         hide_tip(state);
         return;
     }
+    let ui_scale = btn.spec.ui_scale.max(0.01);
     let btn_x = btn.spec.face.x;
     let btn_y = btn.spec.face.y;
     let btn_w = btn.spec.face.w as i32;
     let btn_h = btn.spec.face.h as i32;
-    let (tw, th, rgba) = raster::rasterize_tip(&tip_text);
+    let (tw, th, rgba) = raster::rasterize_tip(&tip_text, ui_scale);
     if tw == 0 || th == 0 || rgba.is_empty() {
         hide_tip(state);
         return;
@@ -2608,12 +2634,13 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
                 x_destroy_window(state.display, old.win);
             }
         }
-        match create_tip_window(state, tip_x, tip_y, tw, th) {
+        match create_tip_window(state, tip_x, tip_y, tw, th, ui_scale) {
             Ok(win) => {
                 state.tip = Some(TipWindow {
                     win,
                     for_id: button_id.to_string(),
                     text: tip_text.clone(),
+                    ui_scale,
                     w: tw,
                     h: th,
                     mapped: true,
@@ -2627,6 +2654,7 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
     } else if let Some(tip) = state.tip.as_mut() {
         tip.for_id = button_id.to_string();
         tip.text = tip_text.clone();
+        tip.ui_scale = ui_scale;
         // SAFETY: HostState display invariant; tip.win is live on this display.
         unsafe {
             x_move_resize(state.display, tip.win, tip_x, tip_y, tw, th);
@@ -2635,7 +2663,7 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         tip.mapped = true;
     }
     if let Some(tip) = state.tip.as_ref() {
-        apply_tip_shape(state.display, tip.win, tip.w, tip.h);
+        apply_tip_shape(state.display, tip.win, tip.w, tip.h, tip.ui_scale);
         blit_rgba(state, tip.win, tip.w, tip.h, &rgba, false);
         // Keep tip under button hits. ConfigureWindow can synthesize Leave/Enter —
         // suppress crossing and discard those events before re-enabling tip logic.
@@ -3011,6 +3039,7 @@ fn create_tip_window(
     y: i32,
     w: u32,
     h: u32,
+    ui_scale: f32,
 ) -> Result<Window, OverlayError> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
     // SAFETY: HostState display invariant — tip window lifecycle matches buttons.
@@ -3040,7 +3069,7 @@ fn create_tip_window(
             return Err(OverlayError::CreateWindow("tip"));
         }
         register_overlay_window(state.display, state.root, win, OVERLAY_TIP_WM_TITLE);
-        apply_tip_shape(state.display, win, w, h);
+        apply_tip_shape(state.display, win, w, h, ui_scale);
         // Map without raising — show_tip stacks tip below button hits.
         XMapWindow(state.display, win);
         XFlush(state.display);
@@ -3049,8 +3078,8 @@ fn create_tip_window(
 }
 
 /// Rounded bounding + empty input so the tip never steals hover from the button.
-fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
-    apply_rounded_shape(display, win, w, h, TIP_CORNER_PX);
+fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32, ui_scale: f32) {
+    apply_rounded_shape(display, win, w, h, tip_corner_px(ui_scale));
 }
 
 fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8], argb: bool) {
@@ -3185,7 +3214,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
             }
             if state.tip.as_ref().is_some_and(|t| t.win == win && t.mapped) {
                 if let Some(tip) = state.tip.as_ref() {
-                    let (tw, th, rgba) = raster::rasterize_tip(&tip.text);
+                    let (tw, th, rgba) = raster::rasterize_tip(&tip.text, tip.ui_scale);
                     if tw > 0 && th > 0 && !rgba.is_empty() {
                         blit_rgba(state, tip.win, tw, th, &rgba, false);
                     }
@@ -4575,6 +4604,7 @@ mod tests {
                 brand: false,
             },
             tip: "run m".into(),
+            ui_scale: 1.0,
             busy: false,
             visibility_gated: false,
             input_enabled: true,
