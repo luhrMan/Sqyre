@@ -9,10 +9,11 @@
 //! compositor delivers enter, hover, and clicks over the desktop and native
 //! Wayland surfaces. `XQueryPointer` freezes once the pointer leaves XWayland,
 //! so an always-empty input region gets no events there. ShapeInput is emptied
-//! while that pointer is on a foreign X11 window near a button — a confined
+//! for the whole time `_NET_ACTIVE_WINDOW` is a foreign X11 client — a confined
 //! game cursor would otherwise stop at the button edge — and those clicks /
 //! hover are polled in X root coordinates. Enter/Leave are ignored during
-//! click-through so emptying the shape cannot flash hover off.
+//! click-through so emptying the shape cannot flash hover off. When focus
+//! returns to native Wayland / Sqyre / unset, rounded ShapeInput is restored.
 //!
 //! # X11 safety (`HostState`)
 //!
@@ -57,11 +58,11 @@ use x11::xlib::{
     XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
     XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
     XDefineCursor, XDestroyImage, XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush,
-    XFreeColormap, XFreeCursor, XFreeGC, XGetSelectionOwner, XGrabPointer, XInternAtom, XMapRaised,
-    XMapWindow, XMatchVisualInfo, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
-    XQueryPointer, XRectangle, XSelectInput, XSetWindowAttributes, XSetWindowBackground,
-    XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XVisualInfo, XWindowChanges,
-    ZPixmap,
+    XFree, XFreeColormap, XFreeCursor, XFreeGC, XGetSelectionOwner, XGetWindowProperty,
+    XGrabPointer, XInternAtom, XMapRaised, XMapWindow, XMatchVisualInfo, XMoveResizeWindow,
+    XNextEvent, XOpenDisplay, XPending, XPutImage, XQueryPointer, XRectangle, XSelectInput,
+    XSetWindowAttributes, XSetWindowBackground, XStoreName, XSync, XUndefineCursor, XUngrabPointer,
+    XUnmapWindow, XVisualInfo, XWindowChanges, ZPixmap, XA_WINDOW,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -73,10 +74,6 @@ const BUSY_TICK_MS: u64 = 50;
 /// Hover this long before a polled (click-through) tip appears, so a game cursor
 /// crossing the button does not flash one.
 const PASSTHROUGH_TIP_DWELL: Duration = Duration::from_millis(300);
-/// Empty the hit this far outside the button, before a confined cursor touches it.
-const CLICK_THROUGH_ENTER_PAD: i32 = 128;
-/// Once click-through, keep it until the pointer is this far outside (no edge flicker).
-const CLICK_THROUGH_EXIT_PAD: i32 = 192;
 /// X11 cursorfont fleur (four-way move arrow).
 const XC_FLEUR: c_uint = 52;
 /// X11 cursorfont left pointer (normal arrow).
@@ -456,9 +453,9 @@ struct HostState {
     /// Wayland session where a foreign X11 window can wall a confined pointer.
     /// Hits stay interactive until [`HostState::click_through`] is set.
     passthrough_hits: bool,
-    /// Hit ShapeInput is empty and clicks are polled. Set while the pointer is
-    /// moving on a foreign X11 window near a button; off over native Wayland,
-    /// where `XQueryPointer` does not track the cursor.
+    /// Hit ShapeInput is empty and clicks are polled. Set for the whole time a
+    /// foreign X11 client owns `_NET_ACTIVE_WINDOW`; off when focus is native
+    /// Wayland / Sqyre / unset so desktop hits stay interactive.
     click_through: bool,
     /// Previous `XQueryPointer` root position. `None` until the first sample,
     /// so the first read is not treated as motion.
@@ -593,8 +590,8 @@ fn host_loop(
 
     // Wayland compositors confine an X11 game pointer to the surface under the
     // cursor. A hit window with ShapeInput is a different surface, so the cursor
-    // stops at the button edge. `passthrough_hits` arms that fallback; the hit
-    // stays a real target until the pointer is actually on a foreign X window.
+    // stops at the button edge. `passthrough_hits` arms focus-scoped click-through
+    // while a foreign X11 client is focused.
     let passthrough_hits =
         sqyre_capture::LinuxSessionInfo::detect().has_wayland && xfixes_supported(display);
 
@@ -3959,8 +3956,8 @@ fn seed_passthrough_hover_from_x_hover(state: &mut HostState) {
     });
 }
 
-/// Keep ShapeInput over native Wayland; empty it while the X pointer is on a
-/// foreign window near a button, and poll hover/clicks from that sample.
+/// Focus-scoped click-through: empty ShapeInput while a foreign X11 client is
+/// focused; poll hover/clicks from the seat sample while empty.
 ///
 /// Portal desktop coords match X root on GNOME, but not always on Cosmic — we
 /// only use portal for hit tests after seeing them agree. Returns `(btn1, btn3)`.
@@ -3970,9 +3967,6 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
     let x11_pos = x11.map(|p| (p.x, p.y));
     let x11_moved = pointer_moved(state.last_x11_pos, x11_pos);
     let portal_moved = pointer_moved(state.last_portal_pos, portal);
-    // Capture before updating — first seat sample has no prior pos, so
-    // pointer_moved is false, but we still want to empty ShapeInput early.
-    let first_x11_sample = state.last_x11_pos.is_none() && x11_pos.is_some();
     update_portal_alignment(state, x11_pos, portal, x11_moved, portal_moved);
     if x11_pos.is_some() {
         state.last_x11_pos = x11_pos;
@@ -3980,15 +3974,11 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
     if portal.is_some() {
         state.last_portal_pos = portal;
     }
+    let next = next_click_through(state.passthrough_hits, foreign_x11_client_focused(state));
+    set_click_through(state, next);
     if let Some(p) = x11 {
-        let foreign = over_foreign_x11(state, p.child);
-        let pad = if state.click_through {
-            CLICK_THROUGH_EXIT_PAD
-        } else {
-            CLICK_THROUGH_ENTER_PAD
-        };
         // Relative-mouse XWayland games freeze X while the visual cursor still
-        // moves — prefer aligned portal coords for near/hover in that case.
+        // moves — prefer aligned portal coords for hover in that case.
         let (hx, hy) = passthrough_hit_xy(
             p.x,
             p.y,
@@ -3997,29 +3987,12 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
             portal_moved,
             state.portal_aligned,
         );
-        let using_portal_hit =
-            !x11_moved && portal_moved && state.portal_aligned && portal.is_some();
-        let near = foreign && button_near(state, hx, hy, pad);
-        let next = next_click_through(
-            state.click_through,
-            x11_moved,
-            portal_moved,
-            foreign,
-            near,
-            first_x11_sample,
-            using_portal_hit,
-        );
-        set_click_through(state, next);
         let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
         let btn3 = p.button3 || sqyre_hotkeys::right_button_down();
         if state.click_through {
             poll_passthrough_pointer(state, hx, hy, btn1, last_btn1, btn3, last_btn3);
         }
         return (btn1, btn3);
-    }
-    // No X sample at all (rare): portal motion alone means we left XWayland.
-    if portal_moved {
-        set_click_through(state, false);
     }
     (last_btn1, last_btn3)
 }
@@ -4116,9 +4089,65 @@ fn pointer_moved(prev: Option<(i32, i32)>, next: Option<(i32, i32)>) -> bool {
     }
 }
 
-/// `child` is another client's X window, not the root and not one of ours.
-fn over_foreign_x11(state: &HostState, child: Window) -> bool {
-    child != 0 && child != state.root && !overlay_owns_window(state, child)
+/// True when `_NET_ACTIVE_WINDOW` is another client's X11/XWayland window.
+///
+/// Drives focus-scoped click-through: empty hit ShapeInput for the whole focus
+/// period so a confined game cursor never meets a rounded disk. Native Wayland
+/// focus usually leaves this unset — hits stay interactive for desktop use.
+fn foreign_x11_client_focused(state: &HostState) -> bool {
+    let Some(active) = net_active_window(state.display, state.root) else {
+        return false;
+    };
+    active != 0 && active != state.root && !overlay_owns_window(state, active)
+}
+
+/// `_NET_ACTIVE_WINDOW` on `root`, if the property is present and non-zero.
+fn net_active_window(display: *mut Display, root: Window) -> Option<Window> {
+    if display.is_null() || root == 0 {
+        return None;
+    }
+    // SAFETY: host-thread display; root from that display; prop freed on every path.
+    unsafe {
+        let Ok(name) = std::ffi::CString::new("_NET_ACTIVE_WINDOW") else {
+            return None;
+        };
+        let atom = XInternAtom(display, name.as_ptr(), False);
+        if atom == 0 {
+            return None;
+        }
+        let mut actual_type = 0;
+        let mut actual_format: c_int = 0;
+        let mut nitems: c_ulong = 0;
+        let mut bytes_after: c_ulong = 0;
+        let mut prop: *mut u8 = std::ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            root,
+            atom,
+            0,
+            1,
+            False,
+            XA_WINDOW,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as c_int || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop.cast());
+            }
+            return None;
+        }
+        let win = *(prop as *const Window);
+        XFree(prop.cast());
+        if win == 0 {
+            None
+        } else {
+            Some(win)
+        }
+    }
 }
 
 fn overlay_owns_window(state: &HostState, win: Window) -> bool {
@@ -4133,25 +4162,6 @@ fn overlay_owns_window(state: &HostState, win: Window) -> bool {
         || state.shield.as_ref().is_some_and(|s| s.win == win)
 }
 
-fn button_near(state: &HostState, x: i32, y: i32, pad: i32) -> bool {
-    state
-        .buttons
-        .values()
-        .filter(|b| b.mapped)
-        .any(|b| spec_near(&b.spec, x, y, pad))
-}
-
-/// Point within `pad` pixels of the spec rect (the rect itself counts).
-fn spec_near(spec: &NativeButtonSpec, x: i32, y: i32, pad: i32) -> bool {
-    let pad = pad.max(0);
-    let w = spec.face.w.max(1) as i32;
-    let h = spec.face.h.max(1) as i32;
-    x >= spec.face.x.saturating_sub(pad)
-        && y >= spec.face.y.saturating_sub(pad)
-        && x < spec.face.x.saturating_add(w).saturating_add(pad)
-        && y < spec.face.y.saturating_add(h).saturating_add(pad)
-}
-
 /// True when button Enter/Leave must not update hover (poll or drag owns it).
 fn button_crossing_deferred(
     click_through: bool,
@@ -4161,40 +4171,9 @@ fn button_crossing_deferred(
     click_through || drag_active || suppress_crossing
 }
 
-/// Whether hits should be click-through for this sample.
-///
-/// Engage when the X pointer moves onto a foreign window near a button, on the
-/// first seat sample already there, or when an aligned portal hit is driving
-/// the sample while X is frozen (relative-mouse games).
-///
-/// Portal motion with a frozen X sample means "left XWayland" only when the
-/// pointer is *not* still over a foreign X11 window.
-fn next_click_through(
-    click_through: bool,
-    x11_moved: bool,
-    portal_moved: bool,
-    over_foreign_x11: bool,
-    near_button: bool,
-    first_x11_sample: bool,
-    portal_hit: bool,
-) -> bool {
-    if portal_moved && !x11_moved && !over_foreign_x11 {
-        return false;
-    }
-    if !over_foreign_x11 {
-        return false;
-    }
-    if near_button && (x11_moved || first_x11_sample || portal_hit) {
-        return true;
-    }
-    if !x11_moved {
-        // Aligned portal is tracking the visual cursor — honor leave even when X is frozen.
-        if portal_hit {
-            return near_button;
-        }
-        return click_through;
-    }
-    near_button
+/// Whether hits should be click-through: Wayland session + foreign X11 focus.
+fn next_click_through(passthrough_hits: bool, foreign_x11_focused: bool) -> bool {
+    passthrough_hits && foreign_x11_focused
 }
 
 /// Sample hover and left/right button edges while hit windows are click-through.
@@ -4792,55 +4771,20 @@ mod tests {
     }
 
     #[test]
-    fn click_through_follows_foreign_x11_motion() {
-        // At rest (not the first sample), keep the hit so Wayland can deliver events.
-        assert!(!next_click_through(
-            false, false, false, true, true, false, false
-        ));
-        // First seat sample already foreign+near: empty before Enter can fire.
-        assert!(next_click_through(
-            false, false, false, true, true, true, false
-        ));
-        // Pointer moving on a foreign X window near a button: yield so confine can cross.
-        assert!(next_click_through(
-            false, true, false, true, true, false, false
-        ));
-        // Moving on X but far from buttons: keep the shape.
-        assert!(!next_click_through(
-            false, true, false, true, false, false, false
-        ));
-        // Our window or the root: real events, including while the pointer moves.
-        assert!(!next_click_through(
-            false, true, false, false, true, false, false
-        ));
-        // Hold click-through while the game cursor rests on the button.
-        assert!(next_click_through(
-            true, false, false, true, true, false, false
-        ));
-        // Relative-mouse game: portal moves, X frozen, still over foreign X11.
-        assert!(next_click_through(
-            true, false, true, true, true, false, false
-        ));
-        // Aligned portal hit while X frozen: engage/keep near the button.
-        assert!(next_click_through(
-            false, false, true, true, true, false, true
-        ));
-        // Left XWayland for native Wayland: portal moves, X frozen, not foreign.
-        assert!(!next_click_through(
-            true, false, true, false, true, false, false
-        ));
-        // Both move (portal mirrors the game cursor): still the game.
-        assert!(next_click_through(
-            true, true, true, true, true, false, false
-        ));
-        // Child is no longer a foreign window: restore input.
-        assert!(!next_click_through(
-            true, false, false, false, true, false, false
-        ));
-        // Moved away from the pad on foreign X11: restore input.
-        assert!(!next_click_through(
-            true, true, false, true, false, false, false
-        ));
+    fn click_through_follows_foreign_x11_focus() {
+        assert!(
+            !next_click_through(false, true),
+            "pure X11 never forces click-through"
+        );
+        assert!(!next_click_through(false, false));
+        assert!(
+            !next_click_through(true, false),
+            "desktop / Wayland focus → interactive hits"
+        );
+        assert!(
+            next_click_through(true, true),
+            "foreign X11 focus → empty hits for the whole period"
+        );
     }
 
     #[test]
@@ -4899,16 +4843,6 @@ mod tests {
         assert!(!pointer_moved(Some((1, 2)), Some((1, 2))));
         assert!(pointer_moved(Some((1, 2)), Some((2, 2))));
         assert!(!pointer_moved(Some((1, 2)), None));
-    }
-
-    #[test]
-    fn spec_near_includes_pad_and_rect() {
-        let s = spec();
-        assert!(spec_near(&s, 100, 200, 0), "top-left of the rect");
-        assert!(!spec_near(&s, 99, 200, 0));
-        assert!(spec_near(&s, 99, 200, 1), "one pixel of pad");
-        assert!(spec_near(&s, 100 - 128, 200, 128));
-        assert!(!spec_near(&s, 100 - 129, 200, 128));
     }
 
     #[test]
