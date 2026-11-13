@@ -159,21 +159,31 @@ fn ui_font() -> &'static Font {
     })
 }
 
-/// Opaque tip panel: `(width, height, rgba)`. Empty text → empty buffer / 0 size.
+/// Corner radius for a tip window shape at the given UI scale (`pixels_per_point`).
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
+pub fn tip_corner_px(ui_scale: f32) -> f32 {
+    TIP_CORNER_PX * ui_scale.max(0.01)
+}
+
+/// Opaque tip panel: `(width, height, rgba)`. Empty text → empty buffer / 0 size.
+///
+/// `ui_scale` is egui `pixels_per_point` (OS DPI × Settings → UI scale) so tip
+/// text tracks overlay button size.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub fn rasterize_tip(text: &str, ui_scale: f32) -> (u32, u32, Vec<u8>) {
     let text = text.trim();
     if text.is_empty() {
         return (0, 0, Vec::new());
     }
     let font = ui_font();
+    let scale = ui_scale.max(0.01);
     let ssaa = TIP_SSAA.max(1) as f32;
-    let font_px = TIP_FONT_PX * ssaa;
-    let pad_x = TIP_PAD_X * ssaa;
-    let pad_y = TIP_PAD_Y * ssaa;
-    let max_text_w = TIP_MAX_TEXT_W * ssaa;
-    let corner = TIP_CORNER_PX * ssaa;
-    let border_w = TIP_BORDER_W * ssaa;
+    let font_px = TIP_FONT_PX * scale * ssaa;
+    let pad_x = TIP_PAD_X * scale * ssaa;
+    let pad_y = TIP_PAD_Y * scale * ssaa;
+    let max_text_w = TIP_MAX_TEXT_W * scale * ssaa;
+    let corner = tip_corner_px(scale) * ssaa;
+    let border_w = TIP_BORDER_W * scale * ssaa;
 
     // fontdue::layout places each glyph on a shared baseline (manual ymin math
     // was making characters bob independently).
@@ -939,7 +949,7 @@ mod tip_tests {
 
     #[test]
     fn tip_is_compact_and_has_ink() {
-        let (w, h, rgba) = rasterize_tip("Remove all Gems");
+        let (w, h, rgba) = rasterize_tip("Remove all Gems", 1.0);
         assert!((70..=200).contains(&w), "w={w}");
         assert!((18..=36).contains(&h), "h={h}");
         assert_eq!(rgba.len(), (w * h * 4) as usize);
@@ -986,8 +996,26 @@ mod tip_tests {
             return;
         }
         // Monospace "Remove all Gems" is much wider; proportional should be compact.
-        let (w, _, _) = rasterize_tip("Remove all Gems");
+        let (w, _, _) = rasterize_tip("Remove all Gems", 1.0);
         assert!(w < 160, "expected proportional tip width, got {w}");
+    }
+
+    #[test]
+    fn tip_text_scales_with_ui_scale() {
+        let (w1, h1, _) = rasterize_tip("Remove all Gems", 1.0);
+        let (w2, h2, _) = rasterize_tip("Remove all Gems", 2.0);
+        assert!(w2 > w1, "width should grow with UI scale: 1x={w1} 2x={w2}");
+        assert!(h2 > h1, "height should grow with UI scale: 1x={h1} 2x={h2}");
+        // ~2× linear; allow SSAA / rounding slack.
+        assert!(
+            (w2 as f32 / w1 as f32 - 2.0).abs() < 0.35,
+            "expected ~2× width, got {}x",
+            w2 as f32 / w1 as f32
+        );
+        assert!(
+            (tip_corner_px(2.0) - TIP_CORNER_PX * 2.0).abs() < f32::EPSILON,
+            "corner radius must track UI scale"
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 //! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
-use crate::raster::{self, ButtonPaint, TIP_CORNER_PX};
+use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use crate::OverlayButtonMove;
 use parking_lot::Mutex;
 use sqyre_capture::{self, event_log, mark_site, note};
@@ -71,6 +71,8 @@ pub struct WinButtonSpec {
     pub macro_name: String,
     pub face: crate::ButtonFace,
     pub tip: String,
+    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
+    pub ui_scale: f32,
     pub busy: bool,
     pub visibility_gated: bool,
     /// When false, hit-tests pass through and presses are ignored (hub fan travel).
@@ -203,6 +205,7 @@ struct TipWindow {
     hwnd: HWND,
     for_id: String,
     text: String,
+    ui_scale: f32,
     mapped: bool,
 }
 
@@ -390,6 +393,20 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
             state.buttons.insert(id, live);
         }
     }
+    let tip_refresh = state.tip.as_ref().and_then(|tip| {
+        if !tip.mapped {
+            return None;
+        }
+        let btn = state.buttons.get(tip.for_id.as_str())?;
+        let text = btn.spec.tip.trim();
+        if text.is_empty() {
+            return Some((tip.for_id.clone(), false));
+        }
+        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
+            return Some((tip.for_id.clone(), true));
+        }
+        None
+    });
     let stale: Vec<String> = state
         .buttons
         .keys()
@@ -405,6 +422,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
         }
         if let Some(live) = state.buttons.remove(&id) {
             destroy_hwnd(state, live.hwnd);
+        }
+    }
+    if let Some((id, show)) = tip_refresh {
+        if show && state.buttons.contains_key(&id) {
+            show_tip(state, &id);
+        } else {
+            hide_tip(state);
         }
     }
     state.hub_fan.forget_missing(&keep);
@@ -702,15 +726,17 @@ fn show_tip(state: &mut HostState, id: &str) {
         hide_tip(state);
         return;
     }
+    let ui_scale = btn.spec.ui_scale.max(0.01);
     let (x, y, h) = (btn.spec.face.x, btn.spec.face.y, btn.spec.face.h);
-    if state
-        .tip
-        .as_ref()
-        .is_some_and(|t| t.mapped && t.for_id == id && t.text == text)
-    {
+    if state.tip.as_ref().is_some_and(|t| {
+        t.mapped
+            && t.for_id == id
+            && t.text == text
+            && (t.ui_scale - ui_scale).abs() <= f32::EPSILON
+    }) {
         return;
     }
-    let (tw, th, rgba) = raster::rasterize_tip(&text);
+    let (tw, th, rgba) = raster::rasterize_tip(&text, ui_scale);
     if tw == 0 || th == 0 || rgba.is_empty() {
         hide_tip(state);
         return;
@@ -745,7 +771,7 @@ fn show_tip(state: &mut HostState, id: &str) {
                 Err(_) => return,
             }
         };
-        set_round_region(hwnd, tw, th, TIP_CORNER_PX);
+        set_round_region(hwnd, tw, th, tip_corner_px(ui_scale));
         if sqyre_capture::overlay_capture_omitted() {
             apply_affinity(&[ShareHwnd(hwnd)], true);
         }
@@ -753,6 +779,7 @@ fn show_tip(state: &mut HostState, id: &str) {
             hwnd,
             for_id: id.to_string(),
             text: text.clone(),
+            ui_scale,
             mapped: false,
         });
         sync_hwnd_list(state);
@@ -762,6 +789,8 @@ fn show_tip(state: &mut HostState, id: &str) {
     };
     tip.for_id = id.to_string();
     tip.text = text;
+    tip.ui_scale = ui_scale;
+    set_round_region(tip.hwnd, tw, th, tip_corner_px(ui_scale));
     blit_layered(tip.hwnd, tip_x, tip_y, tw, th, &bgra);
     if !tip.mapped {
         // SAFETY: tip HWND is live on this thread.
