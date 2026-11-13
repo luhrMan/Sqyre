@@ -1161,8 +1161,7 @@ fn place_hub_satellite_spec(state: &HostState, spec: &mut NativeButtonSpec) {
     let rest = (spec.face.x, spec.face.y);
     let (hx, hy, hw, hh) = hub_face_geom(state);
     let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let park = crate::hub_fan::hub_park(hx, hy, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
     spec.face.x = x;
     spec.face.y = y;
     spec.input_enabled = state.hub_fan.fully_open();
@@ -1178,6 +1177,8 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
     if was_open != now_open {
         rearm_hub_satellite_input(state);
     }
+    // Map while traveling/open; unmap when fully closed (no off-desktop park).
+    apply_gate_visibility(state);
     sync_hub_fan_dismiss_arm(state);
     // SAFETY: HostState display invariant.
     unsafe {
@@ -1209,8 +1210,7 @@ fn place_all_hub_satellites(state: &mut HostState) {
         };
         let (w, h) = (live.spec.face.w, live.spec.face.h);
         let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let park = crate::hub_fan::hub_park(hx, hy, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
         if live.spec.face.x == x && live.spec.face.y == y {
             continue;
         }
@@ -1255,9 +1255,18 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 /// Advance hub fan travel on the host clock (independent of egui focus).
 fn tick_hub_fan(state: &mut HostState) -> bool {
     let was_open = state.hub_fan.fully_open();
+    let was_traveling = state.hub_fan.open_or_traveling();
     if !state.hub_fan.tick() {
+        // Collapse finished: unmap satellites so they cannot paint or steal hits.
+        if was_traveling && !state.hub_fan.open_or_traveling() {
+            apply_gate_visibility(state);
+        }
         sync_hub_fan_dismiss_arm(state);
         return false;
+    }
+    // Opening from closed: map before the first MoveResize so travel is visible.
+    if !was_traveling {
+        apply_gate_visibility(state);
     }
     place_all_hub_satellites(state);
     if was_open != state.hub_fan.fully_open() {
@@ -2185,7 +2194,11 @@ fn create_button(
     // the mapped flag ever drifted).
     // Mapping during capture-omit, then unmapping in apply_gate_visibility,
     // flashes the button while a macro is hiding it.
+    // Closed hub satellites stay created-but-unmapped (warm for the next open).
+    let fan_show =
+        !crate::hub_fan::is_hub_satellite_id(&spec.id) || state.hub_fan.open_or_traveling();
     let map_now = !state.capture_omit
+        && fan_show
         && (state.relocate_mode
             || !spec.visibility_gated
             || state
@@ -2356,7 +2369,11 @@ fn apply_gate_visibility(state: &mut HostState) {
         // Relocate (Overlay editor open): keep hosted buttons mapped so the user
         // can drag them; do not let the found-map hide them mid-edit. Callers only
         // host the selected program's buttons in this mode.
+        // Closed hub satellites stay unmapped (warm windows, no paint/hit).
+        let fan_show =
+            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
         let show = !state.capture_omit
+            && fan_show
             && (state.relocate_mode
                 || !btn.spec.visibility_gated
                 || found.get(&id).copied().unwrap_or(false));
