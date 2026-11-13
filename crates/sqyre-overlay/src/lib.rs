@@ -51,7 +51,7 @@ mod os_popup;
 mod pending_wake;
 
 #[cfg(feature = "runtime")]
-pub use hub_fan::{hub_fan_ease, HUB_FAN_ANIM_SECS};
+pub use hub_fan::{hub_fan_ease, hub_park, HUB_FAN_ANIM_SECS};
 
 #[cfg(all(feature = "runtime", target_os = "android"))]
 mod android_buttons;
