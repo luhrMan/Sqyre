@@ -1555,14 +1555,19 @@ fn poll_relocate_pointer(state: &mut HostState) -> Option<(i32, i32, bool)> {
     let x11_pos = (p.x, p.y);
     let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
     let portal = sqyre_capture::portal_cursor_position();
-    let desktop = sqyre_capture::desktop_cursor_position();
     let x11_moved = pointer_moved(state.last_x11_pos, Some(x11_pos));
     let portal_moved = pointer_moved(state.last_portal_pos, portal);
     update_portal_alignment(state, Some(x11_pos), portal, x11_moved, portal_moved);
     if portal.is_some() && !state.portal_aligned {
         note_relocate_portal_skip_once();
     }
-    let (x, y) = relocate_pointer_xy(x11_pos, portal, desktop, x11_moved, state.portal_aligned);
+    let (x, y) = relocate_pointer_xy(
+        x11_pos,
+        portal,
+        x11_moved,
+        portal_moved,
+        state.portal_aligned,
+    );
     state.last_x11_pos = Some(x11_pos);
     if portal.is_some() {
         state.last_portal_pos = portal;
@@ -1570,26 +1575,23 @@ fn poll_relocate_pointer(state: &mut HostState) -> Option<(i32, i32, bool)> {
     Some((x, y, btn1))
 }
 
-/// Choose relocate drag coordinates without trusting an unaligned Cosmic portal.
+/// Choose relocate drag coordinates in **X root** placement space.
+///
+/// Aligned portal is used only when X is frozen while the portal seat still
+/// moves (cursor over native Wayland). A stopped cursor, or an unaligned Cosmic
+/// portal, must keep X — `desktop_cursor_position` prefers portal first, so
+/// falling back to it reintroduces the same corner jump.
 fn relocate_pointer_xy(
     x11: (i32, i32),
     portal: Option<(i32, i32)>,
-    desktop: Option<(i32, i32)>,
     x11_moved: bool,
+    portal_moved: bool,
     portal_aligned: bool,
 ) -> (i32, i32) {
-    // Same rule as [`passthrough_hit_xy`]: aligned portal only while X is frozen.
-    if !x11_moved && portal_aligned {
+    if !x11_moved && portal_moved && portal_aligned {
         if let Some(p) = portal {
             return p;
         }
-    }
-    if x11_moved {
-        return x11;
-    }
-    // X frozen and portal unusable: compositor desktop cursor, else parked X.
-    if let Some(d) = desktop {
-        return d;
     }
     x11
 }
@@ -3987,8 +3989,16 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
         };
         // Relative-mouse XWayland games freeze X while the visual cursor still
         // moves — prefer aligned portal coords for near/hover in that case.
-        let (hx, hy) = passthrough_hit_xy(p.x, p.y, portal, x11_moved, state.portal_aligned);
-        let using_portal_hit = !x11_moved && state.portal_aligned && portal.is_some();
+        let (hx, hy) = passthrough_hit_xy(
+            p.x,
+            p.y,
+            portal,
+            x11_moved,
+            portal_moved,
+            state.portal_aligned,
+        );
+        let using_portal_hit =
+            !x11_moved && portal_moved && state.portal_aligned && portal.is_some();
         let near = foreign && button_near(state, hx, hy, pad);
         let next = next_click_through(
             state.click_through,
@@ -4048,9 +4058,11 @@ fn passthrough_hit_xy(
     x11_y: i32,
     portal: Option<(i32, i32)>,
     x11_moved: bool,
+    portal_moved: bool,
     portal_aligned: bool,
 ) -> (i32, i32) {
-    if !x11_moved && portal_aligned {
+    // Same seat rule as relocate: portal only while X is frozen and portal moves.
+    if !x11_moved && portal_moved && portal_aligned {
         if let Some(p) = portal {
             return p;
         }
@@ -4834,43 +4846,48 @@ mod tests {
     #[test]
     fn passthrough_hit_prefers_aligned_portal_when_x_frozen() {
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), false, true),
-            (100, 200)
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, true, true),
+            (100, 200),
+            "X frozen + portal moving + aligned"
         );
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), false, false),
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, false, true),
+            (10, 20),
+            "stopped cursor keeps X even when portal aligned"
+        );
+        assert_eq!(
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, true, false),
             (10, 20),
             "unaligned Cosmic portal must not drive hits"
         );
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), true, true),
+            passthrough_hit_xy(10, 20, Some((100, 200)), true, true, true),
             (10, 20),
             "moving X wins over portal"
         );
     }
 
     #[test]
-    fn relocate_pointer_ignores_unaligned_cosmic_portal() {
+    fn relocate_pointer_stays_in_x_root_space() {
         let x11 = (10, 20);
         let portal = Some((100, 200));
-        let desktop = Some((30, 40));
         assert_eq!(
-            relocate_pointer_xy(x11, portal, desktop, false, true),
+            relocate_pointer_xy(x11, portal, false, true, true),
             (100, 200),
-            "aligned portal while X frozen"
+            "aligned portal while X frozen and portal moving"
         );
         assert_eq!(
-            relocate_pointer_xy(x11, portal, desktop, false, false),
-            (30, 40),
-            "unaligned Cosmic portal → desktop cursor"
-        );
-        assert_eq!(
-            relocate_pointer_xy(x11, portal, None, false, false),
+            relocate_pointer_xy(x11, portal, false, false, true),
             x11,
-            "unaligned, no desktop → X11"
+            "stopped cursor must not jump to portal"
         );
         assert_eq!(
-            relocate_pointer_xy(x11, portal, desktop, true, true),
+            relocate_pointer_xy(x11, portal, false, true, false),
+            x11,
+            "unaligned Cosmic portal must not drive relocate"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, true, true, true),
             x11,
             "moving X wins over portal"
         );
