@@ -141,8 +141,17 @@ pub(crate) fn hub_overlay_buttons(
     let origin_y = hy + (size_px - sat_size_px) * 0.5;
     let eased = hub_fan_ease(fan_t);
     // Park far off every monitor so a closed fan cannot sit under the pointer.
-    let park_x = mon_x - sat_size_px * 8.0 - 64.0;
-    let park_y = mon_y - sat_size_px * 8.0 - 64.0;
+    // Host uses the same helper; a small hub/monitor-local offset still lands
+    // on-screen for right/bottom docks (and on the neighbor for multi-monitor).
+    let (park_x, park_y) = {
+        let (x, y) = sqyre_overlay::hub_park(
+            hx.round() as i32,
+            hy.round() as i32,
+            sat_size_px.round() as u32,
+            sat_size_px.round() as u32,
+        );
+        (x as f32, y as f32)
+    };
     for (i, action) in ACTIONS.iter().enumerate() {
         let (sx, sy) = satellite_top_left(layout, i);
         let (ax, ay) = if eased <= 0.001 {
@@ -694,7 +703,7 @@ mod tests {
         assert_eq!(closed.len(), 5, "closed fan keeps warm satellites");
         for sat in closed.iter().skip(1) {
             assert!(
-                sat.x < 0.0 && sat.y < 0.0,
+                sat.x < -10_000.0 && sat.y < -10_000.0,
                 "closed satellite parks off-desktop: {} @ {},{}",
                 sat.id,
                 sat.x,
