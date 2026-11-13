@@ -111,7 +111,7 @@ pub(crate) fn hub_overlay_buttons(
         return vec![hub_face(hub, hub.x, hub.y, size_pt)];
     }
     let (mon_x, mon_y, mon_w, mon_h) = monitor_for_point(hub.x, hub.y);
-    // Preserve up to 75% edge overhang from the stored desktop position.
+    // Preserve up to 50% edge overhang from the stored desktop position.
     let (edge, hx, hy) = snap_hub_xy_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
     let mut out = vec![hub_face(hub, hx, hy, size_pt)];
     // Always emit satellites while the hub is enabled so the overlay host keeps

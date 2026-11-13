@@ -344,7 +344,7 @@ pub const DEFAULT_QUICK_ACCESS_OPACITY: u8 = 220;
 /// Brand icon id for the hub face.
 pub const QUICK_ACCESS_HUB_ICON: &str = "sqyre-brand";
 /// Max fraction of the hub face that may sit outside the monitor when docked.
-pub const HUB_MAX_EDGE_OVERHANG: f32 = 0.75;
+pub const HUB_MAX_EDGE_OVERHANG: f32 = 0.50;
 
 /// True when `id` is the reserved quick-access hub overlay button.
 pub fn is_quick_access_hub_id(id: &str) -> bool {
@@ -450,8 +450,8 @@ pub fn snap_hub_to_monitor(
 /// Snap hub top-left to the nearest monitor edge, keeping up to
 /// [`HUB_MAX_EDGE_OVERHANG`] of the face outside the monitor.
 ///
-/// Along the docked edge the face may hang outward from flush to 75% off-screen
-/// (25% remains visible). Along the edge, the same overhang is allowed at the
+/// Along the docked edge the face may hang outward from flush to 50% off-screen
+/// (50% remains visible). Along the edge, the same overhang is allowed at the
 /// corners so the icon can sit partially past the monitor bounds.
 pub fn snap_hub_xy_to_monitor(
     x: f32,
@@ -466,7 +466,7 @@ pub fn snap_hub_xy_to_monitor(
     let (edge, _) = snap_hub_to_monitor(x, y, size, mon_x, mon_y, mon_w, mon_h);
     let max_out = size * HUB_MAX_EDGE_OVERHANG;
     let min_in = size * (1.0 - HUB_MAX_EDGE_OVERHANG);
-    // Along-edge span: flush on-screen through 75% past either end.
+    // Along-edge span: flush on-screen through 50% past either end.
     let y_lo = mon_y - max_out;
     let y_hi = mon_y + mon_h - min_in;
     let x_lo = mon_x - max_out;
@@ -2086,14 +2086,14 @@ mod tests {
         assert!((btn.x - 0.0).abs() < f32::EPSILON);
         assert!((btn.y - 400.0).abs() < 1.0);
 
-        // 75% of the face may hang past the right edge; 25% stays on-screen.
+        // 50% of the face may hang past the right edge; 50% stays on-screen.
         let size = 40.0;
         let (edge, x, _) = snap_hub_xy_to_monitor(1900.0, 500.0, size, 0.0, 0.0, 1920.0, 1080.0);
         assert_eq!(edge, HubEdge::Right);
         let flush = 1920.0 - size;
         let max_out = size * HUB_MAX_EDGE_OVERHANG;
         assert!(x >= flush - 0.5 && x <= flush + max_out + 0.5, "x={x}");
-        // Dragged past 75%: clamp to max overhang (only 25% visible).
+        // Dragged past 50%: clamp to max overhang (only 50% visible).
         let (_, x_hang, _) = snap_hub_xy_to_monitor(1920.0, 500.0, size, 0.0, 0.0, 1920.0, 1080.0);
         assert!((x_hang - (flush + max_out)).abs() < 1.0, "x_hang={x_hang}");
 
