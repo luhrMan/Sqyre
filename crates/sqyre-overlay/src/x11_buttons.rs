@@ -746,7 +746,7 @@ fn host_loop(
         // Poll-track relocate: portal / quiet X after press (X11 or Wayland poll-hit).
         // Over Wayland surfaces (Cursor, GNOME desktop) OR hit windows often get no
         // ButtonPress — detect rising Button1 over a button rect instead.
-        let ptr = poll_relocate_pointer(&state);
+        let ptr = poll_relocate_pointer(&mut state);
         if state.drag.as_ref().is_some_and(|d| d.poll_track) {
             let mut release = false;
             if let Some((x, y, btn1)) = ptr {
@@ -1527,30 +1527,70 @@ fn flush_relocate_visual(state: &mut HostState) {
     sync_relocate_shield(state);
 }
 
-/// Portal cursor + physical button state for relocate.
+/// Portal / desktop / X11 cursor + physical button state for relocate.
 ///
-/// Position: portal metadata (works over Wayland) → desktop cursor → X11.
+/// Position follows the same Cosmic-safe seat rules as click-through: portal
+/// desktop coords are used only after [`HostState::portal_aligned`] is learned.
+/// Prefer live X11 while it moves; when X is frozen, aligned portal (then
+/// compositor desktop cursor) tracks the visual pointer over native Wayland.
 /// Button1: X11 QueryPointer **or** evdev/rdev global left-button (X11 alone
 /// stays false while a native Wayland surface owns the click).
-fn poll_relocate_pointer(state: &HostState) -> Option<(i32, i32, bool)> {
-    let (qx, qy, x_btn1) = {
-        let dpy = if !state.ptr_display.is_null() {
-            state.ptr_display
-        } else {
-            state.display
-        };
-        // SAFETY: quiet or host display still open for this thread.
-        let p = unsafe { query_pointer_root(dpy)? };
-        (p.x, p.y, p.button1)
+fn poll_relocate_pointer(state: &mut HostState) -> Option<(i32, i32, bool)> {
+    let dpy = if !state.ptr_display.is_null() {
+        state.ptr_display
+    } else {
+        state.display
     };
-    let btn1 = x_btn1 || sqyre_hotkeys::left_button_down();
-    if let Some((x, y)) = sqyre_capture::portal_cursor_position() {
-        return Some((x, y, btn1));
+    // SAFETY: quiet or host display still open for this thread.
+    let p = unsafe { query_pointer_root(dpy)? };
+    let x11_pos = (p.x, p.y);
+    let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
+    let portal = sqyre_capture::portal_cursor_position();
+    let desktop = sqyre_capture::desktop_cursor_position();
+    let x11_moved = pointer_moved(state.last_x11_pos, Some(x11_pos));
+    let portal_moved = pointer_moved(state.last_portal_pos, portal);
+    update_portal_alignment(state, Some(x11_pos), portal, x11_moved, portal_moved);
+    if portal.is_some() && !state.portal_aligned {
+        note_relocate_portal_skip_once();
     }
-    if let Some((x, y)) = sqyre_capture::desktop_cursor_position() {
-        return Some((x, y, btn1));
+    let (x, y) = relocate_pointer_xy(x11_pos, portal, desktop, x11_moved, state.portal_aligned);
+    state.last_x11_pos = Some(x11_pos);
+    if portal.is_some() {
+        state.last_portal_pos = portal;
     }
-    Some((qx, qy, btn1))
+    Some((x, y, btn1))
+}
+
+/// Choose relocate drag coordinates without trusting an unaligned Cosmic portal.
+fn relocate_pointer_xy(
+    x11: (i32, i32),
+    portal: Option<(i32, i32)>,
+    desktop: Option<(i32, i32)>,
+    x11_moved: bool,
+    portal_aligned: bool,
+) -> (i32, i32) {
+    // Same rule as [`passthrough_hit_xy`]: aligned portal only while X is frozen.
+    if !x11_moved && portal_aligned {
+        if let Some(p) = portal {
+            return p;
+        }
+    }
+    if x11_moved {
+        return x11;
+    }
+    // X frozen and portal unusable: compositor desktop cursor, else parked X.
+    if let Some(d) = desktop {
+        return d;
+    }
+    x11
+}
+
+fn note_relocate_portal_skip_once() {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if LOGGED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    note("overlay-x11: relocate-portal-skip (unaligned; prefer X11/desktop)");
 }
 
 /// Mapped button whose viewport contains root `(x, y)` (for poll-hit relocate).
@@ -2470,6 +2510,10 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
         // union is still applied to order blit-then-shrink correctly.
         btn.armed = false;
         flipped = true;
+        // Keep mid-drag hit empty (parked at grab start) until commit/cancel.
+        if state.drag.as_ref().is_some_and(|d| d.id == id) {
+            continue;
+        }
         let (hit, w, h, radius, press_stops, input_enabled) = (
             btn.hit,
             btn.spec.face.w,
@@ -3795,8 +3839,14 @@ fn set_click_through(state: &mut HostState, click_through: bool) {
             apply_button_cursor(state, btn.hit, false);
         }
     }
+    // Mid-relocate drag keeps an empty hit at the grab start; never re-arm it
+    // here (transparent hub faces used to regain a disk and freeze the drag).
+    let drag_id = state.drag.as_ref().map(|d| d.id.clone());
     let ids: Vec<String> = state.buttons.keys().cloned().collect();
     for id in ids {
+        if drag_id.as_deref() == Some(id.as_str()) {
+            continue;
+        }
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
@@ -4778,6 +4828,33 @@ mod tests {
         assert_eq!(
             passthrough_hit_xy(10, 20, Some((100, 200)), true, true),
             (10, 20),
+            "moving X wins over portal"
+        );
+    }
+
+    #[test]
+    fn relocate_pointer_ignores_unaligned_cosmic_portal() {
+        let x11 = (10, 20);
+        let portal = Some((100, 200));
+        let desktop = Some((30, 40));
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, desktop, false, true),
+            (100, 200),
+            "aligned portal while X frozen"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, desktop, false, false),
+            (30, 40),
+            "unaligned Cosmic portal → desktop cursor"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, None, false, false),
+            x11,
+            "unaligned, no desktop → X11"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, desktop, true, true),
+            x11,
             "moving X wins over portal"
         );
     }
