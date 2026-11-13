@@ -63,6 +63,17 @@ pub(crate) struct TempPoint {
 /// Horizontal offset aligning the "Nearby" hint under the point fields above it.
 const SUB_ROW_INDENT: f32 = 24.0;
 
+pub(crate) const POSITION_WARNING: &str = "Cursor position unavailable from the screen-capture portal. Mouse input without a position is skipped. Grant or restart screen capture, then record again.";
+
+pub(crate) fn paint_position_warning(ui: &mut egui::Ui, unavailable: bool) {
+    if unavailable {
+        ui.horizontal_wrapped(|ui| {
+            StatusBanner::paint_warn(ui, POSITION_WARNING);
+            ui.label(egui::RichText::new(POSITION_WARNING).color(crate::theme::warn_fg()));
+        });
+    }
+}
+
 /// Result of Copy from the review window.
 pub(crate) struct MacroRecordCopy {
     pub maps: Vec<serde_yaml::Mapping>,
@@ -102,6 +113,7 @@ pub(crate) struct ReviewState {
     tooltip: TooltipState,
     pills_cache: HashMap<ActionId, (u64, Vec<SummaryPill>)>,
     paint_revision: u64,
+    position_unavailable: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -192,6 +204,7 @@ impl MacroRecordUi {
                         tooltip: TooltipState::default(),
                         pills_cache: HashMap::new(),
                         paint_revision: 0,
+                        position_unavailable: bridge.position_unavailable(),
                     }));
                     // Bring the main window back before the review popup.
                     #[cfg(not(target_arch = "wasm32"))]
@@ -285,6 +298,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         tooltip,
         pills_cache,
         paint_revision,
+        position_unavailable,
     } = review;
 
     let mut close = false;
@@ -320,6 +334,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
     )
     .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
+            paint_position_warning(ui, *position_unavailable);
             ui.label(
                 "Hover for view tip, middle-click or double-click to edit, right-click for Edit / Delete. Copy and paste into a macro.",
             );
@@ -697,6 +712,7 @@ fn events_to_actions(
     let mut last_move: Option<(i32, i32)> = None;
     let mut pending_key: Option<(String, Instant)> = None;
     let mut pending_btn: Option<(RecordMouseButton, Instant)> = None;
+    let mut position_was_unavailable = false;
 
     let flush_wait = |actions: &mut Vec<Action>, last_t: &mut Instant, at: Instant| {
         let ms = at.duration_since(*last_t).as_millis() as i64;
@@ -743,6 +759,11 @@ fn events_to_actions(
 
     for ev in &compressed {
         match ev {
+            MacroRecordEvent::PositionUnavailable => {
+                pending_btn = None;
+                last_move = None;
+                position_was_unavailable = true;
+            }
             MacroRecordEvent::MouseMove { x, y, at } => {
                 if last_move.is_none_or(|(lx, ly)| {
                     (x - lx).abs() >= t.move_min_px || (y - ly).abs() >= t.move_min_px
@@ -801,7 +822,7 @@ fn events_to_actions(
                         actions.push(click_action(*button, PressState::Up));
                         last_t = *at;
                     }
-                } else {
+                } else if !position_was_unavailable {
                     flush_wait(&mut actions, &mut last_t, *at);
                     actions.push(click_action(*button, PressState::Up));
                     last_t = *at;
@@ -864,6 +885,10 @@ fn compress_events(events: &[MacroRecordEvent]) -> Vec<MacroRecordEvent> {
     let mut last_move: Option<(i32, i32)> = None;
     for ev in events {
         match ev {
+            MacroRecordEvent::PositionUnavailable => {
+                last_move = None;
+                out.push(ev.clone());
+            }
             MacroRecordEvent::MouseMove { x, y, at } => {
                 if last_move == Some((*x, *y)) {
                     continue;
@@ -1030,6 +1055,7 @@ fn live_record_points(events: &[MacroRecordEvent], t: &RecordThresholds) -> Vec<
     };
     for ev in &compressed {
         match ev {
+            MacroRecordEvent::PositionUnavailable => last_move = None,
             MacroRecordEvent::MouseMove { x, y, .. }
                 if last_move.is_none_or(|(lx, ly)| {
                     (x - lx).abs() >= t.move_min_px || (y - ly).abs() >= t.move_min_px
@@ -1194,6 +1220,109 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovered_position_is_not_compressed_across_loss() {
+        let started = Instant::now();
+        let events = vec![
+            MacroRecordEvent::MouseMove {
+                x: 100,
+                y: 100,
+                at: started,
+            },
+            MacroRecordEvent::PositionUnavailable,
+            MacroRecordEvent::MouseMove {
+                x: 100,
+                y: 100,
+                at: started,
+            },
+        ];
+        assert_eq!(compress_events(&events).len(), 3);
+        let thresholds = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let (_, points) =
+            events_to_actions(&events, started, &ProgramCatalog::default(), &thresholds);
+        assert_eq!(points.len(), 2);
+        assert_eq!(live_record_points(&events, &thresholds).len(), 2);
+    }
+
+    #[test]
+    fn unavailable_cursor_skips_mouse_actions_and_recovers() {
+        let bridge = MacroRecordBridge::new();
+        bridge.set_hook_coordinates(sqyre_hotkeys::HookCoordinates::Relative);
+        bridge.arm();
+        bridge.on_mouse_move(900, 800);
+        bridge.on_button(RecordMouseButton::Left, true);
+        bridge.on_button(RecordMouseButton::Left, false);
+        bridge.on_escape();
+        let (started, events) = bridge.take_finished().unwrap();
+        let catalog = ProgramCatalog::default();
+        let thresholds = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let (actions, points) = events_to_actions(&events, started, &catalog, &thresholds);
+        assert!(actions.is_empty());
+        assert!(points.is_empty());
+        assert!(live_record_points(&events, &thresholds).is_empty());
+
+        bridge.arm();
+        bridge.on_button(RecordMouseButton::Left, true);
+        bridge.set_absolute_pos(|| Some((100, 100)));
+        bridge.on_button(RecordMouseButton::Left, false);
+        assert!(events_to_actions(
+            &bridge.peek_events(),
+            bridge.started_at().unwrap(),
+            &catalog,
+            &thresholds
+        )
+        .0
+        .is_empty());
+        bridge.on_button(RecordMouseButton::Left, true);
+        bridge.on_button(RecordMouseButton::Left, false);
+        bridge.on_escape();
+        let (started, events) = bridge.take_finished().unwrap();
+        let (actions, points) = events_to_actions(&events, started, &catalog, &thresholds);
+        assert_eq!(points.len(), 1);
+        assert_eq!((points[0].x, points[0].y), (100, 100));
+        assert!(actions
+            .iter()
+            .any(|a| matches!(a.kind, ActionKind::Click { .. })));
+        assert!(bridge.position_unavailable());
+    }
+
+    #[test]
+    fn lost_cursor_discards_pending_click() {
+        let bridge = MacroRecordBridge::new();
+        bridge.set_hook_coordinates(sqyre_hotkeys::HookCoordinates::Relative);
+        bridge.set_absolute_pos(|| Some((100, 100)));
+        bridge.arm();
+        bridge.on_button(RecordMouseButton::Left, true);
+        bridge.set_absolute_pos(|| None);
+        bridge.on_button(RecordMouseButton::Left, false);
+        bridge.on_escape();
+        let (started, events) = bridge.take_finished().unwrap();
+        let thresholds = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let (actions, _) =
+            events_to_actions(&events, started, &ProgramCatalog::default(), &thresholds);
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a.kind, ActionKind::Click { .. })));
+    }
+
+    #[test]
+    fn position_warning_renders_only_for_incomplete_recording() {
+        let ctx = egui::Context::default();
+        for unavailable in [false, true, true, false] {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint_position_warning(ui, unavailable);
+            });
+            let visible = out.shapes.iter().any(|shape| {
+                matches!(
+                    &shape.shape,
+                    egui::epaint::Shape::Text(text) if text.galley.text() == POSITION_WARNING
+                )
+            });
+            assert_eq!(visible, unavailable);
+            out.drop_without_applying_deltas();
+        }
+    }
 
     #[test]
     fn compress_keeps_last_move_before_click() {

@@ -8,6 +8,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 type AbsolutePosFn = Arc<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+type CoordinateSourceFn = Arc<dyn Fn(&'static str) + Send + Sync>;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HookCoordinates {
+    #[default]
+    Absolute,
+    Relative,
+}
 
 /// Fast path for OS hooks: skip mouse-move work unless macro recording is armed.
 #[cfg(feature = "hooks")]
@@ -46,6 +54,7 @@ impl RecordMouseButton {
 /// One raw input sample while macro recording is armed.
 #[derive(Debug, Clone)]
 pub enum MacroRecordEvent {
+    PositionUnavailable,
     MouseMove {
         x: i32,
         y: i32,
@@ -68,7 +77,11 @@ pub enum MacroRecordEvent {
 #[derive(Default)]
 struct Inner {
     armed: bool,
-    last_pos: (i32, i32),
+    last_pos: Option<(i32, i32)>,
+    hook_coordinates: HookCoordinates,
+    coordinate_source: Option<&'static str>,
+    on_coordinate_source: Option<CoordinateSourceFn>,
+    position_unavailable: bool,
     events: Vec<MacroRecordEvent>,
     /// Set when Esc ends an armed session (UI takes finished events).
     finished: bool,
@@ -93,6 +106,38 @@ impl std::fmt::Debug for Inner {
     }
 }
 
+impl Inner {
+    fn sample_position(&mut self, hook: Option<(i32, i32)>) -> Option<(i32, i32)> {
+        let absolute = self.absolute_pos.as_ref().and_then(|f| f());
+        let pos = absolute.or_else(|| {
+            (self.hook_coordinates == HookCoordinates::Absolute)
+                .then(|| hook.or(self.last_pos))
+                .flatten()
+        });
+        let source = if absolute.is_some() {
+            "portal"
+        } else if pos.is_some() {
+            "hook"
+        } else {
+            "unavailable"
+        };
+        if self.armed && self.coordinate_source != Some(source) {
+            if let Some(f) = &self.on_coordinate_source {
+                f(source);
+            }
+            if pos.is_none() {
+                self.events.push(MacroRecordEvent::PositionUnavailable);
+            }
+            self.coordinate_source = Some(source);
+        }
+        if self.armed && pos.is_none() {
+            self.position_unavailable = true;
+        }
+        self.last_pos = pos;
+        pos
+    }
+}
+
 /// Shared bridge between the hotkey thread and the macro-record UI.
 #[derive(Clone, Default)]
 pub struct MacroRecordBridge {
@@ -107,10 +152,11 @@ impl MacroRecordBridge {
     pub fn arm(&self) {
         let mut g = self.inner.lock();
         let absolute_pos = g.absolute_pos.clone();
-        let pos = absolute_pos
-            .as_ref()
-            .and_then(|f| f())
-            .unwrap_or(g.last_pos);
+        let hook_coordinates = g.hook_coordinates;
+        let on_coordinate_source = g.on_coordinate_source.clone();
+        let pos = g
+            .last_pos
+            .or_else(|| (hook_coordinates == HookCoordinates::Absolute).then_some((0, 0)));
         *g = Inner {
             armed: true,
             last_pos: pos,
@@ -120,7 +166,12 @@ impl MacroRecordBridge {
             started_at: Some(Instant::now()),
             prev_keys: HashSet::new(),
             absolute_pos,
+            hook_coordinates,
+            on_coordinate_source,
+            coordinate_source: None,
+            position_unavailable: false,
         };
+        g.sample_position(None);
         sync_hook_wants_moves(true);
     }
 
@@ -128,6 +179,20 @@ impl MacroRecordBridge {
     /// Wayland, where hook mouse coordinates are relative counts, not pixels).
     pub fn set_absolute_pos(&self, f: impl Fn() -> Option<(i32, i32)> + Send + Sync + 'static) {
         self.inner.lock().absolute_pos = Some(Arc::new(f));
+    }
+
+    pub fn set_hook_coordinates(&self, coordinates: HookCoordinates) {
+        let mut g = self.inner.lock();
+        g.hook_coordinates = coordinates;
+        g.last_pos = None;
+    }
+
+    pub fn set_coordinate_source_logger(&self, f: impl Fn(&'static str) + Send + Sync + 'static) {
+        self.inner.lock().on_coordinate_source = Some(Arc::new(f));
+    }
+
+    pub fn position_unavailable(&self) -> bool {
+        self.inner.lock().position_unavailable
     }
 
     pub fn disarm(&self) {
@@ -150,14 +215,17 @@ impl MacroRecordBridge {
         if !g.armed {
             return None;
         }
-        let (x, y) = g.last_pos;
+        let position = g.last_pos.map_or_else(
+            || "cursor position unavailable".to_string(),
+            |(x, y)| format!("({x}, {y})"),
+        );
         let n = g.events.len();
         Some(format!(
-            "Recording macro — ({x}, {y}) — {n} events — Esc to finish"
+            "Recording macro — {position} — {n} events — Esc to finish"
         ))
     }
 
-    pub fn last_pos(&self) -> (i32, i32) {
+    pub fn last_pos(&self) -> Option<(i32, i32)> {
         self.inner.lock().last_pos
     }
 
@@ -167,14 +235,18 @@ impl MacroRecordBridge {
 
     /// Update pointer without recording a move event (e.g. click coordinates).
     pub fn set_last_pos(&self, x: i32, y: i32) {
-        self.inner.lock().last_pos = (x, y);
+        let mut g = self.inner.lock();
+        if g.hook_coordinates == HookCoordinates::Absolute {
+            g.last_pos = Some((x, y));
+        }
     }
 
     /// Hotkey thread: track pointer (always, so arm starts with a real position).
     pub fn on_mouse_move(&self, x: i32, y: i32) {
         let mut g = self.inner.lock();
-        let pos = g.absolute_pos.as_ref().and_then(|f| f()).unwrap_or((x, y));
-        g.last_pos = pos;
+        let Some(pos) = g.sample_position(Some((x, y))) else {
+            return;
+        };
         if g.armed {
             g.events.push(MacroRecordEvent::MouseMove {
                 x: pos.0,
@@ -190,10 +262,9 @@ impl MacroRecordBridge {
         if !g.armed {
             return;
         }
-        if let Some(pos) = g.absolute_pos.as_ref().and_then(|f| f()) {
-            g.last_pos = pos;
-        }
-        let (x, y) = g.last_pos;
+        let Some((x, y)) = g.sample_position(None) else {
+            return;
+        };
         g.events.push(MacroRecordEvent::Button {
             button,
             pressed,
@@ -411,7 +482,7 @@ mod tests {
         b.arm();
         // Wayland evdev REL counts are not screen coordinates.
         b.on_mouse_move(3, 4);
-        assert_eq!(b.last_pos(), (500, 600));
+        assert_eq!(b.last_pos(), Some((500, 600)));
         assert!(b.on_escape());
         let (_, events) = b.take_finished().expect("finished");
         assert!(events
@@ -442,15 +513,94 @@ mod tests {
         let b = MacroRecordBridge::new();
         b.set_absolute_pos(|| Some((40, 50)));
         b.arm();
-        assert_eq!(b.last_pos(), (40, 50));
+        assert_eq!(b.last_pos(), Some((40, 50)));
     }
 
     #[test]
-    fn hook_coords_used_when_absolute_pos_missing() {
+    fn trusted_hook_coords_used_when_absolute_pos_missing() {
         let b = MacroRecordBridge::new();
         b.set_absolute_pos(|| None);
         b.arm();
         b.on_mouse_move(7, 9);
-        assert_eq!(b.last_pos(), (7, 9));
+        b.on_button(RecordMouseButton::Left, true);
+        assert_eq!(b.last_pos(), Some((7, 9)));
+        assert!(!b.position_unavailable());
+        assert!(matches!(
+            b.peek_events().last(),
+            Some(MacroRecordEvent::Button { x: 7, y: 9, .. })
+        ));
+    }
+
+    #[test]
+    fn relative_hook_never_records_positions_without_provider() {
+        let b = MacroRecordBridge::new();
+        b.set_hook_coordinates(HookCoordinates::Relative);
+        b.set_absolute_pos(|| None);
+        b.set_last_pos(99, 88);
+        b.arm();
+        b.on_mouse_move(7, 9);
+        b.on_button(RecordMouseButton::Left, true);
+        b.on_button(RecordMouseButton::Left, false);
+        assert_eq!(b.last_pos(), None);
+        assert!(b.position_unavailable());
+        assert!(b.status_label().unwrap().contains("position unavailable"));
+        assert!(b.on_escape());
+        let (_, events) = b.take_finished().unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [MacroRecordEvent::PositionUnavailable]
+        ));
+        assert!(b.position_unavailable());
+    }
+
+    #[test]
+    fn relative_hook_recovers_and_logs_source_transitions_once() {
+        let b = MacroRecordBridge::new();
+        b.set_hook_coordinates(HookCoordinates::Relative);
+        let position = Arc::new(Mutex::new(None));
+        let provider = position.clone();
+        b.set_absolute_pos(move || *provider.lock());
+        let sources = Arc::new(Mutex::new(Vec::new()));
+        let logged = sources.clone();
+        b.set_coordinate_source_logger(move |source| logged.lock().push(source));
+        b.arm();
+        b.on_mouse_move(7, 9);
+        b.on_button(RecordMouseButton::Left, true);
+        *position.lock() = Some((100, 200));
+        b.on_mouse_move(999, 999);
+        b.on_button(RecordMouseButton::Left, true);
+        b.on_button(RecordMouseButton::Left, false);
+        assert_eq!(b.last_pos(), Some((100, 200)));
+        *position.lock() = None;
+        b.on_mouse_move(123, 456);
+        b.on_button(RecordMouseButton::Right, true);
+        assert_eq!(b.last_pos(), None);
+        assert_eq!(*sources.lock(), ["unavailable", "portal", "unavailable"]);
+        assert!(b.position_unavailable());
+        b.on_escape();
+        let (_, events) = b.take_finished().unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [
+                MacroRecordEvent::PositionUnavailable,
+                MacroRecordEvent::MouseMove { x: 100, y: 200, .. },
+                MacroRecordEvent::Button {
+                    x: 100,
+                    y: 200,
+                    pressed: true,
+                    ..
+                },
+                MacroRecordEvent::Button {
+                    x: 100,
+                    y: 200,
+                    pressed: false,
+                    ..
+                },
+                MacroRecordEvent::PositionUnavailable,
+            ]
+        ));
+        *position.lock() = Some((10, 20));
+        b.arm();
+        assert!(!b.position_unavailable());
     }
 }
