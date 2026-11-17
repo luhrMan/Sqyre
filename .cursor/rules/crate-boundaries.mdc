@@ -1,0 +1,67 @@
+---
+description: Crate layering, hub growth, and read-model boundaries for Sqyre
+globs: crates/**/*.rs, crates/*/Cargo.toml
+alwaysApply: false
+---
+
+# Crate boundaries
+
+Keep dependency arrows downward. Prefer extracting hubs over growing them. See also `cross-platform`, `rust-style` (logging), `no-backwards-compatibility`.
+
+## Allowed direction
+
+```
+sqyre-app / sqyre-overlay
+        ↓
+sqyre-executor / sqyre-hotkeys / …
+        ↓
+sqyre-ports  ←  traits, errors, geometry, shared diag façade
+        ↑
+sqyre-capture / platform adapters implement ports
+        ↑
+sqyre-domain ←  sqyre-persist, -serialize, -validate, -ui-model
+```
+
+- `sqyre-domain` never imports app, capture, executor, or overlay.
+- `sqyre-ports` never imports app, executor, capture, or overlay.
+- Platform crates implement ports traits; they do not become the app’s public capture API.
+
+## Capture and diag
+
+- UI / editor / executor **capture** goes through `ScreenCapturer` / `OsCapturer` / shared capturer helpers — not `sqyre_capture::linux::*`, `win_capture`, portal modules, etc.
+- **Do not** add or deepen `sqyre-app` → `sqyre-capture` edges for logging alone. Diag (`note`, `event_log`, `cap_log`, `mark_site`, log dir) belongs on a ports (or tiny dedicated) façade; capture may keep the implementation and call it internally. Until the façade exists, re-export from ports in the same change as the first new non-capture consumer — do not teach new crates to depend on capture for diag.
+- Legitimate app→capture: wiring the shared capturer / platform session at the native shell boundary, or code already behind `native-runtime` that must call OS capture entry points. Prefer shrinking that set.
+
+## Catalog and settings
+
+- **Mutate** `ProgramCatalog` only in `sqyre-persist` (and tests). UI takes a narrow read view / snapshot when possible — do not thread the whole catalog into paint, tooltips, or palette unless mutate is required.
+- Prefer **partitioned** settings types (runtime prefs vs UI layout chrome) over growing one `UserSettings` mega-struct. New fields go on the partition that owns them; defaults live on that type (`persisted-ui-state`).
+
+## Hub growth
+
+When touching a known hub, prefer extract over add:
+
+| Hub | Prefer |
+|-----|--------|
+| `SqyreApp` | New subsystem types / modules; `impl` blocks on extracted types — not more fields on `SqyreApp` |
+| `ProgramCatalog` | Read-only views for UI; mutate API stays in persist |
+| `UserSettings` / settings UI | Partitioned structs + smaller settings panels |
+| `x11_buttons` / `win_buttons` / large portal files | Shared OS-neutral modules beside platform files (`cross-platform`) |
+
+Soft signals to extract before adding: file already multi-thousand LOC, or a type that many unrelated modules import. A hub split is one concern — update **all** call sites in that change (`no-backwards-compatibility`); do not leave shims.
+
+## Wrong-layer examples
+
+```
+❌ sqyre-app imports portal_pipewire / win_capture for a frame
+✅ sqyre-app uses ScreenCapturer / shared_capturer
+
+❌ New UI module `use sqyre_capture::note` and adds a capture dep
+✅ Re-export diag via ports (or use existing façade), then call that
+
+❌ Pass &mut ProgramCatalog into a paint-only helper
+✅ Pass a CatalogView / needed slice
+
+❌ Add another field to SqyreApp for a self-contained panel
+✅ Own state on the panel type; SqyreApp only holds/composes it
+```

@@ -36,6 +36,8 @@ CI: `clippy --workspace --all-targets -D warnings`. Fix at the source; if unavoi
 
 ## Logging
 
-- Crates depending on `sqyre-capture`: `sqyre_capture::{note, event_log, cap_log, mark_site}`. During a run: `Executor::log` / `log_timing`. `sqyre-app` user-facing stderr: `crate::log::warn`.
+- **Diag façade:** `note` / `event_log` / `cap_log` / `mark_site` / log-dir helpers should be consumed via `sqyre-ports` (or a tiny dedicated diag crate), not by taking a `sqyre-capture` dependency for logging alone. Capture may own the implementation and use it internally. See `crate-boundaries` and `debug-from-logs`.
+- Until ports re-exports exist, existing `sqyre_capture::{note, …}` call sites may stay; **new** non-capture call sites must add/use a ports (or dedicated) re-export in the same change — do not widen app→capture for diag.
+- During a run: `Executor::log` / `log_timing`. `sqyre-app` user-facing stderr: `crate::log::warn`.
 - Lower crates (domain, match, vision, hotkeys, …) return errors; a detached thread with no caller may `eprintln!("sqyre-<crate>: …")`.
-- `println!` only in CLI bins, `--version`/`--help`, `build.rs`. No `tracing`/`env_logger`; `log` is wasm-only (`WebLogger`). See `debug-from-logs`.
+- `println!` only in CLI bins, `--version`/`--help`, `build.rs`. No `tracing`/`env_logger`; `log` is wasm-only (`WebLogger`).

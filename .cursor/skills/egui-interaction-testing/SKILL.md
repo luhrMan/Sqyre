@@ -15,8 +15,8 @@ description: >-
 
 ## Where tests live
 
-- `crates/sqyre-app/tests/ui_interaction.rs` — full-app flows via `common::build_docs_harness([w, h], |app| app.open_*_for_docs())` → `egui_kittest::Harness<'_, SqyreApp>`. Drive with `get_by_label(..).click()`, `key_press(Key::Enter/Escape)`, `query_all_by_role(..)` + `.focus()` / `.type_text(..)`, then `harness.run()` / `run_steps(n)` and assert on `harness.state().docs_*()` accessors.
-- Inline `#[cfg(test)] mod tests` beside the widget — for `egui::Context`-level checks that need no full app (tooltip areas, painted shapes, area rects).
+- Inline `#[cfg(test)] mod tests` beside the widget — **prefer this** for `egui::Context`-level checks that need no full app (tooltip areas, painted shapes, area rects, extracted panel types). Do not force new coverage through `SqyreApp` when the subsystem can be exercised alone (`crate-boundaries`).
+- `crates/sqyre-app/tests/ui_interaction.rs` — full-app flows via `common::build_docs_harness([w, h], |app| app.open_*_for_docs())` → `egui_kittest::Harness<'_, SqyreApp>`. Use when the bug needs shell wiring (focus across panels, docs accessors, multi-surface keys). Drive with `get_by_label(..).click()`, `key_press(Key::Enter/Escape)`, `query_all_by_role(..)` + `.focus()` / `.type_text(..)`, then `harness.run()` / `run_steps(n)` and assert on `harness.state().docs_*()` accessors.
 - `tests/macro_list_split.rs` — persisted-state round-trips.
 - `docs_screenshots` / `ui_interaction` run in the nextest `gpu` group (lavapipe); `ctx.run_ui` tests need no GPU.
 

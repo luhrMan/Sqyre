@@ -56,4 +56,10 @@ fn capture() {
 - One OS-neutral API across targets: `OsCapturer`, `shared_capturer`, `SharedRunCapturer`, `OsWindowFocuser` (never `X11Capturer`-style names).
 - Shared traits (`ScreenCapturer`, `WindowFocuser`, `AutomationBackend`) stay OS-agnostic.
 - Wayland vs X11 is a runtime session choice (`linux/session.rs`) behind the same surface, not a parallel API.
-- Extend existing `#[cfg]` modules instead of inventing parallel stacks; no dual codecs or compatibility shims.
+- No dual codecs, parallel public APIs, or compatibility shims for the same capability (`no-backwards-compatibility`).
+
+## Module layout (platform vs shared)
+
+- **FFI / unsafe / OS types** stay in `#[cfg]` platform modules (`win_*`, `x11_*`, `linux/wayland/`, …). Extend those modules for new OS calls — do not invent a second Win32/X11 stack.
+- **OS-neutral policy and host-loop logic** (commands, animation state, layout math, shared `HostCmd`-style enums) belong in shared modules *beside* the platform files, compiled on every relevant target. Prefer extracting a shared core over growing dual mega-files (`x11_buttons` + `win_buttons`, mirrored portal helpers, etc.).
+- Platform modules call into the shared core; the shared core must not import Win32/X11/PipeWire types. See `crate-boundaries`.

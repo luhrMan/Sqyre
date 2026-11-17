@@ -50,10 +50,14 @@ Macro/action issues: executor `ActionLogger` lines (`ctx.log`, `log_timing`, `lo
 
 ## APIs (use these, not `println!` / `tracing` / `log`)
 
-Native / X11 / Win32 / overlay / probe:
+Native / X11 / Win32 / overlay / probe — prefer the **ports (or dedicated) diag façade** so non-capture crates do not depend on `sqyre-capture` for logging (`crate-boundaries`, `rust-style`). Capture may call the same functions internally.
 
 ```rust
-use sqyre_capture::{cap_log, event_log, mark_site, note};
+// Preferred once re-exported from ports (or a tiny diag crate):
+// use sqyre_ports::{cap_log, event_log, mark_site, note};
+// Today the implementation still lives in sqyre-capture; existing call sites may
+// keep `use sqyre_capture::{…}`. New non-capture consumers: re-export via ports
+// in the same change, then import from there — do not add a capture-only dep.
 
 mark_site("preview:finish_texture:before_gpu"); // abort breadcrumb; always disk
 note("overlay: grab arm failed");               // stderr; diag.log if SQYRE_DIAG

@@ -74,3 +74,6 @@ docs/blog
 .cursor/cli.json
 .cursor/rules/git-identity.mdc
 sqyre-timelapse.mp4
+
+# Graphify local knowledge graph (generated; rebuild with `graphify update .`)
+/graphify-out/
