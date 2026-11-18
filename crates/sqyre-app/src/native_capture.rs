@@ -16,15 +16,10 @@ pub fn open_shared_run() -> Result<SharedRunCapturer, CaptureError> {
 pub fn try_open_shared_run() -> Result<Option<SharedRunCapturer>, CaptureError> {
     match sqyre_capture::shared_capturer_nonblocking() {
         Ok(c) => Ok(Some(SharedRunCapturer(c))),
-        Err(e)
-            if matches!(
-                e,
-                CaptureError::NotReady(NotReady::AwaitingPortalPermission)
-                    | CaptureError::NotReady(NotReady::AwaitingFirstFrame)
-            ) =>
-        {
-            Ok(None)
-        }
+        Err(
+            CaptureError::NotReady(NotReady::AwaitingPortalPermission)
+            | CaptureError::NotReady(NotReady::AwaitingFirstFrame),
+        ) => Ok(None),
         Err(e) => Err(e),
     }
 }
