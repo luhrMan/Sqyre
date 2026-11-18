@@ -1572,7 +1572,7 @@ mod tests {
                         key_record: &mut self.key_record,
                         hotkey_record: &mut self.hotkey_record,
                         macro_hotkeys: &self.macro_hotkeys,
-                        screen_click: &self.hotkey.screen_click,
+                        screen_click: &self.screen_click,
                     },
                     compact_program_headers: false,
                     pending_scale: None,

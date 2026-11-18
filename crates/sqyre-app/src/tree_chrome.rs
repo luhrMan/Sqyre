@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
 };
-use sqyre_persist::CatalogView;
+use sqyre_persist::{CatalogView, ProgramCatalog};
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashMap;
 
@@ -976,7 +976,7 @@ mod tests {
     #[test]
     fn image_search_tip_tag_groups_lists_names_and_members() {
         use sqyre_domain::{ItemSortBy, ItemSortThen};
-        use sqyre_persist::{CatalogView, ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
         let mut cat = ProgramCatalog::default();
@@ -1015,7 +1015,7 @@ mod tests {
         );
 
         let groups = image_search_tip_tag_groups(
-            &cat,
+            CatalogView::from(&cat),
             &["+consumable".into(), "-junk".into()],
             ItemSortBy::Name,
             ItemSortThen::NameAsc,
@@ -1039,7 +1039,7 @@ mod tests {
     #[test]
     fn image_search_view_tip_sort_matches_edit_order() {
         use sqyre_domain::{ItemSortBy, ItemSortThen};
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
         let mut cat = ProgramCatalog::default();
@@ -1088,8 +1088,14 @@ mod tests {
         let sort_by = ItemSortBy::Name;
         let sort_then = ItemSortThen::NameDesc;
 
-        let edit_order =
-            sorted_image_search_targets(&cat, &targets, &tags, sort_by, sort_then, &[]);
+        let edit_order = sorted_image_search_targets(
+            CatalogView::from(&cat),
+            &targets,
+            &tags,
+            sort_by,
+            sort_then,
+            &[],
+        );
         assert_eq!(
             edit_order,
             vec![
@@ -1101,22 +1107,43 @@ mod tests {
 
         // Old view tip Items passed `&[]` for tags: tags-only actions showed an
         // empty Items grid. Expansion must match edit/search order.
-        assert!(sorted_image_search_targets(&cat, &[], &[], sort_by, sort_then, &[]).is_empty());
+        assert!(sorted_image_search_targets(
+            CatalogView::from(&cat),
+            &[],
+            &[],
+            sort_by,
+            sort_then,
+            &[]
+        )
+        .is_empty());
         assert_eq!(
-            sorted_image_search_targets(&cat, &[], &tags, sort_by, sort_then, &[]),
+            sorted_image_search_targets(
+                CatalogView::from(&cat),
+                &[],
+                &tags,
+                sort_by,
+                sort_then,
+                &[]
+            ),
             edit_order
         );
 
         // Old tag groups always sorted A→Z; they must follow Search sorting.
-        let groups = image_search_tip_tag_groups(&cat, &tags, sort_by, sort_then, &[]);
+        let groups =
+            image_search_tip_tag_groups(CatalogView::from(&cat), &tags, sort_by, sort_then, &[]);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members, edit_order);
-        let alpha_groups =
-            image_search_tip_tag_groups(&cat, &tags, ItemSortBy::Name, ItemSortThen::NameAsc, &[]);
+        let alpha_groups = image_search_tip_tag_groups(
+            CatalogView::from(&cat),
+            &tags,
+            ItemSortBy::Name,
+            ItemSortThen::NameAsc,
+            &[],
+        );
         assert_ne!(alpha_groups[0].members, edit_order);
 
         let footprint = sorted_image_search_targets(
-            &cat,
+            CatalogView::from(&cat),
             &targets,
             &tags,
             ItemSortBy::Footprint,
@@ -1132,7 +1159,7 @@ mod tests {
             ]
         );
         let fp_groups = image_search_tip_tag_groups(
-            &cat,
+            CatalogView::from(&cat),
             &tags,
             ItemSortBy::Footprint,
             ItemSortThen::FootprintLarge,
@@ -1241,7 +1268,14 @@ mod tests {
                                 is_dark: true,
                             };
                             paint_summary_pill_cell(
-                                ui, &action, pill, &catalog, &mut icons, theme, band_h, false,
+                                ui,
+                                &action,
+                                pill,
+                                CatalogView::from(&catalog),
+                                &mut icons,
+                                theme,
+                                band_h,
+                                false,
                             )
                             .rect
                         })
@@ -1537,7 +1571,7 @@ mod tests {
         use egui::os::OperatingSystem;
         use egui_kittest::Harness;
         use image::ImageFormat;
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
         use std::io::Cursor;
 
@@ -1614,7 +1648,12 @@ mod tests {
                             .small()
                             .strong(),
                     );
-                    paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
+                    paint_image_search_tooltip_thumbs_pub(
+                        ui,
+                        &action,
+                        CatalogView::from(&catalog),
+                        &mut icons,
+                    );
                 });
             });
 

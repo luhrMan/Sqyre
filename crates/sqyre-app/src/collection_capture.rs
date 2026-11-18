@@ -1,7 +1,7 @@
 //! Capture a collection's linked search area and write the static preview PNG.
 
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
-use sqyre_persist::{CatalogView, ProgramCollection};
+use sqyre_persist::{CatalogView, ProgramCatalog, ProgramCollection};
 use sqyre_ports::ScreenCapturer;
 use std::path::{Path, PathBuf};
 
@@ -86,7 +86,7 @@ mod tests {
     use image::Rgba;
     use sqyre_capture::SolidCapturer;
     use sqyre_domain::ScalarValue;
-    use sqyre_persist::ProgramSearchArea;
+    use sqyre_persist::{CatalogView, ProgramCatalog, ProgramSearchArea};
     use sqyre_ports::DesktopRect;
 
     fn catalog_with_sa(root: PathBuf) -> ProgramCatalog {
@@ -126,7 +126,13 @@ mod tests {
                 h: 200,
             },
         };
-        capture_and_save_collection_image_with(&mut capturer, &cat, "Demo", &col).unwrap();
+        capture_and_save_collection_image_with(
+            &mut capturer,
+            CatalogView::from(&cat),
+            "Demo",
+            &col,
+        )
+        .unwrap();
         let path = cat.collection_image_path("Demo", "Box");
         assert!(path.is_file(), "expected {}", path.display());
         let img = image::open(&path).unwrap().into_rgba8();
@@ -144,8 +150,13 @@ mod tests {
             cols: 1,
         };
         let mut capturer = SolidCapturer::default();
-        let err =
-            capture_and_save_collection_image_with(&mut capturer, &cat, "Demo", &col).unwrap_err();
+        let err = capture_and_save_collection_image_with(
+            &mut capturer,
+            CatalogView::from(&cat),
+            "Demo",
+            &col,
+        )
+        .unwrap_err();
         assert!(err.contains("no search area"));
     }
 }

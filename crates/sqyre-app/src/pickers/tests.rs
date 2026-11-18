@@ -3,7 +3,7 @@ use super::items_grid::{sort_by_display_name, toggle_select_all_filtered};
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::types::{EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP, GRID_CELL, GRID_GAP};
 use crate::window_types::WindowInfo;
-use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
+use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
 use std::collections::BTreeMap;
 
 #[test]
@@ -78,15 +78,15 @@ fn item_tooltip_parts_resolves_name_and_tags() {
         },
     );
 
-    let (name, tags) = item_tooltip_parts(&cat, "Game~Flask");
+    let (name, tags) = item_tooltip_parts(CatalogView::from(&cat), "Game~Flask");
     assert_eq!(name, "Health Flask");
     assert_eq!(tags, vec!["healing", "consumable"]);
 
-    let (name, tags) = item_tooltip_parts(&cat, "Game~Flask~v2");
+    let (name, tags) = item_tooltip_parts(CatalogView::from(&cat), "Game~Flask~v2");
     assert_eq!(name, "Health Flask");
     assert_eq!(tags, vec!["healing", "consumable"]);
 
-    let (name, tags) = item_tooltip_parts(&cat, "Missing~Item");
+    let (name, tags) = item_tooltip_parts(CatalogView::from(&cat), "Missing~Item");
     assert_eq!(name, "Item");
     assert!(tags.is_empty());
 }

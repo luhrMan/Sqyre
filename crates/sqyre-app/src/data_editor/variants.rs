@@ -797,7 +797,7 @@ fn create_item_with_original(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::ProgramCatalog;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
     use tempfile::tempdir;
 
     fn catalog_with_icons(root: &std::path::Path) -> ProgramCatalog {
@@ -829,7 +829,9 @@ mod tests {
         let item = cat.get("Game").unwrap().items.get("Potion").unwrap();
         assert_eq!(item.grid_cols, 1);
         assert_eq!(item.grid_rows, 1);
-        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original").unwrap();
+        let path =
+            icon_variants::variant_path(CatalogView::from(&cat), "Game", "Potion", "Original")
+                .unwrap();
         assert!(path.is_file());
         assert!(icon_variants::validate_png_file(&path).is_ok());
     }
@@ -867,10 +869,13 @@ mod tests {
             create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
         assert_eq!(name, "Potion 2");
         assert!(cat.get("Game").unwrap().items.contains_key("Potion 2"));
-        assert!(
-            icon_variants::variant_path(&cat, "Game", "Potion 2", "Original")
-                .unwrap()
-                .is_file()
-        );
+        assert!(icon_variants::variant_path(
+            CatalogView::from(&cat),
+            "Game",
+            "Potion 2",
+            "Original"
+        )
+        .unwrap()
+        .is_file());
     }
 }

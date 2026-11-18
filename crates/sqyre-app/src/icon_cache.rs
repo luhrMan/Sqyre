@@ -7,7 +7,7 @@ use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::window_types::ProcessIcon;
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::CatalogView;
+use sqyre_persist::{CatalogView, ProgramCatalog};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
@@ -928,7 +928,14 @@ mod tests {
             for path in demo_icons::merged_variant_paths(CatalogView::from(&catalog), target) {
                 assert!(icons.for_path(&ctx, &path).is_some());
             }
-            let slot = stable_icon_thumb_size(&ctx, &catalog, &mut icons, target, 30.0, 18.0);
+            let slot = stable_icon_thumb_size(
+                &ctx,
+                CatalogView::from(&catalog),
+                &mut icons,
+                target,
+                30.0,
+                18.0,
+            );
             let wide = image_view::fit_icon_thumb(64.0, 16.0, 30.0, 18.0);
             let tall = image_view::fit_icon_thumb(16.0, 64.0, 30.0, 18.0);
             assert!((slot.x - wide.x.max(tall.x)).abs() < 0.01);

@@ -5,7 +5,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::RgbaImage;
 use sqyre_capture::{shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
-use sqyre_persist::{CatalogView, ProgramPoint, ProgramSearchArea};
+use sqyre_persist::{CatalogView, ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{clamp_search_rect, mark_site, CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -2246,7 +2246,9 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) = entity_preview_spec(&cat, "Game", "Spot", PreviewKind::Point).unwrap();
+        let (_, _, coords) =
+            entity_preview_spec(CatalogView::from(&cat), "Game", "Spot", PreviewKind::Point)
+                .unwrap();
         match coords {
             PreviewCoords::Point { x, y } => assert_eq!((x, y), (1930, 120)),
             _ => panic!("expected point"),
@@ -2268,8 +2270,13 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) =
-            entity_preview_spec(&cat, "Game", "Box", PreviewKind::SearchArea).unwrap();
+        let (_, _, coords) = entity_preview_spec(
+            CatalogView::from(&cat),
+            "Game",
+            "Box",
+            PreviewKind::SearchArea,
+        )
+        .unwrap();
         match coords {
             PreviewCoords::SearchArea {
                 left,
@@ -2309,8 +2316,13 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) =
-            entity_preview_spec(&cat, "Game", "Box", PreviewKind::Collection).unwrap();
+        let (_, _, coords) = entity_preview_spec(
+            CatalogView::from(&cat),
+            "Game",
+            "Box",
+            PreviewKind::Collection,
+        )
+        .unwrap();
         match coords {
             PreviewCoords::SearchArea {
                 left,

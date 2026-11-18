@@ -1223,7 +1223,7 @@ mod tests {
     use super::*;
     use sqyre_domain::{ScalarValue, TEMPORARY_PROGRAM};
     use sqyre_persist::{
-        ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+        CatalogView, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
     };
 
     fn catalog() -> ProgramCatalog {
@@ -1267,17 +1267,21 @@ mod tests {
                 },
             );
         }
-        let names = compute_entity_names(&cat, EditorTab::Items, "Game");
+        let names = compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Game");
         assert_eq!(
             names,
             vec!["zz", "aa"],
             "sorted by display name, keys returned"
         );
         // Unknown program → empty.
-        assert!(compute_entity_names(&cat, EditorTab::Items, "Nope").is_empty());
+        assert!(compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Nope").is_empty());
         // Programs / Overlay tabs list no entities.
-        assert!(compute_entity_names(&cat, EditorTab::Programs, "Game").is_empty());
-        assert!(compute_entity_names(&cat, EditorTab::Overlay, "Game").is_empty());
+        assert!(
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Programs, "Game").is_empty()
+        );
+        assert!(
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Overlay, "Game").is_empty()
+        );
     }
 
     #[test]
@@ -1300,7 +1304,7 @@ mod tests {
             },
         )
         .unwrap();
-        let names = compute_entity_names(&cat, EditorTab::Masks, "Game");
+        let names = compute_entity_names(CatalogView::from(&cat), EditorTab::Masks, "Game");
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"maskkey".to_string()));
         assert!(names.contains(&"named".to_string()));
@@ -1328,17 +1332,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::Points, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Points, "Game"),
             vec!["Spawn"]
         );
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::Collections, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Collections, "Game"),
             vec!["bag"]
         );
         // PixelCheck shares the items list.
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::PixelCheck, "Game"),
-            compute_entity_names(&cat, EditorTab::Items, "Game")
+            compute_entity_names(CatalogView::from(&cat), EditorTab::PixelCheck, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Game")
         );
     }
 
@@ -1358,7 +1362,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(ed.entity_names(&cat, "Game"), vec!["Potion"]);
+        assert_eq!(
+            ed.entity_names(CatalogView::from(&cat), "Game"),
+            vec!["Potion"]
+        );
         let gen0 = ed.list_cache.catalog_generation;
 
         // Mutating the catalog bumps generation → cache rebuild sees the new item.
@@ -1370,13 +1377,13 @@ mod tests {
             },
         )
         .unwrap();
-        let names = ed.entity_names(&cat, "Game");
+        let names = ed.entity_names(CatalogView::from(&cat), "Game");
         assert_eq!(names, vec!["Elixir", "Potion"]);
         assert!(ed.list_cache.catalog_generation > gen0);
 
         // Switching tabs rebuilds the entity view.
         ed.tab = EditorTab::Masks;
-        assert!(ed.entity_names(&cat, "Game").is_empty());
+        assert!(ed.entity_names(CatalogView::from(&cat), "Game").is_empty());
         assert_eq!(ed.list_cache.tab, EditorTab::Masks);
     }
 
@@ -1445,16 +1452,31 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Points;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 1);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            1
+        );
         // Screen Cap counts search areas and collections together.
         ed.tab = EditorTab::ScreenCap;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Overlay;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Programs;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 0);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            0
+        );
     }
 
     #[test]
@@ -1464,20 +1486,20 @@ mod tests {
         let settings = UserSettings::default();
         let mut ed = DataEditor::default();
 
-        ed.select_program(TEMPORARY_PROGRAM, &cat, &settings);
+        ed.select_program(TEMPORARY_PROGRAM, CatalogView::from(&cat), &settings);
         assert!(ed.selected_program.is_none());
 
-        ed.select_program("Game", &cat, &settings);
+        ed.select_program("Game", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_program.as_deref(), Some("Game"));
         // Selecting a program clears the entity selection.
         ed.selected_entity = Some("old".into());
-        ed.select_program("Game", &cat, &settings);
+        ed.select_program("Game", CatalogView::from(&cat), &settings);
         assert!(ed.selected_entity.is_none());
 
-        ed.select_entity(TEMPORARY_PROGRAM, "x", &cat, &settings);
+        ed.select_entity(TEMPORARY_PROGRAM, "x", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_program.as_deref(), Some("Game"));
 
-        ed.select_entity("Game", "Spawn", &cat, &settings);
+        ed.select_entity("Game", "Spawn", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_entity.as_deref(), Some("Spawn"));
     }
 }

@@ -237,7 +237,9 @@ mod tests {
         let mut cat = ProgramCatalog::default();
         cat.create_program("Game").unwrap();
         cat.create_program(TEMPORARY_PROGRAM).unwrap();
-        let names: Vec<_> = editor_program_names(&cat).map(|s| s.as_str()).collect();
+        let names: Vec<_> = editor_program_names(CatalogView::from(&cat))
+            .map(|s| s.as_str())
+            .collect();
         assert_eq!(names, ["Game"]);
         assert!(!is_editor_listed_program(TEMPORARY_PROGRAM));
         assert!(is_editor_listed_program("Game"));
@@ -318,7 +320,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            collect_program_item_tags(&cat, "Game"),
+            collect_program_item_tags(CatalogView::from(&cat), "Game"),
             vec!["alpha", "beta", "gamma"]
         );
     }
@@ -334,12 +336,19 @@ mod tests {
     fn form_absolute_area_adds_monitor_origin() {
         let mut cat = ProgramCatalog::default();
         cat.set_monitor_rects(vec![(0, 0, 1920, 1080), (1920, 100, 1920, 1080)]);
-        let (lx, ty, rx, by) = form_absolute_area(&cat, 2, Some(10), Some(20), Some(110), Some(80));
+        let (lx, ty, rx, by) = form_absolute_area(
+            CatalogView::from(&cat),
+            2,
+            Some(10),
+            Some(20),
+            Some(110),
+            Some(80),
+        );
         assert_eq!(
             (lx, ty, rx, by),
             (Some(1930), Some(120), Some(2030), Some(180))
         );
-        let (x, y) = form_absolute_xy(&cat, 2, Some(10), Some(20));
+        let (x, y) = form_absolute_xy(CatalogView::from(&cat), 2, Some(10), Some(20));
         assert_eq!((x, y), (Some(1930), Some(120)));
     }
 
@@ -358,7 +367,7 @@ mod tests {
         );
         assert_eq!(monitor, 2);
         let abs = form_desktop_area(
-            &cat,
+            CatalogView::from(&cat),
             monitor,
             &lx.to_string(),
             &ty.to_string(),
