@@ -16,7 +16,7 @@ impl SqyreApp {
     pub(crate) fn take_pending_db_import(&mut self) {
         #[cfg(target_arch = "wasm32")]
         {
-            let Some(result) = self.pending_import.lock().take() else {
+            let Some(result) = self.lifecycle.pending_import.lock().take() else {
                 return;
             };
             match result {
@@ -59,7 +59,7 @@ impl SqyreApp {
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn request_db_import(&self) {
-        let pending = Arc::clone(&self.pending_import);
+        let pending = Arc::clone(&self.lifecycle.pending_import);
         let repaint = self.hotkey_repaint.lock().clone();
         wasm_bindgen_futures::spawn_local(async move {
             let file = rfd::AsyncFileDialog::new()

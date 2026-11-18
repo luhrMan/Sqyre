@@ -433,7 +433,7 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     format!("v{version} installed — restart to finish"),
                 );
                 if ui.small_button("Restart").clicked() {
-                    crate::update::restart_app(&mut app.instance_lock);
+                    crate::update::restart_app(&mut app.lifecycle.instance_lock);
                 }
             });
         }

@@ -329,7 +329,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
         );
         if app.settings_ui.restart_requested {
             app.settings_ui.restart_requested = false;
-            crate::update::restart_app(&mut app.instance_lock);
+            crate::update::restart_app(&mut app.lifecycle.instance_lock);
         }
     }
     #[cfg(target_arch = "wasm32")]
@@ -478,9 +478,9 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
     use crate::help_text as ht;
     use sqyre_android::{bridge, frames, Projection};
 
-    if app.pending_projection_run.is_none() {
+    if app.lifecycle.pending_projection_run.is_none() {
         if let Some(macro_name) = crate::app_run::take_android_projection_request() {
-            app.pending_projection_run = Some(PendingProjectionRun {
+            app.lifecycle.pending_projection_run = Some(PendingProjectionRun {
                 macro_name,
                 state: ProjectionGate::Ask,
             });
@@ -489,12 +489,12 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
     // Consent can also arrive from another surface (Settings → Permissions, the
     // first-start popup); grant starts the queued run regardless of gate state.
     if frames().projection() == Projection::Running {
-        if let Some(pending) = app.pending_projection_run.take() {
+        if let Some(pending) = app.lifecycle.pending_projection_run.take() {
             app.start_macro_by_name(&pending.macro_name, ctx);
         }
         return;
     }
-    let Some(pending) = app.pending_projection_run.as_mut() else {
+    let Some(pending) = app.lifecycle.pending_projection_run.as_mut() else {
         return;
     };
     if !app
@@ -503,7 +503,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
         .iter()
         .any(|m| m.name.eq_ignore_ascii_case(&pending.macro_name))
     {
-        app.pending_projection_run = None;
+        app.lifecycle.pending_projection_run = None;
         return;
     }
     if pending.state == ProjectionGate::Waiting && frames().projection() == Projection::Stopped {
@@ -592,14 +592,14 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
 
     if cancel {
         *app.run_session.state.status.lock() = format!("Cancelled — \"{macro_name}\" was not run.");
-        app.pending_projection_run = None;
+        app.lifecycle.pending_projection_run = None;
         return;
     }
     if request {
         frames().rearm();
         match bridge::request_projection() {
             Ok(()) => {
-                if let Some(pending) = app.pending_projection_run.as_mut() {
+                if let Some(pending) = app.lifecycle.pending_projection_run.as_mut() {
                     pending.state = ProjectionGate::Waiting;
                 }
             }
@@ -614,7 +614,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
 /// shown the deferred startup work (portal probe on Linux, hotkeys) resumes.
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
-    let Some(intro) = app.permissions_intro.as_mut() else {
+    let Some(intro) = app.lifecycle.permissions_intro.as_mut() else {
         return;
     };
     if intro.show(ctx) {
@@ -629,7 +629,7 @@ fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
     if !intro.finished() {
         return;
     }
-    app.permissions_intro = None;
+    app.lifecycle.permissions_intro = None;
     // Linux starts hotkeys from `poll_deferred_capture_probe`, after the portal picker.
     #[cfg(not(target_os = "linux"))]
     app.start_deferred_hotkeys();
@@ -650,20 +650,20 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
 
-    if app.portal_probe.finished || app.permissions_intro.is_some() {
+    if app.lifecycle.portal_probe.finished || app.lifecycle.permissions_intro.is_some() {
         return;
     }
 
-    if app.portal_probe.pending.is_none() {
+    if app.lifecycle.portal_probe.pending.is_none() {
         if !sqyre_capture::shared_capturer_open_may_block() {
-            app.portal_probe.finished = true;
+            app.lifecycle.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             return;
         }
         let now = std::time::Instant::now();
-        match app.portal_probe.not_before {
+        match app.lifecycle.portal_probe.not_before {
             None => {
-                app.portal_probe.not_before = Some(now + Duration::from_millis(750));
+                app.lifecycle.portal_probe.not_before = Some(now + Duration::from_millis(750));
                 ctx.request_repaint_after(Duration::from_millis(750));
                 return;
             }
@@ -675,7 +675,7 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
             }
         }
         let (tx, rx) = std::sync::mpsc::channel();
-        app.portal_probe.pending = Some(rx);
+        app.lifecycle.portal_probe.pending = Some(rx);
         std::thread::spawn(move || {
             let result = match sqyre_capture::shared_capturer() {
                 Ok(_) => Ok(()),
@@ -688,13 +688,13 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
         });
     }
 
-    let Some(rx) = app.portal_probe.pending.as_ref() else {
+    let Some(rx) = app.lifecycle.portal_probe.pending.as_ref() else {
         return;
     };
     match rx.try_recv() {
         Ok(Ok(())) => {
-            app.portal_probe.pending = None;
-            app.portal_probe.finished = true;
+            app.lifecycle.portal_probe.pending = None;
+            app.lifecycle.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             apply_main_monitor_resolution(&mut app.workspace.catalog);
             let _ =
@@ -702,8 +702,8 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
             ctx.request_repaint();
         }
         Ok(Err(warn)) => {
-            app.portal_probe.pending = None;
-            app.portal_probe.finished = true;
+            app.lifecycle.portal_probe.pending = None;
+            app.lifecycle.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             app.workspace.platform_warning = Some(match app.workspace.platform_warning.take() {
                 Some(existing) => format!("{existing}\n{warn}"),
@@ -713,8 +713,8 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
         }
         Err(TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(100)),
         Err(TryRecvError::Disconnected) => {
-            app.portal_probe.pending = None;
-            app.portal_probe.finished = true;
+            app.lifecycle.portal_probe.pending = None;
+            app.lifecycle.portal_probe.finished = true;
             app.start_deferred_hotkeys();
         }
     }
@@ -739,7 +739,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     ))]
     poll_deferred_capture_probe(app, ctx);
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-    if app.permissions_intro.is_none() {
+    if app.lifecycle.permissions_intro.is_none() {
         app.settings_ui.tick_permissions(ctx);
     }
 
@@ -796,25 +796,25 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     {
         use std::sync::mpsc::TryRecvError;
 
-        if let Some(rx) = app.tasks.pixel_sample.as_ref() {
+        if let Some(rx) = app.lifecycle.tasks.pixel_sample.as_ref() {
             match rx.try_recv() {
                 Ok(Ok(hex)) => {
-                    app.tasks.pixel_sample = None;
+                    app.lifecycle.tasks.pixel_sample = None;
                     app.tree.tooltip.apply_recorded_color(hex.clone());
                     app.add_action_picker.apply_recorded_color(hex);
                 }
                 Ok(Err(e)) => {
-                    app.tasks.pixel_sample = None;
+                    app.lifecycle.tasks.pixel_sample = None;
                     note_pixel_sample_failure(app, &e.to_string());
                 }
                 Err(TryRecvError::Empty) => ctx.request_repaint(),
                 Err(TryRecvError::Disconnected) => {
-                    app.tasks.pixel_sample = None;
+                    app.lifecycle.tasks.pixel_sample = None;
                     note_pixel_sample_failure(app, "capture worker stopped");
                 }
             }
         }
-        if app.tasks.pixel_sample.is_none() {
+        if app.lifecycle.tasks.pixel_sample.is_none() {
             if let Some((x, y)) = app.screen_click.take_color_point() {
                 #[cfg(target_os = "linux")]
                 if let Some(hex) = app.overlay.recording_overlay.sample_frozen_pixel_hex(x, y) {
@@ -823,7 +823,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 } else {
                     match crate::native_capture::open_shared_run() {
                         Ok(capturer) => {
-                            app.tasks.pixel_sample =
+                            app.lifecycle.tasks.pixel_sample =
                                 Some(pixel_color::spawn_sample_pixel_hex_with(capturer, x, y));
                             ctx.request_repaint();
                         }
@@ -833,7 +833,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 #[cfg(not(target_os = "linux"))]
                 match crate::native_capture::open_shared_run() {
                     Ok(capturer) => {
-                        app.tasks.pixel_sample =
+                        app.lifecycle.tasks.pixel_sample =
                             Some(pixel_color::spawn_sample_pixel_hex_with(capturer, x, y));
                         ctx.request_repaint();
                     }
@@ -990,7 +990,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     // Poll in-flight task first.
-    if let Some(rx) = app.tasks.backup.take() {
+    if let Some(rx) = app.lifecycle.tasks.backup.take() {
         match rx.try_recv() {
             Ok(Ok(path)) => {
                 app.settings_ui.note_backup_success(&path);
@@ -1003,7 +1003,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
                 );
             }
             Err(mpsc::TryRecvError::Empty) => {
-                app.tasks.backup = Some(rx);
+                app.lifecycle.tasks.backup = Some(rx);
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
                 return;
             }
@@ -1017,7 +1017,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let settings = app.settings_ui.settings();
-    if !settings.data.backup_enabled || app.tasks.backup.is_some() {
+    if !settings.data.backup_enabled || app.lifecycle.tasks.backup.is_some() {
         return;
     }
     let interval_secs = (settings.data.backup_interval_hours.max(1) as u64).saturating_mul(3600);
@@ -1033,7 +1033,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
 
     let keep = settings.data.backup_max_keep.max(1) as usize;
     let (tx, rx) = mpsc::channel();
-    app.tasks.backup = Some(rx);
+    app.lifecycle.tasks.backup = Some(rx);
     thread::spawn(move || {
         let result = (|| {
             let path = sqyre_persist::create_backup().map_err(|e| e.to_string())?;

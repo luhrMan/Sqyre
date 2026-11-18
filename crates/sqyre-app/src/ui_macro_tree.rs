@@ -709,7 +709,7 @@ fn tree_owns_delete(app: &SqyreApp, ui: &egui::Ui, tree_id: egui::Id) -> bool {
         return false;
     }
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-    if app.permissions_intro.is_some() {
+    if app.lifecycle.permissions_intro.is_some() {
         return false;
     }
     // Row click requests this id; arrow keys only move selection while it is focused.

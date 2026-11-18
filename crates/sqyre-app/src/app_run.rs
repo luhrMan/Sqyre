@@ -308,7 +308,7 @@ mod native_run {
             // of firing the system dialog mid-run once the first capture asks.
             #[cfg(target_os = "android")]
             if needs_projection_consent(&self.workspace.macros[idx], &self.workspace.macros) {
-                self.pending_projection_run = Some(PendingProjectionRun {
+                self.lifecycle.pending_projection_run = Some(PendingProjectionRun {
                     macro_name: self.workspace.macros[idx].name.clone(),
                     state: ProjectionGate::Ask,
                 });

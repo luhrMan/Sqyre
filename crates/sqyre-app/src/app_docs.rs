@@ -188,8 +188,26 @@ impl SqyreApp {
                 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
                 overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
             },
-            #[cfg(all(target_os = "android", feature = "native-runtime"))]
-            pending_projection_run: None,
+            lifecycle: crate::NativeLifecycle {
+                #[cfg(not(target_arch = "wasm32"))]
+                tasks: crate::BackgroundTasks::default(),
+                // Screenshots never run the probe; mark it already finished.
+                #[cfg(all(
+                    not(target_arch = "wasm32"),
+                    feature = "native-runtime",
+                    target_os = "linux"
+                ))]
+                portal_probe: crate::PortalProbe::finished(),
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                permissions_intro: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                instance_lock: None,
+                pending_import: crate::wasm_io::new_pending_import(),
+                #[cfg(all(target_os = "android", feature = "native-runtime"))]
+                pending_projection_run: None,
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                hotkeys_deferred: None,
+            },
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
@@ -201,27 +219,11 @@ impl SqyreApp {
             macro_list_filter: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,
             pending_viewport_scale: None,
-            pending_import: crate::wasm_io::new_pending_import(),
-            #[cfg(not(target_arch = "wasm32"))]
-            tasks: crate::BackgroundTasks::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
-            // Screenshots never run the probe; mark it already finished.
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            portal_probe: crate::PortalProbe::finished(),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            hotkeys_deferred: None,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            permissions_intro: None,
         };
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         app.settings_ui.suppress_permission_probe_for_docs();
