@@ -409,6 +409,10 @@ impl SqyreApp {
     }
 
     /// Snap the fan shut without playing the collapse motion (mode switches).
+    #[cfg_attr(
+        not(all(feature = "native-runtime", feature = "overlay-buttons")),
+        expect(dead_code, reason = "only called from overlay sync")
+    )]
     pub(crate) fn snap_quick_access_fan_closed(&mut self) {
         self.quick_access.expanded = false;
         self.quick_access.fan_from = 0.0;
