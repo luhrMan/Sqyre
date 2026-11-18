@@ -489,7 +489,7 @@ impl SqyreApp {
                 db: &mut self.workspace.db,
                 macros: &mut self.workspace.macros,
                 catalog: &mut self.workspace.catalog,
-                icons: &mut self.icon_cache,
+                icons: &mut self.assets.icon_cache,
                 screen_click: &self.screen_click,
                 settings: self.settings_ui.settings_mut(),
                 hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,

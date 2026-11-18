@@ -256,7 +256,7 @@ fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
         // The shield stays; the S inside it becomes the trace spinner —
         // drawn into a hollow cut by `sqyre_shell` at the S's exact
         // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).
-        let shell = app.icon_cache.sqyre_shell(ui.ctx());
+        let shell = app.assets.icon_cache.sqyre_shell(ui.ctx());
         ui.painter().image(
             shell.id(),
             icon_rect,
@@ -281,7 +281,7 @@ fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
         ui.ctx()
             .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
     } else {
-        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+        let tex = app.assets.icon_cache.sqyre_fallback(ui.ctx());
         ui.painter().image(
             tex.id(),
             icon_rect,
@@ -321,6 +321,7 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
             .map(|name| name.as_str()),
     );
     let program_icons = app
+        .assets
         .icon_cache
         .program_name_icons(ui.ctx(), &app.workspace.catalog);
     let m = &mut app.workspace.macros[idx];

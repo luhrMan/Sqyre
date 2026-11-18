@@ -461,6 +461,12 @@ impl PortalProbe {
     }
 }
 
+/// Texture / preview caches owned by the app shell.
+pub(crate) struct AssetCaches {
+    pub icon_cache: IconCache,
+    pub preview_tooltips: PreviewTooltipCache,
+}
+
 pub struct SqyreApp {
     pub(crate) workspace: Workspace,
     pub(crate) run_session: RunSession,
@@ -475,8 +481,8 @@ pub struct SqyreApp {
     hotkey_record: HotkeyRecordUi,
     key_record: KeyRecordUi,
     macro_record: MacroRecordUi,
-    icon_cache: IconCache,
-    preview_tooltips: PreviewTooltipCache,
+    /// Texture / preview caches for chrome and tooltips.
+    assets: AssetCaches,
     add_action_picker: AddActionPicker,
     command_palette: CommandPaletteUi,
     data_editor: DataEditor,
@@ -769,8 +775,10 @@ impl SqyreApp {
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_record: MacroRecordUi::default(),
-            icon_cache: IconCache::new(),
-            preview_tooltips: PreviewTooltipCache::new(),
+            assets: AssetCaches {
+                icon_cache: IconCache::new(),
+                preview_tooltips: PreviewTooltipCache::new(),
+            },
             add_action_picker,
             command_palette: CommandPaletteUi::default(),
             data_editor: DataEditor::default(),
@@ -921,13 +929,13 @@ impl SqyreApp {
         match picked.purpose {
             file_dialogs::PickPurpose::IconVariant => self.data_editor.add_picked_variant(
                 &self.workspace.catalog,
-                &mut self.icon_cache,
+                &mut self.assets.icon_cache,
                 self.settings_ui.settings(),
                 picked.path,
             ),
             file_dialogs::PickPurpose::MaskImage => self.data_editor.upload_mask_image(
                 &self.workspace.catalog,
-                &mut self.icon_cache,
+                &mut self.assets.icon_cache,
                 picked.path,
             ),
             purpose @ (file_dialogs::PickPurpose::RestoreBackup
@@ -1291,7 +1299,7 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_click_fx");
 
             let t = web_time::Instant::now();
-            self.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();
+            self.assets.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();
             sqyre_capture::cap_log(
                 "APP",
                 "drop",

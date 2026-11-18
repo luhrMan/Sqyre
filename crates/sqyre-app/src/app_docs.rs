@@ -152,8 +152,10 @@ impl SqyreApp {
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_record: MacroRecordUi::default(),
-            icon_cache: IconCache::new(),
-            preview_tooltips: PreviewTooltipCache::without_capture(),
+            assets: crate::AssetCaches {
+                icon_cache: IconCache::new(),
+                preview_tooltips: PreviewTooltipCache::without_capture(),
+            },
             add_action_picker,
             command_palette: crate::command_palette::CommandPaletteUi::default(),
             data_editor: DataEditor::default(),

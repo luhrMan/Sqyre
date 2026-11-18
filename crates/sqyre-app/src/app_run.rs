@@ -153,9 +153,10 @@ impl SqyreApp {
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         {
-            self.preview_tooltips
+            self.assets
+                .preview_tooltips
                 .set_desktop_outlines_enabled(self.settings_ui.settings().preview_desktop_outline);
-            let preview_outline = self.preview_tooltips.take_desktop_outline();
+            let preview_outline = self.assets.preview_tooltips.take_desktop_outline();
             self.recording_overlay.sync_with_macro_record(
                 ctx,
                 &self.screen_click,

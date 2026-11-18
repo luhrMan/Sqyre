@@ -260,7 +260,7 @@ pub fn show_logs_window(
         &title,
         &app.run_session.action_log,
         &mut app.run_session.logs_state,
-        &mut app.preview_tooltips,
+        &mut app.assets.preview_tooltips,
         is_running,
         pending_scale,
     ) {
@@ -285,14 +285,14 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             db: &mut app.workspace.db,
             macros: &mut app.workspace.macros,
             catalog: &mut app.workspace.catalog,
-            icons: &mut app.icon_cache,
+            icons: &mut app.assets.icon_cache,
             screen_click: &app.screen_click,
             settings: app.settings_ui.settings_mut(),
             hotkey_tag_filters: &mut app.workspace.hotkey_tag_filters,
             pending_scale,
         },
         app.workspace.selected_macro,
-        &mut app.preview_tooltips,
+        &mut app.assets.preview_tooltips,
     );
     if app.data_editor.take_hotkey_refresh() {
         app.refresh_macro_hotkey_bindings();
@@ -373,8 +373,8 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     }
     if let Some(action) = {
         let catalog = &app.workspace.catalog;
-        let icons = &mut app.icon_cache;
-        let previews = &mut app.preview_tooltips;
+        let icons = &mut app.assets.icon_cache;
+        let previews = &mut app.assets.preview_tooltips;
         let macros: Vec<(String, Vec<String>)> = app
             .workspace
             .macros
@@ -762,8 +762,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.variables_panel = variables_panel::VariablesPanelUi::default();
         app.variables_panel.open = vars_open;
         app.pending_delete_macro = None;
-        app.icon_cache = IconCache::new();
-        app.preview_tooltips = PreviewTooltipCache::new();
+        app.assets.icon_cache = IconCache::new();
+        app.assets.preview_tooltips = PreviewTooltipCache::new();
         app.refresh_macro_hotkey_bindings();
     }
 
@@ -876,8 +876,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             macro_hotkeys: &app.run_session.macro_hotkeys,
             bridge: &app.macro_record_bridge,
             catalog: &mut app.workspace.catalog,
-            icons: &mut app.icon_cache,
-            previews: &mut app.preview_tooltips,
+            icons: &mut app.assets.icon_cache,
+            previews: &mut app.assets.preview_tooltips,
             key_record: &mut app.key_record,
             hotkey_record: &mut app.hotkey_record,
             screen_click: &app.screen_click,
