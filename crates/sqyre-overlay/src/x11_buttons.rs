@@ -28,8 +28,8 @@
 //! the same invariant at the call boundary (see `x11_focus` for the same style).
 
 use crate::host_common::{
-    spec_contains, spec_contains_rounded, spec_delta, tip_refresh_decision, TipButtonView,
-    TipRefreshInput,
+    place_hub_satellite_face, spec_contains, spec_contains_rounded, spec_delta,
+    tip_refresh_decision, HubFanHost, TipButtonView, TipRefreshInput,
 };
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
@@ -1110,32 +1110,41 @@ fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
 }
 
 fn place_hub_satellite_spec(state: &HostState, spec: &mut NativeButtonSpec) {
-    let rest = (spec.face.x, spec.face.y);
-    let (hx, hy, hw, hh) = hub_face_geom(state);
-    let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
-    spec.face.x = x;
-    spec.face.y = y;
-    spec.input_enabled = state.hub_fan.fully_open();
+    place_hub_satellite_face(&state.hub_fan, hub_face_geom(state), spec);
+}
+
+impl HubFanHost for HostState {
+    fn hub_fan(&mut self) -> &mut crate::hub_fan::HubFanState {
+        &mut self.hub_fan
+    }
+
+    fn place_all_satellites(&mut self) {
+        place_all_hub_satellites(self);
+    }
+
+    fn rearm_satellite_input(&mut self) {
+        rearm_hub_satellite_input(self);
+    }
+
+    fn apply_fan_visibility(&mut self) {
+        // Map while traveling/open; unmap when fully closed (no off-desktop park).
+        apply_gate_visibility(self);
+    }
+
+    fn sync_dismiss_arm(&mut self) {
+        sync_hub_fan_dismiss_arm(self);
+    }
+
+    fn flush_after_fan(&mut self) {
+        // SAFETY: HostState display invariant.
+        unsafe {
+            x_flush(self.display);
+        }
+    }
 }
 
 fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
-    let was_open = state.hub_fan.fully_open();
-    state.hub_fan.set_expanded(expanded, snap);
-    if snap || !state.hub_fan.animating() {
-        place_all_hub_satellites(state);
-    }
-    let now_open = state.hub_fan.fully_open();
-    if was_open != now_open {
-        rearm_hub_satellite_input(state);
-    }
-    // Map while traveling/open; unmap when fully closed (no off-desktop park).
-    apply_gate_visibility(state);
-    sync_hub_fan_dismiss_arm(state);
-    // SAFETY: HostState display invariant.
-    unsafe {
-        x_flush(state.display);
-    }
+    crate::host_common::apply_hub_fan_cmd(state, expanded, snap);
 }
 
 fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
@@ -1206,30 +1215,7 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 
 /// Advance hub fan travel on the host clock (independent of egui focus).
 fn tick_hub_fan(state: &mut HostState) -> bool {
-    let was_open = state.hub_fan.fully_open();
-    let was_traveling = state.hub_fan.open_or_traveling();
-    if !state.hub_fan.tick() {
-        // Collapse finished: unmap satellites so they cannot paint or steal hits.
-        if was_traveling && !state.hub_fan.open_or_traveling() {
-            apply_gate_visibility(state);
-        }
-        sync_hub_fan_dismiss_arm(state);
-        return false;
-    }
-    // Opening from closed: map before the first MoveResize so travel is visible.
-    if !was_traveling {
-        apply_gate_visibility(state);
-    }
-    place_all_hub_satellites(state);
-    if was_open != state.hub_fan.fully_open() {
-        rearm_hub_satellite_input(state);
-    }
-    sync_hub_fan_dismiss_arm(state);
-    // SAFETY: HostState display invariant.
-    unsafe {
-        x_flush(state.display);
-    }
-    true
+    crate::host_common::tick_hub_fan(state)
 }
 
 fn set_relocate_mode(state: &mut HostState, enabled: bool) {

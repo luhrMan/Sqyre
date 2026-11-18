@@ -7,7 +7,8 @@
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::host_common::{
-    point_in_rounded_rect, tip_refresh_decision, TipButtonView, TipRefreshInput,
+    place_hub_satellite_face, point_in_rounded_rect, tip_refresh_decision, HubFanHost,
+    TipButtonView, TipRefreshInput,
 };
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use parking_lot::Mutex;
@@ -440,26 +441,38 @@ fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
 }
 
 fn place_hub_satellite_spec(state: &HostState, spec: &mut WinButtonSpec) {
-    let rest = (spec.face.x, spec.face.y);
-    let (hx, hy, hw, hh) = hub_face_geom(state);
-    let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
-    spec.face.x = x;
-    spec.face.y = y;
-    spec.input_enabled = state.hub_fan.fully_open();
+    place_hub_satellite_face(&state.hub_fan, hub_face_geom(state), spec);
+}
+
+impl HubFanHost for HostState {
+    fn hub_fan(&mut self) -> &mut crate::hub_fan::HubFanState {
+        &mut self.hub_fan
+    }
+
+    fn place_all_satellites(&mut self) {
+        place_all_hub_satellites(self);
+    }
+
+    fn rearm_satellite_input(&mut self) {
+        rearm_hub_satellite_input(self);
+    }
+
+    fn apply_fan_visibility(&mut self) {
+        apply_visibility(self);
+    }
+
+    fn sync_dismiss_arm(&mut self) {
+        sync_hub_fan_dismiss_arm(self);
+    }
+
+    fn flush_after_fan(&mut self) {
+        // Win hosts blit immediately; no display flush.
+        let _ = self;
+    }
 }
 
 fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
-    let was_open = state.hub_fan.fully_open();
-    state.hub_fan.set_expanded(expanded, snap);
-    if snap || !state.hub_fan.animating() {
-        place_all_hub_satellites(state);
-    }
-    if was_open != state.hub_fan.fully_open() {
-        rearm_hub_satellite_input(state);
-    }
-    apply_visibility(state);
-    sync_hub_fan_dismiss_arm(state);
+    crate::host_common::apply_hub_fan_cmd(state, expanded, snap);
 }
 
 fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
@@ -511,23 +524,7 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 }
 
 fn tick_hub_fan(state: &mut HostState) {
-    let was_open = state.hub_fan.fully_open();
-    let was_traveling = state.hub_fan.open_or_traveling();
-    if !state.hub_fan.tick() {
-        if was_traveling && !state.hub_fan.open_or_traveling() {
-            apply_visibility(state);
-        }
-        sync_hub_fan_dismiss_arm(state);
-        return;
-    }
-    if !was_traveling {
-        apply_visibility(state);
-    }
-    place_all_hub_satellites(state);
-    if was_open != state.hub_fan.fully_open() {
-        rearm_hub_satellite_input(state);
-    }
-    sync_hub_fan_dismiss_arm(state);
+    let _ = crate::host_common::tick_hub_fan(state);
 }
 
 fn update_button(state: &mut HostState, spec: WinButtonSpec) {

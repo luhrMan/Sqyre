@@ -1,5 +1,6 @@
 //! OS-neutral overlay host DTOs and helpers shared by X11 and Windows button hosts.
 
+use crate::hub_fan::{hub_origin, satellite_pos, HubFanState};
 use crate::ButtonFace;
 
 /// Desired on-screen button (physical pixels, host desktop coordinates).
@@ -159,6 +160,72 @@ pub fn tip_refresh_decision(
         return Some((tip.for_id.to_string(), true));
     }
     None
+}
+
+/// Place a hub satellite face at the current fan `t` (rested slot → hub origin).
+pub fn place_hub_satellite_face(
+    fan: &HubFanState,
+    hub_geom: (i32, i32, u32, u32),
+    spec: &mut OverlayButtonSpec,
+) {
+    let rest = (spec.face.x, spec.face.y);
+    let (hx, hy, hw, hh) = hub_geom;
+    let origin = hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
+    let (x, y) = satellite_pos(fan.t, rest, origin);
+    spec.face.x = x;
+    spec.face.y = y;
+    spec.input_enabled = fan.fully_open();
+}
+
+/// OS-local hooks for shared hub-fan tick / apply orchestration.
+///
+/// Hosts keep window move/paint/hit logic; this trait only supplies the
+/// place / input / visibility / flush side effects the shared orchestrators need.
+pub trait HubFanHost {
+    fn hub_fan(&mut self) -> &mut HubFanState;
+    fn place_all_satellites(&mut self);
+    fn rearm_satellite_input(&mut self);
+    fn apply_fan_visibility(&mut self);
+    fn sync_dismiss_arm(&mut self);
+    fn flush_after_fan(&mut self);
+}
+
+/// Apply an expand/collapse command, placing immediately when snapped or settled.
+pub fn apply_hub_fan_cmd<H: HubFanHost>(host: &mut H, expanded: bool, snap: bool) {
+    let was_open = host.hub_fan().fully_open();
+    host.hub_fan().set_expanded(expanded, snap);
+    if snap || !host.hub_fan().animating() {
+        host.place_all_satellites();
+    }
+    if was_open != host.hub_fan().fully_open() {
+        host.rearm_satellite_input();
+    }
+    host.apply_fan_visibility();
+    host.sync_dismiss_arm();
+    host.flush_after_fan();
+}
+
+/// Advance hub fan travel; returns whether travel is still in progress.
+pub fn tick_hub_fan<H: HubFanHost>(host: &mut H) -> bool {
+    let was_open = host.hub_fan().fully_open();
+    let was_traveling = host.hub_fan().open_or_traveling();
+    if !host.hub_fan().tick() {
+        if was_traveling && !host.hub_fan().open_or_traveling() {
+            host.apply_fan_visibility();
+        }
+        host.sync_dismiss_arm();
+        return false;
+    }
+    if !was_traveling {
+        host.apply_fan_visibility();
+    }
+    host.place_all_satellites();
+    if was_open != host.hub_fan().fully_open() {
+        host.rearm_satellite_input();
+    }
+    host.sync_dismiss_arm();
+    host.flush_after_fan();
+    true
 }
 
 #[cfg(test)]

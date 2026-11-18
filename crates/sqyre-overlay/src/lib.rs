@@ -76,7 +76,8 @@ pub use context_menu::{
 };
 #[cfg(feature = "runtime")]
 pub use host_common::{
-    point_in_rounded_rect, spec_contains, spec_contains_rounded, spec_delta, tip_refresh_decision,
+    apply_hub_fan_cmd, place_hub_satellite_face, point_in_rounded_rect, spec_contains,
+    spec_contains_rounded, spec_delta, tick_hub_fan, tip_refresh_decision, HubFanHost,
     OverlayButtonMove, OverlayButtonSpec, SpecDelta, TipButtonView, TipRefreshInput,
 };
 #[cfg(feature = "runtime")]
