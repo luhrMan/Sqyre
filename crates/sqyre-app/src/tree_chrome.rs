@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
 };
-use sqyre_persist::{CatalogView, ProgramCatalog};
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashMap;
 
@@ -966,6 +966,7 @@ mod tests {
     use super::*;
     use crate::image_view;
     use sqyre_domain::{ActionKind, CoordinateRef, PressState, ScalarValue};
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();

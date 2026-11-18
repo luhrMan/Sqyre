@@ -1,7 +1,7 @@
 //! Capture a collection's linked search area and write the static preview PNG.
 
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
-use sqyre_persist::{CatalogView, ProgramCatalog, ProgramCollection};
+use sqyre_persist::{CatalogView, ProgramCollection};
 use sqyre_ports::ScreenCapturer;
 use std::path::{Path, PathBuf};
 

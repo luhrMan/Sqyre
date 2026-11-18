@@ -7,7 +7,7 @@ use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::window_types::ProcessIcon;
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::{CatalogView, ProgramCatalog};
+use sqyre_persist::CatalogView;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
@@ -786,6 +786,7 @@ fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<Textu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     #[test]
     fn process_identity_key_keeps_shared_binaries_distinct() {

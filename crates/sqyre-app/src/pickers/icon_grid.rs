@@ -6,7 +6,7 @@ use crate::image_view;
 use crate::theme::{picker_drop_stroke, picker_selected_fill, picker_selected_stroke};
 use eframe::egui::{self, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::{CatalogView, ProgramCatalog};
+use sqyre_persist::CatalogView;
 
 pub(crate) fn item_tooltip_parts(catalog: CatalogView<'_>, target: &str) -> (String, Vec<String>) {
     let Some((program, rest)) = target.split_once(PROGRAM_DELIMITER) else {
@@ -505,6 +505,7 @@ pub fn paint_even_icon_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     #[test]
     fn after_icon_receives_fitted_icon_rect() {
