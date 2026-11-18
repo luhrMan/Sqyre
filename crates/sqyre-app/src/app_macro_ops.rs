@@ -192,7 +192,7 @@ impl SqyreApp {
 
     /// Surface a failed `persist_database` to the toolbar status line.
     ///
-    /// [`Self::persist_database`] already sets [`Workspace::save_error`] (macro-list banner);
+    /// [`Workspace::persist_database`] already sets [`Workspace::save_error`] (macro-list banner);
     /// this also pushes the same failure into the always-visible run status.
     pub(crate) fn report_persist_failure(&mut self, action: &str, err: &str) {
         crate::log::warn(format_args!("{action}: {err}"));
@@ -206,7 +206,7 @@ impl SqyreApp {
         if idx >= self.workspace.macros.len() {
             return false;
         }
-        match self.persist_database() {
+        match self.workspace.persist_database() {
             Ok(()) => {
                 self.refresh_macro_hotkey_bindings();
                 true
@@ -272,7 +272,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Create macro", &e);
             return;
@@ -293,7 +293,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Import AI macro", &e);
             return;
@@ -357,7 +357,7 @@ impl SqyreApp {
                 .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         }
 
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             // Roll back.
             if let Some(i) = self
                 .workspace
@@ -405,7 +405,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Import YAML macro", &e);
             return;
@@ -431,7 +431,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Duplicate macro", &e);
             return;
@@ -447,7 +447,7 @@ impl SqyreApp {
         };
         // Persist first; only drop history / YAML drafts after disk agrees.
         let removed = self.workspace.macros.remove(pos);
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.insert(pos, removed);
             self.report_persist_failure("Delete macro", &e);
             return;
@@ -505,7 +505,7 @@ impl SqyreApp {
         }
         self.macro_yaml_builder
             .on_macro_renamed(&old_name, &new_name);
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             // Roll memory (+ overlay / history / YAML drafts) back to the old name.
             if let Some(i) = self
                 .workspace
@@ -630,7 +630,7 @@ impl SqyreApp {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
-                if let Err(e) = self.persist_database() {
+                if let Err(e) = self.workspace.persist_database() {
                     // Persist failed after undo/redo — reverse so memory matches disk.
                     self.reverse_last_undo_redo(was_undo);
                     self.report_persist_failure(label, &e);
@@ -1011,7 +1011,7 @@ mod tests {
         sqyre_persist::with_sqyre_dir_override(dir.path().to_path_buf(), || {
             sqyre_persist::initialize_directories().unwrap();
             let mut app = SqyreApp::for_docs();
-            app.persist_database().expect("initial save");
+            app.workspace.persist_database().expect("initial save");
             make_unwritable(dir.path());
             f(&mut app);
             make_writable(dir.path());

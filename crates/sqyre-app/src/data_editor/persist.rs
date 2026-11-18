@@ -1136,7 +1136,7 @@ impl DataEditor {
         macros: &[Macro],
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
-        crate::SqyreApp::persist_database_for_editor(db, macros, catalog)?;
+        crate::workspace::Workspace::persist_database_for_editor(db, macros, catalog)?;
         self.rebuild_list_cache(catalog);
         Ok(())
     }

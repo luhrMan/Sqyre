@@ -140,7 +140,6 @@ use macro_yaml_builder::MacroYamlBuilderUi;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use run_session::RunSession;
-use sqyre_domain::Macro;
 use sqyre_hotkeys::{
     default_hotkeys, HotkeyCallbacks, HotkeyService, MacroRecordBridge, ScreenClickBridge,
 };
@@ -412,19 +411,6 @@ fn defer_hotkeys_at_startup(intro_pending: bool) -> bool {
     {
         intro_pending
     }
-}
-
-/// Sync macros/catalog into `db` and write `db.yaml`. The single database-save
-/// implementation shared by [`SqyreApp::persist_database`] and
-/// [`SqyreApp::persist_database_for_editor`] so the two call sites cannot drift.
-fn sync_and_save_database(
-    db: &mut Database,
-    macros: &[Macro],
-    catalog: &ProgramCatalog,
-) -> Result<(), String> {
-    db.set_programs_from_catalog(catalog);
-    db.replace_macros(macros.iter().cloned());
-    db.save_default().map_err(|e| e.to_string())
 }
 
 /// Results awaited from worker threads, drained on the UI thread each frame.
@@ -867,57 +853,6 @@ impl SqyreApp {
         if let Err(e) = self.hotkeys.start(callbacks) {
             crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
-    }
-
-    /// Sync working macros + catalog into `db` and write `db.yaml`.
-    pub(crate) fn persist_database(&mut self) -> Result<(), String> {
-        match sync_and_save_database(
-            &mut self.workspace.db,
-            &self.workspace.macros,
-            &self.workspace.catalog,
-        ) {
-            Ok(()) => {
-                self.workspace.save_error = None;
-                Ok(())
-            }
-            Err(msg) => {
-                self.workspace.save_error = Some(msg.clone());
-                Err(msg)
-            }
-        }
-    }
-
-    /// Data Editor's persist path: the same save implementation as [`Self::persist_database`],
-    /// plus catalog-generation continuity the editor's `ListCache` invalidation relies on.
-    ///
-    /// Takes explicit `db`/`macros`/`catalog` rather than `&mut self` because
-    /// `DataEditor::show` (and its `on_new`/`on_update`/`on_delete` helpers) run with those
-    /// fields already disjointly borrowed out of `SqyreApp`, so `&mut SqyreApp` isn't
-    /// available at the call site.
-    pub(crate) fn persist_database_for_editor(
-        db: &mut Database,
-        macros: &[Macro],
-        catalog: &mut ProgramCatalog,
-    ) -> Result<(), String> {
-        let previous_generation = catalog.generation();
-        // Runtime layout/scale are not serialized in db.yaml — preserve across reload.
-        let saved_rects = catalog.monitor_rects().to_vec();
-        let saved_res_key = catalog.resolution_key().to_string();
-        let saved_scale = catalog.runtime_scale();
-        sync_and_save_database(db, macros, catalog)?;
-        *catalog = Arc::unwrap_or_clone(db.program_catalog().map_err(|e| e.to_string())?);
-        // YAML reload resets generation to 0; keep ListCache invalidation working.
-        catalog.continue_generation_after_reload(previous_generation);
-        if !saved_rects.is_empty() {
-            catalog.set_monitor_rects(saved_rects);
-        }
-        if !saved_res_key.is_empty() {
-            catalog.set_resolution_key(saved_res_key);
-        }
-        catalog.set_runtime_scale(saved_scale);
-        // Refresh from live layout when available (won't shrink a richer cache).
-        apply_main_monitor_resolution(catalog);
-        Ok(())
     }
 
     /// Start a background update check when the preference is on.

@@ -632,7 +632,7 @@ pub fn action_toolbar(
                 &mut app.workspace.catalog,
             )
         {
-            if let Err(e) = app.persist_database() {
+            if let Err(e) = app.workspace.persist_database() {
                 app.report_persist_failure("Save after record prep", &e);
             }
         }

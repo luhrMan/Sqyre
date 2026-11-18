@@ -889,7 +889,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             ),
         });
         if result.catalog_changed {
-            if let Err(e) = app.persist_database() {
+            if let Err(e) = app.workspace.persist_database() {
                 app.report_persist_failure("Save after macro-record points", &e);
             }
         }
