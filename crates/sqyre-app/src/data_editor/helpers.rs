@@ -1,7 +1,7 @@
 //! Shared parsing / naming helpers for the data editor.
 
 use sqyre_domain::{GENERAL_PROGRAM, TEMPORARY_PROGRAM};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{CatalogView, ProgramCatalog};
 use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Recording scratch program — omitted from Data Editor lists and selectors.
@@ -9,7 +9,7 @@ pub(crate) fn is_editor_listed_program(name: &str) -> bool {
     name != TEMPORARY_PROGRAM
 }
 
-pub(crate) fn editor_program_names(catalog: &ProgramCatalog) -> impl Iterator<Item = &String> {
+pub(crate) fn editor_program_names(catalog: CatalogView<'_>) -> impl Iterator<Item = &String> {
     catalog
         .program_names()
         .filter(|n| is_editor_listed_program(n))
@@ -17,7 +17,7 @@ pub(crate) fn editor_program_names(catalog: &ProgramCatalog) -> impl Iterator<It
 
 /// Program a program dropdown defaults to: `General` when seeded, else the
 /// first listed program.
-pub(crate) fn default_editor_program(catalog: &ProgramCatalog) -> Option<String> {
+pub(crate) fn default_editor_program(catalog: CatalogView<'_>) -> Option<String> {
     if catalog.get(GENERAL_PROGRAM).is_some() {
         return Some(GENERAL_PROGRAM.to_string());
     }
@@ -64,7 +64,7 @@ pub(crate) fn unique_name(base: &str, exists: impl Fn(&str) -> bool) -> String {
 }
 
 /// Sorted unique tags across items in a program.
-pub(crate) fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str) -> Vec<String> {
+pub(crate) fn collect_program_item_tags(catalog: CatalogView<'_>, program: &str) -> Vec<String> {
     crate::macro_meta::unique_sorted(
         catalog
             .get(program)
@@ -79,7 +79,7 @@ pub(crate) fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str)
 }
 
 /// Sorted unique tags across all editor-listed programs.
-pub(crate) fn collect_all_item_tags(catalog: &ProgramCatalog) -> Vec<String> {
+pub(crate) fn collect_all_item_tags(catalog: CatalogView<'_>) -> Vec<String> {
     crate::macro_meta::unique_sorted(
         editor_program_names(catalog)
             .filter_map(|n| catalog.get(n))
@@ -117,7 +117,7 @@ pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
 
 /// Live layout for record→relative conversion. Prefers capture/X11 over a stale
 /// catalog snapshot so slot assignment matches the rubber-band cover.
-pub(crate) fn live_monitor_rects(catalog: &ProgramCatalog) -> Vec<sqyre_persist::MonitorRect> {
+pub(crate) fn live_monitor_rects(catalog: CatalogView<'_>) -> Vec<sqyre_persist::MonitorRect> {
     #[cfg(feature = "native-runtime")]
     {
         let live: Vec<sqyre_persist::MonitorRect> = crate::native_capture::preferred_rects()
@@ -138,7 +138,7 @@ pub(crate) fn live_monitor_rects(catalog: &ProgramCatalog) -> Vec<sqyre_persist:
 pub(crate) fn sync_live_monitor_rects(
     catalog: &mut ProgramCatalog,
 ) -> Vec<sqyre_persist::MonitorRect> {
-    let live = live_monitor_rects(catalog);
+    let live = live_monitor_rects(CatalogView::new(catalog));
     if !live.is_empty() {
         let cached = catalog.monitor_rects();
         if cached.is_empty() || live.len() >= cached.len() {
@@ -151,7 +151,7 @@ pub(crate) fn sync_live_monitor_rects(
 /// Origin of a 1-based monitor slot. Catalog layout first so this matches
 /// [`sqyre_persist::ProgramCatalog::resolve_search_area`]; live capture only
 /// when the catalog snapshot is empty.
-pub(crate) fn monitor_origin(catalog: &ProgramCatalog, monitor: u32) -> (i32, i32) {
+pub(crate) fn monitor_origin(catalog: CatalogView<'_>, monitor: u32) -> (i32, i32) {
     let slot = monitor.max(1) as usize;
     let cached = catalog.monitor_rects();
     let rects = if cached.is_empty() {
@@ -167,7 +167,7 @@ pub(crate) fn monitor_origin(catalog: &ProgramCatalog, monitor: u32) -> (i32, i3
 
 /// Relative form literals → absolute desktop coords for capture preview.
 pub(crate) fn form_absolute_xy(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     monitor: u32,
     x: Option<i32>,
     y: Option<i32>,
@@ -177,7 +177,7 @@ pub(crate) fn form_absolute_xy(
 }
 
 pub(crate) fn form_absolute_area(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     monitor: u32,
     lx: Option<i32>,
     ty: Option<i32>,
@@ -195,7 +195,7 @@ pub(crate) fn form_absolute_area(
 
 /// Monitor-relative form strings → absolute desktop pixels for capture/preview.
 pub(crate) fn form_desktop_area(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     monitor: u32,
     left: &str,
     top: &str,
@@ -230,7 +230,7 @@ pub(crate) fn copy_image_as_png(
 mod tests {
     use super::*;
     use sqyre_domain::ScalarValue;
-    use sqyre_persist::{ProgramCatalog, ProgramItem};
+    use sqyre_persist::{CatalogView, ProgramCatalog, ProgramItem};
 
     #[test]
     fn editor_lists_omit_temporary_program() {

@@ -5,7 +5,7 @@ use super::helpers::{parse_i32, rgba_color};
 use super::pixel_check;
 use super::{DataEditor, EditorTab};
 use sqyre_domain::{Macro, ScalarValue};
-use sqyre_persist::{ProgramCatalog, UserSettings};
+use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
 use sqyre_validate::{
     validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
     validate_search_area_literal_bounds,
@@ -479,7 +479,7 @@ impl FormState for ScreenCapForm {
         }
         let coord =
             sqyre_domain::CoordinateRef(format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER));
-        if ed.apply_screen_cap_reference(catalog, coord) {
+        if ed.apply_screen_cap_reference(CatalogView::from(catalog), coord) {
             return;
         }
         let res = catalog.resolution_key();
@@ -521,7 +521,7 @@ impl FormState for PixelCheckForm {
                 ed.selected_program.as_deref(),
                 ed.selected_entity.as_deref(),
             ) {
-                let variant = pixel_check::default_variant(catalog, prog, item);
+                let variant = pixel_check::default_variant(CatalogView::from(catalog), prog, item);
                 ed.pixel_check.variant = variant;
             }
         }

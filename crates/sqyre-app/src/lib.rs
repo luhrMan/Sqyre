@@ -143,7 +143,7 @@ use run_session::RunSession;
 use sqyre_hotkeys::{
     default_hotkeys, HotkeyCallbacks, HotkeyService, MacroRecordBridge, ScreenClickBridge,
 };
-use sqyre_persist::{Database, ProgramCatalog, UserSettings};
+use sqyre_persist::{CatalogView, Database, ProgramCatalog, UserSettings};
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 use tree_state::TreeState;
@@ -936,13 +936,13 @@ impl SqyreApp {
         };
         match picked.purpose {
             file_dialogs::PickPurpose::IconVariant => self.data_editor.add_picked_variant(
-                &self.workspace.catalog,
+                CatalogView::from(&self.workspace.catalog),
                 &mut self.assets.icon_cache,
                 self.settings_ui.settings(),
                 picked.path,
             ),
             file_dialogs::PickPurpose::MaskImage => self.data_editor.upload_mask_image(
-                &self.workspace.catalog,
+                CatalogView::from(&self.workspace.catalog),
                 &mut self.assets.icon_cache,
                 picked.path,
             ),

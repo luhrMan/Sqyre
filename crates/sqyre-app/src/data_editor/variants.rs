@@ -14,7 +14,7 @@ use eframe::egui;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 #[cfg(any(test, feature = "native-runtime"))]
 use sqyre_persist::ProgramItem;
-use sqyre_persist::{screen_cap_path, ProgramCatalog, UserSettings};
+use sqyre_persist::{screen_cap_path, CatalogView, ProgramCatalog, UserSettings};
 #[cfg(feature = "native-runtime")]
 use sqyre_validate::{validate_entity_name, validate_item_grid_fields};
 #[cfg(feature = "native-runtime")]
@@ -34,7 +34,7 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         icons: &mut IconCache,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         target: &str,
         item: &str,
     ) {
@@ -187,7 +187,7 @@ impl DataEditor {
     /// Finish [`Self::request_variant_pick`] with the chosen image.
     pub(crate) fn add_picked_variant(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
         path: PathBuf,
@@ -209,7 +209,7 @@ impl DataEditor {
 
     pub(crate) fn add_icon_variant(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
         name: &str,
@@ -250,7 +250,7 @@ impl DataEditor {
 
     pub(crate) fn overwrite_icon_variant(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         variant: &str,
         source: &std::path::Path,
@@ -275,7 +275,7 @@ impl DataEditor {
 
     pub(crate) fn delete_icon_variant(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
         variant: &str,
@@ -326,7 +326,7 @@ impl DataEditor {
     /// Finish [`Self::request_mask_image_pick`] with the chosen image.
     pub(crate) fn upload_mask_image(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         src: PathBuf,
     ) {
@@ -357,7 +357,7 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn remove_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+    pub(crate) fn remove_mask_image(&mut self, catalog: CatalogView<'_>, icons: &mut IconCache) {
         let (Some(prog), Some(mask)) =
             (self.selected_program.clone(), self.selected_entity.clone())
         else {
@@ -385,7 +385,7 @@ impl DataEditor {
     /// Returns `true` when the reference resolved to desktop bounds.
     pub(crate) fn apply_screen_cap_reference(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         coord: CoordinateRef,
     ) -> bool {
         let macro_ = Macro::new("", 0, vec![]);
@@ -443,7 +443,7 @@ impl DataEditor {
     #[cfg(feature = "native-runtime")]
     fn screen_cap_preview_image(
         &self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         previews: &crate::preview_tooltip::PreviewTooltipCache,
     ) -> Result<std::sync::Arc<image::RgbaImage>, String> {
         let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
@@ -477,7 +477,7 @@ impl DataEditor {
 
     pub(crate) fn save_screen_cap(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         previews: &crate::preview_tooltip::PreviewTooltipCache,
     ) {
         #[cfg(not(feature = "native-runtime"))]
@@ -607,7 +607,7 @@ impl DataEditor {
                 self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return;
             }
-            let img = match self.screen_cap_preview_image(catalog, previews) {
+            let img = match self.screen_cap_preview_image(CatalogView::new(catalog), previews) {
                 Ok(img) => img,
                 Err(e) => {
                     self.set_err(e);
@@ -625,8 +625,12 @@ impl DataEditor {
             match create_item_with_original(catalog, &prog, item, img.as_ref()) {
                 Ok(name) => {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
-                    if let Ok(path) = icon_variants::variant_path(catalog, &prog, &name, "Original")
-                    {
+                    if let Ok(path) = icon_variants::variant_path(
+                        CatalogView::new(catalog),
+                        &prog,
+                        &name,
+                        "Original",
+                    ) {
                         icons.invalidate_path(&path);
                     }
                     icons.invalidate_target(&target);
@@ -678,7 +682,7 @@ impl DataEditor {
 
     pub(crate) fn start_collection_capture(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         program: &str,
         collection: &sqyre_persist::ProgramCollection,
         rollback_collection: Option<(String, String)>,
@@ -780,7 +784,8 @@ fn create_item_with_original(
     catalog
         .upsert_item(program, item)
         .map_err(|e| e.to_string())?;
-    if let Err(e) = icon_variants::add_variant_image(catalog, program, &name, img) {
+    if let Err(e) = icon_variants::add_variant_image(CatalogView::new(catalog), program, &name, img)
+    {
         return Err(match catalog.delete_item(program, &name) {
             Ok(_) => e.to_string(),
             Err(del) => format!("{e}; also failed to remove item: {del}"),

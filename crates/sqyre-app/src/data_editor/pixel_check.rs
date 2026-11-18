@@ -21,7 +21,7 @@ mod inner {
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
-    use sqyre_persist::ProgramCatalog;
+    use sqyre_persist::CatalogView;
     use sqyre_ports::{DesktopRect, ScreenCapturer};
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
@@ -139,7 +139,7 @@ mod inner {
     }
 
     pub(crate) fn can_compute_pixel_check(
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
         variant: &str,
@@ -1054,7 +1054,7 @@ mod inner {
     }
 
     pub(crate) fn resolve_template(
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
         variant: &str,
@@ -1062,7 +1062,7 @@ mod inner {
         variant_path(catalog, prog, item, variant)
     }
 
-    pub(crate) fn default_variant(catalog: &ProgramCatalog, prog: &str, item: &str) -> String {
+    pub(crate) fn default_variant(catalog: CatalogView<'_>, prog: &str, item: &str) -> String {
         crate::icon_variants::variant_names(catalog, prog, item)
             .into_iter()
             .next()
@@ -1070,7 +1070,7 @@ mod inner {
     }
 
     pub(crate) fn variant_options(
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
     ) -> Vec<(String, String)> {
@@ -1103,7 +1103,7 @@ mod inner {
     impl crate::data_editor::DataEditor {
         pub(crate) fn request_pixel_check_match(
             &mut self,
-            catalog: &ProgramCatalog,
+            catalog: CatalogView<'_>,
             left: Option<i32>,
             top: Option<i32>,
             right: Option<i32>,

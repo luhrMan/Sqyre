@@ -51,9 +51,8 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) {
-        let CatalogPaint {
-            catalog, previews, ..
-        } = paint;
+        let catalog = paint.catalog;
+        let CatalogPaint { previews, .. } = paint;
         let FormCtx {
             screen_click,
             active_macro,
@@ -81,9 +80,8 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) {
-        let CatalogPaint {
-            catalog, previews, ..
-        } = paint;
+        let catalog = paint.catalog;
+        let CatalogPaint { previews, .. } = paint;
         let FormCtx {
             screen_click,
             active_macro,
@@ -125,7 +123,8 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) {
-        let CatalogPaint { catalog, icons, .. } = paint;
+        let catalog = paint.catalog;
+        let CatalogPaint { icons, .. } = paint;
         let FormCtx {
             active_macro,
             known,
@@ -387,11 +386,9 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) {
+        let catalog = paint.catalog;
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            icons, previews, ..
         } = paint;
         let FormCtx {
             screen_click,

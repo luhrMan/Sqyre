@@ -11,14 +11,16 @@ use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::widgets::searchable_combo;
 use eframe::egui;
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings};
+use sqyre_persist::{
+    CatalogView, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+};
 use std::cell::Cell;
 use std::collections::HashMap;
 
 impl DataEditor {
     /// Expand/collapse-all for All-programs entity lists — trailing control on
     /// the header search row (same placement as item/coord pickers).
-    pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+    pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: CatalogView<'_>) {
         let grouped = matches!(self.search_scope, SearchScope::AllPrograms)
             && self.tab != EditorTab::Programs;
         if !grouped {
@@ -60,7 +62,7 @@ impl DataEditor {
     pub(crate) fn draw_left_list(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
@@ -275,7 +277,7 @@ impl DataEditor {
                     let progs = self.grouped_program_list(catalog, grouped);
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -329,7 +331,7 @@ impl DataEditor {
                     let progs = self.grouped_program_list(catalog, grouped);
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -441,7 +443,7 @@ impl DataEditor {
                     };
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -559,7 +561,7 @@ impl DataEditor {
     /// Model count for `program` on the current tab (program dropdown badge).
     fn tab_model_count(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
         program: &str,
     ) -> usize {
@@ -584,7 +586,7 @@ impl DataEditor {
     }
 
     /// Cached entity keys for `program` on the current tab.
-    pub(crate) fn entity_names(&mut self, catalog: &ProgramCatalog, program: &str) -> Vec<String> {
+    pub(crate) fn entity_names(&mut self, catalog: CatalogView<'_>, program: &str) -> Vec<String> {
         self.ensure_list_cache(catalog);
         self.list_cache
             .entities_by_program
@@ -594,7 +596,7 @@ impl DataEditor {
     }
 
     /// Programs to iterate for the current list scope (grouped = all, else selection).
-    fn grouped_program_list(&mut self, catalog: &ProgramCatalog, grouped: bool) -> Vec<String> {
+    fn grouped_program_list(&mut self, catalog: CatalogView<'_>, grouped: bool) -> Vec<String> {
         self.ensure_list_cache(catalog);
         if grouped {
             self.list_cache.program_names.clone()
@@ -603,7 +605,7 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn ensure_list_cache(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn ensure_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key();
         if self.list_cache.catalog_generation == gen
@@ -615,7 +617,7 @@ impl DataEditor {
         self.rebuild_list_cache(catalog);
     }
 
-    pub(crate) fn rebuild_list_cache(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn rebuild_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key().to_string();
         let tab = self.tab;
@@ -637,7 +639,7 @@ impl DataEditor {
     pub(crate) fn select_program(
         &mut self,
         name: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
         if !is_editor_listed_program(name) {
@@ -645,7 +647,7 @@ impl DataEditor {
         }
         self.selected_program = Some(name.to_string());
         self.selected_entity = None;
-        self.load_form(catalog, settings);
+        self.load_form(catalog.inner(), settings);
     }
 
     /// Open Coordinates → Points with a filled entity (docs screenshots).
@@ -653,26 +655,26 @@ impl DataEditor {
         &mut self,
         program: &str,
         point: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
     ) {
         let settings = UserSettings::default();
         self.open = true;
-        self.switch_tab(EditorTab::Points, catalog, &settings);
+        self.switch_tab(EditorTab::Points, catalog.inner(), &settings);
         self.select_entity(program, point, catalog, &settings);
     }
 
     /// Open the editor on the Programs tab (docs / interaction harnesses).
-    pub(crate) fn open_programs_for_docs(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn open_programs_for_docs(&mut self, catalog: CatalogView<'_>) {
         let settings = UserSettings::default();
         self.open = true;
-        self.switch_tab(EditorTab::Programs, catalog, &settings);
+        self.switch_tab(EditorTab::Programs, catalog.inner(), &settings);
     }
 
     pub(crate) fn select_entity(
         &mut self,
         program: &str,
         entity: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
         if !is_editor_listed_program(program) {
@@ -680,7 +682,7 @@ impl DataEditor {
         }
         self.selected_program = Some(program.to_string());
         self.selected_entity = Some(entity.to_string());
-        self.load_form(catalog, settings);
+        self.load_form(catalog.inner(), settings);
     }
 
     /// Screen Cap collection row: select it and open the cell picker.
@@ -716,7 +718,7 @@ impl DataEditor {
     pub(crate) fn program_toggle(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
@@ -776,7 +778,7 @@ impl DataEditor {
     pub(crate) fn ui_program_combo(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
@@ -848,7 +850,7 @@ fn entity_rows(
     ui: &mut egui::Ui,
     tab: EditorTab,
     kind: Option<PreviewKind>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     prog: &str,
@@ -892,7 +894,7 @@ fn entity_row(
     ui: &mut egui::Ui,
     tab: EditorTab,
     kind: Option<PreviewKind>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     prog: &str,
@@ -940,7 +942,7 @@ fn program_rows_or_group(
         program_group_section(
             ui,
             g.tab,
-            g.catalog,
+            CatalogView::from(g.catalog),
             g.icons,
             g.compact_headers,
             prog,
@@ -968,7 +970,7 @@ fn program_rows_or_group(
 fn program_group_section(
     ui: &mut egui::Ui,
     tab: EditorTab,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     compact_headers: bool,
     prog: &str,
@@ -1118,7 +1120,7 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     }
 }
 
-fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str) -> Vec<String> {
+fn compute_entity_names(catalog: CatalogView<'_>, tab: EditorTab, program: &str) -> Vec<String> {
     let Some(p) = catalog.get(program) else {
         return Vec::new();
     };

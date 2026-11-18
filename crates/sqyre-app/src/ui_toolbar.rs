@@ -6,6 +6,7 @@ use crate::theme;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
 
@@ -323,7 +324,7 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
     let program_icons = app
         .assets
         .icon_cache
-        .program_name_icons(ui.ctx(), &app.workspace.catalog);
+        .program_name_icons(ui.ctx(), CatalogView::from(&app.workspace.catalog));
     let m = &mut app.workspace.macros[idx];
     let laid = app.workspace.macro_meta.paint_name_and_tags(
         ui,

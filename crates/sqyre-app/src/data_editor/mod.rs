@@ -32,7 +32,7 @@ use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_e
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, Database, OverlayButtonConfig, OverlayVisibilityGate,
+    default_overlay_position, CatalogView, Database, OverlayButtonConfig, OverlayVisibilityGate,
     OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
     DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
@@ -733,8 +733,8 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = default_editor_program(catalog) {
-                self.select_program(&name, catalog, settings);
+            if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
+                self.select_program(&name, CatalogView::from(catalog), settings);
             }
         }
     }
@@ -748,8 +748,8 @@ impl DataEditor {
         self.open = true;
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = default_editor_program(catalog) {
-                self.select_program(&name, catalog, settings);
+            if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
+                self.select_program(&name, CatalogView::from(catalog), settings);
             }
         }
     }
@@ -777,7 +777,7 @@ impl DataEditor {
         if self.selected_program.as_deref() == Some(name.as_str()) {
             return;
         }
-        self.select_program(&name, catalog, settings);
+        self.select_program(&name, CatalogView::from(catalog), settings);
     }
 
     /// Open on `tab`, ensure a program is selected, then create a new entity.
@@ -797,7 +797,7 @@ impl DataEditor {
     ) {
         self.request_open(ctx);
         self.switch_tab(EditorTab::Programs, catalog, settings);
-        self.select_program(name, catalog, settings);
+        self.select_program(name, CatalogView::from(catalog), settings);
     }
 
     pub(crate) fn open_entity(
@@ -811,7 +811,7 @@ impl DataEditor {
     ) {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
-        self.select_entity(program, entity, catalog, settings);
+        self.select_entity(program, entity, CatalogView::from(catalog), settings);
     }
 
     pub fn show(
@@ -897,7 +897,7 @@ impl DataEditor {
             env.ctx,
             &mut self.window_picker,
             &mut CatalogPaint {
-                catalog: env.catalog,
+                catalog: sqyre_persist::CatalogView::new(env.catalog),
                 icons: env.icons,
                 previews,
             },
@@ -947,7 +947,7 @@ impl DataEditor {
                 if matches!(self.tab, EditorTab::Overlay) {
                     self.form_overlay_gate_search_area = coord.0;
                 } else {
-                    self.apply_screen_cap_reference(env.catalog, coord);
+                    self.apply_screen_cap_reference(CatalogView::new(env.catalog), coord);
                 }
             }
             PickerResult::Items {
@@ -1013,12 +1013,12 @@ impl DataEditor {
     fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         ui.horizontal(|ui| {
             let just_opened = self.ui_search_toggle(ui);
-            self.program_toggle(ui, env.catalog, env.icons, env.settings);
+            self.program_toggle(ui, CatalogView::new(env.catalog), env.icons, env.settings);
             if self.search_open {
                 self.ui_search_controls(ui, env.catalog, env.icons, env.settings, just_opened);
             }
             if self.program_open {
-                self.ui_program_combo(ui, env.catalog, env.icons, env.settings);
+                self.ui_program_combo(ui, CatalogView::new(env.catalog), env.icons, env.settings);
             }
             crate::widgets::section_separator(ui);
             crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
@@ -1160,8 +1160,10 @@ impl DataEditor {
                     if settings.ui.data_editor_items_sort == Sort::Tags {
                         ui.separator();
                         ui.label(egui::RichText::new("Tag priority").strong().small());
-                        let suggestions = helpers::collect_all_item_tags(catalog);
-                        let program_icons = icons.program_name_icons(ui.ctx(), catalog);
+                        let suggestions =
+                            helpers::collect_all_item_tags(CatalogView::from(catalog));
+                        let program_icons =
+                            icons.program_name_icons(ui.ctx(), CatalogView::from(catalog));
                         let edit = crate::widgets::tag_chip_editor(
                             ui,
                             &mut settings.ui.data_editor_items_tag_priority,
@@ -1203,7 +1205,7 @@ impl DataEditor {
             }
         }
         // Right end of the search row — same slot pickers use for expand/collapse.
-        self.paint_search_expand_collapse(ui, catalog);
+        self.paint_search_expand_collapse(ui, CatalogView::from(catalog));
     }
 
     /// Every section's subtab buttons in one row — the subsection buttons are
@@ -1311,7 +1313,13 @@ impl DataEditor {
 
         let mut tag_submit = false;
 
-        self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
+        self.draw_left_list(
+            &mut left_ui,
+            CatalogView::new(env.catalog),
+            env.icons,
+            previews,
+            env.settings,
+        );
 
         let split_resp = ui.interact(
             split_rect,
@@ -1423,7 +1431,7 @@ impl DataEditor {
                 tag_submit = self.draw_form(
                     ui,
                     &mut CatalogPaint {
-                        catalog: env.catalog,
+                        catalog: sqyre_persist::CatalogView::new(env.catalog),
                         icons: env.icons,
                         previews,
                     },
@@ -1570,7 +1578,12 @@ impl DataEditor {
                 PendingConfirm::Delete { label } => {
                     ui.horizontal(|ui| {
                         if let Some(prog) = self.selected_program.as_deref() {
-                            crate::icon_cache::paint_program_icon(ui, env.catalog, env.icons, prog);
+                            crate::icon_cache::paint_program_icon(
+                                ui,
+                                CatalogView::new(env.catalog),
+                                env.icons,
+                                prog,
+                            );
                         }
                         ui.label(format!("Delete {label}? This cannot be undone."));
                     });
@@ -1614,15 +1627,25 @@ impl DataEditor {
                     }
                     PendingConfirm::DeleteVariant { variant } => {
                         self.confirm = None;
-                        self.delete_icon_variant(env.catalog, env.icons, env.settings, &variant);
+                        self.delete_icon_variant(
+                            CatalogView::new(env.catalog),
+                            env.icons,
+                            env.settings,
+                            &variant,
+                        );
                     }
                     PendingConfirm::OverwriteVariant { variant, source } => {
                         self.confirm = None;
-                        self.overwrite_icon_variant(env.catalog, env.icons, &variant, &source);
+                        self.overwrite_icon_variant(
+                            CatalogView::new(env.catalog),
+                            env.icons,
+                            &variant,
+                            &source,
+                        );
                     }
                     PendingConfirm::DeleteMaskImage => {
                         self.confirm = None;
-                        self.remove_mask_image(env.catalog, env.icons);
+                        self.remove_mask_image(CatalogView::new(env.catalog), env.icons);
                     }
                 },
                 crate::widgets::ConfirmCancel::None => {}
@@ -1665,7 +1688,7 @@ impl DataEditor {
             let name = self.variant_name_draft.trim().to_string();
             self.variant_prompt = None;
             self.variant_name_draft.clear();
-            self.add_icon_variant(catalog, icons, settings, &name, &source);
+            self.add_icon_variant(CatalogView::from(catalog), icons, settings, &name, &source);
         }
     }
 
@@ -1720,7 +1743,7 @@ impl DataEditor {
         }
         use helpers::form_desktop_area;
         let (lx, ty, rx, by) = form_desktop_area(
-            catalog,
+            CatalogView::from(catalog),
             self.form_monitor,
             &self.form_left,
             &self.form_top,
@@ -1732,7 +1755,7 @@ impl DataEditor {
             self.selected_entity.as_deref(),
         ) {
             (Some(prog), Some(item)) => pixel_check::can_compute_pixel_check(
-                catalog,
+                CatalogView::from(catalog),
                 prog,
                 item,
                 &self.pixel_check.variant,

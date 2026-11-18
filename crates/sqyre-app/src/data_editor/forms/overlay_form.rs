@@ -12,11 +12,9 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) -> bool {
+        let catalog = paint.catalog;
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            icons, previews, ..
         } = paint;
         let FormCtx { macros, .. } = ctx;
         if self.selected_program.is_none() || self.selected_entity.is_none() {

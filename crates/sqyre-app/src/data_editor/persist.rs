@@ -8,8 +8,9 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::window_types::ProcessIcon;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
-    merge_fs_warning, Database, FsWarn, OverlayButtonConfig, ProgramAtlas, ProgramCatalog,
-    ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings,
+    merge_fs_warning, CatalogView, Database, FsWarn, OverlayButtonConfig, ProgramAtlas,
+    ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+    UserSettings,
 };
 use sqyre_validate::validate_entity_name;
 
@@ -335,7 +336,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_collection(&prog, col.clone()) {
                     Ok(()) => match self.start_collection_capture(
-                        catalog,
+                        CatalogView::new(catalog),
                         &prog,
                         &col,
                         Some((prog.clone(), name.clone())),
@@ -735,8 +736,8 @@ impl DataEditor {
                     }
                 }
                 merge_fs_warning(&mut fs_warn, catalog.rename_item(&prog, &old, new_name)?);
-                icons.invalidate_item(catalog, &prog, &old);
-                icons.invalidate_item(catalog, &prog, new_name);
+                icons.invalidate_item(CatalogView::new(catalog), &prog, &old);
+                icons.invalidate_item(CatalogView::new(catalog), &prog, new_name);
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
@@ -1038,7 +1039,7 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_item(&prog, &name).inspect(|_| {
-                    icons.invalidate_item(catalog, &prog, &name);
+                    icons.invalidate_item(CatalogView::new(catalog), &prog, &name);
                     self.selected_entity = None;
                     self.reset_item_form();
                 })
@@ -1138,7 +1139,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
         crate::workspace::Workspace::persist_database_for_editor(db, macros, catalog)?;
-        self.rebuild_list_cache(catalog);
+        self.rebuild_list_cache(CatalogView::new(catalog));
         Ok(())
     }
 }

@@ -26,6 +26,7 @@ use sqyre_domain::{blank_action, Action, ActionKind, Macro};
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 #[cfg(feature = "native-runtime")]
 use sqyre_overlay::MacroOverlay;
+use sqyre_persist::CatalogView;
 use sqyre_persist::UserSettings;
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
@@ -262,15 +263,18 @@ impl SqyreApp {
     }
     pub fn open_data_editor(&mut self) {
         // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
-        self.data_editor
-            .open_points_for_docs("Demo Program", "center", &self.workspace.catalog);
+        self.data_editor.open_points_for_docs(
+            "Demo Program",
+            "center",
+            CatalogView::from(&self.workspace.catalog),
+        );
     }
 
     /// Open the data editor on the Programs tab (docs / interaction harnesses).
     /// Unlike Points/SearchAreas, New here does not arm screen-click recording.
     pub fn open_data_editor_programs_for_docs(&mut self) {
         self.data_editor
-            .open_programs_for_docs(&self.workspace.catalog);
+            .open_programs_for_docs(CatalogView::from(&self.workspace.catalog));
     }
 
     pub fn select_action(&mut self, id: sqyre_domain::ActionId) {

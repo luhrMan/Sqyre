@@ -451,11 +451,9 @@ impl DataEditor {
         ctx: FormCtx<'_>,
         settings: &UserSettings,
     ) {
+        let catalog = paint.catalog;
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            icons, previews, ..
         } = paint;
         let FormCtx {
             screen_click,

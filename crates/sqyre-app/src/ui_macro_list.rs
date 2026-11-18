@@ -13,7 +13,7 @@ use crate::SqyreApp;
 use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::format_hotkey;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use std::collections::{BTreeMap, HashMap};
 
 /// Empty-string group key for macros with no tags.
@@ -119,7 +119,7 @@ fn tag_header_label(tag: &str) -> &str {
 /// Programs without a process icon are skipped.
 fn program_tag_icons(
     ctx: &egui::Context,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
 ) -> HashMap<String, Vec<TextureHandle>> {
     let mut out: HashMap<String, Vec<TextureHandle>> = HashMap::new();
@@ -464,7 +464,7 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let program_icons = app
         .assets
         .icon_cache
-        .program_name_icons(ui.ctx(), &app.workspace.catalog);
+        .program_name_icons(ui.ctx(), CatalogView::from(&app.workspace.catalog));
     let filters = &app.workspace.hotkey_tag_filters;
     let pill_w = |ui: &egui::Ui, text: &str| {
         tag_pill_width(
@@ -683,8 +683,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ui.set_max_width(list_w);
                 let filter = app.macro_list_filter.trim().to_string();
                 let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
-                let tag_icons =
-                    program_tag_icons(ui.ctx(), &app.workspace.catalog, &mut app.assets.icon_cache);
+                let tag_icons = program_tag_icons(
+                    ui.ctx(),
+                    CatalogView::from(&app.workspace.catalog),
+                    &mut app.assets.icon_cache,
+                );
                 let compact = app.settings_ui.settings().ui.compact_program_headers;
                 let mut row_action: Option<MacroRowAction> = None;
                 let mut clicked_tag: Option<String> = None;

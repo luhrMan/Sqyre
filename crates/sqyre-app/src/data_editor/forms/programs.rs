@@ -5,6 +5,7 @@
 use super::super::DataEditor;
 use super::*;
 use crate::help_text as ht;
+use sqyre_persist::CatalogView;
 
 impl DataEditor {
     pub(super) fn draw_programs_form(
@@ -13,7 +14,8 @@ impl DataEditor {
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
     ) -> bool {
-        let CatalogPaint { catalog, icons, .. } = paint;
+        let catalog = paint.catalog;
+        let CatalogPaint { icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
         paint_name_field(ui, &mut self.form_name);
         let title = self.form_window_title.trim().to_string();
@@ -151,7 +153,8 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
     ) -> bool {
-        let CatalogPaint { catalog, icons, .. } = paint;
+        let catalog = paint.catalog;
+        let CatalogPaint { icons, .. } = paint;
         paint_name_field(ui, &mut self.form_name);
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
         if let (Some(prog), Some(item)) =
@@ -167,7 +170,7 @@ impl DataEditor {
     pub(super) fn paint_item_param_fields(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut crate::icon_cache::IconCache,
     ) -> bool {
         let program_tags = self
