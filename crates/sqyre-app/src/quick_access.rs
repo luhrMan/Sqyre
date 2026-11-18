@@ -523,7 +523,7 @@ impl SqyreApp {
     pub(crate) fn refresh_focused_program_hint(&mut self) {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
-            let hint = self.macro_overlay.last_foreign_focus();
+            let hint = self.overlay.macro_overlay.last_foreign_focus();
             let program = crate::hotkey_focus_tags::focused_editor_program(
                 &self.workspace.catalog,
                 hint.as_ref(),

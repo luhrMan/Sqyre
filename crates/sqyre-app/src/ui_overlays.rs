@@ -21,9 +21,10 @@ use std::sync::atomic::Ordering;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
-    app.macro_overlay
+    app.overlay
+        .macro_overlay
         .set_press_stops_run(app.settings_ui.settings().overlay.overlay_press_stops_run);
-    app.macro_overlay.set_show_over_sqyre(
+    app.overlay.macro_overlay.set_show_over_sqyre(
         app.settings_ui
             .settings()
             .overlay
@@ -35,18 +36,19 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             .overlay
             .overlay_buttons_in_detection,
     );
-    app.macro_overlay
-        .set_visibility_map(app.overlay_visibility.found_map());
-    let moves = app.macro_overlay.drain_moves();
+    app.overlay
+        .macro_overlay
+        .set_visibility_map(app.overlay.overlay_visibility.found_map());
+    let moves = app.overlay.macro_overlay.drain_moves();
     let ppp = ctx.pixels_per_point();
     apply_overlay_and_hub_moves(app, moves, ppp);
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
         app.snap_quick_access_fan_closed();
-        app.macro_overlay.set_hub_fan(false, true);
-        app.macro_overlay.set_hub_fan_interactive(false);
-        app.macro_overlay.set_hub_fan_dismiss(false);
+        app.overlay.macro_overlay.set_hub_fan(false, true);
+        app.overlay.macro_overlay.set_hub_fan_interactive(false);
+        app.overlay.macro_overlay.set_hub_fan_dismiss(false);
         // Comment above: hidden while recording — clear native buttons (do not leave last sync).
-        app.macro_overlay.sync(
+        app.overlay.macro_overlay.sync(
             ctx,
             &[],
             None,
@@ -71,9 +73,9 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     let hub_cfg = resolve_hub_overlay_config(app);
     let (hub_btns, buttons) = if relocate {
         app.snap_quick_access_fan_closed();
-        app.macro_overlay.set_hub_fan(false, true);
-        app.macro_overlay.set_hub_fan_interactive(false);
-        app.macro_overlay.set_hub_fan_dismiss(false);
+        app.overlay.macro_overlay.set_hub_fan(false, true);
+        app.overlay.macro_overlay.set_hub_fan_interactive(false);
+        app.overlay.macro_overlay.set_hub_fan_dismiss(false);
         let mut buttons: Vec<_> = {
             let all = app
                 .settings_ui
@@ -101,15 +103,17 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
                 // Host owns satellite travel on its poll clock so the fan stays
                 // smooth while Sqyre is unfocused (egui ROOT starves on Wayland).
                 // Specs always carry rested slots; host lerps from park → rest.
-                app.macro_overlay
+                app.overlay
+                    .macro_overlay
                     .set_hub_fan(app.quick_access.expanded, false);
                 let fan_t = app.quick_access_fan_t();
                 let fan_open = app.quick_access.expanded || fan_t > 0.001;
                 // Host gates satellite hits until fully open; pass expanded so a
                 // late egui frame is not required to arm ShapeInput.
-                app.macro_overlay
+                app.overlay
+                    .macro_overlay
                     .set_hub_fan_interactive(app.quick_access.expanded);
-                app.macro_overlay.set_hub_fan_dismiss(fan_open);
+                app.overlay.macro_overlay.set_hub_fan_dismiss(fan_open);
                 crate::quick_access::hub_overlay_buttons(hub, 1.0, ppp, false)
             }
             None => Vec::new(),
@@ -130,14 +134,15 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         .settings()
         .runtime
         .image_search_close_matches_distance;
-    app.overlay_visibility
+    app.overlay
+        .overlay_visibility
         .set_paused(app.run_session.state.running.load(Ordering::SeqCst));
-    app.overlay_visibility.tick(
+    app.overlay.overlay_visibility.tick(
         ctx,
         &buttons,
         &app.workspace.catalog,
         close_dist,
-        app.macro_overlay.last_foreign_focus(),
+        app.overlay.macro_overlay.last_foreign_focus(),
     );
     // While relocating, hub live-edits go through the normal overlay preview.
     // At runtime the hub is only in hub_btns — drop a hub preview there.
@@ -156,7 +161,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
                 .map(|idx| app.workspace.macros[idx].name.as_str())
         })
         .flatten();
-    app.macro_overlay.sync(
+    app.overlay.macro_overlay.sync(
         ctx,
         &buttons,
         preview.as_ref(),
@@ -812,7 +817,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         if app.tasks.pixel_sample.is_none() {
             if let Some((x, y)) = app.screen_click.take_color_point() {
                 #[cfg(target_os = "linux")]
-                if let Some(hex) = app.recording_overlay.sample_frozen_pixel_hex(x, y) {
+                if let Some(hex) = app.overlay.recording_overlay.sample_frozen_pixel_hex(x, y) {
                     app.tree.tooltip.apply_recorded_color(hex.clone());
                     app.add_action_picker.apply_recorded_color(hex);
                 } else {

@@ -174,20 +174,22 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            hidden_for_recording: false,
-            #[cfg(feature = "native-runtime")]
-            recording_overlay: RecordingOverlay::new(),
-            #[cfg(feature = "native-runtime")]
-            click_fx_overlay: crate::click_fx::ClickFxOverlay::new(),
-            #[cfg(all(target_os = "android", feature = "native-runtime"))]
-            screen_pick: Default::default(),
+            overlay: crate::OverlayShell {
+                #[cfg(not(target_arch = "wasm32"))]
+                hidden_for_recording: false,
+                #[cfg(feature = "native-runtime")]
+                recording_overlay: RecordingOverlay::new(),
+                #[cfg(feature = "native-runtime")]
+                click_fx_overlay: crate::click_fx::ClickFxOverlay::new(),
+                #[cfg(all(target_os = "android", feature = "native-runtime"))]
+                screen_pick: Default::default(),
+                #[cfg(feature = "native-runtime")]
+                macro_overlay: MacroOverlay::new(),
+                #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+                overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
+            },
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             pending_projection_run: None,
-            #[cfg(feature = "native-runtime")]
-            macro_overlay: MacroOverlay::new(),
-            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-            overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,

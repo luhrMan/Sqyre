@@ -469,6 +469,31 @@ pub(crate) struct AssetCaches {
     pub preview_tooltips: PreviewTooltipCache,
 }
 
+/// Desktop overlay hosts (recording outlines, click FX, macro buttons, pick).
+///
+/// Field cfgs match the previous flat `SqyreApp` layout; the bundle itself is
+/// always present so call sites share one `overlay.` prefix.
+pub(crate) struct OverlayShell {
+    /// Window was hidden because a point/search-area recording is armed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) hidden_for_recording: bool,
+    /// Outline windows for live search-area selection rect.
+    #[cfg(feature = "native-runtime")]
+    pub(crate) recording_overlay: crate::recording_overlay::RecordingOverlay,
+    /// Gold square flash where automated clicks land (Settings → Macros).
+    #[cfg(feature = "native-runtime")]
+    pub(crate) click_fx_overlay: click_fx::ClickFxOverlay,
+    /// Android: still of the previous app to place a recorded point or search area on.
+    #[cfg(all(target_os = "android", feature = "native-runtime"))]
+    pub(crate) screen_pick: crate::screen_pick::ScreenPick,
+    /// Always-on-top floating buttons that start macros.
+    #[cfg(feature = "native-runtime")]
+    pub(crate) macro_overlay: sqyre_overlay::MacroOverlay,
+    /// Image-search visibility gate for overlay buttons.
+    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+    pub(crate) overlay_visibility: overlay_visibility::OverlayVisibilityPoller,
+}
+
 pub struct SqyreApp {
     pub(crate) workspace: Workspace,
     pub(crate) run_session: RunSession,
@@ -492,27 +517,11 @@ pub struct SqyreApp {
     variables_panel: variables_panel::VariablesPanelUi,
     macro_prompt_builder: MacroPromptBuilderUi,
     macro_yaml_builder: MacroYamlBuilderUi,
-    /// Window was hidden because a point/search-area recording is armed.
-    #[cfg(not(target_arch = "wasm32"))]
-    hidden_for_recording: bool,
-    /// Outline windows for live search-area selection rect.
-    #[cfg(feature = "native-runtime")]
-    recording_overlay: crate::recording_overlay::RecordingOverlay,
-    /// Gold square flash where automated clicks land (Settings → Macros).
-    #[cfg(feature = "native-runtime")]
-    click_fx_overlay: click_fx::ClickFxOverlay,
-    /// Android: still of the previous app to place a recorded point or search area on.
-    #[cfg(all(target_os = "android", feature = "native-runtime"))]
-    screen_pick: crate::screen_pick::ScreenPick,
+    /// Recording / click-FX / macro-button / screen-pick overlay hosts.
+    overlay: OverlayShell,
     /// Android: a screen-reading run parked behind the consent modal.
     #[cfg(all(target_os = "android", feature = "native-runtime"))]
     pub(crate) pending_projection_run: Option<app_run::PendingProjectionRun>,
-    /// Always-on-top floating buttons that start macros.
-    #[cfg(feature = "native-runtime")]
-    macro_overlay: sqyre_overlay::MacroOverlay,
-    /// Image-search visibility gate for overlay buttons.
-    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-    overlay_visibility: overlay_visibility::OverlayVisibilityPoller,
     /// Auto-select Program macro tags for hotkeys while that program owns focus.
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
@@ -789,20 +798,22 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: MacroPromptBuilderUi::default(),
             macro_yaml_builder: MacroYamlBuilderUi::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            hidden_for_recording: false,
-            #[cfg(feature = "native-runtime")]
-            recording_overlay: recording_overlay::RecordingOverlay::new(),
-            #[cfg(feature = "native-runtime")]
-            click_fx_overlay: click_fx::ClickFxOverlay::new(),
-            #[cfg(all(target_os = "android", feature = "native-runtime"))]
-            screen_pick: Default::default(),
+            overlay: OverlayShell {
+                #[cfg(not(target_arch = "wasm32"))]
+                hidden_for_recording: false,
+                #[cfg(feature = "native-runtime")]
+                recording_overlay: recording_overlay::RecordingOverlay::new(),
+                #[cfg(feature = "native-runtime")]
+                click_fx_overlay: click_fx::ClickFxOverlay::new(),
+                #[cfg(all(target_os = "android", feature = "native-runtime"))]
+                screen_pick: Default::default(),
+                #[cfg(feature = "native-runtime")]
+                macro_overlay: sqyre_overlay::MacroOverlay::new(),
+                #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+                overlay_visibility: overlay_visibility::OverlayVisibilityPoller::new(),
+            },
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             pending_projection_run: None,
-            #[cfg(feature = "native-runtime")]
-            macro_overlay: sqyre_overlay::MacroOverlay::new(),
-            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-            overlay_visibility: overlay_visibility::OverlayVisibilityPoller::new(),
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
@@ -838,7 +849,8 @@ impl SqyreApp {
             feature = "native-runtime",
             any(target_os = "linux", target_os = "windows")
         ))]
-        app.macro_overlay
+        app.overlay
+            .macro_overlay
             .set_run_stop(app.run_session.state.stop.clone());
         if app.settings_ui.settings().runtime.restore_last_macro {
             let last_selected = app
@@ -1077,7 +1089,7 @@ impl eframe::App for SqyreApp {
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-        if self.hidden_for_recording
+        if self.overlay.hidden_for_recording
             && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
         {
             // Poll grab/snapshot while the main window is unmapped. If the
@@ -1112,7 +1124,7 @@ impl eframe::App for SqyreApp {
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
         #[cfg(feature = "native-runtime")]
-        self.click_fx_overlay.sync(
+        self.overlay.click_fx_overlay.sync(
             &self.run_session.click_fx,
             self.settings_ui.settings().runtime.click_flash_ms,
             self.settings_ui.settings().runtime.click_effect,
@@ -1280,10 +1292,11 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_tray");
 
             let t = web_time::Instant::now();
-            self.macro_overlay = sqyre_overlay::MacroOverlay::new();
+            self.overlay.macro_overlay = sqyre_overlay::MacroOverlay::new();
             #[cfg(feature = "overlay-buttons")]
             {
-                self.overlay_visibility = overlay_visibility::OverlayVisibilityPoller::new();
+                self.overlay.overlay_visibility =
+                    overlay_visibility::OverlayVisibilityPoller::new();
             }
             sqyre_capture::cap_log(
                 "APP",
@@ -1293,7 +1306,7 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_macro_overlay");
 
             let t = web_time::Instant::now();
-            self.recording_overlay = recording_overlay::RecordingOverlay::new();
+            self.overlay.recording_overlay = recording_overlay::RecordingOverlay::new();
             sqyre_capture::cap_log(
                 "APP",
                 "drop",
@@ -1302,7 +1315,7 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_recording_overlay");
 
             let t = web_time::Instant::now();
-            self.click_fx_overlay = click_fx::ClickFxOverlay::new();
+            self.overlay.click_fx_overlay = click_fx::ClickFxOverlay::new();
             sqyre_capture::cap_log(
                 "APP",
                 "drop",

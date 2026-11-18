@@ -125,8 +125,8 @@ impl SqyreApp {
             let should_hide = !cfg!(target_os = "android")
                 && self.settings_ui.settings().ui.hide_app_during_recording
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
-            if should_hide && !self.hidden_for_recording {
-                self.hidden_for_recording = true;
+            if should_hide && !self.overlay.hidden_for_recording {
+                self.overlay.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:hide_main");
                 // Same unmap path as tray Hide — ViewportCommand alone is not enough
@@ -137,8 +137,8 @@ impl SqyreApp {
                     sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
                     sqyre_capture::nudge_portal_capture_after_ui_hide();
                 }
-            } else if !should_hide && self.hidden_for_recording {
-                self.hidden_for_recording = false;
+            } else if !should_hide && self.overlay.hidden_for_recording {
+                self.overlay.hidden_for_recording = false;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:show_main");
                 self.tray.set_root_visible(ctx, true);
@@ -157,21 +157,21 @@ impl SqyreApp {
                 self.settings_ui.settings().ui.preview_desktop_outline,
             );
             let preview_outline = self.assets.preview_tooltips.take_desktop_outline();
-            self.recording_overlay.sync_with_macro_record(
+            self.overlay.recording_overlay.sync_with_macro_record(
                 ctx,
                 &self.screen_click,
                 Some(&self.macro_record_bridge),
                 preview_outline,
-                self.hidden_for_recording,
+                self.overlay.hidden_for_recording,
             );
             let markers = crate::macro_record::desktop_marker_points(
                 &self.macro_record,
                 &self.macro_record_bridge,
                 &crate::macro_record::RecordThresholds::from_settings(self.settings_ui.settings()),
             );
-            self.recording_overlay.sync_point_markers(&markers);
+            self.overlay.recording_overlay.sync_point_markers(&markers);
             #[cfg(target_os = "android")]
-            self.screen_pick.sync(ctx, &self.screen_click);
+            self.overlay.screen_pick.sync(ctx, &self.screen_click);
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
@@ -232,7 +232,12 @@ mod native_run {
             if self.run_session.state.running.load(Ordering::SeqCst) {
                 // Re-triggering the *running* macro follows the hotkey-while-running
                 // policy; any other start still waits for the run to end.
-                let running_name = self.macro_overlay.running_macro_slot().lock().clone();
+                let running_name = self
+                    .overlay
+                    .macro_overlay
+                    .running_macro_slot()
+                    .lock()
+                    .clone();
                 if running_name
                     .as_deref()
                     .is_some_and(|n| n.eq_ignore_ascii_case(name))
@@ -334,7 +339,7 @@ mod native_run {
                     click_fx: self.run_session.click_fx.clone(),
                     continue_wait: self.run_session.continue_wait.clone(),
                     macro_hotkeys: self.run_session.macro_hotkeys.clone(),
-                    running_macro: self.macro_overlay.running_macro_slot(),
+                    running_macro: self.overlay.macro_overlay.running_macro_slot(),
                     close_matches: settings.runtime.image_search_close_matches_distance,
                     variant_exit_early: settings.runtime.image_search_variant_exit_early,
                     release_held_inputs: settings.runtime.release_held_inputs_on_end,
@@ -616,7 +621,7 @@ mod native_run {
             click_fx: app.run_session.click_fx.clone(),
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
-            running_macro: app.macro_overlay.running_macro_slot(),
+            running_macro: app.overlay.macro_overlay.running_macro_slot(),
             close_matches: settings.runtime.image_search_close_matches_distance,
             variant_exit_early: settings.runtime.image_search_variant_exit_early,
             release_held_inputs: settings.runtime.release_held_inputs_on_end,

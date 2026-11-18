@@ -187,7 +187,7 @@ impl SqyreApp {
             } else {
                 format!("Hotkey: {chord_label}")
             };
-            self.macro_overlay.show_hotkey_chooser(
+            self.overlay.macro_overlay.show_hotkey_chooser(
                 ctx,
                 &self.pending_hotkey_macros,
                 title,
@@ -227,7 +227,7 @@ impl SqyreApp {
             target_os = "linux"
         ))]
         {
-            match self.macro_overlay.take_hotkey_chooser_result() {
+            match self.overlay.macro_overlay.take_hotkey_chooser_result() {
                 Some(sqyre_overlay::NativeHotkeyChooserResult::Picked(name)) => {
                     self.hotkey_chooser = None;
                     Some(name)
@@ -275,8 +275,8 @@ impl SqyreApp {
             target_os = "linux"
         ))]
         if self.hotkey_chooser.as_ref().is_some_and(|c| c.native) {
-            self.macro_overlay.hide_hotkey_chooser();
-            let _ = self.macro_overlay.take_hotkey_chooser_result();
+            self.overlay.macro_overlay.hide_hotkey_chooser();
+            let _ = self.overlay.macro_overlay.take_hotkey_chooser_result();
         }
         self.hotkey_chooser = None;
     }

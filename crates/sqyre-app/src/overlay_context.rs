@@ -9,7 +9,7 @@ impl SqyreApp {
     /// Apply Open settings / Disable picks from overlay hosts.
     #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
     pub(crate) fn drain_overlay_context_actions(&mut self, ctx: &egui::Context) {
-        let actions = self.macro_overlay.drain_context_actions();
+        let actions = self.overlay.macro_overlay.drain_context_actions();
         if actions.is_empty() {
             return;
         }
