@@ -94,13 +94,13 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
                 // smooth while Sqyre is unfocused (egui ROOT starves on Wayland).
                 // Specs always carry rested slots; host lerps from park → rest.
                 app.macro_overlay
-                    .set_hub_fan(app.quick_access_expanded, false);
+                    .set_hub_fan(app.quick_access.expanded, false);
                 let fan_t = app.quick_access_fan_t();
-                let fan_open = app.quick_access_expanded || fan_t > 0.001;
+                let fan_open = app.quick_access.expanded || fan_t > 0.001;
                 // Host gates satellite hits until fully open; pass expanded so a
                 // late egui frame is not required to arm ShapeInput.
                 app.macro_overlay
-                    .set_hub_fan_interactive(app.quick_access_expanded);
+                    .set_hub_fan_interactive(app.quick_access.expanded);
                 app.macro_overlay.set_hub_fan_dismiss(fan_open);
                 crate::quick_access::hub_overlay_buttons(hub, 1.0, ppp, false)
             }

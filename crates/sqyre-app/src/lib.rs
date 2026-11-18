@@ -510,12 +510,8 @@ pub struct SqyreApp {
     hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
     /// Near-cursor menu when multiple macros share a hotkey chord.
     hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
-    /// Edge hub radial fan is open (satellites travel toward rested slots).
-    quick_access_expanded: bool,
-    /// Fan progress at the start of the current open/close transition.
-    quick_access_fan_from: f32,
-    /// When the current fan transition started (`None` = settled at target).
-    quick_access_fan_anim_start: Option<std::time::Instant>,
+    /// Edge hub radial fan animation state.
+    quick_access: quick_access::QuickAccessFan,
     /// Macro to start once the current run stops (chooser pick while busy).
     start_when_idle: Option<String>,
     /// Live panic-key name shared with the global hotkey hook; synced from
@@ -799,9 +795,7 @@ impl SqyreApp {
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
-            quick_access_expanded: false,
-            quick_access_fan_from: 0.0,
-            quick_access_fan_anim_start: None,
+            quick_access: quick_access::QuickAccessFan::default(),
             start_when_idle: None,
             panic_key_slot,
             macro_list_open: true,

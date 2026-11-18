@@ -8,9 +8,9 @@ use crate::widgets::VectorIcon;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Sense};
 use sqyre_domain::{action_type_table, Macro};
-use sqyre_persist::{CatalogView, OverlayButtonConfig};
 #[cfg(test)]
 use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{CatalogView, OverlayButtonConfig};
 use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
