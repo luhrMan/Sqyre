@@ -7,7 +7,7 @@ use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::window_types::ProcessIcon;
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 #[cfg(not(target_arch = "wasm32"))]
@@ -64,7 +64,7 @@ impl IconCache {
     pub fn for_target(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         target: &str,
     ) -> Option<TextureHandle> {
         if self.missing.contains_key(target) {
@@ -94,7 +94,7 @@ impl IconCache {
     pub fn for_target_or_fallback(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         target: &str,
     ) -> TextureHandle {
         self.for_target(ctx, catalog, target)
@@ -105,7 +105,7 @@ impl IconCache {
     pub fn for_target_random_variant(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         target: &str,
     ) -> Option<TextureHandle> {
         let paths = demo_icons::merged_variant_paths(catalog, target);
@@ -217,7 +217,7 @@ impl IconCache {
     pub fn for_program(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         program: &str,
     ) -> Option<TextureHandle> {
         let program = program.trim();
@@ -238,7 +238,7 @@ impl IconCache {
     pub fn program_name_icons(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
     ) -> HashMap<String, TextureHandle> {
         let names: Vec<String> = catalog.program_names().cloned().collect();
         let mut out = HashMap::new();
@@ -326,7 +326,7 @@ impl IconCache {
     /// Item renames can reuse a destination path that previously held another
     /// item's texture, so invalidate by filename even after the old file has
     /// already been moved or deleted.
-    pub fn invalidate_item(&mut self, catalog: &ProgramCatalog, program: &str, item: &str) {
+    pub fn invalidate_item(&mut self, catalog: CatalogView<'_>, program: &str, item: &str) {
         let icons_dir = catalog.icons_dir(program);
         self.textures
             .retain(|path, _| !is_item_icon_path(path, &icons_dir, item));
@@ -461,7 +461,7 @@ fn rotating_variant_index(target: &str, count: usize, time_secs: f64) -> usize {
 /// frame followed by a tall one cannot resize grids, tree thumbs, or sibling layout.
 pub fn stable_icon_thumb_size(
     ctx: &egui::Context,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
     max_w: f32,
@@ -547,7 +547,7 @@ pub enum ProgramLabelStyle {
 /// name (full name on hover) and keep the child count on the right.
 pub fn paint_program_label(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     program: &str,
     style: ProgramLabelStyle,
@@ -681,7 +681,7 @@ fn paint_program_title(
 /// Paint a program's process icon when bound; returns whether an icon was drawn.
 pub fn paint_program_icon(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     program: &str,
 ) -> bool {
@@ -695,7 +695,7 @@ pub fn paint_program_icon(
 /// Leading OS icon for a catalog program name or `program~…` ref string.
 pub fn paint_leading_program_icon(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     text: &str,
 ) -> bool {
@@ -925,7 +925,7 @@ mod tests {
             let ctx = egui::Context::default();
             let mut icons = IconCache::new();
             let target = "Prog~Item";
-            for path in demo_icons::merged_variant_paths(&catalog, target) {
+            for path in demo_icons::merged_variant_paths(CatalogView::from(&catalog), target) {
                 assert!(icons.for_path(&ctx, &path).is_some());
             }
             let slot = stable_icon_thumb_size(&ctx, &catalog, &mut icons, target, 30.0, 18.0);

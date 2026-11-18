@@ -26,7 +26,7 @@ use sqyre_domain::{
     MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS, MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS,
     MIN_TYPE_DELAY_MS,
 };
-use sqyre_persist::{ProgramCatalog, MAX_WHILE_MAX_ITERATIONS};
+use sqyre_persist::{CatalogView, MAX_WHILE_MAX_ITERATIONS};
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
     validate_variable_references, EntryValidation,
@@ -743,7 +743,7 @@ pub fn paint_edit_fields(
 
 fn targets_editor(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     edit: TargetsSortEdit<'_>,
     picker: &mut ActivePicker,
@@ -905,7 +905,7 @@ struct TargetsSortEdit<'a> {
 }
 
 fn target_sort_infos(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
 ) -> Vec<sqyre_domain::ItemSortInfo> {
     targets
@@ -923,7 +923,7 @@ fn target_sort_infos(
 
 fn item_tag_suggestions(
     ctx: &egui::Context,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
     target_tags: &[String],
 ) -> Vec<String> {
@@ -995,7 +995,7 @@ fn picker_display_row(
 
 fn paint_coord_preview(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: PreviewKind,
@@ -1081,10 +1081,9 @@ fn coord_picker_row(
     kind: CoordKind,
     picker: &mut ActivePicker,
 ) {
+    let catalog = paint.catalog;
     let CatalogPaint {
-        catalog,
-        icons,
-        previews,
+        icons, previews, ..
     } = paint;
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
@@ -1144,7 +1143,7 @@ fn coord_unset_validation(kind: CoordKind, coord: &CoordinateRef) -> EntryValida
 fn attach_coord_hover(
     ui: &mut egui::Ui,
     response: &egui::Response,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: CoordKind,

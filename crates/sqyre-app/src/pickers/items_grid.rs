@@ -5,7 +5,7 @@ use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use eframe::egui;
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::{ProgramCatalog, ProgramData};
+use sqyre_persist::{CatalogView, ProgramData};
 
 pub fn items_icon_grid_collapse_id(program: &str) -> egui::Id {
     egui::Id::new(("items_icon_grid", program))
@@ -120,7 +120,7 @@ pub fn program_item_targets(
 /// grid. Returns the number of cells painted.
 pub fn paint_program_items_grid(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     targets: &[String],
     selected: &mut Vec<String>,
@@ -202,7 +202,7 @@ pub fn paint_program_items_grid(
 )]
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     search: &str,
     selected: &mut Vec<String>,

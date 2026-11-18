@@ -1,13 +1,13 @@
 //! Capture a collection's linked search area and write the static preview PNG.
 
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
-use sqyre_persist::{ProgramCatalog, ProgramCollection};
+use sqyre_persist::{CatalogView, ProgramCollection};
 use sqyre_ports::ScreenCapturer;
 use std::path::{Path, PathBuf};
 
 /// Resolve paths/coords on the UI thread; capture runs on a worker.
 pub fn collection_capture_job(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(PathBuf, i32, i32, i32, i32), String> {
@@ -32,7 +32,7 @@ pub fn capture_search_area_to_png(
 #[cfg(test)]
 pub fn capture_and_save_collection_image_with(
     capturer: &mut dyn ScreenCapturer,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(), String> {
@@ -42,7 +42,7 @@ pub fn capture_and_save_collection_image_with(
 
 /// Resolve the collection's linked search area to screen coordinates.
 pub fn resolve_collection_capture_rect(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(i32, i32, i32, i32), String> {

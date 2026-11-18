@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
 };
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashMap;
 
@@ -161,7 +161,7 @@ fn overflow_pill_width(ui: &egui::Ui, hidden: usize) -> f32 {
 
 fn target_thumb_size(
     ui: &egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
 ) -> Vec2 {
@@ -267,7 +267,7 @@ pub(crate) fn paint_summary_pill_cell(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     theme: VarTheme<'_>,
     band_h: f32,
@@ -330,7 +330,7 @@ fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
 
 fn paint_target_thumb(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
@@ -363,7 +363,7 @@ fn paint_target_thumb(
 fn paint_image_search_extras(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     is_dark: bool,
     drag_handle: &mut egui::Rect,
@@ -442,7 +442,7 @@ fn paint_image_search_extras(
 pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
 ) {
     let ActionKind::ImageSearch(d) = &action.kind else {
@@ -580,7 +580,7 @@ impl ImageSearchTipTagGroup {
 /// Member order matches the action's Search sorting (`sort_by` / `sort_then` /
 /// `tag_priority`) so the view tip agrees with the edit tip.
 pub(crate) fn image_search_tip_tag_groups(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
     sort_then: sqyre_domain::ItemSortThen,
@@ -626,7 +626,7 @@ pub(crate) fn image_search_tip_tag_groups(
 /// catalogs. Identical inputs share one entry; catalog mutations invalidate it.
 pub(crate) fn cached_sorted_image_search_targets(
     ctx: &egui::Context,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
@@ -667,7 +667,7 @@ pub(crate) fn cached_sorted_image_search_targets(
 
 /// Display / search order for Image Search targets (explicit + tag expansion).
 pub(crate) fn sorted_image_search_targets(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
@@ -691,7 +691,7 @@ pub(crate) fn sorted_image_search_targets(
     sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
 }
 
-fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemRef> {
+fn catalog_item_refs(catalog: CatalogView<'_>) -> Vec<sqyre_domain::CatalogItemRef> {
     use sqyre_domain::{CatalogItemRef, PROGRAM_DELIMITER};
     catalog
         .program_names()
@@ -717,7 +717,7 @@ fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemR
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     known_vars: &KnownVariableNames,
     is_dark: bool,
@@ -976,7 +976,7 @@ mod tests {
     #[test]
     fn image_search_tip_tag_groups_lists_names_and_members() {
         use sqyre_domain::{ItemSortBy, ItemSortThen};
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
         let mut cat = ProgramCatalog::default();
@@ -1465,10 +1465,11 @@ mod tests {
     }
 
     fn paint_test_row(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> RowInteraction {
+        let catalog = ProgramCatalog::default();
         paint_action_row(
             ui,
             action,
-            &ProgramCatalog::default(),
+            CatalogView::from(&catalog),
             &mut IconCache::new(),
             &KnownVariableNames::default(),
             is_dark,
@@ -1498,10 +1499,11 @@ mod tests {
                 ..Default::default()
             },
         )));
+        let catalog = ProgramCatalog::default();
         paint_action_row(
             ui,
             &search,
-            &ProgramCatalog::default(),
+            CatalogView::from(&catalog),
             &mut IconCache::new(),
             &KnownVariableNames::default(),
             true,

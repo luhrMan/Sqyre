@@ -158,7 +158,7 @@ pub fn path_for_item_target(target: &str) -> Option<PathBuf> {
 }
 
 /// Disk paths plus any in-memory demo variants for `target`.
-pub fn merged_variant_paths(catalog: &sqyre_persist::ProgramCatalog, target: &str) -> Vec<PathBuf> {
+pub fn merged_variant_paths(catalog: sqyre_persist::CatalogView<'_>, target: &str) -> Vec<PathBuf> {
     let mut paths = catalog.variant_paths(target);
     for p in variant_paths_for_target(target) {
         if !paths.contains(&p) {

@@ -384,7 +384,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
         crate::macro_yaml_builder::YamlBuilderOutcome::None => {}
     }
     if let Some(action) = {
-        let catalog = &app.workspace.catalog;
+        let catalog = sqyre_persist::CatalogView::from(&app.workspace.catalog);
         let icons = &mut app.assets.icon_cache;
         let previews = &mut app.assets.preview_tooltips;
         let macros: Vec<(String, Vec<String>)> = app

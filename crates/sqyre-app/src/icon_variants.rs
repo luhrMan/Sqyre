@@ -2,7 +2,7 @@
 
 use crate::data_editor::helpers::copy_image_as_png;
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::{confined_join, ProgramCatalog};
+use sqyre_persist::{confined_join, CatalogView};
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ pub struct VariantExistsError {
 /// `Err` when `item`/`variant` from `db.yaml` is not a safe path component —
 /// imported names reach the filesystem here.
 pub fn variant_path(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant: &str,
@@ -37,7 +37,7 @@ pub fn variant_path(
     confined_join(&dir, &name).map_err(|e| format!("unsafe icon path: {e}"))
 }
 
-pub fn variant_names(catalog: &ProgramCatalog, program: &str, item: &str) -> Vec<String> {
+pub fn variant_names(catalog: CatalogView<'_>, program: &str, item: &str) -> Vec<String> {
     let target = format!("{program}{PROGRAM_DELIMITER}{item}");
     let mut names: Vec<String> = catalog
         .variant_paths(&target)
@@ -99,7 +99,7 @@ pub enum AddVariantError {
 }
 
 fn prepare_new_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -139,7 +139,7 @@ fn prepare_new_variant(
 }
 
 pub fn add_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -154,7 +154,7 @@ pub fn add_variant(
 /// Write `img` as a new variant PNG. The first variant is always named `Original`.
 #[cfg(any(test, feature = "native-runtime"))]
 pub fn add_variant_image(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     img: &image::RgbaImage,
@@ -167,7 +167,7 @@ pub fn add_variant_image(
 }
 
 pub fn overwrite_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -186,7 +186,7 @@ pub fn overwrite_variant(
 }
 
 pub fn delete_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -211,7 +211,7 @@ pub fn delete_variant(
     }
 }
 
-fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
+fn invalidate_item_templates(catalog: CatalogView<'_>, program: &str, item: &str) {
     let prefix = catalog.icons_dir(program).join(item);
     sqyre_persist::invalidate_icon_fs_cache_under(&prefix);
     #[cfg(feature = "native-runtime")]

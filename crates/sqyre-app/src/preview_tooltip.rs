@@ -5,7 +5,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::RgbaImage;
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
-use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
+use sqyre_persist::{CatalogView, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{clamp_search_rect, CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -268,7 +268,7 @@ impl PreviewTooltipCache {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         program: &str,
         name: &str,
         kind: PreviewKind,
@@ -314,7 +314,7 @@ impl PreviewTooltipCache {
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         force: bool,
@@ -360,7 +360,7 @@ impl PreviewTooltipCache {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         help: &str,
@@ -1073,7 +1073,7 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
 }
 
 fn ref_preview_spec(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     macro_: &Macro,
     coord_ref: &CoordinateRef,
     kind: PreviewKind,
@@ -1133,7 +1133,7 @@ enum EntityPreviewError {
 }
 
 fn entity_preview_spec(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     name: &str,
     kind: PreviewKind,
