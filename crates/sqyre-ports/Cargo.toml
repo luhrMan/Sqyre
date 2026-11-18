@@ -14,6 +14,7 @@ parking_lot = { workspace = true }
 rayon = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 thiserror = { workspace = true }
+web-time = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

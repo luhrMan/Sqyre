@@ -3,12 +3,12 @@
 //! GNOME 46+ ignores `NotifyPointer*` once the session is on EIS. Absolute
 //! pointer also needs ScreenCast streams on the same Remote Desktop session.
 
-use crate::cap_log;
 use crate::error::CaptureError;
 use reis::ei::{self, button::ButtonState, keyboard::KeyState};
 use reis::event::{Device, DeviceCapability, EiEvent, EiEventConverter, Region};
 use reis::handshake::EiHandshaker;
 use reis::PendingRequestResult;
+use sqyre_ports::cap_log;
 use sqyre_ports::{cosmic_desktop_session, AutomationError, APP_ID};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};

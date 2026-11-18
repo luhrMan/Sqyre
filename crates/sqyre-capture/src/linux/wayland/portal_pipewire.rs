@@ -7,7 +7,6 @@ use super::portal_session::{
 };
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
-use crate::{cap_log, mark_site};
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
 use pipewire as pw;
@@ -21,6 +20,7 @@ use pw::spa::buffer::{
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
+use sqyre_ports::{cap_log, mark_site};
 use sqyre_ports::{DesktopRect, RgbCapture, APP_ID};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -859,7 +859,7 @@ impl Drop for PortalCapturer {
             // On process quit, don't block the UI thread on PipeWire / portal
             // Session::Close — the kernel reaps the thread and D-Bus disconnect
             // ends the screencast. Mid-session reset still joins.
-            if crate::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 cap_log("PORTAL", "drop", "pw_join=abandon");
                 mark_site("portal:drop:abandon_pw");
                 // Detach: dropping JoinHandle without join does not abort the thread.
@@ -1302,7 +1302,7 @@ fn portal_pw_thread(
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
     // Session Drop may call portal Close over D-Bus (often ~1–2s on GNOME).
     // On process exit, forget the hold — disconnect tears the session down.
-    if crate::process_exiting() {
+    if sqyre_ports::process_exiting() {
         mark_site("portal:pw:forget_session");
         std::mem::forget(portal_hold);
     } else {

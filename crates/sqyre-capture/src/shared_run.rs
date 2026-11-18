@@ -41,7 +41,7 @@ macro_rules! define_shared_run_capturer {
                 // ended) can never produce another frame — drop it and reopen
                 // below instead of serving a permanently failing Arc.
                 if matches!(slot.as_ref(), Some(Ok(c)) if c.is_dead()) {
-                    $crate::cap_log("PORTAL", "pw", "capturer dead; reopening shared session");
+                    ::sqyre_ports::cap_log("PORTAL", "pw", "capturer dead; reopening shared session");
                     let stale = slot.take();
                     // Dropping the last Arc joins the pw thread (~session teardown);
                     // never do that under the slot lock.

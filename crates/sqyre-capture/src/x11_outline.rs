@@ -26,7 +26,8 @@ use crate::outline_geometry::{
     edge_placements, outline_should_clear, STROKE_B, STROKE_G, STROKE_R,
 };
 pub use crate::outline_rect::OutlineRect;
-use crate::{cap_log, event_log, CaptureError};
+use crate::CaptureError;
+use sqyre_ports::{cap_log, event_log};
 
 /// `ShapeInput` from `X11/extensions/shapeconst.h` — empty region = click-through.
 const SHAPE_INPUT: c_int = 2;
@@ -311,7 +312,7 @@ impl SelectionOutline {
 
 impl Drop for SelectionOutline {
     fn drop(&mut self) {
-        crate::mark_site("outline:drop:start");
+        sqyre_ports::mark_site("outline:drop:start");
         let t0 = std::time::Instant::now();
         // Destroy windows without XFlush (avoids multi-second stalls under a busy
         // fullscreen XWayland client). Close each Display on a helper thread —
@@ -339,7 +340,7 @@ impl Drop for SelectionOutline {
         for dpy in to_close {
             schedule_x_close(dpy);
         }
-        crate::cap_log(
+        sqyre_ports::cap_log(
             "OUTLINE",
             "drop",
             &format!(
@@ -348,7 +349,7 @@ impl Drop for SelectionOutline {
                 crate::x11_secondary::count()
             ),
         );
-        crate::mark_site("outline:drop:done");
+        sqyre_ports::mark_site("outline:drop:done");
     }
 }
 
@@ -382,7 +383,7 @@ pub(crate) fn open_x_display() -> Result<*mut Display, CaptureError> {
     unsafe {
         let display = XOpenDisplay(ptr::null());
         if display.is_null() {
-            crate::diag::note(&format!(
+            sqyre_ports::note(&format!(
                 "outline: XOpenDisplay failed secondary={}",
                 crate::x11_secondary::count()
             ));

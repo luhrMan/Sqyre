@@ -1,11 +1,13 @@
-//! OS-facing port traits (capture, automation, focus) and execution telemetry
-//! (action log, highlight, runtime vars) shared by adapters and the macro executor.
+//! OS-facing port traits (capture, automation, focus), diagnostic logging, and
+//! execution telemetry (action log, highlight, runtime vars) shared by adapters
+//! and the macro executor.
 
 mod action_log;
 mod automation_error;
 mod capture_error;
 mod click_fx;
 mod detection_span;
+mod diag;
 mod domain_ports;
 mod highlight;
 mod image_limits;
@@ -22,6 +24,11 @@ pub use automation_error::AutomationError;
 pub use capture_error::{CaptureError, NotReady};
 pub use click_fx::{ClickFxSink, SharedClickFx};
 pub use detection_span::{overlay_macro_hide_held, set_overlay_macro_hide_hooks, OverlayMacroHide};
+pub use diag::{
+    cap_log, disk_logging_enabled, event_log, log_dir, mark_site, note, process_exiting,
+    read_last_site, set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE,
+    DIAG_LOG_FILE, LAST_SITE_FILE, SITE_HIST_FILE,
+};
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };

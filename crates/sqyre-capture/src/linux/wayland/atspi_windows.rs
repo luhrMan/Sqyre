@@ -53,7 +53,7 @@ pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     for app in walk_applications_from(&conn, kids)? {
         out.extend(app);
     }
-    crate::cap_log(
+    sqyre_ports::cap_log(
         "FOCUS",
         if out.is_empty() { "atspi" } else { "ok" },
         &format!("atspi root_children={root_n} windows={}", out.len()),
@@ -212,7 +212,7 @@ fn log_empty_walk(conn: &Connection, kids: &[AtspiRef]) {
             .unwrap_or_else(|e| format!("err:{e}"));
         let name = name_of(conn, app).unwrap_or_else(|e| format!("err:{e}"));
         let frames = children(conn, app).map(|c| c.len()).unwrap_or(0);
-        crate::note(&format!(
+        sqyre_ports::note(&format!(
             "atspi: empty walk[{i}] dest={} role={role} name={name:?} frames={frames}",
             app.dest
         ));
@@ -361,7 +361,7 @@ fn enable_toolkit_a11y(session: &Connection) {
         return;
     }
     if let Err(e) = status.set_property("IsEnabled", true) {
-        crate::note(&format!("atspi: enable IsEnabled: {e}"));
+        sqyre_ports::note(&format!("atspi: enable IsEnabled: {e}"));
     }
 }
 
@@ -376,7 +376,7 @@ fn register_event_listener(conn: &Connection) {
         "object:children-changed",
     ] {
         if let Err(e) = proxy.call::<_, _, ()>("RegisterEvent", &ev) {
-            crate::note(&format!("atspi: RegisterEvent {ev}: {e}"));
+            sqyre_ports::note(&format!("atspi: RegisterEvent {ev}: {e}"));
         }
     }
 }

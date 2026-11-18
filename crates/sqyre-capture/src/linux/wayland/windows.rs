@@ -31,7 +31,7 @@ pub(crate) fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
         clients.as_deref().unwrap_or(&[]),
         x11.as_deref().unwrap_or(&[]),
     ]);
-    crate::cap_log(
+    sqyre_ports::cap_log(
         "FOCUS",
         if merged.is_empty() { "fail" } else { "ok" },
         &format!(

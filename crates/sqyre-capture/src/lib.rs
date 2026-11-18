@@ -4,7 +4,6 @@
 mod android_capture;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod click_fx_host;
-mod diag;
 mod error;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod grab_stub;
@@ -50,11 +49,6 @@ mod x11_secondary;
 #[cfg(target_os = "linux")]
 mod x11_snapshot_overlay;
 
-pub use diag::{
-    cap_log, disk_logging_enabled, event_log, log_dir, mark_site, note, process_exiting,
-    read_last_site, set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE,
-    DIAG_LOG_FILE, LAST_SITE_FILE,
-};
 pub use error::{linux_session_capture_warning, CaptureError, NotReady};
 #[cfg(target_os = "linux")]
 pub use linux::{
