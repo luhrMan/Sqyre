@@ -1282,7 +1282,7 @@ pub struct DataLifecycle {
 }
 
 /// User-tunable Sqyre preferences.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct UserSettings {
     #[serde(default)]
     pub runtime: RuntimePrefs,
@@ -1554,18 +1554,6 @@ impl Default for DataLifecycle {
             backup_dir: String::new(),
             update_check_interval_hours: DEFAULT_UPDATE_CHECK_INTERVAL_HOURS,
             update_include_prerelease: false,
-        }
-    }
-}
-
-impl Default for UserSettings {
-    fn default() -> Self {
-        Self {
-            runtime: RuntimePrefs::default(),
-            ui: UiLayout::default(),
-            overlay: OverlaySettings::default(),
-            sound: SoundSettings::default(),
-            data: DataLifecycle::default(),
         }
     }
 }
@@ -2377,7 +2365,6 @@ mod tests {
                 update_include_prerelease: true,
                 ..Default::default()
             },
-            ..Default::default()
         };
         let back: UserSettings = serde_yaml::from_str(&serde_yaml::to_string(&s).unwrap()).unwrap();
         assert!(back.runtime.diagnostic_logging);
