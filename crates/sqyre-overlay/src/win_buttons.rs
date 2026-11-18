@@ -1074,7 +1074,7 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
     let over_hub = state.buttons.values().any(|btn| {
         btn.mapped
             && crate::hub_fan::is_hub_chrome_id(&btn.spec.id)
-            && inside_rounded(
+            && point_in_rounded_rect(
                 pt.x - btn.spec.face.x,
                 pt.y - btn.spec.face.y,
                 btn.spec.face.w,
