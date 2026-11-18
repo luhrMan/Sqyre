@@ -710,6 +710,28 @@ pub fn monitor_count() -> usize {
     wrap.monitor_sizes().map(|s| s.len().max(1)).unwrap_or(1)
 }
 
+/// Process-wide [`sqyre_ports::MonitorLayout`] for app UI / catalog seeding.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OsMonitorLayout;
+
+impl sqyre_ports::MonitorLayout for OsMonitorLayout {
+    fn preferred_rects(&self) -> Vec<sqyre_ports::DesktopRect> {
+        preferred_monitor_rects()
+    }
+
+    fn count(&self) -> usize {
+        monitor_count()
+    }
+
+    fn primary_resolution_key(&self) -> Option<String> {
+        main_monitor_resolution_key()
+    }
+
+    fn primary_scale(&self) -> Option<f32> {
+        main_monitor_scale()
+    }
+}
+
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
