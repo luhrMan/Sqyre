@@ -35,9 +35,10 @@ use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX}
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
 use sqyre_capture::{
-    event_log, mark_site, note, register_secondary_x_display, unregister_secondary_x_display,
-    OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE,
+    register_secondary_x_display, unregister_secondary_x_display, OVERLAY_TIP_WM_TITLE,
+    OVERLAY_WM_TITLE,
 };
+use sqyre_ports::{event_log, mark_site, note};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::os::fd::RawFd;
@@ -239,8 +240,8 @@ impl X11ButtonHost {
         if let Some(join) = self.join.lock().take() {
             // XCloseDisplay / flush under a busy XWayland client can stall for
             // seconds; on process exit abandon the host thread.
-            if sqyre_capture::process_exiting() {
-                sqyre_capture::note("overlay-x11: shutdown abandon join");
+            if sqyre_ports::process_exiting() {
+                sqyre_ports::note("overlay-x11: shutdown abandon join");
                 std::mem::forget(join);
             } else {
                 let _ = join.join();

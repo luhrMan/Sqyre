@@ -921,8 +921,8 @@ fn show_edit_window(
                 if refit {
                     edit.auto_fit = true;
                     #[cfg(feature = "native-runtime")]
-                    if sqyre_capture::disk_logging_enabled() {
-                        sqyre_capture::event_log(
+                    if sqyre_ports::disk_logging_enabled() {
+                        sqyre_ports::event_log(
                             "SQYRE_EDIT_TIP",
                             &[
                                 ("refit", "advanced"),
@@ -938,8 +938,8 @@ fn show_edit_window(
                         // Settle only after a frame that applied fit_min_h.
                         edit.auto_fit = false;
                         #[cfg(feature = "native-runtime")]
-                        if sqyre_capture::disk_logging_enabled() {
-                            sqyre_capture::event_log(
+                        if sqyre_ports::disk_logging_enabled() {
+                            sqyre_ports::event_log(
                                 "SQYRE_EDIT_TIP",
                                 &[
                                     ("fit", "settle"),

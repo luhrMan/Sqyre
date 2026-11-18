@@ -91,7 +91,7 @@ pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
             .map(|&(x, y, w, h)| format!("{w}x{h}+{x}+{y}"))
             .collect::<Vec<_>>()
             .join(";");
-        sqyre_capture::event_log(
+        sqyre_ports::event_log(
             "SQYRE_GENERAL",
             &[("monitors", &n.to_string()), ("layout", &layout)],
         );

@@ -244,7 +244,7 @@ fn native_options() -> eframe::NativeOptions {
             builder.with_x11();
         }));
         #[cfg(feature = "native-runtime")]
-        sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
+        sqyre_ports::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
     }
     options
 }
@@ -347,7 +347,7 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
     #[cfg(not(target_os = "windows"))]
     let result = launch(options);
     #[cfg(feature = "native-runtime")]
-    sqyre_capture::mark_site("app:run_native:returned");
+    sqyre_ports::mark_site("app:run_native:returned");
     result
 }
 
@@ -1069,12 +1069,12 @@ impl eframe::App for SqyreApp {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.settings_ui.settings().data.close_to_tray && self.tray.is_active() {
-                sqyre_capture::mark_site("app:close_to_tray");
+                sqyre_ports::mark_site("app:close_to_tray");
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.tray.hide(ctx, frame);
             } else {
-                sqyre_capture::set_process_exiting();
-                sqyre_capture::mark_site("app:close_requested");
+                sqyre_ports::set_process_exiting();
+                sqyre_ports::mark_site("app:close_requested");
                 if let Some(win) = frame.winit_window().or(self.tray.root_window()) {
                     win.set_visible(false);
                 }
@@ -1279,8 +1279,8 @@ impl Drop for SqyreApp {
         self.save_window_geometry();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
-            sqyre_capture::set_process_exiting();
-            sqyre_capture::mark_site("app:drop:start");
+            sqyre_ports::set_process_exiting();
+            sqyre_ports::mark_site("app:drop:start");
             // Belt-and-suspenders if close_requested was missed (e.g. tray Quit).
             if let Some(win) = self.tray.root_window() {
                 win.set_visible(false);
@@ -1293,12 +1293,12 @@ impl Drop for SqyreApp {
         self.hotkey.hotkeys.stop();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("hotkeys_ms={}", t_hk.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_hotkeys");
+            sqyre_ports::mark_site("app:drop:after_hotkeys");
         }
 
         // Tear down known-slow fields before automatic drop order so we get
@@ -1308,12 +1308,12 @@ impl Drop for SqyreApp {
         {
             let t = web_time::Instant::now();
             self.tray = tray::SystemTray::default();
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("tray_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_tray");
+            sqyre_ports::mark_site("app:drop:after_tray");
 
             let t = web_time::Instant::now();
             self.overlay.macro_overlay = sqyre_overlay::MacroOverlay::new();
@@ -1322,48 +1322,48 @@ impl Drop for SqyreApp {
                 self.overlay.overlay_visibility =
                     overlay_visibility::OverlayVisibilityPoller::new();
             }
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("macro_overlay_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_macro_overlay");
+            sqyre_ports::mark_site("app:drop:after_macro_overlay");
 
             let t = web_time::Instant::now();
             self.overlay.recording_overlay = recording_overlay::RecordingOverlay::new();
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("recording_overlay_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_recording_overlay");
+            sqyre_ports::mark_site("app:drop:after_recording_overlay");
 
             let t = web_time::Instant::now();
             self.overlay.click_fx_overlay = click_fx::ClickFxOverlay::new();
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("click_fx_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_click_fx");
+            sqyre_ports::mark_site("app:drop:after_click_fx");
 
             let t = web_time::Instant::now();
             self.assets.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("preview_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:after_preview");
+            sqyre_ports::mark_site("app:drop:after_preview");
 
             let t = web_time::Instant::now();
             sqyre_capture::reset_shared_capturer();
-            sqyre_capture::cap_log(
+            sqyre_ports::cap_log(
                 "APP",
                 "drop",
                 &format!("capturer_ms={}", t.elapsed().as_millis()),
             );
-            sqyre_capture::mark_site("app:drop:done");
+            sqyre_ports::mark_site("app:drop:done");
         }
     }
 }

@@ -7,9 +7,9 @@ mod permissions;
 mod permissions_panel;
 
 use serde::Serialize;
-use sqyre_capture::{cap_log, event_log};
 use sqyre_hotkeys::HotkeyCallbacks;
 use sqyre_input::OsAutomation;
+use sqyre_ports::{cap_log, event_log};
 use sqyre_ports::{DesktopRect, ScreenCapturer};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};

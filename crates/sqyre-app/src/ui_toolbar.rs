@@ -389,7 +389,7 @@ fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
         });
         if pressed || released {
             let layer = pos.and_then(|p| ui.ctx().layer_id_at(p));
-            sqyre_capture::event_log(
+            sqyre_ports::event_log(
                 "SQYRE_STOPBTN",
                 &[
                     ("phase", if pressed { "press" } else { "release" }),

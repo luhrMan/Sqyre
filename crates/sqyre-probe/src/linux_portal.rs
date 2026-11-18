@@ -1,7 +1,7 @@
 //! XDG Desktop Portal probes (ScreenCast, GlobalShortcuts).
 
 use crate::{CapStatus, CapabilityResult, ProbeOptions, SessionReport};
-use sqyre_capture::cap_log;
+use sqyre_ports::cap_log;
 use std::collections::BTreeMap;
 use std::time::Duration;
 

@@ -12,7 +12,7 @@ use crate::host_common::{
 };
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use parking_lot::Mutex;
-use sqyre_capture::{self, event_log, mark_site, note};
+use sqyre_ports::{event_log, mark_site, note};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::mem::size_of;
@@ -168,7 +168,7 @@ impl WinButtonHost {
         let _ = self.cmd_tx.send(HostCmd::Shutdown);
         sqyre_capture::set_overlay_omit_hook(None);
         if let Some(join) = self.join.lock().take() {
-            if sqyre_capture::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 note("overlay-win: shutdown abandon join");
                 std::mem::forget(join);
             } else {

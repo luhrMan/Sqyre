@@ -21,7 +21,7 @@ pub fn build_docs_harness(
     sqyre_persist::set_home_dir(dir.join("home"));
     sqyre_persist::set_sqyre_dir_override(Some(dir.clone()));
     sqyre_persist::initialize_directories().unwrap();
-    sqyre_capture::set_log_dir(Some(dir));
+    sqyre_ports::set_log_dir(Some(dir));
     let mut app = SqyreApp::for_docs();
     setup(&mut app);
     let settings = app.docs_settings().clone();

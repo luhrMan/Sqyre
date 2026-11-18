@@ -1,12 +1,12 @@
 //! Panic hook + crash dump for the desktop shell.
 //!
-//! Writes [`sqyre_capture::CRASH_LOG_FILE`] under the Sqyre data dir and includes
-//! the last [`sqyre_capture::mark_site`] breadcrumb. [`sqyre_capture::LAST_SITE_FILE`]
+//! Writes [`sqyre_ports::CRASH_LOG_FILE`] under the Sqyre data dir and includes
+//! the last [`sqyre_ports::mark_site`] breadcrumb. [`sqyre_ports::LAST_SITE_FILE`]
 //! is always updated by `mark_site` (hard-abort breadcrumb). Continuous
-//! [`sqyre_capture::DIAG_LOG_FILE`] appends require `SQYRE_DIAG=1`.
+//! [`sqyre_ports::DIAG_LOG_FILE`] appends require `SQYRE_DIAG=1`.
 //! Memory samples (`mem.log`) require `SQYRE_MEM=1` — see [`crate::mem_diag`].
 
-use sqyre_capture::{
+use sqyre_ports::{
     disk_logging_enabled, note, read_last_site, set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE,
     LAST_SITE_FILE,
 };

@@ -23,9 +23,9 @@
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
-use sqyre_capture::{event_log, mark_site, SelectionGrab, SelectionOutline};
+use sqyre_capture::{SelectionGrab, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
-use sqyre_ports::DesktopRect;
+use sqyre_ports::{event_log, mark_site, DesktopRect};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -738,7 +738,7 @@ impl Drop for RecordingOverlay {
             stop.store(true, Ordering::Relaxed);
         }
         if let Some(join) = self.join.take() {
-            if sqyre_capture::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 std::mem::forget(join);
             } else {
                 let _ = join.join();

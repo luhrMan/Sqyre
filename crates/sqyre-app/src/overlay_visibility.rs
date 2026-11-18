@@ -8,8 +8,8 @@ use eframe::egui;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use sqyre_capture::{
-    event_log, get_active_window, mark_site, note, shared_capturer, window_is_our_process,
-    window_is_transient_shell_focus, window_matches_binding, window_matches_program, WindowInfo,
+    get_active_window, shared_capturer, window_is_our_process, window_is_transient_shell_focus,
+    window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::{CoordinateRef, Macro, GENERAL_PROGRAM};
 use sqyre_match::{
@@ -17,7 +17,7 @@ use sqyre_match::{
     search_blur_kernel,
 };
 use sqyre_persist::{OverlayButtonConfig, OverlayVisibilityGate, ProgramCatalog};
-use sqyre_ports::clamp_search_rect;
+use sqyre_ports::{clamp_search_rect, event_log, mark_site, note};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     rgb_capture_to_image_buf,
