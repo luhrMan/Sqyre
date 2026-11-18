@@ -78,14 +78,23 @@ impl SqyreApp {
         // Keep docs/screenshot/kittest harnesses at 1.0 PPP: AccessKit pointer clicks
         // and golden PNGs assume unscaled coordinates.
         let settings = UserSettings {
-            ui_scale: 1.0,
+            ui: sqyre_persist::UiLayout {
+                ui_scale: 1.0,
+                // Continuous repaint keeps `Harness::run` from settling; goldens stay deterministic.
+                run_button_glow: false,
+                ..Default::default()
+            },
             // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.
-            play_add_sound: false,
-            play_delete_sound: false,
-            play_finish_sound: false,
-            auto_update_check: false,
-            // Continuous repaint keeps `Harness::run` from settling; goldens stay deterministic.
-            run_button_glow: false,
+            sound: sqyre_persist::SoundSettings {
+                play_add_sound: false,
+                play_delete_sound: false,
+                play_finish_sound: false,
+                ..Default::default()
+            },
+            data: sqyre_persist::DataLifecycle {
+                auto_update_check: false,
+                ..Default::default()
+            },
             ..UserSettings::default()
         };
         SettingsUi::apply_action_colors(&settings);
@@ -101,12 +110,13 @@ impl SqyreApp {
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
 
         let highlighter = SharedHighlighter::new();
-        highlighter.set_enabled(settings.highlight_active_action);
+        highlighter.set_enabled(settings.runtime.highlight_active_action);
         let settings_ui = SettingsUi::from_settings(settings);
         let action_log = SharedActionLog::new();
-        action_log.set_log_images(settings_ui.settings().save_meta_images);
-        action_log.set_log_verbose(settings_ui.settings().save_meta_images);
-        action_log.set_max_entries(settings_ui.settings().action_log_max_entries.max(1) as usize);
+        action_log.set_log_images(settings_ui.settings().runtime.save_meta_images);
+        action_log.set_log_verbose(settings_ui.settings().runtime.save_meta_images);
+        action_log
+            .set_max_entries(settings_ui.settings().runtime.action_log_max_entries.max(1) as usize);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
@@ -129,7 +139,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filters: settings_ui.settings().hotkey_tag_filters.clone(),
+                hotkey_tag_filters: settings_ui.settings().runtime.hotkey_tag_filters.clone(),
             },
             run_session: RunSession {
                 state: run,
