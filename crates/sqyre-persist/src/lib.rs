@@ -22,8 +22,9 @@ pub use macro_yaml_draft::{macro_yaml_builder_path, MacroYamlBuilderDrafts, Macr
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
-    merge_fs_warning, monitor_slot_for_point, FsWarn, MonitorRect, ProgramAtlas, ProgramCatalog,
-    ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+    merge_fs_warning, monitor_slot_for_point, CatalogView, FsWarn, MonitorRect, ProgramAtlas,
+    ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
+    ProgramSearchArea,
 };
 pub use settings::{
     available_worker_threads, default_overlay_position, default_quick_access_hub_button,

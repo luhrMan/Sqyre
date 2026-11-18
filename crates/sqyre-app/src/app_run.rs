@@ -470,8 +470,8 @@ mod native_run {
                     let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
                     let mut capturer = SharedRunCapturer(capturer_arc);
-                    let resolver = CatalogResolver(&catalog);
-                    let icons = CatalogIcons(&catalog);
+                    let resolver = CatalogResolver((&catalog).into());
+                    let icons = CatalogIcons((&catalog).into());
                     let focuser = OsWindowFocuser;
                     let ocr_engine = shared_ocrs()
                         .map_err(|e| {

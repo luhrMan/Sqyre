@@ -1142,7 +1142,7 @@ pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
     let commands =
         crate::command_palette::collect_commands(crate::command_palette::CommandSources {
             macros: &app.workspace.macros,
-            catalog: &app.workspace.catalog,
+            catalog: (&app.workspace.catalog).into(),
             overlay_buttons: &app.settings_ui.settings().overlay_buttons,
             running,
         });

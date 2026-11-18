@@ -122,7 +122,7 @@ pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool 
 }
 
 #[cfg(feature = "native-runtime")]
-pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
+pub struct CatalogResolver<'a>(pub sqyre_persist::CatalogView<'a>);
 
 #[cfg(feature = "native-runtime")]
 impl CoordinateResolver for CatalogResolver<'_> {
@@ -162,7 +162,7 @@ impl CoordinateResolver for CatalogResolver<'_> {
 }
 
 #[cfg(feature = "native-runtime")]
-pub struct CatalogIcons<'a>(pub &'a ProgramCatalog);
+pub struct CatalogIcons<'a>(pub sqyre_persist::CatalogView<'a>);
 
 #[cfg(feature = "native-runtime")]
 impl IconStore for CatalogIcons<'_> {
@@ -259,7 +259,7 @@ Game:
     #[cfg(feature = "native-runtime")]
     fn catalog_resolver_resolves_point_and_area() {
         let cat = sample_catalog();
-        let resolver = CatalogResolver(&cat);
+        let resolver = CatalogResolver((&cat).into());
         let m = Macro::new("t", 0, vec![]);
         assert_eq!(
             resolver
@@ -289,7 +289,7 @@ Game:
     #[cfg(feature = "native-runtime")]
     fn catalog_icons_expose_item_meta() {
         let cat = sample_catalog();
-        let icons = CatalogIcons(&cat);
+        let icons = CatalogIcons((&cat).into());
         let meta = icons.item_meta("Game~Sword").expect("meta");
         assert_eq!(meta.name, "Sword");
         assert_eq!(meta.stack_max, 1);
