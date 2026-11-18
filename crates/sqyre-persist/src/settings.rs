@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::{PersistError, Result};
 use sqyre_domain::{
     clamp_match_blur, clamp_match_tolerance, rename_coordinate_entity, rename_coordinate_program,
-    CatalogItemSort, CoordinateRef, Macro, MatchMethod, ACTION_COLOR_KEY_CONTROL_FLOW,
+    CatalogItemSort, CoordinateRef, MatchMethod, ACTION_COLOR_KEY_CONTROL_FLOW,
     ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS,
     ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
 };
@@ -856,22 +856,6 @@ impl OverlayButtonConfig {
             return macro_name;
         }
         self.id.as_str()
-    }
-
-    /// Desktop top-left for the button viewport.
-    ///
-    /// When [`Self::point`] is set, resolves that catalog point (literal scalars /
-    /// arithmetic without macro variables). Falls back to [`Self::x`] / [`Self::y`]
-    /// when the point is empty or cannot be resolved.
-    pub fn resolved_position(&self, catalog: &crate::ProgramCatalog) -> (f32, f32) {
-        let point = self.point.trim();
-        if !point.is_empty() {
-            let m = Macro::new("", 0, vec![]);
-            if let Ok((x, y)) = catalog.resolve_point(&CoordinateRef(point.to_string()), &m) {
-                return (x as f32, y as f32);
-            }
-        }
-        (self.x, self.y)
     }
 
     /// Resolve `#rrggbb` (or empty → `fallback`) plus alpha → RGBA.

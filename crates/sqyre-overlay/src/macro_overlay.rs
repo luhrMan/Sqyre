@@ -576,7 +576,7 @@ impl MacroOverlay {
                 busy_shown += 1;
             }
             let mut drawn = btn.clone();
-            let (x, y) = btn.resolved_position(catalog);
+            let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
             drawn.x = x;
             drawn.y = y;
             specs.push(ButtonDraw { cfg: drawn, busy });
@@ -589,7 +589,7 @@ impl MacroOverlay {
                 busy_shown += 1;
             }
             let mut drawn = btn.clone();
-            let (x, y) = btn.resolved_position(catalog);
+            let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
             drawn.x = x;
             drawn.y = y;
             specs.push(ButtonDraw { cfg: drawn, busy });
@@ -1250,7 +1250,7 @@ fn android_spec(
     ungate: bool,
 ) -> crate::button_visibility::AndroidButtonSpec {
     let mut placed = btn.clone();
-    let (x, y) = btn.resolved_position(catalog);
+    let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
     placed.x = x;
     placed.y = y;
     let face = button_face(&placed, ppp);

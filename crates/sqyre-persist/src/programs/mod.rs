@@ -255,6 +255,15 @@ Schedule 1:
             .resolve_search_area(&CoordinateRef("Schedule 1~Box".into()), &m)
             .unwrap();
         assert_eq!(sa, (10, 20, 30, 40));
+        assert_eq!(
+            cat.resolve_overlay_xy("Schedule 1~Spot", (1.0, 2.0)),
+            (100.0, 200.0)
+        );
+        assert_eq!(cat.resolve_overlay_xy("", (3.0, 4.0)), (3.0, 4.0));
+        assert_eq!(
+            cat.resolve_overlay_xy("missing~point", (5.0, 6.0)),
+            (5.0, 6.0)
+        );
     }
 
     #[test]
