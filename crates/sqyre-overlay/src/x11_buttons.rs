@@ -27,6 +27,10 @@
 //! Thin `x_*` helpers carry a single `SAFETY` contract; larger blocks document
 //! the same invariant at the call boundary (see `x11_focus` for the same style).
 
+use crate::host_common::{
+    spec_contains, spec_contains_rounded, spec_delta, tip_refresh_decision, TipButtonView,
+    TipRefreshInput,
+};
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
@@ -894,60 +898,6 @@ fn host_loop(
     note("overlay-x11: host thread stopped");
 }
 
-/// What a spec update changed, for the minimal repaint/reshape path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SpecDelta {
-    /// Desktop position changed (`x`/`y`).
-    pos: bool,
-    /// Face pixel size changed (`w`/`h`).
-    size: bool,
-    /// Corner radius changed (input shape needs rebuild even without geometry).
-    radius: bool,
-    /// Any paint-affecting field changed (radius counts — it shapes ink).
-    style: bool,
-    /// Hit-target arming changed (`input_enabled`).
-    input: bool,
-}
-
-impl SpecDelta {
-    /// Position and/or size changed — needs a MoveResize.
-    fn geom(self) -> bool {
-        self.pos || self.size
-    }
-}
-
-fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
-    let radius = sqyre_domain::f32_changed(old.face.corner_radius, new.face.corner_radius);
-    SpecDelta {
-        pos: old.face.x != new.face.x || old.face.y != new.face.y,
-        size: old.face.w != new.face.w || old.face.h != new.face.h,
-        radius,
-        style: old.face.bg != new.face.bg
-            || old.face.border != new.face.border
-            || sqyre_domain::f32_changed(old.face.border_width, new.face.border_width)
-            || radius
-            || old.face.icon_glyph != new.face.icon_glyph
-            || old.face.icon != new.face.icon
-            || old.face.icon_hover != new.face.icon_hover
-            || old.face.brand != new.face.brand
-            || old.tip != new.tip
-            || old.busy != new.busy,
-        input: old.input_enabled != new.input_enabled,
-    }
-}
-
-/// True when `(x, y)` is inside the spec's rect (saturating right/bottom edge).
-/// A zero-dimension spec hits a 1×1 box on purpose: window creation clamps to
-/// `max(1)` too, so the test covers the window that actually exists.
-fn spec_contains(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
-    let w = spec.face.w.max(1) as i32;
-    let h = spec.face.h.max(1) as i32;
-    x >= spec.face.x
-        && y >= spec.face.y
-        && x < spec.face.x.saturating_add(w)
-        && y < spec.face.y.saturating_add(h)
-}
-
 fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     let mut keep = std::collections::HashSet::new();
     for mut spec in specs {
@@ -1092,18 +1042,21 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         }
     }
     let tip_refresh = state.tip.as_ref().and_then(|tip| {
-        if !tip.mapped {
-            return None;
-        }
-        let btn = state.buttons.get(tip.for_id.as_str())?;
-        let text = btn.spec.tip.trim();
-        if text.is_empty() {
-            return Some((tip.for_id.clone(), false));
-        }
-        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
-            return Some((tip.for_id.clone(), true));
-        }
-        None
+        tip_refresh_decision(
+            TipRefreshInput {
+                for_id: tip.for_id.as_str(),
+                text: tip.text.as_str(),
+                ui_scale: tip.ui_scale,
+                mapped: tip.mapped,
+            },
+            state
+                .buttons
+                .get(tip.for_id.as_str())
+                .map(|btn| TipButtonView {
+                    text: btn.spec.tip.as_str(),
+                    ui_scale: btn.spec.ui_scale,
+                }),
+        )
     });
     let drop_ids: Vec<String> = state
         .buttons
@@ -3773,37 +3726,6 @@ fn overlay_press_kind(
     }
 }
 
-/// Point inside the button's rounded rect (corners outside the radius miss).
-fn spec_contains_rounded(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
-    if !spec_contains(spec, x, y) {
-        return false;
-    }
-    let w = spec.face.w.max(1) as i32;
-    let h = spec.face.h.max(1) as i32;
-    let r = (spec.face.corner_radius.round().max(0.0) as i32)
-        .min(w / 2)
-        .min(h / 2);
-    if r <= 0 {
-        return true;
-    }
-    let lx = x - spec.face.x;
-    let ly = y - spec.face.y;
-    let (cx, cy) = if lx < r && ly < r {
-        (r, r)
-    } else if lx >= w - r && ly < r {
-        (w - r, r)
-    } else if lx < r && ly >= h - r {
-        (r, h - r)
-    } else if lx >= w - r && ly >= h - r {
-        (w - r, h - r)
-    } else {
-        return true;
-    };
-    let dx = lx - cx;
-    let dy = ly - cy;
-    dx * dx + dy * dy <= r * r
-}
-
 /// Rounded input, or empty while [`HostState::click_through`] is on.
 fn sync_hit_input(
     state: &HostState,
@@ -4561,172 +4483,6 @@ fn circle_inset(r: i32, y_from_edge: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn spec() -> NativeButtonSpec {
-        NativeButtonSpec {
-            id: "b1".into(),
-            macro_name: "m".into(),
-            face: crate::ButtonFace {
-                x: 100,
-                y: 200,
-                w: 48,
-                h: 48,
-                bg: [10, 20, 30, 200],
-                border: [255, 255, 255, 255],
-                border_width: 2.0,
-                corner_radius: 8.0,
-                icon_glyph: '+',
-                icon: [255, 255, 255, 255],
-                icon_hover: [200, 200, 200, 255],
-                brand: false,
-            },
-            tip: "run m".into(),
-            ui_scale: 1.0,
-            busy: false,
-            visibility_gated: false,
-            input_enabled: true,
-        }
-    }
-
-    #[test]
-    fn spec_delta_classifies_changes() {
-        let base = spec();
-        assert_eq!(
-            spec_delta(&base, &base),
-            SpecDelta {
-                pos: false,
-                size: false,
-                radius: false,
-                style: false,
-                input: false,
-            }
-        );
-
-        // Position-only (hub fan travel): MoveResize, no paint/reshape.
-        let moved = NativeButtonSpec {
-            face: crate::ButtonFace {
-                x: base.face.x + 10,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        let d = spec_delta(&base, &moved);
-        assert!(d.pos && !d.size && d.geom() && !d.radius && !d.style);
-
-        // Size-only needs paint + hit reshape.
-        let resized = NativeButtonSpec {
-            face: crate::ButtonFace {
-                w: base.face.w + 8,
-                h: base.face.h + 8,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        let d = spec_delta(&base, &resized);
-        assert!(d.size && !d.pos && d.geom() && !d.radius && !d.style);
-
-        // Radius is style + radius (input shape depends on it), not geom.
-        let rounded = NativeButtonSpec {
-            face: crate::ButtonFace {
-                corner_radius: base.face.corner_radius + 4.0,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        let d = spec_delta(&base, &rounded);
-        assert!(d.radius && d.style && !d.geom());
-
-        // Sub-epsilon radius changes do not churn repaints.
-        let near = NativeButtonSpec {
-            face: crate::ButtonFace {
-                corner_radius: base.face.corner_radius + f32::EPSILON / 2.0,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        assert_eq!(spec_delta(&base, &near), spec_delta(&base, &base));
-
-        // But the compare scales with the value: a sub-EPSILON diff is a real
-        // change for thin widths (absolute EPSILON would have missed it).
-        let thin = NativeButtonSpec {
-            face: crate::ButtonFace {
-                border_width: 0.25,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        let thinner = NativeButtonSpec {
-            face: crate::ButtonFace {
-                border_width: 0.25 + f32::EPSILON / 2.0,
-                ..base.face
-            },
-            ..base.clone()
-        };
-        assert!(spec_delta(&thin, &thinner).style);
-
-        // Paint fields are style-only.
-        let painted = NativeButtonSpec {
-            busy: true,
-            ..base.clone()
-        };
-        let d = spec_delta(&base, &painted);
-        assert!(d.style && !d.geom() && !d.radius && !d.input);
-
-        let tinted = NativeButtonSpec {
-            face: crate::ButtonFace {
-                icon_hover: [1, 2, 3, 4],
-                ..base.face
-            },
-            ..base.clone()
-        };
-        assert!(spec_delta(&base, &tinted).style);
-
-        let muted = NativeButtonSpec {
-            input_enabled: false,
-            ..base.clone()
-        };
-        let d = spec_delta(&base, &muted);
-        assert!(d.input && !d.geom() && !d.radius && !d.style);
-    }
-
-    #[test]
-    fn spec_contains_rect_edges() {
-        let s = spec(); // (100,200) 48x48
-        assert!(spec_contains(&s, 100, 200));
-        assert!(spec_contains(&s, 147, 247));
-        assert!(!spec_contains(&s, 148, 200)); // right edge exclusive
-        assert!(!spec_contains(&s, 100, 248)); // bottom edge exclusive
-        assert!(!spec_contains(&s, 99, 200));
-        assert!(!spec_contains(&s, 100, 199));
-        // Zero/negative-dim specs still hit a 1px box.
-        let zero = NativeButtonSpec {
-            face: crate::ButtonFace {
-                w: 0,
-                h: 0,
-                ..spec().face
-            },
-            ..spec()
-        };
-        assert!(spec_contains(&zero, 100, 200));
-        assert!(!spec_contains(&zero, 101, 200));
-    }
-
-    #[test]
-    fn spec_contains_rounded_skips_corners() {
-        let mut s = spec();
-        s.face.corner_radius = 24.0; // disk: radius is half of 48
-        assert!(spec_contains_rounded(&s, 124, 224), "center");
-        assert!(!spec_contains_rounded(&s, 100, 200), "top-left corner");
-        assert!(!spec_contains_rounded(&s, 147, 200), "top-right corner");
-        assert!(
-            spec_contains_rounded(&s, 124, 200),
-            "top middle of the disk"
-        );
-        // Radius 0 keeps the full rect, including corners.
-        s.face.corner_radius = 0.0;
-        assert!(spec_contains_rounded(&s, 100, 200));
-        assert!(!spec_contains_rounded(&s, 99, 200));
-    }
 
     #[test]
     fn overlay_press_kind_matches_click_policy() {

@@ -6,6 +6,9 @@
 //! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
+use crate::host_common::{
+    point_in_rounded_rect, tip_refresh_decision, TipButtonView, TipRefreshInput,
+};
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use parking_lot::Mutex;
 use sqyre_capture::{self, event_log, mark_site, note};
@@ -376,18 +379,21 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
         }
     }
     let tip_refresh = state.tip.as_ref().and_then(|tip| {
-        if !tip.mapped {
-            return None;
-        }
-        let btn = state.buttons.get(tip.for_id.as_str())?;
-        let text = btn.spec.tip.trim();
-        if text.is_empty() {
-            return Some((tip.for_id.clone(), false));
-        }
-        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
-            return Some((tip.for_id.clone(), true));
-        }
-        None
+        tip_refresh_decision(
+            TipRefreshInput {
+                for_id: tip.for_id.as_str(),
+                text: tip.text.as_str(),
+                ui_scale: tip.ui_scale,
+                mapped: tip.mapped,
+            },
+            state
+                .buttons
+                .get(tip.for_id.as_str())
+                .map(|btn| TipButtonView {
+                    text: btn.spec.tip.as_str(),
+                    ui_scale: btn.spec.ui_scale,
+                }),
+        )
     });
     let stale: Vec<String> = state
         .buttons
@@ -1270,7 +1276,7 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
     }
     let local_x = screen_x - btn.spec.face.x;
     let local_y = screen_y - btn.spec.face.y;
-    if inside_rounded(
+    if point_in_rounded_rect(
         local_x,
         local_y,
         btn.spec.face.w,
@@ -1281,37 +1287,6 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
     } else {
         LRESULT(HTTRANSPARENT as isize)
     }
-}
-
-fn inside_rounded(x: i32, y: i32, w: u32, h: u32, radius: f32) -> bool {
-    if w == 0 || h == 0 {
-        return false;
-    }
-    let xf = x as f32;
-    let yf = y as f32;
-    let wf = w as f32;
-    let hf = h as f32;
-    if xf < 0.0 || yf < 0.0 || xf >= wf || yf >= hf {
-        return false;
-    }
-    let r = radius.clamp(0.0, wf.min(hf) * 0.5);
-    let cx = if xf < r {
-        r
-    } else if xf > wf - r {
-        wf - r
-    } else {
-        xf
-    };
-    let cy = if yf < r {
-        r
-    } else if yf > hf - r {
-        hf - r
-    } else {
-        yf
-    };
-    let dx = xf - cx;
-    let dy = yf - cy;
-    dx * dx + dy * dy <= r * r
 }
 
 fn lparam_xy(lp: LPARAM) -> (i32, i32) {

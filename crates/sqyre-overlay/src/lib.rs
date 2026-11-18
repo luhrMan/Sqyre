@@ -75,7 +75,10 @@ pub use context_menu::{
     CTX_OPEN_SETTINGS,
 };
 #[cfg(feature = "runtime")]
-pub use host_common::{OverlayButtonMove, OverlayButtonSpec};
+pub use host_common::{
+    point_in_rounded_rect, spec_contains, spec_contains_rounded, spec_delta, tip_refresh_decision,
+    OverlayButtonMove, OverlayButtonSpec, SpecDelta, TipButtonView, TipRefreshInput,
+};
 #[cfg(feature = "runtime")]
 pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult};
 #[cfg(all(
