@@ -289,6 +289,7 @@ impl SettingsUi {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn choose_sqyre_location(&mut self) {
         let start = sqyre_dir()
             .parent()
