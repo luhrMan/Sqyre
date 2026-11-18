@@ -81,30 +81,7 @@ const XC_LEFT_PTR: c_uint = 68;
 const BUTTON_LEFT: c_uint = 1;
 const BUTTON_RIGHT: c_uint = 3;
 
-/// Desired on-screen button (physical pixels, root coordinates).
-#[derive(Debug, Clone, PartialEq)]
-pub struct NativeButtonSpec {
-    pub id: String,
-    pub macro_name: String,
-    pub face: crate::ButtonFace,
-    /// Hover tip text (label / display name). Empty = no tip.
-    pub tip: String,
-    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
-    pub ui_scale: f32,
-    pub busy: bool,
-    /// When true, the host maps this button only while [`HostState`] visibility says found.
-    pub visibility_gated: bool,
-    /// When false, ShapeInput is emptied and presses are ignored (hub fan travel).
-    pub input_enabled: bool,
-}
-
-/// Desktop position committed after a relocate-mode drag (root coordinates).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OverlayButtonMove {
-    pub id: String,
-    pub x: i32,
-    pub y: i32,
-}
+pub use crate::host_common::{OverlayButtonMove, OverlayButtonSpec as NativeButtonSpec};
 
 enum HostCmd {
     SetButtons(Vec<NativeButtonSpec>),

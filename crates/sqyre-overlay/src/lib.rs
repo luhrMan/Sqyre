@@ -39,6 +39,8 @@ pub struct ButtonFace {
 #[cfg(feature = "runtime")]
 mod context_menu;
 #[cfg(feature = "runtime")]
+mod host_common;
+#[cfg(feature = "runtime")]
 mod hub_fan;
 #[cfg(feature = "runtime")]
 mod macro_overlay;
@@ -73,7 +75,9 @@ pub use context_menu::{
     CTX_OPEN_SETTINGS,
 };
 #[cfg(feature = "runtime")]
-pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult, OverlayButtonMove};
+pub use host_common::{OverlayButtonMove, OverlayButtonSpec};
+#[cfg(feature = "runtime")]
+pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult};
 #[cfg(all(
     feature = "runtime",
     any(target_os = "linux", target_os = "windows", test)

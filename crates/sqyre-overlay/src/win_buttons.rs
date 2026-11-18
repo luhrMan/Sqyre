@@ -7,7 +7,6 @@
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
-use crate::OverlayButtonMove;
 use parking_lot::Mutex;
 use sqyre_capture::{self, event_log, mark_site, note};
 use std::cell::Cell;
@@ -64,20 +63,7 @@ thread_local! {
     static HOST: Cell<*mut HostState> = const { Cell::new(std::ptr::null_mut()) };
 }
 
-/// Desired on-screen button (physical pixels, virtual-desktop coordinates).
-#[derive(Debug, Clone, PartialEq)]
-pub struct WinButtonSpec {
-    pub id: String,
-    pub macro_name: String,
-    pub face: crate::ButtonFace,
-    pub tip: String,
-    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
-    pub ui_scale: f32,
-    pub busy: bool,
-    pub visibility_gated: bool,
-    /// When false, hit-tests pass through and presses are ignored (hub fan travel).
-    pub input_enabled: bool,
-}
+pub use crate::host_common::{OverlayButtonMove, OverlayButtonSpec as WinButtonSpec};
 
 enum HostCmd {
     SetButtons(Vec<WinButtonSpec>),
