@@ -692,6 +692,7 @@ impl DataEditor {
         #[cfg(feature = "native-runtime")]
         {
             use crate::collection_capture::{capture_search_area_to_png, collection_capture_job};
+            use crate::native_capture;
             use std::sync::mpsc;
             use std::thread;
 
@@ -704,7 +705,18 @@ impl DataEditor {
             let path_for_thread = path.clone();
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
-                let result = capture_search_area_to_png(left, top, right, bottom, &path_for_thread);
+                let result = (|| {
+                    let mut capturer = native_capture::open_shared_run()
+                        .map_err(|e| format!("collection capture: {e}"))?;
+                    capture_search_area_to_png(
+                        &mut capturer,
+                        left,
+                        top,
+                        right,
+                        bottom,
+                        &path_for_thread,
+                    )
+                })();
                 let _ = tx.send(result);
             });
             self.collection_capture_pending = Some(super::CollectionCapturePending {

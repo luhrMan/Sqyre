@@ -120,7 +120,7 @@ pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
 pub(crate) fn live_monitor_rects(catalog: &ProgramCatalog) -> Vec<sqyre_persist::MonitorRect> {
     #[cfg(feature = "native-runtime")]
     {
-        let live: Vec<sqyre_persist::MonitorRect> = sqyre_capture::preferred_monitor_rects()
+        let live: Vec<sqyre_persist::MonitorRect> = crate::native_capture::preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();

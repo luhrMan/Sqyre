@@ -12,7 +12,7 @@ use sqyre_persist::{
 pub(crate) fn primary_overlay_screen_rect(catalog: &ProgramCatalog) -> (f32, f32, f32, f32) {
     #[cfg(feature = "native-runtime")]
     {
-        if let Some(r) = sqyre_capture::preferred_monitor_rects()
+        if let Some(r) = crate::native_capture::preferred_rects()
             .into_iter()
             .find(|r| r.w > 1 && r.h > 1)
         {

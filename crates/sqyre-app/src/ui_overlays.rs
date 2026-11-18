@@ -797,18 +797,20 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                     app.tree.tooltip.apply_recorded_color(hex.clone());
                     app.add_action_picker.apply_recorded_color(hex);
                 } else {
-                    match pixel_color::spawn_sample_pixel_hex(x, y) {
-                        Ok(rx) => {
-                            app.tasks.pixel_sample = Some(rx);
+                    match crate::native_capture::open_shared_run() {
+                        Ok(capturer) => {
+                            app.tasks.pixel_sample =
+                                Some(pixel_color::spawn_sample_pixel_hex_with(capturer, x, y));
                             ctx.request_repaint();
                         }
                         Err(e) => note_pixel_sample_failure(app, &e.to_string()),
                     }
                 }
                 #[cfg(not(target_os = "linux"))]
-                match pixel_color::spawn_sample_pixel_hex(x, y) {
-                    Ok(rx) => {
-                        app.tasks.pixel_sample = Some(rx);
+                match crate::native_capture::open_shared_run() {
+                    Ok(capturer) => {
+                        app.tasks.pixel_sample =
+                            Some(pixel_color::spawn_sample_pixel_hex_with(capturer, x, y));
                         ctx.request_repaint();
                     }
                     Err(e) => note_pixel_sample_failure(app, &e.to_string()),
@@ -818,7 +820,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
     #[cfg(all(target_arch = "wasm32", feature = "native-runtime"))]
     if let Some((x, y)) = app.screen_click.take_color_point() {
-        match pixel_color::sample_pixel_hex(x, y) {
+        match crate::native_capture::open_shared_run()
+            .map_err(|e| e.to_string())
+            .and_then(|mut c| pixel_color::sample_pixel_hex_with(&mut c, x, y))
+        {
             Ok(hex) => {
                 app.tree.tooltip.apply_recorded_color(hex.clone());
                 app.add_action_picker.apply_recorded_color(hex);

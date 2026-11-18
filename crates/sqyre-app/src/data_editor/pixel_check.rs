@@ -16,14 +16,13 @@ mod inner {
     use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
-    use sqyre_capture::shared_capturer;
     use sqyre_domain::MatchMethod;
     use sqyre_match::{
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
     use sqyre_persist::ProgramCatalog;
-    use sqyre_ports::DesktopRect;
+    use sqyre_ports::{DesktopRect, ScreenCapturer};
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
     use std::sync::mpsc;
@@ -276,21 +275,25 @@ mod inner {
         image::imageops::resize(&img, nw, nh, filter)
     }
 
-    fn capture_search_area(lx: i32, ty: i32, rx: i32, by: i32) -> Result<RgbaImage, String> {
-        let capturer = shared_capturer().map_err(|e| e.to_string())?;
-        let vb = capturer.virtual_bounds_ref().map_err(|e| e.to_string())?;
+    fn capture_search_area(
+        capturer: &mut dyn ScreenCapturer,
+        lx: i32,
+        ty: i32,
+        rx: i32,
+        by: i32,
+    ) -> Result<RgbaImage, String> {
+        let vb = capturer.virtual_bounds().map_err(|e| e.to_string())?;
         let (lx, ty, rx, by) = DesktopRect::normalize_corners(lx, ty, rx, by);
         if rx <= lx || by <= ty {
             return Err("invalid search area bounds".into());
         }
         let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-        let img = capturer
-            .capture_rect_ref(bounds)
-            .map_err(|e| e.to_string())?;
+        let img = capturer.capture_rect(bounds).map_err(|e| e.to_string())?;
         Ok(downscale_max_dim(img, PANEL_MAX_DIM))
     }
 
     fn compute_match(
+        capturer: &mut dyn ScreenCapturer,
         template_path: &Path,
         mask_path: Option<&Path>,
         lx: i32,
@@ -300,7 +303,7 @@ mod inner {
         blur: i32,
         method: MatchMethod,
     ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
-        let img = capture_search_area(lx, ty, rx, by)?;
+        let img = capture_search_area(capturer, lx, ty, rx, by)?;
         let image_w = img.width() as usize;
         let image_h = img.height() as usize;
         let search = rgba_to_rgb_buf(&img);
@@ -659,7 +662,10 @@ mod inner {
         let (tx, job_rx) = mpsc::channel();
         thread::spawn(move || {
             let result = (|| {
+                let mut capturer =
+                    crate::native_capture::open_shared_run().map_err(|e| e.to_string())?;
                 let (map, image_w, image_h, tmpl_w, tmpl_h, mask_missing) = compute_match(
+                    &mut capturer,
                     &template_path,
                     mask_path.as_deref(),
                     lx,

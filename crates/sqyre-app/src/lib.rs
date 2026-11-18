@@ -54,6 +54,8 @@ mod macro_yaml_builder;
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod mem_diag;
 mod model_icons;
+#[cfg(feature = "native-runtime")]
+mod native_capture;
 /// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
 mod overlay_icons {
     pub use sqyre_overlay::{

@@ -1,20 +1,8 @@
 //! Sample a screen pixel as `rrggbb` (Find Pixel dropper).
 
-use sqyre_capture::shared_capturer;
-use sqyre_ports::DesktopRect;
-
-#[cfg(any(test, target_arch = "wasm32"))]
-use sqyre_ports::ScreenCapturer;
+use sqyre_ports::{DesktopRect, ScreenCapturer};
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
-#[cfg(target_arch = "wasm32")]
-pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
-    let capturer = shared_capturer().map_err(|e| e.to_string())?;
-    let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
-    sample_pixel_hex_with(&mut wrap, x, y)
-}
-
-#[cfg(any(test, target_arch = "wasm32"))]
 pub fn sample_pixel_hex_with(
     capturer: &mut dyn ScreenCapturer,
     x: i32,
@@ -32,33 +20,25 @@ pub fn sample_pixel_hex_with(
     ))
 }
 
-/// Spawn a background 1×1 capture; poll the receiver from the UI thread.
+/// Spawn a background 1×1 capture using an injected capturer; poll from the UI thread.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn spawn_sample_pixel_hex(
+pub fn spawn_sample_pixel_hex_with<C>(
+    capturer: C,
     x: i32,
     y: i32,
-) -> Result<std::sync::mpsc::Receiver<Result<String, String>>, String> {
+) -> std::sync::mpsc::Receiver<Result<String, String>>
+where
+    C: ScreenCapturer + Send + 'static,
+{
     use std::sync::mpsc;
     use std::thread;
 
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let result = (|| -> Result<String, String> {
-            let capturer = shared_capturer().map_err(|e| e.to_string())?;
-            let rgb = capturer
-                .capture_rect_rgb_ref(DesktopRect { x, y, w: 1, h: 1 })
-                .map_err(|e| e.to_string())?;
-            if rgb.data.len() < 3 {
-                return Err("empty pixel capture".into());
-            }
-            Ok(format!(
-                "{:02x}{:02x}{:02x}",
-                rgb.data[0], rgb.data[1], rgb.data[2]
-            ))
-        })();
-        let _ = tx.send(result);
+        let mut capturer = capturer;
+        let _ = tx.send(sample_pixel_hex_with(&mut capturer, x, y));
     });
-    Ok(rx)
+    rx
 }
 
 #[cfg(test)]

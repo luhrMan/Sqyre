@@ -18,13 +18,16 @@ use std::sync::Arc;
 pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
     #[cfg(feature = "native-runtime")]
     {
-        if let Some(key) = sqyre_capture::main_monitor_resolution_key() {
+        use sqyre_ports::MonitorLayout;
+        let layout = crate::native_capture::monitor_layout();
+        if let Some(key) = layout.primary_resolution_key() {
             catalog.set_resolution_key(key);
         }
-        if let Some(scale) = sqyre_capture::main_monitor_scale() {
+        if let Some(scale) = layout.primary_scale() {
             catalog.set_runtime_scale(scale);
         }
-        let rects: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+        let rects: Vec<MonitorRect> = layout
+            .preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
@@ -49,7 +52,9 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
     #[cfg(feature = "native-runtime")]
     {
-        let from_layout: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+        use sqyre_ports::MonitorLayout;
+        let from_layout: Vec<MonitorRect> = crate::native_capture::monitor_layout()
+            .preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();

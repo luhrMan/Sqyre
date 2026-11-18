@@ -760,18 +760,19 @@ fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32
     }
     #[cfg(feature = "native-runtime")]
     {
-        let preferred: Vec<_> = sqyre_capture::preferred_monitor_rects()
+        let preferred: Vec<_> = crate::native_capture::preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
         if !preferred.is_empty() {
             return preferred;
         }
-        if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
+        if let Ok(Some(mut capturer)) = crate::native_capture::try_open_shared_run() {
+            use sqyre_ports::ScreenCapturer;
             // Sizes only: place primary at virtual origin, others to the right.
-            if let Ok(sizes) = capturer.monitor_sizes_ref() {
+            if let Ok(sizes) = capturer.monitor_sizes() {
                 let (ox, oy) = capturer
-                    .virtual_bounds_ref()
+                    .virtual_bounds()
                     .map(|vb| (vb.x, vb.y))
                     .unwrap_or((0, 0));
                 let laid = layout_monitors_ltr(ox, oy, &sizes);
@@ -779,7 +780,7 @@ fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32
                     return laid;
                 }
             }
-            if let Ok(vb) = capturer.virtual_bounds_ref() {
+            if let Ok(vb) = capturer.virtual_bounds() {
                 if vb.w > 0 && vb.h > 0 {
                     return vec![(vb.x, vb.y, vb.w, vb.h)];
                 }
