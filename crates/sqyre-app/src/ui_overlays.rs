@@ -42,7 +42,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     let moves = app.overlay.macro_overlay.drain_moves();
     let ppp = ctx.pixels_per_point();
     apply_overlay_and_hub_moves(app, moves, ppp);
-    if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
+    if app.hotkey.screen_click.is_armed() || app.hotkey.macro_record_bridge.is_armed() {
         app.snap_quick_access_fan_closed();
         app.overlay.macro_overlay.set_hub_fan(false, true);
         app.overlay.macro_overlay.set_hub_fan_interactive(false);
@@ -53,7 +53,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             &[],
             None,
             &app.workspace.catalog,
-            &app.pending_hotkey_macros,
+            &app.hotkey.pending_hotkey_macros,
             None,
             &[],
             false,
@@ -166,7 +166,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         &buttons,
         preview.as_ref(),
         &app.workspace.catalog,
-        &app.pending_hotkey_macros,
+        &app.hotkey.pending_hotkey_macros,
         running_macro,
         &hub_btns,
         relocate,
@@ -303,7 +303,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             macros: &mut app.workspace.macros,
             catalog: &mut app.workspace.catalog,
             icons: &mut app.assets.icon_cache,
-            screen_click: &app.screen_click,
+            screen_click: &app.hotkey.screen_click,
             settings: app.settings_ui.settings_mut(),
             hotkey_tag_filters: &mut app.workspace.hotkey_tag_filters,
             pending_scale,
@@ -425,7 +425,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
                 key_record: &mut app.key_record,
                 hotkey_record: &mut app.hotkey_record,
                 macro_hotkeys: &app.run_session.macro_hotkeys,
-                screen_click: &app.screen_click,
+                screen_click: &app.hotkey.screen_click,
             },
             compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
             pending_scale,
@@ -815,7 +815,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             }
         }
         if app.lifecycle.tasks.pixel_sample.is_none() {
-            if let Some((x, y)) = app.screen_click.take_color_point() {
+            if let Some((x, y)) = app.hotkey.screen_click.take_color_point() {
                 #[cfg(target_os = "linux")]
                 if let Some(hex) = app.overlay.recording_overlay.sample_frozen_pixel_hex(x, y) {
                     app.tree.tooltip.apply_recorded_color(hex.clone());
@@ -843,7 +843,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
     }
     #[cfg(all(target_arch = "wasm32", feature = "native-runtime"))]
-    if let Some((x, y)) = app.screen_click.take_color_point() {
+    if let Some((x, y)) = app.hotkey.screen_click.take_color_point() {
         match crate::native_capture::open_shared_run()
             .map_err(|e| e.to_string())
             .and_then(|mut c| pixel_color::sample_pixel_hex_with(&mut c, x, y))
@@ -898,13 +898,13 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         let result = app.macro_record.show(crate::macro_record::MacroRecordShow {
             ctx,
             macro_hotkeys: &app.run_session.macro_hotkeys,
-            bridge: &app.macro_record_bridge,
+            bridge: &app.hotkey.macro_record_bridge,
             catalog: &mut app.workspace.catalog,
             icons: &mut app.assets.icon_cache,
             previews: &mut app.assets.preview_tooltips,
             key_record: &mut app.key_record,
             hotkey_record: &mut app.hotkey_record,
-            screen_click: &app.screen_click,
+            screen_click: &app.hotkey.screen_click,
             macros: &macros,
             compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
             pending_scale: pending.as_ref(),
@@ -940,8 +940,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     } else if app.hotkey_record.is_open()
         || app.key_record.is_open()
         || app.macro_record.is_open()
-        || app.screen_click.is_armed()
-        || app.macro_record_bridge.is_armed()
+        || app.hotkey.screen_click.is_armed()
+        || app.hotkey.macro_record_bridge.is_armed()
     {
         ctx.request_repaint();
     } else if app

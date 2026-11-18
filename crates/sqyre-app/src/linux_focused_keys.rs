@@ -19,7 +19,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let record_ui_open = app.key_record.is_open() || app.hotkey_record.is_open();
-    let recording = app.macro_record_bridge.is_armed();
+    let recording = app.hotkey.macro_record_bridge.is_armed();
     let focused = ctx.input(|i| i.focused);
 
     // evdev owns macro-record input on Wayland (including clicks).
@@ -70,17 +70,17 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         app.run_session
             .macro_hotkeys
             .on_pressed_keys(&pressed, &|_| {});
-        app.macro_record_bridge.sync_pressed_keys(&pressed);
+        app.hotkey.macro_record_bridge.sync_pressed_keys(&pressed);
         if pressed.contains("esc") {
-            let _ = app.macro_record_bridge.on_escape();
+            let _ = app.hotkey.macro_record_bridge.on_escape();
         }
         return;
     }
 
     app.run_session.continue_wait.on_pressed_keys(&pressed);
 
-    let pending = Arc::clone(&app.pending_hotkey_macros);
-    let repaint = Arc::clone(&app.hotkey_repaint);
+    let pending = Arc::clone(&app.hotkey.pending_hotkey_macros);
+    let repaint = Arc::clone(&app.hotkey.hotkey_repaint);
     app.run_session
         .macro_hotkeys
         .on_pressed_keys(&pressed, &move |name| {
@@ -90,7 +90,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     if esc_pressed && !app.hotkey_record.is_open() && !app.key_record.is_open() {
         let ctrl = pressed.contains("ctrl");
         let shift = pressed.contains("shift") || pressed.contains("rshift");
-        if app.screen_click.on_escape() {
+        if app.hotkey.screen_click.on_escape() {
             // Point/area recording takes Esc; don't also stop macros.
         } else if sqyre_hotkeys::failsafe_modifiers_held(&pressed) {
             crate::log::warn(format_args!(

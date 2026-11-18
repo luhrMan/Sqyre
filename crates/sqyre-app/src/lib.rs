@@ -531,17 +531,36 @@ pub(crate) struct NativeLifecycle {
     pub(crate) hotkeys_deferred: Option<HotkeyCallbacks>,
 }
 
+/// Global hotkey service and related wake / chooser / focus-tag state.
+///
+/// Recording UIs (`hotkey_record`, `key_record`, `macro_record`) stay on
+/// `SqyreApp` — this nest is the runtime host only.
+pub(crate) struct HotkeyHost {
+    pub(crate) hotkeys: Box<dyn HotkeyService>,
+    pub(crate) screen_click: ScreenClickBridge,
+    pub(crate) macro_record_bridge: MacroRecordBridge,
+    /// Macro names requested by the hotkey thread (drained each frame).
+    pub(crate) pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
+    /// egui context for waking the UI when a hotkey queues a macro while idle/unfocused.
+    pub(crate) hotkey_repaint: Arc<Mutex<Option<egui::Context>>>,
+    /// Auto-select Program macro tags for hotkeys while that program owns focus.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
+    /// Near-cursor menu when multiple macros share a hotkey chord.
+    pub(crate) hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
+    /// Live panic-key name shared with the global hotkey hook; synced from
+    /// settings each frame so edits apply without restarting the hook.
+    pub(crate) panic_key_slot: Arc<parking_lot::RwLock<String>>,
+    /// Macro to start once the current run stops (chooser pick while busy).
+    pub(crate) start_when_idle: Option<String>,
+}
+
 pub struct SqyreApp {
     pub(crate) workspace: Workspace,
     pub(crate) run_session: RunSession,
     pub(crate) tree: TreeState,
-    hotkeys: Box<dyn HotkeyService>,
-    screen_click: ScreenClickBridge,
-    macro_record_bridge: MacroRecordBridge,
-    /// Macro names requested by the hotkey thread (drained each frame).
-    pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
-    /// egui context for waking the UI when a hotkey queues a macro while idle/unfocused.
-    hotkey_repaint: Arc<Mutex<Option<egui::Context>>>,
+    /// Global hotkey service, bridges, chooser, and wake slots.
+    hotkey: HotkeyHost,
     hotkey_record: HotkeyRecordUi,
     key_record: KeyRecordUi,
     macro_record: MacroRecordUi,
@@ -558,18 +577,8 @@ pub struct SqyreApp {
     overlay: OverlayShell,
     /// Native startup / process lifecycle (tasks, portal, permissions, import).
     lifecycle: NativeLifecycle,
-    /// Auto-select Program macro tags for hotkeys while that program owns focus.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-    hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
-    /// Near-cursor menu when multiple macros share a hotkey chord.
-    hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
     /// Edge hub radial fan animation state.
     quick_access: quick_access::QuickAccessFan,
-    /// Macro to start once the current run stops (chooser pick while busy).
-    start_when_idle: Option<String>,
-    /// Live panic-key name shared with the global hotkey hook; synced from
-    /// settings each frame so edits apply without restarting the hook.
-    panic_key_slot: Arc<parking_lot::RwLock<String>>,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -789,11 +798,18 @@ impl SqyreApp {
                 logs_state: action_logs_ui::LogsWindowState::default(),
             },
             tree: TreeState::default(),
-            hotkeys,
-            screen_click,
-            macro_record_bridge,
-            pending_hotkey_macros,
-            hotkey_repaint,
+            hotkey: HotkeyHost {
+                hotkeys,
+                screen_click,
+                macro_record_bridge,
+                pending_hotkey_macros,
+                hotkey_repaint,
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+                hotkey_chooser: None,
+                panic_key_slot,
+                start_when_idle: None,
+            },
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_record: MacroRecordUi::default(),
@@ -841,12 +857,7 @@ impl SqyreApp {
                 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                 hotkeys_deferred,
             },
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
-            hotkey_chooser: None,
             quick_access: quick_access::QuickAccessFan::default(),
-            start_when_idle: None,
-            panic_key_slot,
             macro_list_open: true,
             macro_list_filter: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -884,7 +895,7 @@ impl SqyreApp {
         let Some(callbacks) = self.lifecycle.hotkeys_deferred.take() else {
             return;
         };
-        if let Err(e) = self.hotkeys.start(callbacks) {
+        if let Err(e) = self.hotkey.hotkeys.start(callbacks) {
             crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
     }
@@ -1012,6 +1023,7 @@ impl eframe::App for SqyreApp {
                 .runtime
                 .hotkey_tags_while_focused;
             if let Some(tags) = self
+                .hotkey
                 .hotkey_focus_tags
                 .poll(enabled, &self.workspace.catalog)
             {
@@ -1022,8 +1034,8 @@ impl eframe::App for SqyreApp {
         // apply without restarting the hook thread).
         {
             let configured = &self.settings_ui.settings().runtime.panic_key;
-            if *self.panic_key_slot.read() != *configured {
-                *self.panic_key_slot.write() = configured.clone();
+            if *self.hotkey.panic_key_slot.read() != *configured {
+                *self.hotkey.panic_key_slot.write() = configured.clone();
             }
         }
         self.add_action_picker
@@ -1102,14 +1114,14 @@ impl eframe::App for SqyreApp {
         ui_overlays::sync_frame_state(self, ui.ctx());
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         if self.overlay.hidden_for_recording
-            && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
+            && (self.hotkey.screen_click.is_armed() || self.hotkey.macro_record_bridge.is_armed())
         {
             // Poll grab/snapshot while the main window is unmapped. If the
             // completing click lands this frame, fall through so visibility is
             // restored and Data Editor can take the recorded point/area —
             // otherwise the wake poller stops and the frozen cover stays up.
             self.sync_recording_overlay(ui.ctx());
-            if self.screen_click.is_armed() || self.macro_record_bridge.is_armed() {
+            if self.hotkey.screen_click.is_armed() || self.hotkey.macro_record_bridge.is_armed() {
                 return;
             }
             self.update_recording_visibility(ui.ctx());
@@ -1278,7 +1290,7 @@ impl Drop for SqyreApp {
         sqyre_input::release_held_inputs();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         let t_hk = web_time::Instant::now();
-        self.hotkeys.stop();
+        self.hotkey.hotkeys.stop();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
             sqyre_capture::cap_log(

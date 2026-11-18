@@ -475,7 +475,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     key_record: &mut app.key_record,
                     hotkey_record: &mut app.hotkey_record,
                     macro_hotkeys: &app.run_session.macro_hotkeys,
-                    screen_click: &app.screen_click,
+                    screen_click: &app.hotkey.screen_click,
                 },
                 compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
                 pending_scale: pending.as_ref(),

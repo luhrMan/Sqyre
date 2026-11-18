@@ -189,7 +189,7 @@ impl SqyreApp {
             };
             self.overlay.macro_overlay.show_hotkey_chooser(
                 ctx,
-                &self.pending_hotkey_macros,
+                &self.hotkey.pending_hotkey_macros,
                 title,
                 names.clone(),
                 phys.0,
@@ -203,7 +203,7 @@ impl SqyreApp {
         )))]
         let native = false;
 
-        self.hotkey_chooser = Some(HotkeyChooserState {
+        self.hotkey.hotkey_chooser = Some(HotkeyChooserState {
             names,
             chord,
             chord_label,
@@ -218,7 +218,7 @@ impl SqyreApp {
     ///
     /// Called from `App::logic` so a pick lands while the main window is minimized.
     pub(crate) fn poll_native_hotkey_chooser(&mut self, ctx: &egui::Context) -> Option<String> {
-        if !self.hotkey_chooser.as_ref()?.native {
+        if !self.hotkey.hotkey_chooser.as_ref()?.native {
             return None;
         }
         #[cfg(all(
@@ -229,11 +229,11 @@ impl SqyreApp {
         {
             match self.overlay.macro_overlay.take_hotkey_chooser_result() {
                 Some(sqyre_overlay::NativeHotkeyChooserResult::Picked(name)) => {
-                    self.hotkey_chooser = None;
+                    self.hotkey.hotkey_chooser = None;
                     Some(name)
                 }
                 Some(sqyre_overlay::NativeHotkeyChooserResult::Dismissed) => {
-                    self.hotkey_chooser = None;
+                    self.hotkey.hotkey_chooser = None;
                     None
                 }
                 None => {
@@ -250,7 +250,7 @@ impl SqyreApp {
         )))]
         {
             let _ = ctx;
-            self.hotkey_chooser = None;
+            self.hotkey.hotkey_chooser = None;
             None
         }
     }
@@ -260,7 +260,7 @@ impl SqyreApp {
     /// The native chooser never has keyboard focus over native Wayland apps, and
     /// claiming Esc keeps the hook from also stopping macros.
     pub(crate) fn poll_hotkey_chooser_escape(&mut self, ctx: &egui::Context) {
-        let open = self.hotkey_chooser.is_some();
+        let open = self.hotkey.hotkey_chooser.is_some();
         sqyre_hotkeys::claim_popup_escape(open);
         if !open {
             return;
@@ -274,11 +274,16 @@ impl SqyreApp {
             feature = "overlay-buttons",
             target_os = "linux"
         ))]
-        if self.hotkey_chooser.as_ref().is_some_and(|c| c.native) {
+        if self
+            .hotkey
+            .hotkey_chooser
+            .as_ref()
+            .is_some_and(|c| c.native)
+        {
             self.overlay.macro_overlay.hide_hotkey_chooser();
             let _ = self.overlay.macro_overlay.take_hotkey_chooser_result();
         }
-        self.hotkey_chooser = None;
+        self.hotkey.hotkey_chooser = None;
     }
 
     /// Start a macro picked in the chooser, stopping the current run first.
@@ -292,10 +297,10 @@ impl SqyreApp {
         // one when the worker clears (silent already-running skips felt broken).
         if self.run_session.state.running.load(Ordering::SeqCst) {
             self.request_stop();
-            self.start_when_idle = Some(name);
+            self.hotkey.start_when_idle = Some(name);
             *self.run_session.state.status.lock() = "Stopping…".into();
         } else {
-            self.start_when_idle = None;
+            self.hotkey.start_when_idle = None;
             self.start_macro_by_name(&name, ctx);
         }
     }
@@ -305,14 +310,14 @@ impl SqyreApp {
         if self.run_session.state.running.load(Ordering::SeqCst) {
             return;
         }
-        if let Some(name) = self.start_when_idle.take() {
+        if let Some(name) = self.hotkey.start_when_idle.take() {
             self.start_macro_by_name(&name, ctx);
         }
     }
 
     /// Paint the egui conflict chooser when open. Returns a macro name to start.
     pub(crate) fn paint_hotkey_chooser(&mut self, ctx: &egui::Context) -> Option<String> {
-        let state = self.hotkey_chooser.clone()?;
+        let state = self.hotkey.hotkey_chooser.clone()?;
         if state.native {
             return None;
         }
@@ -363,11 +368,11 @@ impl SqyreApp {
                 });
         });
 
-        if let Some(chooser) = self.hotkey_chooser.as_mut() {
+        if let Some(chooser) = self.hotkey.hotkey_chooser.as_mut() {
             chooser.selected = selected;
         }
         if picked.is_some() || dismiss {
-            self.hotkey_chooser = None;
+            self.hotkey.hotkey_chooser = None;
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }

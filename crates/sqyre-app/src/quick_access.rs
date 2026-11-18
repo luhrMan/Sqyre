@@ -494,7 +494,7 @@ impl SqyreApp {
                 macros: &mut self.workspace.macros,
                 catalog: &mut self.workspace.catalog,
                 icons: &mut self.assets.icon_cache,
-                screen_click: &self.screen_click,
+                screen_click: &self.hotkey.screen_click,
                 settings: self.settings_ui.settings_mut(),
                 hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,
                 pending_scale: pending.as_ref(),
@@ -512,8 +512,8 @@ impl SqyreApp {
         );
         self.data_editor
             .prefer_focused_program_for_new(&self.workspace.catalog, self.settings_ui.settings());
-        if !self.screen_click.is_armed() {
-            self.screen_click.arm_search_area();
+        if !self.hotkey.screen_click.is_armed() {
+            self.hotkey.screen_click.arm_search_area();
             self.data_editor
                 .set_ok("Screen Cap: click two corners to capture.");
         }

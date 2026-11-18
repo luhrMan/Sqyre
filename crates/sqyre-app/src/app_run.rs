@@ -44,9 +44,9 @@ impl SqyreApp {
         // Don't take while a chooser is open — overlay clicks share this queue
         // and used to be discarded here. Names from the press that opened it can
         // still be arriving; drop those so the menu does not reopen after a pick.
-        if let Some(open) = &self.hotkey_chooser {
+        if let Some(open) = &self.hotkey.hotkey_chooser {
             let macros = &self.workspace.macros;
-            self.pending_hotkey_macros.lock().retain(|name| {
+            self.hotkey.pending_hotkey_macros.lock().retain(|name| {
                 crate::hotkey_chooser::chord_of(name, macros).as_ref() != Some(&open.chord)
             });
             return;
@@ -54,7 +54,7 @@ impl SqyreApp {
         let pending: Vec<String> = self
             .run_session
             .macro_hotkeys
-            .between_fires(|| std::mem::take(&mut *self.pending_hotkey_macros.lock()));
+            .between_fires(|| std::mem::take(&mut *self.hotkey.pending_hotkey_macros.lock()));
         if pending.is_empty() {
             return;
         }
@@ -124,7 +124,8 @@ impl SqyreApp {
             // Android has one window; hiding it leaves a black screen with nothing to pick on.
             let should_hide = !cfg!(target_os = "android")
                 && self.settings_ui.settings().ui.hide_app_during_recording
-                && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
+                && (self.hotkey.screen_click.is_armed()
+                    || self.hotkey.macro_record_bridge.is_armed());
             if should_hide && !self.overlay.hidden_for_recording {
                 self.overlay.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
@@ -159,19 +160,21 @@ impl SqyreApp {
             let preview_outline = self.assets.preview_tooltips.take_desktop_outline();
             self.overlay.recording_overlay.sync_with_macro_record(
                 ctx,
-                &self.screen_click,
-                Some(&self.macro_record_bridge),
+                &self.hotkey.screen_click,
+                Some(&self.hotkey.macro_record_bridge),
                 preview_outline,
                 self.overlay.hidden_for_recording,
             );
             let markers = crate::macro_record::desktop_marker_points(
                 &self.macro_record,
-                &self.macro_record_bridge,
+                &self.hotkey.macro_record_bridge,
                 &crate::macro_record::RecordThresholds::from_settings(self.settings_ui.settings()),
             );
             self.overlay.recording_overlay.sync_point_markers(&markers);
             #[cfg(target_os = "android")]
-            self.overlay.screen_pick.sync(ctx, &self.screen_click);
+            self.overlay
+                .screen_pick
+                .sync(ctx, &self.hotkey.screen_click);
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
@@ -251,7 +254,7 @@ mod native_run {
                         }
                         sqyre_persist::HotkeyWhileRunning::Restart => {
                             self.request_stop();
-                            self.start_when_idle = Some(name.to_string());
+                            self.hotkey.start_when_idle = Some(name.to_string());
                             *self.run_session.state.status.lock() = "Restarting…".into();
                             ctx.request_repaint();
                             return;

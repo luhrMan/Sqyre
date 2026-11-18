@@ -630,7 +630,7 @@ pub fn action_toolbar(
             .clicked()
             && app.macro_record.open(
                 &app.run_session.macro_hotkeys,
-                &app.macro_record_bridge,
+                &app.hotkey.macro_record_bridge,
                 &mut app.workspace.catalog,
             )
         {

@@ -155,11 +155,18 @@ impl SqyreApp {
                 logs_state: LogsWindowState::default(),
             },
             tree,
-            hotkeys,
-            screen_click,
-            macro_record_bridge: MacroRecordBridge::new(),
-            pending_hotkey_macros,
-            hotkey_repaint,
+            hotkey: crate::HotkeyHost {
+                hotkeys,
+                screen_click,
+                macro_record_bridge: MacroRecordBridge::new(),
+                pending_hotkey_macros,
+                hotkey_repaint,
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+                hotkey_chooser: None,
+                panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
+                start_when_idle: None,
+            },
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_record: MacroRecordUi::default(),
@@ -208,12 +215,7 @@ impl SqyreApp {
                 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                 hotkeys_deferred: None,
             },
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
-            hotkey_chooser: None,
             quick_access: crate::quick_access::QuickAccessFan::default(),
-            start_when_idle: None,
-            panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),

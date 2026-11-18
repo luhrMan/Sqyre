@@ -922,7 +922,7 @@ impl SqyreApp {
                         macros: &mut self.workspace.macros,
                         catalog: &mut self.workspace.catalog,
                         icons: &mut self.assets.icon_cache,
-                        screen_click: &self.screen_click,
+                        screen_click: &self.hotkey.screen_click,
                         settings: self.settings_ui.settings_mut(),
                         hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,
                         pending_scale: pending.as_ref(),

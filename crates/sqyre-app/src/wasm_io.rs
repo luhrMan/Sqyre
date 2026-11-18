@@ -60,7 +60,7 @@ impl SqyreApp {
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn request_db_import(&self) {
         let pending = Arc::clone(&self.lifecycle.pending_import);
-        let repaint = self.hotkey_repaint.lock().clone();
+        let repaint = self.hotkey.hotkey_repaint.lock().clone();
         wasm_bindgen_futures::spawn_local(async move {
             let file = rfd::AsyncFileDialog::new()
                 .add_filter("YAML", &["yaml", "yml"])
