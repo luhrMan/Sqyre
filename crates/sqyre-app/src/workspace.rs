@@ -20,7 +20,7 @@ pub(crate) struct Workspace {
     pub(crate) save_error: Option<String>,
     pub(crate) macro_meta: MacroMetaUi,
     /// When set, macros matching any of these tags (empty string = untagged) have hotkeys enabled.
-    /// Empty = hotkeys off. Persisted in [`sqyre_persist::UserSettings::hotkey_tag_filters`].
+    /// Empty = hotkeys off. Persisted in [`sqyre_persist::RuntimePrefs::hotkey_tag_filters`].
     pub(crate) hotkey_tag_filters: Vec<String>,
 }
 

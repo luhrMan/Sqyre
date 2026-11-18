@@ -168,7 +168,7 @@ impl DataEditor {
                             icons,
                             name,
                             crate::icon_cache::ProgramLabelStyle::Selectable { selected },
-                            settings.compact_program_headers,
+                            settings.ui.compact_program_headers,
                         );
                         if selected {
                             list_scroll_to(ui, &resp, &scroll_to, &did_scroll);
@@ -199,8 +199,8 @@ impl DataEditor {
                         } else {
                             None
                         };
-                    let sort = settings.data_editor_items_sort;
-                    let tag_priority = settings.data_editor_items_tag_priority.as_slice();
+                    let sort = settings.ui.data_editor_items_sort;
+                    let tag_priority = settings.ui.data_editor_items_tag_priority.as_slice();
                     if grouped {
                         // Program accordion (grid manages its own scroll flag).
                         let mut grid_scroll = scroll_to.get();
@@ -213,8 +213,8 @@ impl DataEditor {
                             false,
                             self.selected_program.as_deref(),
                             &mut clicked_program,
-                            settings.compact_program_headers,
-                            settings.show_empty_program_headers,
+                            settings.ui.compact_program_headers,
+                            settings.ui.show_empty_program_headers,
                             Some(&mut grid_scroll),
                             sort,
                             tag_priority,
@@ -278,14 +278,14 @@ impl DataEditor {
                         catalog,
                         icons: &mut *icons,
                         grouped,
-                        compact_headers: settings.compact_program_headers,
+                        compact_headers: settings.ui.compact_program_headers,
                         scroll_to: &scroll_to,
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
                     };
                     for prog in &progs {
                         let entities = self.entity_names(catalog, prog);
-                        if entities.is_empty() && !settings.show_empty_program_headers {
+                        if entities.is_empty() && !settings.ui.show_empty_program_headers {
                             continue;
                         }
                         // A program-name hit only matters in the grouped scope.
@@ -332,7 +332,7 @@ impl DataEditor {
                         catalog,
                         icons: &mut *icons,
                         grouped,
-                        compact_headers: settings.compact_program_headers,
+                        compact_headers: settings.ui.compact_program_headers,
                         scroll_to: &scroll_to,
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
@@ -345,7 +345,7 @@ impl DataEditor {
                             .unwrap_or_default();
                         if search_areas.is_empty()
                             && collections.is_empty()
-                            && !settings.show_empty_program_headers
+                            && !settings.ui.show_empty_program_headers
                         {
                             continue;
                         }
@@ -444,13 +444,14 @@ impl DataEditor {
                         catalog,
                         icons: &mut *icons,
                         grouped,
-                        compact_headers: settings.compact_program_headers,
+                        compact_headers: settings.ui.compact_program_headers,
                         scroll_to: &scroll_to,
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
                     };
                     for prog in &progs {
                         let mut buttons: Vec<_> = settings
+                            .overlay
                             .overlay_buttons
                             .iter()
                             .filter(|b| b.program == *prog)
@@ -460,7 +461,7 @@ impl DataEditor {
                             crate::macro_meta::cmp_display_name(a.display_name(), b.display_name())
                                 .then_with(|| a.id.cmp(&b.id))
                         });
-                        if buttons.is_empty() && !settings.show_empty_program_headers {
+                        if buttons.is_empty() && !settings.ui.show_empty_program_headers {
                             continue;
                         }
                         let prog_match =
@@ -515,7 +516,12 @@ impl DataEditor {
 
         if !overlay_enabled_updates.is_empty() {
             for (id, enabled) in &overlay_enabled_updates {
-                if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == *id) {
+                if let Some(btn) = settings
+                    .overlay
+                    .overlay_buttons
+                    .iter_mut()
+                    .find(|b| b.id == *id)
+                {
                     btn.enabled = *enabled;
                 }
                 if self.selected_entity.as_deref() == Some(id.as_str()) {
@@ -567,6 +573,7 @@ impl DataEditor {
                         .unwrap_or(0)
             }
             EditorTab::Overlay => settings
+                .overlay
                 .overlay_buttons
                 .iter()
                 .filter(|b| b.program == program)
@@ -1421,11 +1428,14 @@ mod tests {
         )
         .unwrap();
         let settings = UserSettings {
-            overlay_buttons: vec![
-                OverlayButtonConfig::new("b1", "Game"),
-                OverlayButtonConfig::new("b2", "Game"),
-                OverlayButtonConfig::new("b3", "Other"),
-            ],
+            overlay: sqyre_persist::OverlaySettings {
+                overlay_buttons: vec![
+                    OverlayButtonConfig::new("b1", "Game"),
+                    OverlayButtonConfig::new("b2", "Game"),
+                    OverlayButtonConfig::new("b3", "Other"),
+                ],
+                ..Default::default()
+            },
             ..Default::default()
         };
         let mut ed = DataEditor {

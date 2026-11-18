@@ -22,11 +22,18 @@ use std::sync::atomic::Ordering;
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
     app.macro_overlay
-        .set_press_stops_run(app.settings_ui.settings().overlay_press_stops_run);
-    app.macro_overlay
-        .set_show_over_sqyre(app.settings_ui.settings().overlay_buttons_over_sqyre);
+        .set_press_stops_run(app.settings_ui.settings().overlay.overlay_press_stops_run);
+    app.macro_overlay.set_show_over_sqyre(
+        app.settings_ui
+            .settings()
+            .overlay
+            .overlay_buttons_over_sqyre,
+    );
     sqyre_capture::set_overlay_buttons_in_detection(
-        app.settings_ui.settings().overlay_buttons_in_detection,
+        app.settings_ui
+            .settings()
+            .overlay
+            .overlay_buttons_in_detection,
     );
     app.macro_overlay
         .set_visibility_map(app.overlay_visibility.found_map());
@@ -71,6 +78,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             let all = app
                 .settings_ui
                 .settings()
+                .overlay
                 .overlay_buttons
                 .iter()
                 .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id));
@@ -109,6 +117,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         let buttons: Vec<_> = app
             .settings_ui
             .settings()
+            .overlay
             .overlay_buttons
             .iter()
             .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id))
@@ -119,6 +128,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     let close_dist = app
         .settings_ui
         .settings()
+        .runtime
         .image_search_close_matches_distance;
     app.overlay_visibility
         .set_paused(app.run_session.state.running.load(Ordering::SeqCst));
@@ -171,6 +181,7 @@ fn resolve_hub_overlay_config(app: &SqyreApp) -> Option<sqyre_persist::OverlayBu
     let mut hub = app
         .settings_ui
         .settings()
+        .overlay
         .overlay_buttons
         .iter()
         .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
@@ -202,6 +213,7 @@ fn apply_overlay_and_hub_moves(
             let size_pt = app
                 .settings_ui
                 .settings()
+                .overlay
                 .overlay_buttons
                 .iter()
                 .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
@@ -410,7 +422,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
                 macro_hotkeys: &app.run_session.macro_hotkeys,
                 screen_click: &app.screen_click,
             },
-            compact_program_headers: app.settings_ui.settings().compact_program_headers,
+            compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
             pending_scale,
         };
         let picked = app.add_action_picker.show(ctx, &mut tip, &macros, |_| {
@@ -601,7 +613,10 @@ fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
         return;
     };
     if intro.show(ctx) {
-        app.settings_ui.settings_mut().permissions_intro_done = true;
+        app.settings_ui
+            .settings_mut()
+            .runtime
+            .permissions_intro_done = true;
         if let Err(e) = app.settings_ui.save_settings() {
             crate::log::warn(format!("save settings after permissions intro: {e}"));
         }
@@ -730,21 +745,25 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     );
 
     // Keep highlighter enable flag in sync with the preference.
-    let highlight_on = app.settings_ui.settings().highlight_active_action;
+    let highlight_on = app.settings_ui.settings().runtime.highlight_active_action;
     if app.run_session.highlighter.is_enabled() != highlight_on {
         app.run_session.highlighter.set_enabled(highlight_on);
     }
     // Keep click-effect enable flag in sync with the preference.
-    let click_fx_on = app.settings_ui.settings().click_effect;
+    let click_fx_on = app.settings_ui.settings().runtime.click_effect;
     if app.run_session.click_fx.is_enabled() != click_fx_on {
         app.run_session.click_fx.set_enabled(click_fx_on);
     }
-    let log_images = app.settings_ui.settings().save_meta_images;
+    let log_images = app.settings_ui.settings().runtime.save_meta_images;
     app.run_session.action_log.set_log_images(log_images);
     app.run_session.action_log.set_log_verbose(log_images);
-    app.run_session
-        .action_log
-        .set_max_entries(app.settings_ui.settings().action_log_max_entries.max(1) as usize);
+    app.run_session.action_log.set_max_entries(
+        app.settings_ui
+            .settings()
+            .runtime
+            .action_log_max_entries
+            .max(1) as usize,
+    );
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.workspace.catalog);
@@ -882,7 +901,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             hotkey_record: &mut app.hotkey_record,
             screen_click: &app.screen_click,
             macros: &macros,
-            compact_program_headers: app.settings_ui.settings().compact_program_headers,
+            compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
             pending_scale: pending.as_ref(),
             thresholds: crate::macro_record::RecordThresholds::from_settings(
                 app.settings_ui.settings(),
@@ -907,8 +926,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             ctx.request_repaint_after(wait);
         }
     }
-    let highlight_on = app.settings_ui.settings().highlight_active_action;
-    if running && (highlight_on || app.settings_ui.settings().click_effect) {
+    let highlight_on = app.settings_ui.settings().runtime.highlight_active_action;
+    if running && (highlight_on || app.settings_ui.settings().runtime.click_effect) {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     } else if running {
         // Keep ROOT coarse while a macro runs.
@@ -923,6 +942,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     } else if app
         .settings_ui
         .settings()
+        .overlay
         .overlay_buttons
         .iter()
         .any(|b| b.enabled)
@@ -934,8 +954,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         {
             // While an update worker is running, poll_update already scheduled a short wake.
             if !app.update.is_busy()
-                && (app.settings_ui.settings().backup_enabled
-                    || app.settings_ui.settings().auto_update_check)
+                && (app.settings_ui.settings().data.backup_enabled
+                    || app.settings_ui.settings().data.auto_update_check)
             {
                 // Coarse wake so automatic backups / update polls can fire while idle.
                 ctx.request_repaint_after(std::time::Duration::from_secs(60));
@@ -992,21 +1012,21 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let settings = app.settings_ui.settings();
-    if !settings.backup_enabled || app.tasks.backup.is_some() {
+    if !settings.data.backup_enabled || app.tasks.backup.is_some() {
         return;
     }
-    let interval_secs = (settings.backup_interval_hours.max(1) as u64).saturating_mul(3600);
+    let interval_secs = (settings.data.backup_interval_hours.max(1) as u64).saturating_mul(3600);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let due = settings.last_backup_unix <= 0
-        || now.saturating_sub(settings.last_backup_unix) as u64 >= interval_secs;
+    let due = settings.data.last_backup_unix <= 0
+        || now.saturating_sub(settings.data.last_backup_unix) as u64 >= interval_secs;
     if !due {
         return;
     }
 
-    let keep = settings.backup_max_keep.max(1) as usize;
+    let keep = settings.data.backup_max_keep.max(1) as usize;
     let (tx, rx) = mpsc::channel();
     app.tasks.backup = Some(rx);
     thread::spawn(move || {
@@ -1143,7 +1163,7 @@ pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
         crate::command_palette::collect_commands(crate::command_palette::CommandSources {
             macros: &app.workspace.macros,
             catalog: (&app.workspace.catalog).into(),
-            overlay_buttons: &app.settings_ui.settings().overlay_buttons,
+            overlay_buttons: &app.settings_ui.settings().overlay.overlay_buttons,
             running,
         });
     let pending = app.pending_viewport_scale;

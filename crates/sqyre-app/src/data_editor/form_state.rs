@@ -569,7 +569,7 @@ impl FormState for OverlayForm {
         let Some(id) = ed.selected_entity.as_deref() else {
             return false;
         };
-        let Some(btn) = settings.overlay_buttons.iter().find(|b| b.id == id) else {
+        let Some(btn) = settings.overlay.overlay_buttons.iter().find(|b| b.id == id) else {
             return true;
         };
         ed.form_overlay_macro.trim() != btn.macro_name.trim()
@@ -725,7 +725,7 @@ mod tests {
         // would read dirty; set the resolved id to isolate the float checks.
         btn.icon = crate::overlay_icons::DEFAULT_ICON_ID.into();
         btn.border_width = 0.25;
-        settings.overlay_buttons.push(btn);
+        settings.overlay.overlay_buttons.push(btn);
 
         let mut ed = editor_on(EditorTab::Overlay);
         ed.selected_program = Some("Game".into());

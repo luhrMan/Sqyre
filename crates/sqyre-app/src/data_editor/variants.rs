@@ -231,9 +231,9 @@ impl DataEditor {
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_add_sound_if(
-                    settings.play_add_sound,
-                    settings.sound_volume,
-                    &settings.add_sound_file,
+                    settings.sound.play_add_sound,
+                    settings.sound.sound_volume,
+                    &settings.sound.add_sound_file,
                 );
                 #[cfg(target_arch = "wasm32")]
                 let _ = settings;
@@ -304,9 +304,9 @@ impl DataEditor {
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_delete_sound_if(
-                    settings.play_delete_sound,
-                    settings.sound_volume,
-                    &settings.delete_sound_file,
+                    settings.sound.play_delete_sound,
+                    settings.sound.sound_volume,
+                    &settings.sound.delete_sound_file,
                 );
                 #[cfg(target_arch = "wasm32")]
                 let _ = settings;
@@ -635,9 +635,9 @@ impl DataEditor {
                     } else {
                         #[cfg(not(target_arch = "wasm32"))]
                         crate::sound::play_add_sound_if(
-                            settings.play_add_sound,
-                            settings.sound_volume,
-                            &settings.add_sound_file,
+                            settings.sound.play_add_sound,
+                            settings.sound.sound_volume,
+                            &settings.sound.add_sound_file,
                         );
                         #[cfg(target_arch = "wasm32")]
                         let _ = settings;

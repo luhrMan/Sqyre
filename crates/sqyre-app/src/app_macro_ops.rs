@@ -35,7 +35,11 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_add_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_add_sound_if(s.play_add_sound, s.sound_volume, &s.add_sound_file);
+        crate::sound::play_add_sound_if(
+            s.sound.play_add_sound,
+            s.sound.sound_volume,
+            &s.sound.add_sound_file,
+        );
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -45,9 +49,9 @@ impl SqyreApp {
     pub(crate) fn play_ui_delete_sound(&self) {
         let s = self.settings_ui.settings();
         crate::sound::play_delete_sound_if(
-            s.play_delete_sound,
-            s.sound_volume,
-            &s.delete_sound_file,
+            s.sound.play_delete_sound,
+            s.sound.sound_volume,
+            &s.sound.delete_sound_file,
         );
     }
 
@@ -95,10 +99,10 @@ impl SqyreApp {
     /// Write [`Workspace::hotkey_tag_filters`] into settings when it drifted.
     pub(crate) fn persist_hotkey_tag_filter(&mut self) {
         let filter = self.workspace.hotkey_tag_filters.clone();
-        if self.settings_ui.settings().hotkey_tag_filters == filter {
+        if self.settings_ui.settings().runtime.hotkey_tag_filters == filter {
             return;
         }
-        self.settings_ui.settings_mut().hotkey_tag_filters = filter;
+        self.settings_ui.settings_mut().runtime.hotkey_tag_filters = filter;
         if let Err(e) = self.settings_ui.save_settings() {
             crate::log::warn(format!("failed to save hotkey tag filter: {e}"));
         }
@@ -252,10 +256,10 @@ impl SqyreApp {
         else {
             return;
         };
-        if self.settings_ui.settings().last_selected_macro == name {
+        if self.settings_ui.settings().runtime.last_selected_macro == name {
             return;
         }
-        self.settings_ui.settings_mut().last_selected_macro = name.to_string();
+        self.settings_ui.settings_mut().runtime.last_selected_macro = name.to_string();
         let _ = self.settings_ui.save_settings();
     }
 
@@ -264,9 +268,9 @@ impl SqyreApp {
         let mut m = Macro::new(name.clone(), 0, vec![]);
         {
             let s = self.settings_ui.settings();
-            m.keyboard_delay = s.default_keyboard_delay_ms;
-            m.mouse_delay = s.default_mouse_delay_ms;
-            m.hotkey_trigger = s.default_hotkey_trigger.clone();
+            m.keyboard_delay = s.runtime.default_keyboard_delay_ms;
+            m.mouse_delay = s.runtime.default_mouse_delay_ms;
+            m.hotkey_trigger = s.runtime.default_hotkey_trigger.clone();
         }
         self.workspace.macros.push(m);
         self.workspace

@@ -34,7 +34,7 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
             #[cfg(not(target_arch = "wasm32"))]
-            let undecorated = !app.settings_ui.settings().window_decorations;
+            let undecorated = !app.settings_ui.settings().ui.window_decorations;
             #[cfg(not(target_arch = "wasm32"))]
             if undecorated {
                 // Interact first so later chrome keeps click priority; empty
@@ -63,7 +63,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         #[cfg(not(target_arch = "wasm32"))]
         let mid_right = {
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                if !app.settings_ui.settings().window_decorations {
+                if !app.settings_ui.settings().ui.window_decorations {
                     crate::window_frame::window_control_buttons(ui);
                 }
                 show_update_banner(app, ui);
@@ -361,7 +361,7 @@ fn paint_run_glow(
 /// Run button that becomes a red-glowing Stop button while a macro runs, followed by a separator.
 #[cfg(not(target_arch = "wasm32"))]
 fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
-    let glow = (running || app.settings_ui.settings().run_button_glow)
+    let glow = (running || app.settings_ui.settings().ui.run_button_glow)
         .then(|| ui.painter().add(egui::Shape::Noop));
     let (icon, tip, color) = if running {
         (

@@ -123,7 +123,7 @@ impl SqyreApp {
         {
             // Android has one window; hiding it leaves a black screen with nothing to pick on.
             let should_hide = !cfg!(target_os = "android")
-                && self.settings_ui.settings().hide_app_during_recording
+                && self.settings_ui.settings().ui.hide_app_during_recording
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
@@ -153,9 +153,9 @@ impl SqyreApp {
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         {
-            self.assets
-                .preview_tooltips
-                .set_desktop_outlines_enabled(self.settings_ui.settings().preview_desktop_outline);
+            self.assets.preview_tooltips.set_desktop_outlines_enabled(
+                self.settings_ui.settings().ui.preview_desktop_outline,
+            );
             let preview_outline = self.assets.preview_tooltips.take_desktop_outline();
             self.recording_overlay.sync_with_macro_record(
                 ctx,
@@ -237,7 +237,7 @@ mod native_run {
                     .as_deref()
                     .is_some_and(|n| n.eq_ignore_ascii_case(name))
                 {
-                    match self.settings_ui.settings().hotkey_while_running {
+                    match self.settings_ui.settings().runtime.hotkey_while_running {
                         sqyre_persist::HotkeyWhileRunning::Stop => {
                             self.request_stop();
                             *self.run_session.state.status.lock() = "Stopping…".into();
@@ -335,16 +335,16 @@ mod native_run {
                     continue_wait: self.run_session.continue_wait.clone(),
                     macro_hotkeys: self.run_session.macro_hotkeys.clone(),
                     running_macro: self.macro_overlay.running_macro_slot(),
-                    close_matches: settings.image_search_close_matches_distance,
-                    variant_exit_early: settings.image_search_variant_exit_early,
-                    release_held_inputs: settings.release_held_inputs_on_end,
-                    while_max_iterations: settings.while_max_iterations,
-                    run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
-                    log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
-                    restore_cursor: settings.restore_cursor_on_end,
-                    play_finish_sound: settings.play_finish_sound,
-                    finish_sound_file: settings.finish_sound_file.clone(),
-                    sound_volume: settings.sound_volume,
+                    close_matches: settings.runtime.image_search_close_matches_distance,
+                    variant_exit_early: settings.runtime.image_search_variant_exit_early,
+                    release_held_inputs: settings.runtime.release_held_inputs_on_end,
+                    while_max_iterations: settings.runtime.while_max_iterations,
+                    run_macro_max_depth: settings.runtime.run_macro_max_depth.max(1) as usize,
+                    log_image_max_edge: settings.runtime.log_image_max_edge.max(1) as usize,
+                    restore_cursor: settings.runtime.restore_cursor_on_end,
+                    play_finish_sound: settings.sound.play_finish_sound,
+                    finish_sound_file: settings.sound.finish_sound_file.clone(),
+                    sound_volume: settings.sound.sound_volume,
                 },
                 macro_: self.workspace.macros[idx].clone(),
             }
@@ -617,16 +617,16 @@ mod native_run {
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
             running_macro: app.macro_overlay.running_macro_slot(),
-            close_matches: settings.image_search_close_matches_distance,
-            variant_exit_early: settings.image_search_variant_exit_early,
-            release_held_inputs: settings.release_held_inputs_on_end,
-            while_max_iterations: settings.while_max_iterations,
-            run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
-            log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
-            restore_cursor: settings.restore_cursor_on_end,
-            play_finish_sound: settings.play_finish_sound,
-            finish_sound_file: settings.finish_sound_file.clone(),
-            sound_volume: settings.sound_volume,
+            close_matches: settings.runtime.image_search_close_matches_distance,
+            variant_exit_early: settings.runtime.image_search_variant_exit_early,
+            release_held_inputs: settings.runtime.release_held_inputs_on_end,
+            while_max_iterations: settings.runtime.while_max_iterations,
+            run_macro_max_depth: settings.runtime.run_macro_max_depth.max(1) as usize,
+            log_image_max_edge: settings.runtime.log_image_max_edge.max(1) as usize,
+            restore_cursor: settings.runtime.restore_cursor_on_end,
+            play_finish_sound: settings.sound.play_finish_sound,
+            finish_sound_file: settings.sound.finish_sound_file.clone(),
+            sound_volume: settings.sound.sound_volume,
         };
         *OVERLAY_KIT.lock() = Some(Arc::new(kit));
     }

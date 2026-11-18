@@ -16,7 +16,7 @@ fn settings_checkbox_toggles_log_meta_images() {
     harness.run();
 
     assert!(
-        !harness.state().docs_settings().save_meta_images,
+        !harness.state().docs_settings().runtime.save_meta_images,
         "docs fixture should start with log meta images off"
     );
 
@@ -24,7 +24,7 @@ fn settings_checkbox_toggles_log_meta_images() {
     harness.run();
 
     assert!(
-        harness.state().docs_settings().save_meta_images,
+        harness.state().docs_settings().runtime.save_meta_images,
         "clicking Log Meta Images should enable the setting"
     );
 
@@ -32,7 +32,7 @@ fn settings_checkbox_toggles_log_meta_images() {
     harness.run();
 
     assert!(
-        !harness.state().docs_settings().save_meta_images,
+        !harness.state().docs_settings().runtime.save_meta_images,
         "second click should disable the setting again"
     );
 }
@@ -45,7 +45,11 @@ fn settings_checkbox_toggles_highlight_active_action() {
     harness.run();
 
     assert!(
-        !harness.state().docs_settings().highlight_active_action,
+        !harness
+            .state()
+            .docs_settings()
+            .runtime
+            .highlight_active_action,
         "docs fixture should start with highlight off"
     );
 
@@ -59,7 +63,11 @@ fn settings_checkbox_toggles_highlight_active_action() {
     harness.run();
 
     assert!(
-        harness.state().docs_settings().highlight_active_action,
+        harness
+            .state()
+            .docs_settings()
+            .runtime
+            .highlight_active_action,
         "clicking highlight checkbox should enable the setting"
     );
 }
@@ -73,7 +81,7 @@ fn settings_checkbox_toggles_os_title_bar() {
     harness.run();
 
     assert!(
-        harness.state().docs_settings().window_decorations,
+        harness.state().docs_settings().ui.window_decorations,
         "docs fixture should start with OS title bar on"
     );
 
@@ -81,7 +89,7 @@ fn settings_checkbox_toggles_os_title_bar() {
     harness.run();
 
     assert!(
-        !harness.state().docs_settings().window_decorations,
+        !harness.state().docs_settings().ui.window_decorations,
         "clicking OS title bar should hide decorations"
     );
 
@@ -89,7 +97,7 @@ fn settings_checkbox_toggles_os_title_bar() {
     harness.run();
 
     assert!(
-        harness.state().docs_settings().window_decorations,
+        harness.state().docs_settings().ui.window_decorations,
         "second click should restore decorations"
     );
 }
@@ -268,7 +276,7 @@ fn tree_row_menu_logs_entry_follows_log_meta_images_setting() {
     );
 
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
-        app.docs_settings_mut().save_meta_images = true;
+        app.docs_settings_mut().runtime.save_meta_images = true;
     });
     harness.run();
     open_first_wait_row_menu(&mut harness);
@@ -377,7 +385,8 @@ fn data_editor_program_name_tooltip_discloses_elided_text() {
     let mut harness = build_docs_harness([480.0, 360.0], |app| {
         // Elision needs a narrow list pane; pin the split to the minimum
         // instead of relying on the global default.
-        app.docs_settings_mut().data_editor_left_split = sqyre_persist::MIN_DATA_EDITOR_LEFT_FRAC;
+        app.docs_settings_mut().ui.data_editor_left_split =
+            sqyre_persist::MIN_DATA_EDITOR_LEFT_FRAC;
         app.open_data_editor_programs_for_docs();
     });
     harness.run();
@@ -489,7 +498,7 @@ fn long_macro_name_tooltip_discloses_elided_text() {
 fn stress_tree_summary_tooltip_discloses_full_type_text_at_scale_two() {
     let full_text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.";
     let mut harness = build_docs_harness([640.0, 360.0], |app| {
-        app.docs_settings_mut().ui_scale = 2.0;
+        app.docs_settings_mut().ui.ui_scale = 2.0;
         app.apply_stress_fixture_for_docs();
         app.expand_all_branches_for_docs();
     });
@@ -929,7 +938,7 @@ fn data_editor_items_sort_menu_hosts_tag_priority() {
     // Picking Tags keeps the popup open so the priority chips can be edited.
     harness.get_by_label("Tag priority");
     assert_eq!(
-        harness.state().docs_settings().data_editor_items_sort,
+        harness.state().docs_settings().ui.data_editor_items_sort,
         sqyre_domain::CatalogItemSort::Tags,
         "choosing Tags should persist to settings"
     );
@@ -944,17 +953,18 @@ fn data_editor_items_sort_menu_hosts_tag_priority() {
         harness
             .state()
             .docs_settings()
+            .ui
             .data_editor_items_tag_priority,
         vec!["rare".to_string()],
         "tag priority chips should persist to settings"
     );
     let reloaded = sqyre_persist::UserSettings::load_default().unwrap();
     assert_eq!(
-        reloaded.data_editor_items_sort,
+        reloaded.ui.data_editor_items_sort,
         sqyre_domain::CatalogItemSort::Tags
     );
     assert_eq!(
-        reloaded.data_editor_items_tag_priority,
+        reloaded.ui.data_editor_items_tag_priority,
         vec!["rare".to_string()]
     );
 }
@@ -962,8 +972,8 @@ fn data_editor_items_sort_menu_hosts_tag_priority() {
 #[test]
 fn data_editor_items_sort_restores_from_settings() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
-        app.docs_settings_mut().data_editor_items_sort = sqyre_domain::CatalogItemSort::Tags;
-        app.docs_settings_mut().data_editor_items_tag_priority = vec!["heal".into()];
+        app.docs_settings_mut().ui.data_editor_items_sort = sqyre_domain::CatalogItemSort::Tags;
+        app.docs_settings_mut().ui.data_editor_items_tag_priority = vec!["heal".into()];
         app.open_data_editor_tab_for_docs("items");
     });
     harness.run();
@@ -973,13 +983,14 @@ fn data_editor_items_sort_restores_from_settings() {
     harness.run();
     harness.get_by_label("Tag priority");
     assert_eq!(
-        harness.state().docs_settings().data_editor_items_sort,
+        harness.state().docs_settings().ui.data_editor_items_sort,
         sqyre_domain::CatalogItemSort::Tags
     );
     assert_eq!(
         harness
             .state()
             .docs_settings()
+            .ui
             .data_editor_items_tag_priority,
         vec!["heal".to_string()]
     );
@@ -989,6 +1000,7 @@ fn data_editor_items_sort_restores_from_settings() {
         harness
             .state()
             .docs_settings()
+            .ui
             .data_editor_items_tag_priority,
         vec!["heal".to_string()]
     );
@@ -996,7 +1008,7 @@ fn data_editor_items_sort_restores_from_settings() {
 
 fn ui_scale_appearance_harness() -> egui_kittest::Harness<'static, sqyre_app::SqyreApp> {
     let mut harness = build_docs_harness([1280.0, 720.0], |app| {
-        app.docs_settings_mut().ui_scale = 1.4;
+        app.docs_settings_mut().ui.ui_scale = 1.4;
         app.open_settings_appearance_for_docs();
     });
     harness.run_steps(3);
@@ -1046,9 +1058,9 @@ fn assert_ui_scale_and_zoom(
     expected_zoom: f32,
 ) {
     assert!(
-        (harness.state().docs_settings().ui_scale - expected_scale).abs() < 0.001,
+        (harness.state().docs_settings().ui.ui_scale - expected_scale).abs() < 0.001,
         "expected UI scale {expected_scale}, got {}",
-        harness.state().docs_settings().ui_scale
+        harness.state().docs_settings().ui.ui_scale
     );
     assert!(
         (harness.ctx.zoom_factor() - expected_zoom).abs() < 0.001,
@@ -1171,7 +1183,7 @@ fn ui_scale_zoom_waits_for_release_during_inside_repeat() {
             "zoom must not change while the stepper is held"
         );
     }
-    let final_scale = harness.state().docs_settings().ui_scale;
+    let final_scale = harness.state().docs_settings().ui.ui_scale;
     assert!(final_scale > 1.5);
 
     primary_button(&mut harness, up, false);
