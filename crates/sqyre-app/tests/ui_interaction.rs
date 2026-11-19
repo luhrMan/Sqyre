@@ -502,17 +502,12 @@ fn demo_tree_action_row_exposes_accessible_type_label() {
             app.select_action(id);
         }
     });
-    harness.run_steps(4);
-    // Tree chrome paints AccessKit labels for action rows; a selected Wait/demo
-    // child must remain queryable after expand (guards tip/row wiring regressions).
-    let found = harness
-        .query_all_by(|node| {
-            node.label().as_deref().is_some_and(|label| {
-                label.contains("Wait") || label.contains("Click") || label.contains("Move")
-            })
-        })
-        .next()
-        .is_some();
+    harness.run();
+    // Same AccessKit path as `open_first_wait_row_menu` — type badges expose
+    // exact labels via `WidgetInfo::labeled`, not substring `node.label()` walks.
+    let found = harness.query_all_by_label("Wait").next().is_some()
+        || harness.query_all_by_label("Click").next().is_some()
+        || harness.query_all_by_label("Move").next().is_some();
     assert!(
         found,
         "expanded demo tree should expose at least one action-type accessible label"
