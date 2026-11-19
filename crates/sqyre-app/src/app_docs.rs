@@ -36,7 +36,7 @@ const DOCS_EDITOR_TABS: &[(&str, EditorTab)] = &[
     ("items", EditorTab::Items),
     ("masks", EditorTab::Masks),
     ("screencap", EditorTab::ScreenCap),
-    ("pixelcheck", EditorTab::PixelCheck),
+    ("matchcheck", EditorTab::MatchCheck),
     ("points", EditorTab::Points),
     ("searchareas", EditorTab::SearchAreas),
     ("collections", EditorTab::Collections),

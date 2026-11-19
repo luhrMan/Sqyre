@@ -199,7 +199,7 @@ pub struct UiLayout {
     #[serde(default = "default_data_editor_left_frac")]
     pub data_editor_left_split: f32,
 
-    /// Data Editor Items / Pixel Check left-list sort.
+    /// Data Editor Items / Match Check left-list sort.
     #[serde(default, skip_serializing_if = "is_default_catalog_item_sort")]
     pub data_editor_items_sort: CatalogItemSort,
 

@@ -385,10 +385,10 @@ impl DataEditor {
                 ));
                 return;
             }
-            EditorTab::PixelCheck => {
+            EditorTab::MatchCheck => {
                 self.set_err(format!(
                     "{} is read-only — select an item to probe.",
-                    EditorTab::PixelCheck.label()
+                    EditorTab::MatchCheck.label()
                 ));
                 return;
             }
@@ -547,7 +547,7 @@ impl DataEditor {
                     return Some(("Atlas", new.to_string()));
                 }
             }
-            EditorTab::ScreenCap | EditorTab::PixelCheck => {}
+            EditorTab::ScreenCap | EditorTab::MatchCheck => {}
             EditorTab::Overlay => {}
         }
         None
@@ -676,7 +676,7 @@ impl DataEditor {
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
-            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => Ok(None),
+            EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay => Ok(None),
         };
 
         match result {
@@ -1107,7 +1107,7 @@ impl DataEditor {
                     None
                 })
             }
-            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => return,
+            EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay => return,
         };
         match result {
             Ok(fs_warn) => {
@@ -1316,7 +1316,7 @@ mod tests {
         // Tools / Overlay tabs never overwrite catalog entities.
         for tab in [
             EditorTab::ScreenCap,
-            EditorTab::PixelCheck,
+            EditorTab::MatchCheck,
             EditorTab::Overlay,
         ] {
             let e = editor(tab, "Game", "x", "y");

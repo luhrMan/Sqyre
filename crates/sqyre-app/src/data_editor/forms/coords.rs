@@ -1,4 +1,4 @@
-//! Point, Search Area, Mask, ScreenCap, and Pixel Check form bodies.
+//! Point, Search Area, Mask, ScreenCap, and Match Check form bodies.
 //!
 //! Split out of `draw_form`; see `forms.rs` for the tab dispatch.
 

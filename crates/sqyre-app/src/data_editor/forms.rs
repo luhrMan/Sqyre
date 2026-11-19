@@ -436,15 +436,15 @@ impl DataEditor {
                 self.draw_screen_cap_form(ui, paint, ctx);
                 false
             }
-            EditorTab::PixelCheck => {
-                self.paint_pixel_check_form(ui, paint, ctx, settings);
+            EditorTab::MatchCheck => {
+                self.paint_match_check_form(ui, paint, ctx, settings);
                 false
             }
             EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx),
         }
     }
 
-    pub(super) fn paint_pixel_check_form(
+    pub(super) fn paint_match_check_form(
         &mut self,
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
@@ -478,7 +478,7 @@ impl DataEditor {
                 ui,
                 &format!(
                     "{} requires the desktop app.",
-                    EditorTab::PixelCheck.label()
+                    EditorTab::MatchCheck.label()
                 ),
             );
         }
@@ -490,7 +490,7 @@ impl DataEditor {
             use sqyre_domain::CoordinateRef;
 
             if self.selected_entity.is_none() {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
             paint_name_field(ui, &mut self.form_name);
@@ -536,9 +536,9 @@ impl DataEditor {
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) {
-                let variants = super::pixel_check::variant_options(catalog, prog, item);
+                let variants = super::match_check::variant_options(catalog, prog, item);
                 if !variants.is_empty() {
-                    let mut label = variant_display_label(&self.pixel_check.variant).to_string();
+                    let mut label = variant_display_label(&self.match_check.variant).to_string();
                     let labels: Vec<&str> = variants.iter().map(|(_, l)| l.as_str()).collect();
                     crate::widgets::combo_str(
                         ui,
@@ -549,20 +549,20 @@ impl DataEditor {
                         &labels,
                     );
                     if let Some((name, _)) = variants.iter().find(|(_, l)| l == &label) {
-                        if name != &self.pixel_check.variant {
-                            self.pixel_check.variant = name.clone();
-                            self.invalidate_pixel_check();
+                        if name != &self.match_check.variant {
+                            self.match_check.variant = name.clone();
+                            self.invalidate_match_check();
                         }
                     }
                 }
             }
             match_settings::paint_match_settings_advanced(
                 ui,
-                &mut self.pixel_check.tolerance,
-                &mut self.pixel_check.blur,
-                &mut self.pixel_check.match_method,
+                &mut self.match_check.tolerance,
+                &mut self.match_check.blur,
+                &mut self.match_check.match_method,
                 |ui, method| {
-                    crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
+                    crate::widgets::advanced_section(ui, "de_matchcheck_match", |ui| {
                         match_settings::paint_match_method(ui, method);
                     });
                 },
@@ -572,7 +572,7 @@ impl DataEditor {
                     self.paint_monitor_slot(ui);
                 })
                 .response,
-                help::DE_PIXELCHECK_BOUNDS,
+                help::DE_MATCHCHECK_BOUNDS,
             );
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
@@ -586,25 +586,25 @@ impl DataEditor {
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             };
-            let can_compute = super::pixel_check::can_compute_pixel_check(
+            let can_compute = super::match_check::can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 lx,
                 ty,
                 rx,
                 by,
             );
             if !can_compute {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
             }
             self.sync_coord_preview_view();
             let force = std::mem::take(&mut self.preview_force);
-            let computing = self.pixel_check_pending.is_some() && can_compute;
+            let computing = self.match_check_pending.is_some() && can_compute;
             if computing {
                 ui.horizontal(|ui| {
                     crate::widgets::brand_spinner(ui);
@@ -612,7 +612,7 @@ impl DataEditor {
                 });
             }
             let preview_h = ui.available_height().max(120.0);
-            let mut hover: Option<super::pixel_check::PixelCheckHover> = None;
+            let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
             ui.allocate_ui_with_layout(
                 egui::vec2(preview_w, preview_h),
@@ -635,38 +635,38 @@ impl DataEditor {
                         ht::ED_REC_SEARCH,
                         "Recording… click two corners.",
                     );
-                    if let Some(cache) = &self.pixel_check_cache {
-                        let inputs = super::pixel_check::inputs_key(
+                    if let Some(cache) = &self.match_check_cache {
+                        let inputs = super::match_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),
                             self.selected_entity.as_deref().unwrap_or(""),
-                            &self.pixel_check.variant,
+                            &self.match_check.variant,
                             lx,
                             ty,
                             rx,
                             by,
-                            self.pixel_check.blur,
-                            self.pixel_check.match_method,
-                            self.pixel_check.tolerance,
-                            self.pixel_check.refresh_gen,
+                            self.match_check.blur,
+                            self.match_check.match_method,
+                            self.match_check.tolerance,
+                            self.match_check.refresh_gen,
                             settings.runtime.image_search_close_matches_distance,
                         );
                         if cache.data.fingerprint == inputs {
                             let match_count = cache.data.tolerance_matches.len();
-                            let show_boxes = super::pixel_check::should_paint_match_boxes(
+                            let show_boxes = super::match_check::should_paint_match_boxes(
                                 match_count,
-                                self.pixel_check.show_many_match_boxes,
+                                self.match_check.show_many_match_boxes,
                             );
                             let image_size =
                                 egui::vec2(cache.data.image_w as f32, cache.data.image_h as f32);
-                            super::pixel_check::paint_heatmap_overlay(
+                            super::match_check::paint_heatmap_overlay(
                                 ui,
                                 rect,
                                 image_size,
                                 &self.coord_preview,
                                 cache,
                                 &mut hover,
-                                self.pixel_check.match_method,
-                                self.pixel_check.tolerance as f32,
+                                self.match_check.match_method,
+                                self.match_check.tolerance as f32,
                                 show_boxes,
                             );
                         }
@@ -682,15 +682,15 @@ impl DataEditor {
                     );
                 },
             );
-            if let Some(cache) = &self.pixel_check_cache {
-                super::pixel_check::paint_legend(
+            if let Some(cache) = &self.match_check_cache {
+                super::match_check::paint_legend(
                     ui,
                     &cache.data.summary,
                     cache.data.tolerance_matches.len(),
-                    &mut self.pixel_check.show_many_match_boxes,
+                    &mut self.match_check.show_many_match_boxes,
                     hover.as_ref(),
-                    self.pixel_check.match_method,
-                    self.pixel_check.tolerance as f32,
+                    self.match_check.match_method,
+                    self.match_check.tolerance as f32,
                     cache.data.tmpl_w,
                     cache.data.tmpl_h,
                 );
@@ -708,7 +708,7 @@ impl DataEditor {
                     }
                     _ => None,
                 };
-                self.request_pixel_check_match(
+                self.request_match_check(
                     catalog,
                     lx,
                     ty,

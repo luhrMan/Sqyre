@@ -58,7 +58,7 @@ pub const ED_REC_POINT: &str = "Click on screen to capture X/Y";
 pub const ED_REC_AREA: &str = "Two clicks: opposite corners of the area";
 /// Record floater on the capture-region preview — arm a two-click capture.
 pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture region";
-/// Record floater on the pixel-check preview — arm a two-click area capture.
+/// Record floater on the Match Check preview — arm a two-click area capture.
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub const ED_REC_SEARCH: &str = "Two clicks: opposite corners of the search area";
 /// "Add running programs" icon right of the programs search bar.

@@ -32,7 +32,7 @@ impl DataEditor {
         }
         let tab = self.tab;
         let ids: Vec<egui::Id> = match tab {
-            EditorTab::Items | EditorTab::PixelCheck => program_names
+            EditorTab::Items | EditorTab::MatchCheck => program_names
                 .iter()
                 .map(|n| pickers::items_icon_grid_collapse_id(n))
                 .collect(),
@@ -42,7 +42,7 @@ impl DataEditor {
                 .collect(),
         };
         pickers::collapse_all_button(ui, ids.iter().copied(), |ctx, open| match tab {
-            EditorTab::Items | EditorTab::PixelCheck => {
+            EditorTab::Items | EditorTab::MatchCheck => {
                 pickers::set_items_icon_grid_openness(
                     ctx,
                     program_names.iter().map(|n| n.as_str()),
@@ -69,7 +69,7 @@ impl DataEditor {
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
-            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
+            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::MatchCheck => {
                 "data_editor_items"
             }
             EditorTab::Overlay => "data_editor_overlay_list",
@@ -93,7 +93,7 @@ impl DataEditor {
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
         ) {
-            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
+            (EditorTab::Items | EditorTab::MatchCheck, Some(p), Some(e)) => {
                 vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
             }
             _ => Vec::new(),
@@ -126,7 +126,7 @@ impl DataEditor {
             let mut visible = 0usize;
             let entity = match self.tab {
                 EditorTab::Programs => "programs",
-                EditorTab::Items | EditorTab::PixelCheck => "items",
+                EditorTab::Items | EditorTab::MatchCheck => "items",
                 EditorTab::Overlay => "overlay buttons",
                 EditorTab::Points => "points",
                 EditorTab::SearchAreas => "search areas",
@@ -183,7 +183,7 @@ impl DataEditor {
                         }
                     }
                 }
-                EditorTab::Items | EditorTab::PixelCheck => {
+                EditorTab::Items | EditorTab::MatchCheck => {
                     ui.set_max_width(ui.available_width());
                     let mut item_menu = |ui: &mut egui::Ui, target: &str| {
                         if crate::widgets::menu_item_danger(ui, "Delete", true) {
@@ -194,7 +194,7 @@ impl DataEditor {
                             }
                         }
                     };
-                    // Pixel Check reuses the items grid read-only.
+                    // Match Check reuses the items grid read-only.
                     let menu: Option<&mut pickers::IconCellMenu<'_>> =
                         if matches!(self.tab, EditorTab::Items) {
                             Some(&mut item_menu)
@@ -545,7 +545,7 @@ impl DataEditor {
             self.select_entity(&prog, &id, catalog, settings);
         } else if let Some((prog, ent)) = clicked_entity {
             self.select_entity(&prog, &ent, catalog, settings);
-        } else if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
+        } else if matches!(self.tab, EditorTab::Items | EditorTab::MatchCheck) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
                     let changed = self.selected_program.as_deref() != Some(prog)
@@ -1109,7 +1109,7 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     match tab {
         EditorTab::Programs => "programs",
         EditorTab::Items => "items",
-        EditorTab::PixelCheck => "pixel_check",
+        EditorTab::MatchCheck => "match_check",
         EditorTab::Points => "points",
         EditorTab::SearchAreas => "search_areas",
         EditorTab::Masks => "masks",
@@ -1126,7 +1126,7 @@ fn compute_entity_names(catalog: CatalogView<'_>, tab: EditorTab, program: &str)
     };
     let res = catalog.resolution_key();
     let mut keys: Vec<(String, String)> = match tab {
-        EditorTab::Items | EditorTab::PixelCheck => p
+        EditorTab::Items | EditorTab::MatchCheck => p
             .items
             .iter()
             .map(|(k, it)| {
@@ -1238,7 +1238,7 @@ mod tests {
         let keys: std::collections::HashSet<&'static str> = [
             EditorTab::Programs,
             EditorTab::Items,
-            EditorTab::PixelCheck,
+            EditorTab::MatchCheck,
             EditorTab::Points,
             EditorTab::SearchAreas,
             EditorTab::Masks,
@@ -1339,9 +1339,9 @@ mod tests {
             compute_entity_names(CatalogView::from(&cat), EditorTab::Collections, "Game"),
             vec!["bag"]
         );
-        // PixelCheck shares the items list.
+        // MatchCheck shares the items list.
         assert_eq!(
-            compute_entity_names(CatalogView::from(&cat), EditorTab::PixelCheck, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::MatchCheck, "Game"),
             compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Game")
         );
     }

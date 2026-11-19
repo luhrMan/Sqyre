@@ -404,10 +404,17 @@ fn catalog_kinds() -> &'static [CatalogKind] {
             ],
         },
         CatalogKind {
-            tab: EditorTab::PixelCheck,
+            tab: EditorTab::MatchCheck,
             new_title: None,
-            icon: egui_phosphor::regular::EYEDROPPER,
-            open_keys: &["pixelcheck", "pixel", "match", "heatmap", "tools", "goto"],
+            icon: egui_phosphor::regular::MAGNIFYING_GLASS,
+            open_keys: &[
+                "matchcheck",
+                "match",
+                "heatmap",
+                "template",
+                "tools",
+                "goto",
+            ],
         },
         CatalogKind {
             tab: EditorTab::Points,
@@ -813,7 +820,7 @@ fn kind_priority(kind: &CommandKind) -> u8 {
 fn is_static_command(kind: &CommandKind) -> bool {
     match kind {
         CommandKind::OpenEditorTab { tab } => {
-            matches!(tab, EditorTab::ScreenCap | EditorTab::PixelCheck)
+            matches!(tab, EditorTab::ScreenCap | EditorTab::MatchCheck)
         }
         CommandKind::AddAction { .. }
         | CommandKind::OpenAddActionPicker
@@ -1014,7 +1021,7 @@ mod tests {
         assert!(shown.iter().any(|t| t == "New Item"));
         assert!(shown.iter().any(|t| t == "Open Data Editor"));
         assert!(shown.iter().any(|t| t == "Open Screen Cap"));
-        assert!(shown.iter().any(|t| t == "Open Pixel Check"));
+        assert!(shown.iter().any(|t| t == "Open Match Check"));
         assert!(!shown.iter().any(|t| t == "Open Items"));
         assert!(!shown.iter().any(|t| t == "Farm gold"));
         assert!(!shown.iter().any(|t| t == "Health Flask"));
@@ -1022,15 +1029,15 @@ mod tests {
     }
 
     #[test]
-    fn screencap_and_pixelcheck_match() {
+    fn screencap_and_matchcheck_match() {
         let catalog = ProgramCatalog::default();
         let items = collect_commands(sources(&[], &catalog, &[], false));
         assert!(titles("screencap", &items)
             .iter()
             .any(|t| t == "Open Screen Cap"));
-        assert!(titles("pixelcheck", &items)
+        assert!(titles("matchcheck", &items)
             .iter()
-            .any(|t| t == "Open Pixel Check"));
+            .any(|t| t == "Open Match Check"));
     }
 
     #[test]
@@ -1040,11 +1047,11 @@ mod tests {
             "Open Screen Cap"
         );
         assert_eq!(
-            format!("Open {}", EditorTab::PixelCheck.label()),
-            "Open Pixel Check"
+            format!("Open {}", EditorTab::MatchCheck.label()),
+            "Open Match Check"
         );
         assert!(EditorTab::ScreenCap.is_desktop_only());
-        assert!(EditorTab::PixelCheck.is_desktop_only());
+        assert!(EditorTab::MatchCheck.is_desktop_only());
     }
 
     #[test]

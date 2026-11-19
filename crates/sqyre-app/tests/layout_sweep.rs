@@ -34,7 +34,7 @@ scene_tests! {
     data_editor_items => "data_editor_items";
     data_editor_masks => "data_editor_masks";
     data_editor_screencap => "data_editor_screencap";
-    data_editor_pixelcheck => "data_editor_pixelcheck";
+    data_editor_matchcheck => "data_editor_matchcheck";
     data_editor_points => "data_editor_points";
     data_editor_searchareas => "data_editor_searchareas";
     data_editor_collections => "data_editor_collections";
@@ -98,7 +98,7 @@ fn docs_scene_lists_cover_compiled_sections_tabs_and_action_types() {
             "items",
             "masks",
             "screencap",
-            "pixelcheck",
+            "matchcheck",
             "points",
             "searchareas",
             "collections",

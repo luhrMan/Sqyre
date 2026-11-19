@@ -23,7 +23,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent`. The window picker lists launchable apps (label as title, package as path, launcher icon as the process icon, saved with the program like desktop icons); the active window is the foreground package seen by the accessibility service |
 | Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are actions on the screen-recording notification (Continue ends a single-key Pause; multi-key Pause waits are `Unsupported`), plus the in-app Stop button |
 | Overlay buttons | Accessibility-overlay windows (`TYPE_ACCESSIBILITY_OVERLAY`), one per button. A tap runs the macro while Sqyre is in the background. Program focus and image-search gates still apply. The tray is desktop-only |
-| Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
+| Selection grab, ScreenCap, MatchCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
 | Coordinate previews, desktop outline | Sqyre covers the screen, so previews crop the *backdrop*: the last frame seen while Sqyre was in the background (`MainActivity` reports `onStart`/`onStop` through `nativeOnShellVisible`). There is no on-screen outline; the tooltip preview shows the location. When no backdrop has been saved, the preview shows an app dropdown instead of an error; picking one opens that app, takes a still, and returns |
 | Point and search-area recording | Sqyre cannot see touches in other apps, so recording shows a still of another app (`screen_pick.rs`). The still is the backdrop. When none is saved, Sqyre shows an app dropdown and screenshots the one the user picks (`SqyreBridge.launch`, then `showShell`). Retake still sends Sqyre to the back (`SqyreBridge.showPrevious`); if no app comes forward, the same dropdown is shown. For a point, a tap places it, a drag nudges it, and a loupe magnifies it; for a search area, a drag draws it from corner to corner. Sqyre is never hidden for recording on Android |
 | Color and macro recording | Not yet (phase 5) |
@@ -106,7 +106,7 @@ Exit: the APK installs on an emulator, opens the editor, and persists `db.yaml` 
 
 ### 2. Capture
 
-Exit: with `ANDROID_FEATURES=native-runtime,overlay-buttons`, ScreenCap saves a PNG of another app's screen after the user accepts the system dialog, and PixelCheck reads a pixel from that frame. Rotation produces frames at the new size.
+Exit: with `ANDROID_FEATURES=native-runtime,overlay-buttons`, ScreenCap saves a PNG of another app's screen after the user accepts the system dialog, and MatchCheck reads a pixel from that frame. Rotation produces frames at the new size.
 
 ### 3. Detection
 

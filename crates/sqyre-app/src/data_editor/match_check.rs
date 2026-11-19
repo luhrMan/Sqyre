@@ -1,4 +1,4 @@
-//! PixelCheck: live template-match heatmap over a search-area preview.
+//! MatchCheck: live template-match heatmap over a search-area preview.
 //!
 //! Legend / marker colors use app theme viz tokens (`match_pass_fg`,
 //! `match_fail_fg`, `match_within_fg`) — not status `error_fg` / `warn_fg` /
@@ -55,7 +55,7 @@ mod inner {
 
     /// Shared match output carried by both the worker result and the
     /// uploaded-texture cache.
-    pub(crate) struct PixelCheckData {
+    pub(crate) struct MatchCheckData {
         pub fingerprint: String,
         pub match_map: MatchMap,
         pub image_w: usize,
@@ -68,17 +68,17 @@ mod inner {
         pub mask_missing: bool,
     }
 
-    pub(crate) struct PixelCheckCache {
-        pub data: PixelCheckData,
+    pub(crate) struct MatchCheckCache {
+        pub data: MatchCheckData,
         pub heatmap: TextureHandle,
     }
 
-    pub(crate) struct PixelCheckResult {
-        pub data: PixelCheckData,
+    pub(crate) struct MatchCheckResult {
+        pub data: MatchCheckData,
         pub heatmap_rgba: Vec<u8>,
     }
 
-    pub(crate) struct PixelCheckHover {
+    pub(crate) struct MatchCheckHover {
         pub x: i32,
         pub y: i32,
         pub score: f32,
@@ -87,8 +87,8 @@ mod inner {
         pub passes: bool,
     }
 
-    /// Session-local match settings for PixelCheck (not persisted).
-    pub(crate) struct PixelCheckSettings {
+    /// Session-local match settings for MatchCheck (not persisted).
+    pub(crate) struct MatchCheckSettings {
         pub tolerance: f64,
         pub blur: i32,
         pub match_method: MatchMethod,
@@ -102,7 +102,7 @@ mod inner {
         pub show_many_match_boxes: bool,
     }
 
-    impl Default for PixelCheckSettings {
+    impl Default for MatchCheckSettings {
         fn default() -> Self {
             Self {
                 tolerance: 0.95,
@@ -135,7 +135,7 @@ mod inner {
         }
     }
 
-    pub(crate) fn can_compute_pixel_check(
+    pub(crate) fn can_compute_match_check(
         catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
@@ -622,7 +622,7 @@ mod inner {
         tmpl_h: usize,
         method: MatchMethod,
         tolerance: f32,
-    ) -> Option<PixelCheckHover> {
+    ) -> Option<MatchCheckHover> {
         if ix < 0 || iy < 0 {
             return None;
         }
@@ -636,7 +636,7 @@ mod inner {
             tolerance,
         )?;
         let passes = score_passes(score, method, tolerance);
-        Some(PixelCheckHover {
+        Some(MatchCheckHover {
             x: ix,
             y: iy,
             score,
@@ -656,7 +656,7 @@ mod inner {
         method: MatchMethod,
         tolerance: f32,
         close_matches_distance: i32,
-    ) -> mpsc::Receiver<Result<PixelCheckResult, String>> {
+    ) -> mpsc::Receiver<Result<MatchCheckResult, String>> {
         let (tx, job_rx) = mpsc::channel();
         thread::spawn(move || {
             let result = (|| {
@@ -674,8 +674,8 @@ mod inner {
                 );
                 let tolerance_matches =
                     collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
-                Ok(PixelCheckResult {
-                    data: PixelCheckData {
+                Ok(MatchCheckResult {
+                    data: MatchCheckData {
                         fingerprint,
                         match_map: map,
                         image_w,
@@ -694,16 +694,16 @@ mod inner {
         job_rx
     }
 
-    pub(crate) fn finish_cache(ctx: &egui::Context, result: PixelCheckResult) -> PixelCheckCache {
+    pub(crate) fn finish_cache(ctx: &egui::Context, result: MatchCheckResult) -> MatchCheckCache {
         let size = [result.data.image_w, result.data.image_h];
         let color = ColorImage::from_rgba_unmultiplied(size, &result.heatmap_rgba);
         let opts = TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
         let heatmap = ctx.load_texture(
-            format!("pixel_check_heatmap_{}", result.data.fingerprint),
+            format!("match_check_heatmap_{}", result.data.fingerprint),
             color,
             opts,
         );
-        PixelCheckCache {
+        MatchCheckCache {
             data: result.data,
             heatmap,
         }
@@ -793,8 +793,8 @@ mod inner {
         viewport: egui::Rect,
         image_size: egui::Vec2,
         view: &ImageViewTransform,
-        cache: &PixelCheckCache,
-        hover: &mut Option<PixelCheckHover>,
+        cache: &MatchCheckCache,
+        hover: &mut Option<MatchCheckHover>,
         method: MatchMethod,
         tolerance: f32,
         show_match_boxes: bool,
@@ -823,7 +823,7 @@ mod inner {
         *hover = None;
         let hover_resp = ui.interact(
             content,
-            ui.id().with("pixel_check_hover"),
+            ui.id().with("match_check_hover"),
             egui::Sense::hover(),
         );
         hover_resp.widget_info(|| {
@@ -866,7 +866,7 @@ mod inner {
         ctx: &egui::Context,
         pointer: egui::Pos2,
         viewport: egui::Rect,
-        h: &PixelCheckHover,
+        h: &MatchCheckHover,
         tol_pct: Option<f32>,
     ) {
         const OFFSET: egui::Vec2 = egui::vec2(20.0, 20.0);
@@ -895,7 +895,7 @@ mod inner {
         };
         let status = if h.passes { "pass" } else { "below tolerance" };
 
-        egui::Area::new(egui::Id::new("pixel_check_mouse_tooltip"))
+        egui::Area::new(egui::Id::new("match_check_mouse_tooltip"))
             .fixed_pos(pos)
             .interactable(false)
             .show(ctx, |ui| {
@@ -931,7 +931,7 @@ mod inner {
         summary: &MatchSummary,
         tolerance_match_count: usize,
         show_many_match_boxes: &mut bool,
-        hover: Option<&PixelCheckHover>,
+        hover: Option<&MatchCheckHover>,
         method: MatchMethod,
         tolerance: f32,
         tmpl_w: usize,
@@ -1080,7 +1080,7 @@ mod inner {
     }
 
     pub(crate) fn should_request(
-        settings: &PixelCheckSettings,
+        settings: &MatchCheckSettings,
         inputs: &str,
         pending: bool,
         now: Instant,
@@ -1097,7 +1097,7 @@ mod inner {
     }
 
     impl crate::data_editor::DataEditor {
-        pub(crate) fn request_pixel_check_match(
+        pub(crate) fn request_match_check(
             &mut self,
             catalog: CatalogView<'_>,
             left: Option<i32>,
@@ -1109,56 +1109,56 @@ mod inner {
             display: Option<(Arc<RgbaImage>, u32, u32)>,
         ) {
             if force {
-                self.pixel_check.refresh_gen = self.pixel_check.refresh_gen.wrapping_add(1);
-                self.pixel_check.paused = false;
-                self.invalidate_pixel_check();
+                self.match_check.refresh_gen = self.match_check.refresh_gen.wrapping_add(1);
+                self.match_check.paused = false;
+                self.invalidate_match_check();
             }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             };
-            if !can_compute_pixel_check(
+            if !can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 left,
                 top,
                 right,
                 bottom,
             ) {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
             let inputs = inputs_key(
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 left,
                 top,
                 right,
                 bottom,
-                self.pixel_check.blur,
-                self.pixel_check.match_method,
-                self.pixel_check.tolerance,
-                self.pixel_check.refresh_gen,
+                self.match_check.blur,
+                self.match_check.match_method,
+                self.match_check.tolerance,
+                self.match_check.refresh_gen,
                 close_matches_distance,
             );
             if inputs.is_empty() {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
-            if inputs != self.pixel_check.last_inputs {
-                self.pixel_check.paused = false;
+            if inputs != self.match_check.last_inputs {
+                self.match_check.paused = false;
             }
-            if self.pixel_check.paused {
+            if self.match_check.paused {
                 return;
             }
             if self
-                .pixel_check_cache
+                .match_check_cache
                 .as_ref()
                 .is_some_and(|c| c.data.fingerprint == inputs)
             {
@@ -1166,21 +1166,21 @@ mod inner {
             }
             let now = Instant::now();
             if !should_request(
-                &self.pixel_check,
+                &self.match_check,
                 &inputs,
-                self.pixel_check_pending.is_some(),
+                self.match_check_pending.is_some(),
                 now,
             ) {
                 return;
             }
             let Ok(template_path) =
-                resolve_template(catalog, prog, item, &self.pixel_check.variant)
+                resolve_template(catalog, prog, item, &self.match_check.variant)
             else {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             };
             if !template_path.is_file() {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
             let Some((display, src_w, src_h)) = display else {
@@ -1189,7 +1189,7 @@ mod inner {
             };
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
-            let tolerance = self.pixel_check.tolerance as f32;
+            let tolerance = self.match_check.tolerance as f32;
             let job_rx = spawn_compute(
                 inputs.clone(),
                 display,
@@ -1197,14 +1197,14 @@ mod inner {
                 src_h,
                 template_path,
                 mask_path,
-                self.pixel_check.blur,
-                self.pixel_check.match_method,
+                self.match_check.blur,
+                self.match_check.match_method,
                 tolerance,
                 close_matches_distance,
             );
-            self.pixel_check.last_inputs = inputs;
-            self.pixel_check.last_request = Some(now);
-            self.pixel_check_pending = Some(job_rx);
+            self.match_check.last_inputs = inputs;
+            self.match_check.last_request = Some(now);
+            self.match_check_pending = Some(job_rx);
         }
     }
 }

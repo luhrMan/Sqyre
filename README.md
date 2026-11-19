@@ -65,7 +65,7 @@ Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on 
 
 ### Also in the app
 
-- **Data editor** — programs, items (with icon variants), masks, points, search areas, collections, atlases; Tools tab for Overlay buttons, ScreenCap, and PixelCheck
+- **Data editor** — programs, items (with icon variants), masks, points, search areas, collections, atlases; Tools tab for Overlay buttons, ScreenCap, and MatchCheck
 - **Command palette** (`Ctrl+K`) — jump to macros, add actions, open editor tabs
 - **Macro recording** — capture moves, clicks, keys, and waits, then review / copy into a tree
 - **Hotkeys** — press or release, multiselect tag filter on the macro list (optional while-focused Program tags), chooser when multiple macros share a chord

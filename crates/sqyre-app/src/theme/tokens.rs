@@ -34,7 +34,7 @@ pub fn preview_label_dim() -> Color32 {
     rgba([0, 0, 0, 150])
 }
 
-// --- Preview / PixelCheck visualization tokens (not status chrome) ---
+// --- Preview / MatchCheck visualization tokens (not status chrome) ---
 // Analysis overlays keep distinct hues so pass/fail/within remain readable on
 // heatmaps. Status text and destructive accents must use `error_fg` / `warn_fg`
 // / `ok_fg` / `MACRO_*` instead of copying these RGB values.
@@ -59,17 +59,17 @@ pub fn preview_selection_stroke() -> Color32 {
     Color32::from_rgb(120, 180, 255)
 }
 
-/// Best / passing match marker (PixelCheck viz).
+/// Best / passing match marker (MatchCheck viz).
 pub fn match_pass_fg() -> Color32 {
     Color32::from_rgb(80, 255, 120)
 }
 
-/// Best match below tolerance (PixelCheck viz).
+/// Best match below tolerance (MatchCheck viz).
 pub fn match_fail_fg() -> Color32 {
     Color32::from_rgb(255, 200, 60)
 }
 
-/// Secondary match within tolerance (PixelCheck viz).
+/// Secondary match within tolerance (MatchCheck viz).
 pub fn match_within_fg() -> Color32 {
     Color32::from_rgb(120, 230, 180)
 }
@@ -229,7 +229,7 @@ mod tests {
             highlight_invalid_fill(),
             Color32::from_rgba_unmultiplied(err.r(), err.g(), err.b(), 45)
         );
-        // PixelCheck viz tokens stay distinct from status chrome.
+        // MatchCheck viz tokens stay distinct from status chrome.
         assert_ne!(match_pass_fg(), ok_fg());
         assert_ne!(match_fail_fg(), warn_fg());
         assert_ne!(match_fail_fg(), error_fg());
