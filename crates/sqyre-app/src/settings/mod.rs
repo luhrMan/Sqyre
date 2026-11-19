@@ -280,7 +280,7 @@ impl SettingsUi {
         {
             // `Some(true)` when the toggle is on; `None` keeps `SQYRE_DIAG` honored.
             sqyre_ports::set_disk_logging(settings.runtime.diagnostic_logging.then_some(true));
-            sqyre_capture::set_pipewire_suspend_on_idle(
+            sqyre_ports::set_pipewire_suspend_on_idle(
                 settings.runtime.suspend_screen_capture_when_idle,
             );
             crate::mem_diag::set_enabled(

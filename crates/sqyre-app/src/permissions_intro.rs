@@ -154,7 +154,7 @@ mod platform {
     use super::{Item, State, CAPTURE_WHY, HOTKEYS_WHY};
 
     pub(super) fn items() -> (Vec<Item>, Option<&'static str>) {
-        if !sqyre_capture::shared_capturer_open_may_block() {
+        if !sqyre_ports::shared_capturer_open_may_block() {
             return (
                 vec![
                     Item {

@@ -116,7 +116,7 @@ pub(crate) fn partition_pending(
 fn desktop_cursor_physical() -> Option<(i32, i32)> {
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     {
-        sqyre_capture::desktop_cursor_position()
+        sqyre_ports::desktop_cursor_position()
     }
     #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
     {

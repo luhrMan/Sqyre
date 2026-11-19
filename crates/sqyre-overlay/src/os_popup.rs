@@ -39,7 +39,7 @@ impl MonitorRect {
 
 /// Monitor containing `(x, y)`, else primary / virtual-desktop fallback.
 pub fn monitor_for_point(x: i32, y: i32) -> MonitorRect {
-    let rects = sqyre_capture::preferred_monitor_rects();
+    let rects = sqyre_ports::preferred_monitor_rects();
     for r in &rects {
         let mon = MonitorRect {
             x: r.x,

@@ -167,6 +167,7 @@ pub fn default_required_caps() -> Vec<String> {
 
 /// Run all capability probes once and return a structured report.
 pub fn run_probe(opts: &ProbeOptions) -> ProbeReport {
+    sqyre_capture::wire_ports_capture_status();
     let started = Instant::now();
     let session = detect_session();
     session.log_native();
@@ -354,7 +355,7 @@ fn probe_capture(
     caps.insert(
         "capture.open".into(),
         timed(|| {
-            if opts.in_app && sqyre_capture::shared_capturer_open_may_block() {
+            if opts.in_app && sqyre_ports::shared_capturer_open_may_block() {
                 return match sqyre_capture::shared_capturer_if_ready() {
                     Some(Ok(_)) => {
                         cap_log("CAP", "ok", &format!("backend={backend} op=open"));
@@ -580,7 +581,7 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
         caps.insert(
             "input.open".into(),
             timed(|| {
-                if sqyre_capture::portal_input_ready()
+                if sqyre_ports::portal_input_ready()
                     || sqyre_capture::portal_remote_desktop_granted()
                 {
                     // The capturer returns on the first frame, which on COSMIC can
@@ -600,7 +601,7 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
                         }
                     };
                 }
-                if sqyre_capture::portal_screencast_granted() {
+                if sqyre_ports::portal_screencast_granted() {
                     cap_log("INPUT", "fail", "reason=no_remote_interaction");
                     CapabilityResult::fail(String::from(
                         "enable Allow Remote Interaction in the screen share dialog",
@@ -615,7 +616,7 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
         );
         caps.insert(
             "input.wayland_impl".into(),
-            if sqyre_capture::portal_input_ready() {
+            if sqyre_ports::portal_input_ready() {
                 CapabilityResult {
                     status: CapStatus::Ok,
                     backend: Some("eis".into()),

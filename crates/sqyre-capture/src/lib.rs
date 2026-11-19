@@ -49,6 +49,8 @@ mod x11_secondary;
 #[cfg(target_os = "linux")]
 mod x11_snapshot_overlay;
 
+mod ports_bridge;
+
 pub use error::{linux_session_capture_warning, CaptureError, NotReady};
 #[cfg(target_os = "linux")]
 pub use linux::{
@@ -65,6 +67,7 @@ pub use pixel_convert::{
     crop_packed_rgba, crop_packed_rgba_to_rgb, strip_rgba_row_to_rgb, swizzle_row_to_rgba,
     zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE,
 };
+pub use ports_bridge::wire_ports_capture_status;
 pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
 
@@ -357,6 +360,7 @@ fn query_os_primary_rect() -> Option<sqyre_ports::DesktopRect> {
 /// reports **more** outputs than the portal (partial ScreenCast streams must not
 /// shrink the logical slot map and reseed General).
 pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
+    wire_ports_capture_status();
     let capture = shared_capturer_nonblocking()
         .ok()
         .and_then(|c| c.monitor_rects_ref().ok())
@@ -506,6 +510,7 @@ pub fn portal_cursor_position() -> Option<(i32, i32)> {
 
 /// Absolute desktop cursor in physical pixels (portal → X11 capturer → Win32).
 pub fn desktop_cursor_position() -> Option<(i32, i32)> {
+    wire_ports_capture_status();
     if let Some(pos) = portal_cursor_position() {
         return Some(pos);
     }

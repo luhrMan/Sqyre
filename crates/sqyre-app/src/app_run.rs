@@ -136,7 +136,7 @@ impl SqyreApp {
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
                     sqyre_ports::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
-                    sqyre_capture::nudge_portal_capture_after_ui_hide();
+                    sqyre_ports::nudge_portal_capture_after_ui_hide();
                 }
             } else if !should_hide && self.overlay.hidden_for_recording {
                 self.overlay.hidden_for_recording = false;
@@ -537,7 +537,7 @@ mod native_run {
 
                 crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
-                sqyre_capture::release_capture_frame_cache();
+                sqyre_ports::release_capture_frame_cache();
                 trim_process_heap();
                 crate::mem_diag::sample_with_action_log("post_run", &action_log);
 

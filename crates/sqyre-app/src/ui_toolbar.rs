@@ -208,7 +208,7 @@ fn paint_list_toggle(app: &mut SqyreApp, ui: &mut egui::Ui) {
 fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     #[cfg(feature = "native-runtime")]
-    let waking = sqyre_capture::pipewire_stream_waking();
+    let waking = sqyre_ports::pipewire_stream_waking();
     #[cfg(not(feature = "native-runtime"))]
     let waking = false;
     let busy = running || waking;

@@ -67,7 +67,7 @@ fn cap_ok(caps: &BTreeMap<String, CapabilityResult>, key: &str) -> bool {
 }
 
 fn live_capture_granted() -> bool {
-    sqyre_capture::portal_screencast_granted()
+    sqyre_ports::portal_screencast_granted()
 }
 
 fn cap_fail_detail(caps: &BTreeMap<String, CapabilityResult>, key: &str) -> Option<String> {
@@ -94,7 +94,7 @@ fn screen_recording_item(
         || cap_ok(caps, "portal.screencast")
     {
         (PermissionEligibility::Granted, None)
-    } else if sqyre_capture::shared_capturer_is_opening() {
+    } else if sqyre_ports::shared_capturer_is_opening() {
         (
             PermissionEligibility::Checking,
             Some("Waiting for the screen sharing dialog.".into()),

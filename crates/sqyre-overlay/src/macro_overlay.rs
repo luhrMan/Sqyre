@@ -184,6 +184,8 @@ impl Drop for MacroOverlay {
 
 impl MacroOverlay {
     pub fn new() -> Self {
+        // Overlay hosts read monitor/cursor status via ports; install capture hooks.
+        sqyre_capture::wire_ports_capture_status();
         Self {
             focus_slot: Arc::new(Mutex::new(FocusSlot::idle())),
             focus_poller: Mutex::new(None),
