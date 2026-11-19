@@ -1884,6 +1884,59 @@ mod tests {
         );
     }
 
+    /// Self-sizing tip Areas must not shrink wrapped text to one-character rows
+    /// across frames (same ratchet class as item-icon tooltips).
+    #[test]
+    fn preview_error_tip_width_does_not_ratchet() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.show_tooltips_only_when_still = false;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let mut first_w = None;
+        let mut last_w = None;
+        for frame in 1..12 {
+            let events = if frame == 1 {
+                vec![egui::Event::PointerMoved(center)]
+            } else {
+                Vec::new()
+            };
+            let out = ctx.run_ui(input(screen, frame as f64 * 0.2, events), |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            });
+            let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.text().contains(LITERAL_COORDS_MSG) => {
+                    Some(t.galley.size().x)
+                }
+                _ => None,
+            });
+            if let Some(w) = tip_w {
+                first_w.get_or_insert(w);
+                last_w = Some(w);
+            }
+            out.drop_without_applying_deltas();
+        }
+        let (first, last) = (
+            first_w.expect("preview tip text never painted"),
+            last_w.expect("preview tip text vanished"),
+        );
+        assert!(
+            last + 1.0 >= first,
+            "preview tip width ratcheted down: first={first:.1} last={last:.1}"
+        );
+    }
+
     /// A tap is not a hover: the message has to show while the finger is down
     /// and stay after it lifts, without waiting out the hover delay.
     #[test]

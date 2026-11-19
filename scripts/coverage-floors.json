@@ -47,6 +47,36 @@
       "path": "/sqyre-executor/",
       "floor": 85.0,
       "note": "whole crate (mocked execution)"
+    },
+    {
+      "name": "capture_status",
+      "path": "capture_status.rs",
+      "floor": 65.0,
+      "note": "ports capture-status façade (hooks + idle defaults)"
+    },
+    {
+      "name": "settings_paths",
+      "path": "settings/paths.rs",
+      "floor": 18.0,
+      "note": "persist settings FS helpers (open-folder OS paths stay lightly covered)"
+    },
+    {
+      "name": "host_press",
+      "path": "host_press.rs",
+      "floor": 90.0,
+      "note": "overlay press policy (OS-neutral)"
+    },
+    {
+      "name": "hub_dismiss",
+      "path": "hub_dismiss.rs",
+      "floor": 85.0,
+      "note": "overlay hub dismiss policy (OS-neutral)"
+    },
+    {
+      "name": "chooser_hit",
+      "path": "chooser_hit.rs",
+      "floor": 90.0,
+      "note": "overlay chooser row hit-test (OS-neutral)"
     }
   ]
 }

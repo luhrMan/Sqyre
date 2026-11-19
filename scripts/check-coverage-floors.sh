@@ -44,7 +44,7 @@ else
 	REPORT_LCOV="$(mktemp)"
 	CLEANUP_REPORT=1
 	trap '[[ "$CLEANUP_REPORT" -eq 1 ]] && rm -f "$REPORT_LCOV"' EXIT
-	echo "Running llvm-cov for pure crates (sqyre-domain, sqyre-varref, sqyre-persist, sqyre-serialize, sqyre-validate, sqyre-executor)..."
+	echo "Running llvm-cov for pure crates (+ ports façade / overlay policy modules)..."
 	"$CARGO" llvm-cov \
 		-p sqyre-domain \
 		-p sqyre-varref \
@@ -52,6 +52,8 @@ else
 		-p sqyre-serialize \
 		-p sqyre-validate \
 		-p sqyre-executor \
+		-p sqyre-ports \
+		-p sqyre-overlay \
 		--lcov --output-path "$REPORT_LCOV" -q
 fi
 

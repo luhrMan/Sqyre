@@ -495,6 +495,31 @@ fn long_macro_name_tooltip_discloses_elided_text() {
 }
 
 #[test]
+fn demo_tree_action_row_exposes_accessible_type_label() {
+    let mut harness = build_docs_harness([900.0, 560.0], |app| {
+        app.expand_all_branches_for_docs();
+        if let Some(id) = app.demo_first_action_id() {
+            app.select_action(id);
+        }
+    });
+    harness.run_steps(4);
+    // Tree chrome paints AccessKit labels for action rows; a selected Wait/demo
+    // child must remain queryable after expand (guards tip/row wiring regressions).
+    let found = harness
+        .query_all_by(|node| {
+            node.label().as_deref().is_some_and(|label| {
+                label.contains("Wait") || label.contains("Click") || label.contains("Move")
+            })
+        })
+        .next()
+        .is_some();
+    assert!(
+        found,
+        "expanded demo tree should expose at least one action-type accessible label"
+    );
+}
+
+#[test]
 fn stress_tree_summary_tooltip_discloses_full_type_text_at_scale_two() {
     let full_text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.";
     let mut harness = build_docs_harness([640.0, 360.0], |app| {
