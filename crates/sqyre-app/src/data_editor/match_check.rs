@@ -102,8 +102,16 @@ mod inner {
         pub paused: bool,
         /// Opt-in paint for match boxes when count exceeds [`MANY_MATCH_BOX_THRESHOLD`].
         pub show_many_match_boxes: bool,
-        /// When the last live match cycle finished (gates [`LIVE_INTERVAL`]).
+        /// When the last live cycle was armed (gates [`LIVE_INTERVAL`]).
         pub last_live_at: Option<Instant>,
+        /// One-shot: invalidate+recapture the panel underlay on the next paint.
+        ///
+        /// Must not stay set across frames — `texture_for(force)` drops in-flight
+        /// captures, which would leave the preview loading forever.
+        pub capture_once: bool,
+        /// Keep retrying a forced rematch until a worker is spawned (display may
+        /// lag one or more frames behind a recapture).
+        pub rematch_once: bool,
     }
 
     impl Default for MatchCheckSettings {
@@ -119,6 +127,8 @@ mod inner {
                 paused: false,
                 show_many_match_boxes: false,
                 last_live_at: None,
+                capture_once: false,
+                rematch_once: false,
             }
         }
     }
@@ -129,12 +139,19 @@ mod inner {
         pending: bool,
         now: Instant,
     ) -> bool {
-        if settings.paused || pending {
+        if settings.paused || pending || settings.rematch_once || settings.capture_once {
             return false;
         }
         settings
             .last_live_at
             .is_none_or(|t| now.duration_since(t) >= LIVE_INTERVAL)
+    }
+
+    /// Arm a single live cycle: rate-limit immediately and request one capture + rematch.
+    pub(crate) fn arm_live_cycle(settings: &mut MatchCheckSettings, now: Instant) {
+        settings.last_live_at = Some(now);
+        settings.capture_once = true;
+        settings.rematch_once = true;
     }
 
     pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
@@ -1246,9 +1263,10 @@ pub(crate) use inner::*;
 #[cfg(all(test, feature = "native-runtime"))]
 mod tests {
     use super::inner::{
-        closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
-        live_refresh_due, scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes,
-        MatchCheckSettings, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
+        arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
+        hover_at_image, live_refresh_due, scale_image_buf, scores_to_heatmap_rgba,
+        should_paint_match_boxes, MatchCheckSettings, MatchSummary, LIVE_INTERVAL,
+        MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::MatchMethod;
     use sqyre_match::{ImageBuf, MatchMap};
@@ -1434,6 +1452,28 @@ mod tests {
         assert!(!live_refresh_due(&settings, false, now));
         settings.paused = false;
         settings.last_live_at = Some(now);
+        assert!(!live_refresh_due(&settings, false, now));
+        assert!(live_refresh_due(
+            &settings,
+            false,
+            now + LIVE_INTERVAL + Duration::from_millis(1)
+        ));
+    }
+
+    #[test]
+    fn arm_live_cycle_is_one_shot_until_flags_clear() {
+        let now = Instant::now();
+        let mut settings = MatchCheckSettings::default();
+        assert!(live_refresh_due(&settings, false, now));
+        arm_live_cycle(&mut settings, now);
+        assert!(settings.capture_once);
+        assert!(settings.rematch_once);
+        // Rate-limit + in-flight flags must stop re-arming every frame (which would
+        // invalidate the panel capture forever via texture_for(force)).
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.capture_once = false;
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.rematch_once = false;
         assert!(!live_refresh_due(&settings, false, now));
         assert!(live_refresh_due(
             &settings,

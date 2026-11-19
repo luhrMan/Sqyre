@@ -603,16 +603,22 @@ impl DataEditor {
                 self.stop_match_check_compute();
             }
             self.sync_coord_preview_view();
-            let mut force = std::mem::take(&mut self.preview_force);
+            let now = web_time::Instant::now();
+            let manual_force = std::mem::take(&mut self.preview_force);
+            if manual_force {
+                // ↻: one panel invalidate + keep rematching until the worker starts.
+                self.match_check.capture_once = true;
+                self.match_check.rematch_once = true;
+                self.match_check.paused = false;
+            }
             if can_compute
                 && super::match_check::live_refresh_due(
                     &self.match_check,
                     self.match_check_pending.is_some(),
-                    web_time::Instant::now(),
+                    now,
                 )
             {
-                // Recapture underlay + rematch; ↻ already sets force and unpauses.
-                force = true;
+                super::match_check::arm_live_cycle(&mut self.match_check, now);
             }
             ui.horizontal(|ui| {
                 let mut live = !self.match_check.paused;
@@ -632,8 +638,13 @@ impl DataEditor {
                 {
                     self.match_check.paused = !live;
                     if live {
-                        self.match_check.last_live_at = None;
-                        force = true;
+                        super::match_check::arm_live_cycle(
+                            &mut self.match_check,
+                            web_time::Instant::now(),
+                        );
+                    } else {
+                        self.match_check.capture_once = false;
+                        self.match_check.rematch_once = false;
                     }
                 }
                 if live {
@@ -646,6 +657,9 @@ impl DataEditor {
                     ui.weak("Computing heatmap…");
                 }
             });
+            // Capture force is one-shot; rematch may retry across frames until spawn.
+            let force_panel = std::mem::take(&mut self.match_check.capture_once);
+            let force_match = self.match_check.rematch_once;
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
@@ -660,7 +674,7 @@ impl DataEditor {
                         ty,
                         rx,
                         by,
-                        force,
+                        force_panel,
                         &mut self.coord_preview,
                     );
                     self.paint_area_record(
@@ -750,13 +764,20 @@ impl DataEditor {
                     ty,
                     rx,
                     by,
-                    force,
+                    force_match,
                     settings.runtime.image_search_close_matches_distance,
                     display,
                 );
+                if self.match_check_pending.is_some() {
+                    self.match_check.rematch_once = false;
+                }
             }
             if can_compute {
-                if force || self.match_check_pending.is_some() {
+                if force_panel
+                    || force_match
+                    || self.match_check_pending.is_some()
+                    || self.match_check.rematch_once
+                {
                     ui.ctx().request_repaint();
                 } else if !self.match_check.paused {
                     ui.ctx()

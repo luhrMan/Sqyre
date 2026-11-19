@@ -1732,6 +1732,8 @@ impl DataEditor {
         self.match_check_cache = None;
         self.match_check.last_inputs.clear();
         self.match_check.paused = true;
+        self.match_check.capture_once = false;
+        self.match_check.rematch_once = false;
     }
 
     #[cfg(feature = "native-runtime")]
