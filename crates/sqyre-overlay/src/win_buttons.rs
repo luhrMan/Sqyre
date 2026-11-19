@@ -477,14 +477,13 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
 
 fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
     let want = state.hub_fan.open_or_traveling();
-    if state.hub_fan_dismiss == want {
-        return;
+    if crate::hub_dismiss::sync_hub_fan_dismiss_fields(
+        &mut state.hub_fan_dismiss,
+        &mut state.last_hub_dismiss_btn1,
+        want,
+    ) {
+        note(&format!("overlay-win: hub_fan_dismiss={want} (fan)"));
     }
-    state.hub_fan_dismiss = want;
-    // Require a full release+repress after arming so the open click cannot
-    // count as an outside dismiss (host arms on the same poll as SetHubFan).
-    state.last_hub_dismiss_btn1 = want;
-    note(&format!("overlay-win: hub_fan_dismiss={want} (fan)"));
 }
 
 fn place_all_hub_satellites(state: &mut HostState) {
@@ -908,12 +907,7 @@ fn hide_context_menu(state: &mut HostState, action: Option<crate::OverlayButtonC
 }
 
 fn context_row_at(menu: &ContextMenuWindow, client_x: i32, client_y: i32) -> Option<usize> {
-    menu.rows.iter().position(|(_, rx, ry, rw, rh)| {
-        client_x >= *rx
-            && client_y >= *ry
-            && client_x < *rx + *rw as i32
-            && client_y < *ry + *rh as i32
-    })
+    crate::chooser_hit::chooser_row_at(&menu.rows, client_x, client_y)
 }
 
 fn repaint_context_menu(state: &mut HostState) {
@@ -1061,9 +1055,7 @@ fn poll_context_menu_outside_dismiss(state: &mut HostState) {
 
 fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
     let btn1 = sqyre_hotkeys::left_button_down();
-    let pressed = btn1 && !state.last_hub_dismiss_btn1;
-    state.last_hub_dismiss_btn1 = btn1;
-    if !pressed {
+    if !crate::hub_dismiss::rising_edge(btn1, &mut state.last_hub_dismiss_btn1) {
         return;
     }
     let mut pt = POINT::default();
@@ -1071,18 +1063,11 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
     if unsafe { GetCursorPos(&mut pt) }.is_err() {
         return;
     }
-    let over_hub = state.buttons.values().any(|btn| {
-        btn.mapped
-            && crate::hub_fan::is_hub_chrome_id(&btn.spec.id)
-            && point_in_rounded_rect(
-                pt.x - btn.spec.face.x,
-                pt.y - btn.spec.face.y,
-                btn.spec.face.w,
-                btn.spec.face.h,
-                btn.spec.face.corner_radius,
-            )
-    });
-    if over_hub {
+    if crate::hub_dismiss::hub_chrome_contains_specs(
+        state.buttons.values().map(|btn| (btn.mapped, &btn.spec)),
+        pt.x,
+        pt.y,
+    ) {
         return;
     }
     note(&format!(
@@ -1123,12 +1108,6 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
         .lock()
         .as_deref()
         .is_some_and(|n| !n.trim().is_empty());
-    if running && state.press_stops.load(Ordering::Relaxed) {
-        mark_site(&format!("overlay-win:press-stop:{id}"));
-        note(&format!("overlay-win: press-stop id={id}"));
-        state.run_stop.lock().request_stop();
-        return;
-    }
     let Some(btn) = state.buttons.get(id) else {
         return;
     };
@@ -1136,9 +1115,20 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
         note(&format!("overlay-win: press-disabled id={id}"));
         return;
     }
-    if btn.spec.busy {
-        note(&format!("overlay-win: press-busy-ignore id={id}"));
-        return;
+    let press_stops = state.press_stops.load(Ordering::Relaxed);
+    match crate::host_press::overlay_press_kind(press_stops, running, btn.spec.busy, false) {
+        crate::host_press::OverlayPressKind::Stop => {
+            mark_site(&format!("overlay-win:press-stop:{id}"));
+            note(&format!("overlay-win: press-stop id={id}"));
+            state.run_stop.lock().request_stop();
+            return;
+        }
+        crate::host_press::OverlayPressKind::IgnoreBusy => {
+            note(&format!("overlay-win: press-busy-ignore id={id}"));
+            return;
+        }
+        crate::host_press::OverlayPressKind::IgnoreArmed => return,
+        crate::host_press::OverlayPressKind::Fire => {}
     }
     let name = btn.spec.macro_name.clone();
     if name.trim().is_empty() {
@@ -1152,7 +1142,7 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
     );
     {
         let mut q = state.pending.lock();
-        if name.trim() == sqyre_persist::QUICK_ACCESS_HUB_ID && q.iter().any(|n| n == &name) {
+        if crate::host_press::should_coalesce_hub_click(&q, &name) {
             note("overlay-win: coalesce hub toggle (already queued)");
             event_log("SQYRE_OVERLAY", &[("click", "coalesce"), ("id", id)]);
         } else {
