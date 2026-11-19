@@ -9,6 +9,7 @@ pub(crate) fn egui_key_name(key: Key) -> Option<&'static str> {
         Key::Backspace | Key::Delete => "delete",
         Key::Enter => "enter",
         Key::Space => "space",
+        Key::Insert => "insert",
         Key::ArrowUp => "up",
         Key::ArrowDown => "down",
         Key::ArrowLeft => "left",
@@ -65,6 +66,20 @@ pub(crate) fn egui_key_name(key: Key) -> Option<&'static str> {
         Key::Num7 => "7",
         Key::Num8 => "8",
         Key::Num9 => "9",
+        // Punctuation — fold shift-glyph variants onto the physical key name so
+        // focused egui recording matches hook/evdev chords (US layout).
+        Key::Minus => "minus",
+        Key::Equals | Key::Plus => "equal",
+        Key::OpenBracket | Key::OpenCurlyBracket => "leftbracket",
+        Key::CloseBracket | Key::CloseCurlyBracket => "rightbracket",
+        Key::Semicolon | Key::Colon => "semicolon",
+        Key::Quote => "quote",
+        Key::Backtick => "grave",
+        Key::Backslash | Key::Pipe => "backslash",
+        Key::Comma => "comma",
+        Key::Period => "period",
+        Key::Slash | Key::Questionmark => "slash",
+        Key::IntlBackslash => "intlbackslash",
         Key::SuperLeft => "cmd",
         Key::SuperRight => "rcmd",
         _ => return None,
@@ -84,5 +99,18 @@ mod tests {
         assert_eq!(egui_key_name(Key::Enter), Some("enter"));
         assert_eq!(egui_key_name(Key::SuperLeft), Some("cmd"));
         assert_eq!(egui_key_name(Key::SuperRight), Some("rcmd"));
+    }
+
+    #[test]
+    fn maps_operator_and_punctuation_keys() {
+        assert_eq!(egui_key_name(Key::Minus), Some("minus"));
+        assert_eq!(egui_key_name(Key::Equals), Some("equal"));
+        assert_eq!(egui_key_name(Key::Plus), Some("equal"));
+        assert_eq!(egui_key_name(Key::OpenBracket), Some("leftbracket"));
+        assert_eq!(egui_key_name(Key::OpenCurlyBracket), Some("leftbracket"));
+        assert_eq!(egui_key_name(Key::CloseCurlyBracket), Some("rightbracket"));
+        assert_eq!(egui_key_name(Key::Backtick), Some("grave"));
+        assert_eq!(egui_key_name(Key::Semicolon), Some("semicolon"));
+        assert_eq!(egui_key_name(Key::Slash), Some("slash"));
     }
 }

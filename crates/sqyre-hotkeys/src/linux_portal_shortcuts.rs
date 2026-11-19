@@ -359,6 +359,24 @@ fn xkb_keysym(key: &str) -> Option<&str> {
         "num_asterisk" => "KP_Multiply",
         "num_slash" => "KP_Divide",
         "num_period" => "KP_Decimal",
+        "minus" | "-" => "minus",
+        "equal" | "=" | "plus" | "+" => "equal",
+        "leftbracket" | "[" | "{" => "bracketleft",
+        "rightbracket" | "]" | "}" => "bracketright",
+        "semicolon" | ";" | ":" => "semicolon",
+        "quote" | "'" | "\"" => "apostrophe",
+        "grave" | "`" | "~" | "backtick" => "grave",
+        "backslash" | "\\" | "|" => "backslash",
+        "intlbackslash" => "less",
+        "comma" | "," => "comma",
+        "period" | "." => "period",
+        "slash" | "/" | "?" => "slash",
+        "insert" => "Insert",
+        "capslock" | "caps" => "Caps_Lock",
+        "numlock" => "Num_Lock",
+        "scrolllock" => "Scroll_Lock",
+        "printscreen" | "print" => "Print",
+        "pause" => "Pause",
         k if k.len() == 1
             && k.bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
@@ -391,6 +409,16 @@ mod tests {
         assert_eq!(
             xdg_trigger(&chord(&["rshift", "shift", "num_plus"])).as_deref(),
             Some("SHIFT+KP_Add")
+        );
+        assert_eq!(
+            xdg_trigger(&chord(&["ctrl", "minus"])).as_deref(),
+            Some("CTRL+minus")
+        );
+        assert_eq!(xdg_trigger(&chord(&["equal"])).as_deref(), Some("equal"));
+        assert_eq!(xdg_trigger(&chord(&["grave"])).as_deref(), Some("grave"));
+        assert_eq!(
+            xdg_trigger(&chord(&["capslock"])).as_deref(),
+            Some("Caps_Lock")
         );
     }
 

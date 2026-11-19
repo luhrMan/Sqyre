@@ -31,6 +31,22 @@ pub fn normalize_key_name(key: &str) -> String {
         "shiftright" | "shift_right" => "rshift".into(),
         "altleft" | "alt_left" => "alt".into(),
         "altright" | "alt_right" | "altgr" => "ralt".into(),
+        // Punctuation / lock aliases (glyphs → stable chord vocabulary).
+        "-" | "_" => "minus".into(),
+        "=" | "+" => "equal".into(),
+        "[" | "{" => "leftbracket".into(),
+        "]" | "}" => "rightbracket".into(),
+        ";" | ":" => "semicolon".into(),
+        "'" | "\"" => "quote".into(),
+        "`" | "~" | "backtick" => "grave".into(),
+        "\\" | "|" => "backslash".into(),
+        "," => "comma".into(),
+        "." => "period".into(),
+        "/" | "?" => "slash".into(),
+        "caps" => "capslock".into(),
+        "num_lock" => "numlock".into(),
+        "scroll_lock" => "scrolllock".into(),
+        "print" | "prtsc" | "print_screen" => "printscreen".into(),
         other => other.to_string(),
     }
 }
@@ -119,6 +135,12 @@ mod tests {
         assert_eq!(normalize_key_name("ControlRight"), "ctrl");
         assert_eq!(normalize_key_name("AltGr"), "ralt");
         assert_eq!(normalize_key_name("F9"), "f9");
+        assert_eq!(normalize_key_name("-"), "minus");
+        assert_eq!(normalize_key_name("="), "equal");
+        assert_eq!(normalize_key_name("+"), "equal");
+        assert_eq!(normalize_key_name("{"), "leftbracket");
+        assert_eq!(normalize_key_name("~"), "grave");
+        assert_eq!(normalize_key_name("Caps"), "capslock");
     }
 
     #[test]
