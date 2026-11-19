@@ -6,6 +6,7 @@
 
 mod data;
 mod overlay;
+mod paths;
 mod runtime;
 mod sound;
 mod ui;
@@ -30,6 +31,7 @@ pub use overlay::{
     MIN_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_GATE_INTERVAL_MS, QUICK_ACCESS_HUB_DISMISS,
     QUICK_ACCESS_HUB_ICON, QUICK_ACCESS_HUB_ID, QUICK_ACCESS_HUB_LABEL,
 };
+pub use paths::{move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path};
 pub use runtime::{
     available_worker_threads, default_worker_threads, HotkeyWhileRunning, RuntimePrefs,
     DEFAULT_ACTION_LOG_MAX_ENTRIES, DEFAULT_CLICK_FLASH_MS,
@@ -59,50 +61,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
+#[cfg(not(target_arch = "wasm32"))]
+use paths::{apply_data_dir_pointer, write_data_dir_pointer};
 use sqyre_domain::{rename_coordinate_entity, rename_coordinate_program, CoordinateRef};
-
-pub fn settings_path() -> PathBuf {
-    crate::sqyre_dir().join(crate::SETTINGS_FILE)
-}
-
-/// XDG pointer that records a relocated data directory (one path per line).
-#[cfg(not(target_arch = "wasm32"))]
-fn data_dir_pointer_path() -> PathBuf {
-    crate::sqyre_config_dir().join("data_dir")
-}
-
-/// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
-#[cfg(not(target_arch = "wasm32"))]
-fn apply_data_dir_pointer() {
-    let path = data_dir_pointer_path();
-    let Ok(text) = fs::read_to_string(&path) else {
-        return;
-    };
-    let dir = text.lines().next().unwrap_or("").trim();
-    if dir.is_empty() {
-        let _ = fs::remove_file(&path);
-        crate::set_sqyre_dir_override(None);
-        return;
-    }
-    crate::set_sqyre_dir_override(Some(PathBuf::from(dir)));
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
-    let path = data_dir_pointer_path();
-    let dir = sqyre_dir.trim();
-    if dir.is_empty() {
-        if path.exists() {
-            fs::remove_file(&path)?;
-        }
-        return Ok(());
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    crate::atomic_write(&path, format!("{dir}\n"))?;
-    Ok(())
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct UserSettings {
@@ -341,99 +302,6 @@ impl UserSettings {
             crate::set_backup_dir_override(Some(PathBuf::from(path)));
         }
     }
-}
-
-/// Open `path` in the platform file manager.
-pub fn open_path_in_file_manager(path: impl AsRef<Path>) -> Result<()> {
-    let path = path.as_ref();
-    if path.as_os_str().is_empty() {
-        return Err(PersistError::Message("open folder: empty path".into()));
-    }
-    if !path.exists() {
-        return Err(PersistError::Message(format!(
-            "open folder {}: path does not exist",
-            path.display()
-        )));
-    }
-    let status = {
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("explorer").arg(path).status()
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(path).status()
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            std::process::Command::new("xdg-open").arg(path).status()
-        }
-    };
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(PersistError::Message(format!(
-            "open folder {}: exited {}",
-            path.display(),
-            s
-        ))),
-        Err(e) => Err(PersistError::Io(e)),
-    }
-}
-
-/// Ensure the Sqyre data directory exists and open it in the file manager.
-pub fn open_sqyre_dir() -> Result<()> {
-    crate::initialize_directories()?;
-    open_path_in_file_manager(crate::sqyre_dir())
-}
-
-/// Move `src` to `dst`. Falls back to recursive copy on cross-device rename.
-/// `dst` must not already exist.
-pub fn move_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
-    let src = src.as_ref();
-    let dst = dst.as_ref();
-    if src == dst {
-        return Ok(());
-    }
-    if dst.exists() {
-        return Err(PersistError::Message(format!(
-            "move {} to {}: destination already exists",
-            src.display(),
-            dst.display()
-        )));
-    }
-    if let Some(parent) = dst.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    match fs::rename(src, dst) {
-        Ok(()) => Ok(()),
-        Err(e) if is_cross_device(&e) => {
-            copy_tree(src, dst)?;
-            fs::remove_dir_all(src)?;
-            Ok(())
-        }
-        Err(e) => Err(PersistError::Io(e)),
-    }
-}
-
-fn is_cross_device(err: &std::io::Error) -> bool {
-    // Linux EXDEV = 18; Windows ERROR_NOT_SAME_DEVICE = 17.
-    matches!(err.raw_os_error(), Some(17) | Some(18))
-}
-
-fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        let ft = entry.file_type()?;
-        if ft.is_dir() {
-            copy_tree(&from, &to)?;
-        } else {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
