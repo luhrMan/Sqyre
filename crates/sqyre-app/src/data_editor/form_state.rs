@@ -532,6 +532,7 @@ impl FormState for MatchCheckForm {
             ed.match_check.paused = false;
             ed.match_check.last_live_at = None;
             ed.match_check.capture_once = false;
+            ed.match_check.awaiting_panel = false;
             ed.match_check.rematch_once = false;
             let variant = match_check::default_variant(CatalogView::from(catalog), &prog, &name);
             ed.match_check.variant = variant;

@@ -55,6 +55,18 @@ pub enum PreviewKind {
     Collection,
 }
 
+/// How a panel/tooltip capture should refresh.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreviewRefresh {
+    /// Reuse the cached texture when present.
+    #[default]
+    None,
+    /// Drop cached pixels and show Capturing… until the new frame lands.
+    Hard,
+    /// Keep showing the last frame while a fresh capture runs in the background.
+    Soft,
+}
+
 struct CacheEntry {
     texture: TextureHandle,
     caption: String,
@@ -213,6 +225,12 @@ impl PreviewTooltipCache {
         Some((display, src_w, src_h))
     }
 
+    /// True while a soft/hard panel search-area capture is still in flight.
+    pub fn panel_search_area_pending(&self, left: i32, top: i32, right: i32, bottom: i32) -> bool {
+        let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
+        self.pending.contains_key(&key)
+    }
+
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
     ///
     /// Consumed by the recording overlay so the gold selection outline is drawn on
@@ -308,8 +326,14 @@ impl PreviewTooltipCache {
                 if self.desktop_outlines_enabled {
                     log_hover_outline_transition(kind, program, name, coords);
                 }
-                let preview =
-                    self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
+                let preview = self.texture_for(
+                    ui.ctx(),
+                    &key,
+                    &caption,
+                    coords,
+                    PreviewRefresh::None,
+                    TOOLTIP_MAX_DIM,
+                );
                 let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
                 show_preview_hover_ui(response, |ui| match &preview {
                     Ok(ready) => {
@@ -348,8 +372,13 @@ impl PreviewTooltipCache {
         let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_embedded(coords);
+                let refresh = if force {
+                    PreviewRefresh::Hard
+                } else {
+                    PreviewRefresh::None
+                };
                 let preview =
-                    self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM);
+                    self.texture_for(ui.ctx(), &key, &caption, coords, refresh, TOOLTIP_MAX_DIM);
                 choose_app =
                     interactive && preview.is_err() && self.failure_is_no_saved_screen(&key);
                 preview
@@ -400,7 +429,14 @@ impl PreviewTooltipCache {
         let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
-                match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
+                match self.texture_for(
+                    ui.ctx(),
+                    &key,
+                    &caption,
+                    coords,
+                    PreviewRefresh::None,
+                    TOOLTIP_MAX_DIM,
+                ) {
                     Ok(ready) => Ok(ready),
                     Err(err) => Err((caption, err)),
                 }
@@ -438,12 +474,17 @@ impl PreviewTooltipCache {
         };
         let key = format!("panel:pt:{x}:{y}");
         let caption = format!("X: {x}, Y: {y}");
+        let refresh = if force {
+            PreviewRefresh::Hard
+        } else {
+            PreviewRefresh::None
+        };
         let preview = self.texture_for(
             ui.ctx(),
             &key,
             &caption,
             PreviewCoords::Point { x, y },
-            force,
+            refresh,
             PANEL_MAX_DIM,
         );
         match preview {
@@ -460,7 +501,7 @@ impl PreviewTooltipCache {
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     #[expect(
         clippy::too_many_arguments,
-        reason = "search-area panel: optional LTRB literals, force refresh, and view transform"
+        reason = "search-area panel: optional LTRB literals, refresh mode, and view transform"
     )]
     pub fn paint_search_area_panel(
         &mut self,
@@ -469,7 +510,7 @@ impl PreviewTooltipCache {
         top: Option<i32>,
         right: Option<i32>,
         bottom: Option<i32>,
-        force: bool,
+        refresh: PreviewRefresh,
         view: &mut ImageViewTransform,
     ) -> (egui::Rect, egui::Vec2) {
         let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
@@ -498,7 +539,7 @@ impl PreviewTooltipCache {
                 bottom,
                 grid: None,
             },
-            force,
+            refresh,
             PANEL_MAX_DIM,
         );
         match preview {
@@ -524,7 +565,7 @@ impl PreviewTooltipCache {
         key: &str,
         caption: &str,
         coords: PreviewCoords,
-        force: bool,
+        refresh: PreviewRefresh,
         max_dim: u32,
     ) -> Result<ReadyPreview, String> {
         #[cfg(target_os = "android")]
@@ -533,27 +574,12 @@ impl PreviewTooltipCache {
         self.drop_stale_backdrop_previews();
         let keep_region = max_dim >= PANEL_MAX_DIM
             && matches!(coords, PreviewCoords::SearchArea { grid: None, .. });
-        if force {
+        if refresh == PreviewRefresh::Hard {
             self.invalidate_coords(coords);
         }
-        if let Some(entry) = self.entries.get(key) {
-            let ready = ReadyPreview {
-                texture: entry.texture.clone(),
-                caption: entry.caption.clone(),
-                marker: entry.marker,
-            };
-            self.touch(key);
-            return Ok(ready);
-        }
 
-        let now = Instant::now();
-        if let Some(fail) = self.failures.get(key) {
-            if now < fail.expires {
-                return Err(fail.error.clone());
-            }
-            self.failures.remove(key);
-        }
-
+        // Always poll in-flight work before returning a cached entry so soft
+        // refreshes can swap in without dropping the visible frame.
         if self.pending.contains_key(key) {
             let recv = self.pending[key].rx.try_recv();
             match recv {
@@ -583,23 +609,99 @@ impl PreviewTooltipCache {
                     };
                     let e = e.to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), no_saved, now, fail_coords, ttl);
+                    self.remember_failure(
+                        key,
+                        e.clone(),
+                        no_saved,
+                        Instant::now(),
+                        fail_coords,
+                        ttl,
+                    );
+                    if let Some(ready) = self.ready_from_entry(key) {
+                        return Ok(ready);
+                    }
                     return Err(e);
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
+                    if let Some(ready) = self.ready_from_entry(key) {
+                        return Ok(ready);
+                    }
                     return Err(CAPTURE_PENDING.into());
                 }
                 Err(TryRecvError::Disconnected) => {
                     let pending = self.pending.remove(key);
                     let e = "capture failed".to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), false, now, fail_coords, FAIL_CACHE_TTL);
+                    self.remember_failure(
+                        key,
+                        e.clone(),
+                        false,
+                        Instant::now(),
+                        fail_coords,
+                        FAIL_CACHE_TTL,
+                    );
+                    if let Some(ready) = self.ready_from_entry(key) {
+                        return Ok(ready);
+                    }
                     return Err(e);
                 }
             }
         }
 
+        if let Some(ready) = self.ready_from_entry(key) {
+            if refresh == PreviewRefresh::Soft {
+                // Recapture without dropping the visible frame. Sync platforms may
+                // finish immediately — prefer that result; otherwise keep `ready`.
+                match self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, true) {
+                    Ok(fresh) => return Ok(fresh),
+                    Err(_) => return Ok(ready),
+                }
+            }
+            return Ok(ready);
+        }
+
+        let now = Instant::now();
+        if let Some(fail) = self.failures.get(key) {
+            if now < fail.expires {
+                return Err(fail.error.clone());
+            }
+            self.failures.remove(key);
+        }
+
+        let fresh = refresh != PreviewRefresh::None;
+        self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, fresh)
+    }
+
+    fn ready_from_entry(&mut self, key: &str) -> Option<ReadyPreview> {
+        let entry = self.entries.get(key)?;
+        let ready = ReadyPreview {
+            texture: entry.texture.clone(),
+            caption: entry.caption.clone(),
+            marker: entry.marker,
+        };
+        self.touch(key);
+        Some(ready)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "capture spawn needs key/caption/coords plus dim and freshness flags"
+    )]
+    fn spawn_capture(
+        &mut self,
+        ctx: &egui::Context,
+        key: &str,
+        caption: &str,
+        coords: PreviewCoords,
+        max_dim: u32,
+        keep_region: bool,
+        fresh: bool,
+    ) -> Result<ReadyPreview, String> {
+        if self.pending.contains_key(key) {
+            ctx.request_repaint();
+            return Err(CAPTURE_PENDING.into());
+        }
         self.ensure_capturer()?;
         let capturer = Arc::clone(self.capturer.as_ref().unwrap());
 
@@ -609,7 +711,7 @@ impl PreviewTooltipCache {
         #[cfg(target_os = "windows")]
         {
             mark_site("preview:capture_sync");
-            match capture_preview(capturer.as_ref(), coords, max_dim, force, keep_region) {
+            match capture_preview(capturer.as_ref(), coords, max_dim, fresh, keep_region) {
                 Ok(captured) => {
                     self.failures.remove(key);
                     self.finish_texture(ctx, key, caption, coords, captured, keep_region)
@@ -631,7 +733,6 @@ impl PreviewTooltipCache {
         #[cfg(not(target_os = "windows"))]
         {
             let (tx, rx) = std::sync::mpsc::channel();
-            let fresh = force;
             thread::spawn(move || {
                 let _ = tx.send(capture_preview(
                     capturer.as_ref(),
@@ -2505,5 +2606,62 @@ mod tests {
         assert!(cache.failures.contains_key("panel:pt:99:99"));
         assert!(!cache.pending.contains_key("pt:Spot:m1:5:5"));
         assert!(cache.pending.contains_key("pt:Other:m1:1:1"));
+    }
+
+    #[test]
+    fn soft_refresh_keeps_cached_frame_while_pending() {
+        let ctx = egui::Context::default();
+        let mut cache = PreviewTooltipCache::new();
+        let coords = PreviewCoords::SearchArea {
+            left: 0,
+            top: 0,
+            right: 10,
+            bottom: 10,
+            grid: None,
+        };
+        let key = "panel:sa:0:0:10:10";
+        let color = ColorImage::new([4, 4], vec![egui::Color32::GREEN; 16]);
+        let tex = ctx.load_texture(key, color, TextureOptions::LINEAR);
+        cache.insert(
+            key.into(),
+            CacheEntry {
+                texture: tex.clone(),
+                caption: "stale".into(),
+                coords,
+                marker: PreviewMarker::Area {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 10.0,
+                    y1: 10.0,
+                    grid: None,
+                    src_w: 10,
+                    src_h: 10,
+                },
+                region: None,
+                display: None,
+            },
+        );
+        let (_tx, rx) = std::sync::mpsc::channel();
+        cache.pending.insert(
+            key.into(),
+            PendingCapture {
+                caption: "refresh".into(),
+                coords,
+                rx,
+            },
+        );
+
+        let ready = cache
+            .texture_for(
+                &ctx,
+                key,
+                "refresh",
+                coords,
+                PreviewRefresh::None,
+                PANEL_MAX_DIM,
+            )
+            .expect("stale frame must stay visible while soft capture is in flight");
+        assert_eq!(ready.caption, "stale");
+        assert!(cache.panel_search_area_pending(0, 0, 10, 10));
     }
 }

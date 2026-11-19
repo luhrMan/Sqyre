@@ -606,9 +606,9 @@ impl DataEditor {
             let now = web_time::Instant::now();
             let manual_force = std::mem::take(&mut self.preview_force);
             if manual_force {
-                // ↻: one panel invalidate + keep rematching until the worker starts.
-                self.match_check.capture_once = true;
-                self.match_check.rematch_once = true;
+                // ↻: hard recapture + rematch once the new display is ready.
+                self.match_check.awaiting_panel = true;
+                self.match_check.rematch_once = false;
                 self.match_check.paused = false;
             }
             if can_compute
@@ -644,6 +644,7 @@ impl DataEditor {
                         );
                     } else {
                         self.match_check.capture_once = false;
+                        self.match_check.awaiting_panel = false;
                         self.match_check.rematch_once = false;
                     }
                 }
@@ -652,14 +653,23 @@ impl DataEditor {
                 } else {
                     ui.weak("Paused");
                 }
-                if self.match_check_pending.is_some() && can_compute {
+                // Only show the spinner on the first compute (no prior heatmap).
+                if self.match_check_pending.is_some()
+                    && can_compute
+                    && self.match_check_cache.is_none()
+                {
                     crate::widgets::brand_spinner(ui);
                     ui.weak("Computing heatmap…");
                 }
             });
-            // Capture force is one-shot; rematch may retry across frames until spawn.
-            let force_panel = std::mem::take(&mut self.match_check.capture_once);
-            let force_match = self.match_check.rematch_once;
+            let soft = std::mem::take(&mut self.match_check.capture_once);
+            let refresh = if manual_force {
+                crate::preview_tooltip::PreviewRefresh::Hard
+            } else if soft {
+                crate::preview_tooltip::PreviewRefresh::Soft
+            } else {
+                crate::preview_tooltip::PreviewRefresh::None
+            };
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
@@ -674,7 +684,7 @@ impl DataEditor {
                         ty,
                         rx,
                         by,
-                        force_panel,
+                        refresh,
                         &mut self.coord_preview,
                     );
                     self.paint_area_record(
@@ -699,8 +709,11 @@ impl DataEditor {
                             self.match_check.refresh_gen,
                             settings.runtime.image_search_close_matches_distance,
                         );
-                        // Keep the prior overlay while a live/forced rematch is in flight.
-                        if cache.data.fingerprint == inputs || self.match_check_pending.is_some() {
+                        // Keep the prior overlay while capture/rematch is in flight.
+                        if cache.data.fingerprint == inputs
+                            || self.match_check_pending.is_some()
+                            || self.match_check.awaiting_panel
+                        {
                             let match_count = cache.data.tolerance_matches.len();
                             let show_boxes = super::match_check::should_paint_match_boxes(
                                 match_count,
@@ -752,12 +765,24 @@ impl DataEditor {
                 }
             }
             if can_compute {
+                let panel_pending = match (lx, ty, rx, by) {
+                    (Some(l), Some(t), Some(r), Some(b)) => {
+                        previews.panel_search_area_pending(l, t, r, b)
+                    }
+                    _ => false,
+                };
                 let display = match (lx, ty, rx, by) {
                     (Some(l), Some(t), Some(r), Some(b)) => {
                         previews.panel_display_image(l, t, r, b)
                     }
                     _ => None,
                 };
+                // Rematch only after the soft/hard panel capture has a ready frame.
+                if self.match_check.awaiting_panel && display.is_some() && !panel_pending {
+                    self.match_check.awaiting_panel = false;
+                    self.match_check.rematch_once = true;
+                }
+                let force_match = self.match_check.rematch_once;
                 self.request_match_check(
                     catalog,
                     lx,
@@ -773,10 +798,10 @@ impl DataEditor {
                 }
             }
             if can_compute {
-                if force_panel
-                    || force_match
+                if refresh != crate::preview_tooltip::PreviewRefresh::None
                     || self.match_check_pending.is_some()
                     || self.match_check.rematch_once
+                    || self.match_check.awaiting_panel
                 {
                     ui.ctx().request_repaint();
                 } else if !self.match_check.paused {

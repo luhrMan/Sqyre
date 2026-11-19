@@ -100,9 +100,13 @@ impl DataEditor {
         paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
-        let force = std::mem::take(&mut self.preview_force);
+        let refresh = if std::mem::take(&mut self.preview_force) {
+            crate::preview_tooltip::PreviewRefresh::Hard
+        } else {
+            crate::preview_tooltip::PreviewRefresh::None
+        };
         let (rect, preview_image_size) =
-            previews.paint_search_area_panel(ui, lx, ty, rx, by, force, &mut self.coord_preview);
+            previews.paint_search_area_panel(ui, lx, ty, rx, by, refresh, &mut self.coord_preview);
         self.paint_search_area_tail(
             ui,
             rect,
@@ -415,7 +419,11 @@ impl DataEditor {
             &self.form_bottom,
         );
         self.sync_coord_preview_view();
-        let force = std::mem::take(&mut self.preview_force);
+        let refresh = if std::mem::take(&mut self.preview_force) {
+            crate::preview_tooltip::PreviewRefresh::Hard
+        } else {
+            crate::preview_tooltip::PreviewRefresh::None
+        };
         // Keep the button row below the preview (panel fills remaining height);
         // the `Saves to …` path lives on the Save button's tooltip.
         let path_hint = format!("Saves to {}", screen_cap_path().display());
@@ -435,7 +443,7 @@ impl DataEditor {
                     ty,
                     rx,
                     by,
-                    force,
+                    refresh,
                     &mut self.coord_preview,
                 );
                 self.paint_search_area_tail(

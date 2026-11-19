@@ -104,13 +104,11 @@ mod inner {
         pub show_many_match_boxes: bool,
         /// When the last live cycle was armed (gates [`LIVE_INTERVAL`]).
         pub last_live_at: Option<Instant>,
-        /// One-shot: invalidate+recapture the panel underlay on the next paint.
-        ///
-        /// Must not stay set across frames — `texture_for(force)` drops in-flight
-        /// captures, which would leave the preview loading forever.
+        /// One-shot soft panel recapture (keeps the last frame visible).
         pub capture_once: bool,
-        /// Keep retrying a forced rematch until a worker is spawned (display may
-        /// lag one or more frames behind a recapture).
+        /// Wait for the soft panel capture to finish before rematching.
+        pub awaiting_panel: bool,
+        /// Keep retrying a forced rematch until a worker is spawned.
         pub rematch_once: bool,
     }
 
@@ -128,6 +126,7 @@ mod inner {
                 show_many_match_boxes: false,
                 last_live_at: None,
                 capture_once: false,
+                awaiting_panel: false,
                 rematch_once: false,
             }
         }
@@ -139,7 +138,12 @@ mod inner {
         pending: bool,
         now: Instant,
     ) -> bool {
-        if settings.paused || pending || settings.rematch_once || settings.capture_once {
+        if settings.paused
+            || pending
+            || settings.rematch_once
+            || settings.capture_once
+            || settings.awaiting_panel
+        {
             return false;
         }
         settings
@@ -147,11 +151,12 @@ mod inner {
             .is_none_or(|t| now.duration_since(t) >= LIVE_INTERVAL)
     }
 
-    /// Arm a single live cycle: rate-limit immediately and request one capture + rematch.
+    /// Arm a single live cycle: rate-limit, soft-recapture, rematch after the new frame.
     pub(crate) fn arm_live_cycle(settings: &mut MatchCheckSettings, now: Instant) {
         settings.last_live_at = Some(now);
         settings.capture_once = true;
-        settings.rematch_once = true;
+        settings.awaiting_panel = true;
+        settings.rematch_once = false;
     }
 
     pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
@@ -1467,13 +1472,13 @@ mod tests {
         assert!(live_refresh_due(&settings, false, now));
         arm_live_cycle(&mut settings, now);
         assert!(settings.capture_once);
-        assert!(settings.rematch_once);
-        // Rate-limit + in-flight flags must stop re-arming every frame (which would
-        // invalidate the panel capture forever via texture_for(force)).
+        assert!(settings.awaiting_panel);
+        assert!(!settings.rematch_once);
+        // Rate-limit + in-flight flags must stop re-arming every frame.
         assert!(!live_refresh_due(&settings, false, now));
         settings.capture_once = false;
         assert!(!live_refresh_due(&settings, false, now));
-        settings.rematch_once = false;
+        settings.awaiting_panel = false;
         assert!(!live_refresh_due(&settings, false, now));
         assert!(live_refresh_due(
             &settings,
