@@ -1786,6 +1786,10 @@ impl DataEditor {
                             self.match_check.show_many_match_boxes = false;
                         }
                         self.match_check_cache = Some(match_check::finish_cache(ctx, result));
+                        self.match_check.last_live_at = Some(web_time::Instant::now());
+                        if !self.match_check.paused {
+                            ctx.request_repaint_after(match_check::LIVE_INTERVAL);
+                        }
                     }
                 }
                 Ok(Err(e)) => {

@@ -529,6 +529,8 @@ impl FormState for MatchCheckForm {
         #[cfg(feature = "native-runtime")]
         {
             ed.invalidate_match_check();
+            ed.match_check.paused = false;
+            ed.match_check.last_live_at = None;
             let variant = match_check::default_variant(CatalogView::from(catalog), &prog, &name);
             ed.match_check.variant = variant;
         }

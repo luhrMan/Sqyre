@@ -30,6 +30,8 @@ mod inner {
     use web_time::{Duration, Instant};
 
     const DEBOUNCE: Duration = Duration::from_millis(200);
+    /// Wall-clock gap between live recapture+rematch cycles (~5 Hz).
+    pub(crate) const LIVE_INTERVAL: Duration = Duration::from_millis(200);
     /// Above this count, match boxes are hidden until the user opts in (paint cost).
     pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
 
@@ -96,10 +98,12 @@ mod inner {
         pub refresh_gen: u64,
         pub last_inputs: String,
         pub last_request: Option<Instant>,
-        /// When true, debounced refresh and retries are suppressed until inputs change or ↻.
+        /// When true, live recapture/rematch and debounced retries are suppressed until ↻ or unpause.
         pub paused: bool,
         /// Opt-in paint for match boxes when count exceeds [`MANY_MATCH_BOX_THRESHOLD`].
         pub show_many_match_boxes: bool,
+        /// When the last live match cycle finished (gates [`LIVE_INTERVAL`]).
+        pub last_live_at: Option<Instant>,
     }
 
     impl Default for MatchCheckSettings {
@@ -114,8 +118,23 @@ mod inner {
                 last_request: None,
                 paused: false,
                 show_many_match_boxes: false,
+                last_live_at: None,
             }
         }
+    }
+
+    /// Whether a live recapture+rematch should start now.
+    pub(crate) fn live_refresh_due(
+        settings: &MatchCheckSettings,
+        pending: bool,
+        now: Instant,
+    ) -> bool {
+        if settings.paused || pending {
+            return false;
+        }
+        settings
+            .last_live_at
+            .is_none_or(|t| now.duration_since(t) >= LIVE_INTERVAL)
     }
 
     pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
@@ -1109,9 +1128,9 @@ mod inner {
             display: Option<(Arc<RgbaImage>, u32, u32)>,
         ) {
             if force {
-                self.match_check.refresh_gen = self.match_check.refresh_gen.wrapping_add(1);
+                // Unpause and prepare a new fingerprint, but keep the prior heatmap
+                // until spawn succeeds so live refresh does not flicker.
                 self.match_check.paused = false;
-                self.invalidate_match_check();
             }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
@@ -1133,6 +1152,11 @@ mod inner {
                 self.stop_match_check_compute();
                 return;
             }
+            let refresh_gen = if force {
+                self.match_check.refresh_gen.wrapping_add(1)
+            } else {
+                self.match_check.refresh_gen
+            };
             let inputs = inputs_key(
                 prog,
                 item,
@@ -1144,7 +1168,7 @@ mod inner {
                 self.match_check.blur,
                 self.match_check.match_method,
                 self.match_check.tolerance,
-                self.match_check.refresh_gen,
+                refresh_gen,
                 close_matches_distance,
             );
             if inputs.is_empty() {
@@ -1157,20 +1181,23 @@ mod inner {
             if self.match_check.paused {
                 return;
             }
-            if self
-                .match_check_cache
-                .as_ref()
-                .is_some_and(|c| c.data.fingerprint == inputs)
+            if !force
+                && self
+                    .match_check_cache
+                    .as_ref()
+                    .is_some_and(|c| c.data.fingerprint == inputs)
             {
                 return;
             }
             let now = Instant::now();
-            if !should_request(
-                &self.match_check,
-                &inputs,
-                self.match_check_pending.is_some(),
-                now,
-            ) {
+            if !force
+                && !should_request(
+                    &self.match_check,
+                    &inputs,
+                    self.match_check_pending.is_some(),
+                    now,
+                )
+            {
                 return;
             }
             let Ok(template_path) =
@@ -1187,6 +1214,10 @@ mod inner {
                 // Panel capture not ready yet — retry next frame once underlay lands.
                 return;
             };
+            // Commit the forced fingerprint only once capture is ready to spawn.
+            if force {
+                self.match_check.refresh_gen = refresh_gen;
+            }
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
             let tolerance = self.match_check.tolerance as f32;
@@ -1216,11 +1247,12 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
-        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary,
-        MANY_MATCH_BOX_THRESHOLD,
+        live_refresh_due, scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes,
+        MatchCheckSettings, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::MatchMethod;
     use sqyre_match::{ImageBuf, MatchMap};
+    use web_time::{Duration, Instant};
 
     fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {
         MatchMap {
@@ -1390,5 +1422,23 @@ mod tests {
             false
         ));
         assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, true));
+    }
+
+    #[test]
+    fn live_refresh_due_respects_pause_pending_and_interval() {
+        let now = Instant::now();
+        let mut settings = MatchCheckSettings::default();
+        assert!(live_refresh_due(&settings, false, now));
+        assert!(!live_refresh_due(&settings, true, now));
+        settings.paused = true;
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.paused = false;
+        settings.last_live_at = Some(now);
+        assert!(!live_refresh_due(&settings, false, now));
+        assert!(live_refresh_due(
+            &settings,
+            false,
+            now + LIVE_INTERVAL + Duration::from_millis(1)
+        ));
     }
 }

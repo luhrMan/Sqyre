@@ -603,14 +603,49 @@ impl DataEditor {
                 self.stop_match_check_compute();
             }
             self.sync_coord_preview_view();
-            let force = std::mem::take(&mut self.preview_force);
-            let computing = self.match_check_pending.is_some() && can_compute;
-            if computing {
-                ui.horizontal(|ui| {
+            let mut force = std::mem::take(&mut self.preview_force);
+            if can_compute
+                && super::match_check::live_refresh_due(
+                    &self.match_check,
+                    self.match_check_pending.is_some(),
+                    web_time::Instant::now(),
+                )
+            {
+                // Recapture underlay + rematch; ↻ already sets force and unpauses.
+                force = true;
+            }
+            ui.horizontal(|ui| {
+                let mut live = !self.match_check.paused;
+                let tip = if live {
+                    "Pause live preview"
+                } else {
+                    "Resume live preview"
+                };
+                if crate::widgets::icon_toggle(
+                    ui,
+                    &mut live,
+                    tip,
+                    egui_phosphor::regular::PLAY,
+                    egui_phosphor::regular::PAUSE,
+                )
+                .changed()
+                {
+                    self.match_check.paused = !live;
+                    if live {
+                        self.match_check.last_live_at = None;
+                        force = true;
+                    }
+                }
+                if live {
+                    ui.weak("Live");
+                } else {
+                    ui.weak("Paused");
+                }
+                if self.match_check_pending.is_some() && can_compute {
                     crate::widgets::brand_spinner(ui);
                     ui.weak("Computing heatmap…");
-                });
-            }
+                }
+            });
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
@@ -650,7 +685,8 @@ impl DataEditor {
                             self.match_check.refresh_gen,
                             settings.runtime.image_search_close_matches_distance,
                         );
-                        if cache.data.fingerprint == inputs {
+                        // Keep the prior overlay while a live/forced rematch is in flight.
+                        if cache.data.fingerprint == inputs || self.match_check_pending.is_some() {
                             let match_count = cache.data.tolerance_matches.len();
                             let show_boxes = super::match_check::should_paint_match_boxes(
                                 match_count,
@@ -719,8 +755,13 @@ impl DataEditor {
                     display,
                 );
             }
-            if can_compute && (force || lx.is_some()) {
-                ui.ctx().request_repaint();
+            if can_compute {
+                if force || self.match_check_pending.is_some() {
+                    ui.ctx().request_repaint();
+                } else if !self.match_check.paused {
+                    ui.ctx()
+                        .request_repaint_after(super::match_check::LIVE_INTERVAL);
+                }
             }
         }
     }
