@@ -17,21 +17,18 @@ mod inner {
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
     use sqyre_domain::MatchMethod;
+    use sqyre_match::ImageBuf;
     use sqyre_match::{
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
     use sqyre_persist::CatalogView;
-    use sqyre_ports::{DesktopRect, ScreenCapturer};
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Arc};
     use std::thread;
     use web_time::{Duration, Instant};
 
-    const PANEL_MAX_DIM: u32 = 1600;
-    const MIN_CAPTURE_SIZE: i32 = 320;
-    const CAPTURE_PADDING: i32 = 48;
     const DEBOUNCE: Duration = Duration::from_millis(200);
     /// Above this count, match boxes are hidden until the user opts in (paint cost).
     pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
@@ -175,151 +172,108 @@ mod inner {
         )
     }
 
-    fn preview_bounds_for_search_area(
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
-        vb: DesktopRect,
-    ) -> DesktopRect {
-        let aw = (rx - lx).max(0);
-        let ah = (by - ty).max(0);
-        let pad_x = CAPTURE_PADDING.max(aw / 4);
-        let pad_y = CAPTURE_PADDING.max(ah / 4);
-        let desired = expand_to_min(
-            DesktopRect {
-                x: lx - pad_x,
-                y: ty - pad_y,
-                w: aw + pad_x * 2,
-                h: ah + pad_y * 2,
-            },
-            MIN_CAPTURE_SIZE,
-            MIN_CAPTURE_SIZE,
-        );
-        shift_into_virtual(desired, vb)
-    }
-
-    fn expand_to_min(r: DesktopRect, min_w: i32, min_h: i32) -> DesktopRect {
-        if r.is_empty() {
-            return r;
+    /// Nearest-neighbor scale of an RGB `ImageBuf` to `(nw, nh)`.
+    pub(crate) fn scale_image_buf(img: &ImageBuf, nw: usize, nh: usize) -> ImageBuf {
+        if img.width == nw && img.height == nh {
+            return img.clone();
         }
-        let w = r.w.max(min_w);
-        let h = r.h.max(min_h);
-        let cx = r.x + r.w / 2;
-        let cy = r.y + r.h / 2;
-        DesktopRect {
-            x: cx - w / 2,
-            y: cy - h / 2,
-            w,
-            h,
-        }
-    }
-
-    fn shift_into_virtual(desired: DesktopRect, vb: DesktopRect) -> DesktopRect {
-        if desired.is_empty() || vb.is_empty() {
-            return DesktopRect::from_corners(
-                desired.x.max(vb.x),
-                desired.y.max(vb.y),
-                (desired.x + desired.w).min(vb.x + vb.w),
-                (desired.y + desired.h).min(vb.y + vb.h),
-            );
-        }
-        let mut w = desired.w;
-        let mut h = desired.h;
-        if w <= 0 || h <= 0 {
-            return DesktopRect::default();
-        }
-        if w >= vb.w && h >= vb.h {
-            return vb;
-        }
-        let mut x0 = desired.x;
-        let mut y0 = desired.y;
-        if w > vb.w {
-            x0 = vb.x;
-            w = vb.w;
-        } else {
-            if x0 < vb.x {
-                x0 = vb.x;
-            }
-            if x0 + w > vb.x + vb.w {
-                x0 = vb.x + vb.w - w;
+        let nw = nw.max(1);
+        let nh = nh.max(1);
+        let mut out = ImageBuf::new(nw, nh, img.channels, 0);
+        for y in 0..nh {
+            let sy = y * img.height / nh;
+            for x in 0..nw {
+                let sx = x * img.width / nw;
+                let si = img.pixel_offset(sx, sy);
+                let di = out.pixel_offset(x, y);
+                out.data[di..di + img.channels].copy_from_slice(&img.data[si..si + img.channels]);
             }
         }
-        if h > vb.h {
-            y0 = vb.y;
-            h = vb.h;
-        } else {
-            if y0 < vb.y {
-                y0 = vb.y;
+        out
+    }
+
+    /// Scale a single-channel mask to template size (nearest-neighbor).
+    fn scale_mask(mask: &[u8], src_w: usize, src_h: usize, nw: usize, nh: usize) -> Vec<u8> {
+        if src_w == nw && src_h == nh && mask.len() == nw * nh {
+            return mask.to_vec();
+        }
+        let nw = nw.max(1);
+        let nh = nh.max(1);
+        let mut out = vec![0u8; nw * nh];
+        for y in 0..nh {
+            let sy = y * src_h / nh;
+            for x in 0..nw {
+                let sx = x * src_w / nw;
+                out[y * nw + x] = mask[sy * src_w + sx];
             }
-            if y0 + h > vb.y + vb.h {
-                y0 = vb.y + vb.h - h;
-            }
         }
-        DesktopRect { x: x0, y: y0, w, h }
+        out
     }
 
-    fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
-        let (w, h) = img.dimensions();
-        if w <= max_dim && h <= max_dim {
-            return img;
-        }
-        let longest = w.max(h).max(1);
-        let nw = ((w as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-        let nh = ((h as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-        let filter = if max_dim >= PANEL_MAX_DIM {
-            image::imageops::FilterType::CatmullRom
-        } else {
-            image::imageops::FilterType::Triangle
-        };
-        image::imageops::resize(&img, nw, nh, filter)
-    }
-
-    fn capture_search_area(
-        capturer: &mut dyn ScreenCapturer,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
-    ) -> Result<RgbaImage, String> {
-        let vb = capturer.virtual_bounds().map_err(|e| e.to_string())?;
-        let (lx, ty, rx, by) = DesktopRect::normalize_corners(lx, ty, rx, by);
-        if rx <= lx || by <= ty {
-            return Err("invalid search area bounds".into());
-        }
-        let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-        let img = capturer.capture_rect(bounds).map_err(|e| e.to_string())?;
-        Ok(downscale_max_dim(img, PANEL_MAX_DIM))
-    }
-
+    /// Match the template against a shared panel display capture.
+    ///
+    /// When the display was downscaled from `src_w`×`src_h`, the template (and
+    /// mask) are scaled by the same factors so sizes stay consistent.
     fn compute_match(
-        capturer: &mut dyn ScreenCapturer,
+        display: &RgbaImage,
+        src_w: u32,
+        src_h: u32,
         template_path: &Path,
         mask_path: Option<&Path>,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
         blur: i32,
         method: MatchMethod,
     ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
-        let img = capture_search_area(capturer, lx, ty, rx, by)?;
-        let image_w = img.width() as usize;
-        let image_h = img.height() as usize;
-        let search = rgba_to_rgb_buf(&img);
+        let image_w = display.width() as usize;
+        let image_h = display.height() as usize;
+        if image_w == 0 || image_h == 0 {
+            return Err("empty display image".into());
+        }
+        let search = rgba_to_rgb_buf(display);
         let kernel = search_blur_kernel(blur);
         let search_blurred = if kernel > 0 {
             blur_image_owned(search, kernel).map_err(|e| e.to_string())?
         } else {
             search
         };
-        let template_blurred = get_cached_blurred_template(template_path, kernel)
+        let template_full = get_cached_blurred_template(template_path, kernel)
             .map_err(|e| format!("template: {e}"))?;
+        let scale_x = if src_w > 0 {
+            image_w as f32 / src_w as f32
+        } else {
+            1.0
+        };
+        let scale_y = if src_h > 0 {
+            image_h as f32 / src_h as f32
+        } else {
+            1.0
+        };
+        let need_scale =
+            (scale_x - 1.0).abs() > f32::EPSILON || (scale_y - 1.0).abs() > f32::EPSILON;
+        let template_blurred = if need_scale {
+            let nw = ((template_full.width as f32) * scale_x).round().max(1.0) as usize;
+            let nh = ((template_full.height as f32) * scale_y).round().max(1.0) as usize;
+            Arc::new(scale_image_buf(&template_full, nw, nh))
+        } else {
+            Arc::clone(&template_full)
+        };
         let tmpl_w = template_blurred.width;
         let tmpl_h = template_blurred.height;
-        let mask_bytes = mask_path.and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
-        let mask_missing = mask_path.is_some() && mask_bytes.is_none();
-        let mask_ref = mask_bytes.as_deref().map(|m| m.as_slice());
+        let mask_owned = mask_path.and_then(|p| {
+            let full = get_cached_image_mask(p, template_full.height, template_full.width)?;
+            if need_scale {
+                Some(scale_mask(
+                    &full,
+                    template_full.width,
+                    template_full.height,
+                    tmpl_w,
+                    tmpl_h,
+                ))
+            } else {
+                Some(full.as_ref().clone())
+            }
+        });
+        let mask_missing = mask_path.is_some() && mask_owned.is_none();
+        let mask_ref = mask_owned.as_deref();
         let prepared =
             prepare_template(&template_blurred, mask_ref, method).map_err(|e| e.to_string())?;
         let search_prep = prepare_search(&search_blurred);
@@ -693,43 +647,30 @@ mod inner {
 
     pub(crate) fn spawn_compute(
         fingerprint: String,
+        display: Arc<RgbaImage>,
+        src_w: u32,
+        src_h: u32,
         template_path: PathBuf,
         mask_path: Option<PathBuf>,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
         blur: i32,
         method: MatchMethod,
         tolerance: f32,
         close_matches_distance: i32,
-        image_w_hint: usize,
-        image_h_hint: usize,
     ) -> mpsc::Receiver<Result<PixelCheckResult, String>> {
         let (tx, job_rx) = mpsc::channel();
         thread::spawn(move || {
             let result = (|| {
-                let mut capturer =
-                    crate::native_capture::open_shared_run().map_err(|e| e.to_string())?;
                 let (map, image_w, image_h, tmpl_w, tmpl_h, mask_missing) = compute_match(
-                    &mut capturer,
+                    &display,
+                    src_w,
+                    src_h,
                     &template_path,
                     mask_path.as_deref(),
-                    lx,
-                    ty,
-                    rx,
-                    by,
                     blur,
                     method,
                 )?;
                 let (heatmap_rgba, summary) = scores_to_heatmap_rgba(
-                    &map,
-                    image_w.max(image_w_hint),
-                    image_h.max(image_h_hint),
-                    tmpl_w,
-                    tmpl_h,
-                    method,
-                    tolerance,
+                    &map, image_w, image_h, tmpl_w, tmpl_h, method, tolerance,
                 );
                 let tolerance_matches =
                     collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
@@ -1165,6 +1106,7 @@ mod inner {
             bottom: Option<i32>,
             force: bool,
             close_matches_distance: i32,
+            display: Option<(Arc<RgbaImage>, u32, u32)>,
         ) {
             if force {
                 self.pixel_check.refresh_gen = self.pixel_check.refresh_gen.wrapping_add(1);
@@ -1241,27 +1183,24 @@ mod inner {
                 self.stop_pixel_check_compute();
                 return;
             }
-            let (lx, ty, rx, by) = match (left, top, right, bottom) {
-                (Some(lx), Some(ty), Some(rx), Some(by)) => (lx, ty, rx, by),
-                _ => return,
+            let Some((display, src_w, src_h)) = display else {
+                // Panel capture not ready yet — retry next frame once underlay lands.
+                return;
             };
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
             let tolerance = self.pixel_check.tolerance as f32;
             let job_rx = spawn_compute(
                 inputs.clone(),
+                display,
+                src_w,
+                src_h,
                 template_path,
                 mask_path,
-                lx,
-                ty,
-                rx,
-                by,
                 self.pixel_check.blur,
                 self.pixel_check.match_method,
                 tolerance,
                 close_matches_distance,
-                0,
-                0,
             );
             self.pixel_check.last_inputs = inputs;
             self.pixel_check.last_request = Some(now);
@@ -1277,10 +1216,11 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
-        scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary, MANY_MATCH_BOX_THRESHOLD,
+        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary,
+        MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::MatchMethod;
-    use sqyre_match::MatchMap;
+    use sqyre_match::{ImageBuf, MatchMap};
 
     fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {
         MatchMap {
@@ -1331,6 +1271,18 @@ mod tests {
             0,
             "worse score outside tolerance should not paint"
         );
+    }
+
+    #[test]
+    fn scale_image_buf_halves_dims() {
+        let mut img = ImageBuf::new(4, 2, 3, 0);
+        img.data[0] = 10;
+        let corner = img.pixel_offset(3, 1);
+        img.data[corner] = 20;
+        let out = scale_image_buf(&img, 2, 1);
+        assert_eq!(out.width, 2);
+        assert_eq!(out.height, 1);
+        assert_eq!(out.data[0], 10);
     }
 
     #[test]

@@ -702,6 +702,12 @@ impl DataEditor {
                 }
             }
             if can_compute {
+                let display = match (lx, ty, rx, by) {
+                    (Some(l), Some(t), Some(r), Some(b)) => {
+                        previews.panel_display_image(l, t, r, b)
+                    }
+                    _ => None,
+                };
                 self.request_pixel_check_match(
                     catalog,
                     lx,
@@ -710,6 +716,7 @@ impl DataEditor {
                     by,
                     force,
                     settings.runtime.image_search_close_matches_distance,
+                    display,
                 );
             }
             if can_compute && (force || lx.is_some()) {

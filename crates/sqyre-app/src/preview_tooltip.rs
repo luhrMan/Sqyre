@@ -64,6 +64,8 @@ struct CacheEntry {
     marker: PreviewMarker,
     /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
     region: Option<Arc<RgbaImage>>,
+    /// Downscaled panel display pixels (same buffer as the texture); Match Check source.
+    display: Option<Arc<RgbaImage>>,
 }
 
 struct ReadyPreview {
@@ -188,6 +190,27 @@ impl PreviewTooltipCache {
         self.entries
             .get(&key)
             .and_then(|e| e.region.as_ref().map(Arc::clone))
+    }
+
+    /// Panel search-area display pixels plus pre-downscale capture size (`src_w`, `src_h`).
+    ///
+    /// Match Check runs template match on this buffer so the heatmap aligns with the
+    /// underlay the user is looking at (no second capture).
+    pub fn panel_display_image(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> Option<(Arc<RgbaImage>, u32, u32)> {
+        let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
+        let entry = self.entries.get(&key)?;
+        let display = entry.display.as_ref().map(Arc::clone)?;
+        let (src_w, src_h) = match entry.marker {
+            PreviewMarker::Area { src_w, src_h, .. } => (src_w, src_h),
+            PreviewMarker::Point { src_w, src_h, .. } => (src_w, src_h),
+        };
+        Some((display, src_w, src_h))
     }
 
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
@@ -666,12 +689,13 @@ impl PreviewTooltipCache {
         captured: CapturedPreview,
         keep_region: bool,
     ) -> Result<ReadyPreview, String> {
-        let img = captured.display;
+        let img = Arc::new(captured.display);
         let size = [img.width() as usize, img.height() as usize];
         mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         // Mipmaps help panel zoom; tooltips stay cheap without them.
-        let opts = if key.starts_with("panel:") {
+        let is_panel = key.starts_with("panel:");
+        let opts = if is_panel {
             TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
         } else {
             TextureOptions::LINEAR
@@ -682,6 +706,7 @@ impl PreviewTooltipCache {
         } else {
             None
         };
+        let display = is_panel.then(|| Arc::clone(&img));
         let marker = captured.marker;
         self.insert(
             key.to_string(),
@@ -691,6 +716,7 @@ impl PreviewTooltipCache {
                 coords,
                 marker,
                 region,
+                display,
             },
         );
         mark_site("preview:finish_texture:done");
