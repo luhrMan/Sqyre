@@ -352,7 +352,7 @@ fn clamp_rect_to_monitor(
 fn primary_monitor_points() -> (f32, f32, f32, f32) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let rects = sqyre_capture::preferred_monitor_rects();
+        let rects = sqyre_ports::preferred_monitor_rects();
         if let Some(r) = rects.first() {
             return (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         }
@@ -370,7 +370,7 @@ fn primary_monitor_points() -> (f32, f32, f32, f32) {
 pub(crate) fn monitor_for_point(x: f32, y: f32) -> (f32, f32, f32, f32) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let rects = sqyre_capture::preferred_monitor_rects();
+        let rects = sqyre_ports::preferred_monitor_rects();
         for r in &rects {
             let rx = r.x as f32;
             let ry = r.y as f32;
@@ -525,7 +525,7 @@ impl SqyreApp {
         {
             let hint = self.overlay.macro_overlay.last_foreign_focus();
             let program = crate::hotkey_focus_tags::focused_editor_program(
-                &self.workspace.catalog,
+                sqyre_persist::CatalogView::from(&self.workspace.catalog),
                 hint.as_ref(),
             );
             self.data_editor.set_focused_program_hint(program);

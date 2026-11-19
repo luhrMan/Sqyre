@@ -17,7 +17,7 @@ use egui::text_selection::CCursorRange;
 use sqyre_domain::{
     action_type_label, blank_action, Action, Macro, PROGRAM_DELIMITER, WIRE_TYPE_KEYS,
 };
-use sqyre_persist::{MacroYamlBuilderDrafts, MacroYamlDraftEntry, ProgramCatalog};
+use sqyre_persist::{CatalogView, MacroYamlBuilderDrafts, MacroYamlDraftEntry};
 use sqyre_serialize::{action_to_map, encode_macro_to_yaml};
 use sqyre_validate::{
     prepare_import_macro_yaml, prepare_macro_yaml, report_macro_yaml, YamlValidateReport,
@@ -262,7 +262,7 @@ impl MacroYamlBuilderUi {
         &mut self,
         ctx: &egui::Context,
         macros: &[Macro],
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
         running: bool,
     ) -> YamlBuilderOutcome {
@@ -344,7 +344,7 @@ impl MacroYamlBuilderUi {
         &mut self,
         ui: &mut egui::Ui,
         macros: &[Macro],
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         running: bool,
         outcome: &mut YamlBuilderOutcome,
         request_close: &mut bool,
@@ -604,7 +604,7 @@ pub fn reconcile_action_uids(old: &Action, new: &mut Action) {
 
 // ── Autocomplete ────────────────────────────────────────────────────────────
 
-fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Vec<Suggestion> {
+fn collect_runtime_suggestions(macros: &[Macro], catalog: CatalogView<'_>) -> Vec<Suggestion> {
     let mut out = Vec::new();
     for key in WIRE_TYPE_KEYS {
         out.push(Suggestion {
@@ -1032,6 +1032,7 @@ fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
 mod tests {
     use super::*;
     use sqyre_domain::{root_loop, ActionKind, ScalarValue};
+    use sqyre_persist::ProgramCatalog;
 
     #[test]
     fn popup_opens_only_while_typing() {
@@ -1129,7 +1130,7 @@ mod tests {
                 },
             )
             .unwrap();
-        let runtime = collect_runtime_suggestions(&[], &catalog);
+        let runtime = collect_runtime_suggestions(&[], CatalogView::from(&catalog));
         let text = "root:\n  subactions:\n  - type: imagesearch\n    targets:\n    - Sh";
         let ctx = find_yaml_context(text, text.len()).unwrap();
         let labels: Vec<String> = suggestions_for_context(&ctx, &runtime)

@@ -5,7 +5,7 @@ use sqyre_capture::{
     window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::GENERAL_PROGRAM;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_ports::note;
 use std::time::{Duration, Instant};
 
@@ -31,7 +31,7 @@ impl HotkeyFocusTagPoller {
 
     /// When `enabled`, return the filters that should be active (`None` = no change this tick).
     /// Empty vec = hotkeys off (unmatched foreign window, or program with no tags).
-    pub fn poll(&mut self, enabled: bool, catalog: &ProgramCatalog) -> Option<Vec<String>> {
+    pub fn poll(&mut self, enabled: bool, catalog: CatalogView<'_>) -> Option<Vec<String>> {
         if !enabled {
             self.last_emitted = None;
             self.last_poll = None;
@@ -88,7 +88,7 @@ fn resolve(focus: Option<&WindowInfo>) -> FocusResolve<'_> {
 
 /// Catalog program that owns `win`, if any (skips General). Prefer process bindings.
 pub(crate) fn find_focused_program(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     win: &WindowInfo,
 ) -> Option<(String, Vec<String>)> {
     let mut bound: Option<(String, Vec<String>)> = None;
@@ -132,7 +132,7 @@ pub(crate) fn find_focused_program(
 /// click still targets the game. Falls back to the OS active window when it is
 /// a foreign client.
 pub(crate) fn focused_editor_program(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     hint: Option<&WindowInfo>,
 ) -> Option<String> {
     let win = hint
@@ -166,7 +166,7 @@ mod tests {
                 .unwrap_or_else(|| "/bin/sqyre".into()),
             icon: None,
         };
-        assert!(focused_editor_program(&cat, Some(&ours)).is_none());
+        assert!(focused_editor_program(CatalogView::from(&cat), Some(&ours)).is_none());
         let game = WindowInfo {
             title: "Game".into(),
             process_name: "game".into(),
@@ -174,7 +174,7 @@ mod tests {
             icon: None,
         };
         assert_eq!(
-            focused_editor_program(&cat, Some(&game)).as_deref(),
+            focused_editor_program(CatalogView::from(&cat), Some(&game)).as_deref(),
             Some("Game")
         );
     }
@@ -196,7 +196,7 @@ mod tests {
             process_path: "/opt/game/Game".into(),
             icon: None,
         };
-        let (name, tags) = find_focused_program(&cat, &win).expect("match");
+        let (name, tags) = find_focused_program(CatalogView::from(&cat), &win).expect("match");
         assert_eq!(name, "Bound");
         assert_eq!(tags, vec!["Bound".to_string(), "combat".to_string()]);
     }
@@ -213,7 +213,7 @@ mod tests {
             process_path: "/opt/solo/Solo".into(),
             icon: None,
         };
-        let (name, tags) = find_focused_program(&cat, &win).expect("match");
+        let (name, tags) = find_focused_program(CatalogView::from(&cat), &win).expect("match");
         assert_eq!(name, "Solo");
         assert_eq!(tags, vec!["Solo".to_string()]);
     }

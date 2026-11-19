@@ -12,6 +12,7 @@ use crate::variables_panel;
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::ActionId;
+use sqyre_persist::CatalogView;
 use std::sync::atomic::Ordering;
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
@@ -30,7 +31,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
             .overlay
             .overlay_buttons_over_sqyre,
     );
-    sqyre_capture::set_overlay_buttons_in_detection(
+    sqyre_ports::set_overlay_buttons_in_detection(
         app.settings_ui
             .settings()
             .overlay
@@ -365,7 +366,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     match app.macro_prompt_builder.show(
         ctx,
         &app.workspace.macros,
-        &app.workspace.catalog,
+        CatalogView::from(&app.workspace.catalog),
         pending_scale,
     ) {
         crate::macro_prompt_builder::PromptBuilderOutcome::ImportMacro(macro_) => {
@@ -376,7 +377,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     match app.macro_yaml_builder.show(
         ctx,
         &app.workspace.macros,
-        &app.workspace.catalog,
+        CatalogView::from(&app.workspace.catalog),
         pending_scale,
         app.run_session.state.running.load(Ordering::SeqCst),
     ) {
@@ -655,7 +656,7 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     if app.lifecycle.portal_probe.pending.is_none() {
-        if !sqyre_capture::shared_capturer_open_may_block() {
+        if !sqyre_ports::shared_capturer_open_may_block() {
             app.lifecycle.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             return;
@@ -925,8 +926,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     if !running {
-        if let Some(wait) =
-            sqyre_capture::release_idle_capture_frame_cache(IDLE_FRAME_CACHE_RELEASE)
+        if let Some(wait) = sqyre_ports::release_idle_capture_frame_cache(IDLE_FRAME_CACHE_RELEASE)
         {
             ctx.request_repaint_after(wait);
         }

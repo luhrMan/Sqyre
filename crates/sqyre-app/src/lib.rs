@@ -407,7 +407,7 @@ fn install_x11_secondary_error_hook() {
 fn defer_hotkeys_at_startup(intro_pending: bool) -> bool {
     #[cfg(target_os = "linux")]
     {
-        intro_pending || sqyre_capture::shared_capturer_open_may_block()
+        intro_pending || sqyre_ports::shared_capturer_open_may_block()
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -598,6 +598,8 @@ pub struct SqyreApp {
 
 impl SqyreApp {
     fn load() -> Self {
+        #[cfg(feature = "native-runtime")]
+        sqyre_capture::wire_ports_capture_status();
         let settings = UserSettings::load_default().unwrap_or_else(|e| {
             crate::log::warn(format!("failed to load settings: {e}"));
             UserSettings::default()
@@ -612,7 +614,7 @@ impl SqyreApp {
             default_hotkeys();
         #[cfg(all(feature = "native-runtime", target_os = "linux"))]
         {
-            screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
+            screen_click.set_absolute_pos(sqyre_ports::portal_cursor_position);
         }
         let run = RunState::default();
         let stop = run.stop.clone();
@@ -752,7 +754,7 @@ impl SqyreApp {
                     };
                     #[cfg(target_os = "linux")]
                     {
-                        sqyre_capture::linux_session_capture_warning().or(ocr_warning)
+                        sqyre_ports::linux_session_capture_warning().or(ocr_warning)
                     }
                     #[cfg(target_os = "windows")]
                     {
@@ -1022,11 +1024,10 @@ impl eframe::App for SqyreApp {
                 .settings()
                 .runtime
                 .hotkey_tags_while_focused;
-            if let Some(tags) = self
-                .hotkey
-                .hotkey_focus_tags
-                .poll(enabled, &self.workspace.catalog)
-            {
+            if let Some(tags) = self.hotkey.hotkey_focus_tags.poll(
+                enabled,
+                sqyre_persist::CatalogView::from(&self.workspace.catalog),
+            ) {
                 self.set_hotkey_tag_filters(tags);
             }
         }
@@ -1099,7 +1100,7 @@ impl eframe::App for SqyreApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         focus_nav::lock_to_window(ui.ctx());
         #[cfg(feature = "native-runtime")]
-        if sqyre_capture::pipewire_stream_waking() {
+        if sqyre_ports::pipewire_stream_waking() {
             ui.ctx()
                 .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
         }
