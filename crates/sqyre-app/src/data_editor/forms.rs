@@ -689,6 +689,7 @@ impl DataEditor {
                     cache.data.tolerance_matches.len(),
                     &mut self.pixel_check.show_many_match_boxes,
                     hover.as_ref(),
+                    self.pixel_check.match_method,
                     self.pixel_check.tolerance as f32,
                     cache.data.tmpl_w,
                     cache.data.tmpl_h,

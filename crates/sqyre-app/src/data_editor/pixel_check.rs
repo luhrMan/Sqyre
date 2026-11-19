@@ -581,7 +581,8 @@ mod inner {
         score_norm_for_display(score, method, summary) * 100.0
     }
 
-    /// Best template-match score covering image pixel `(px, py)` among strict tolerance hits.
+    /// Best template-match score covering image pixel `(px, py)` among heatmap-pooled hits
+    /// (strict passes and normed near-misses within [`HEATMAP_VIZ_MARGIN`]).
     fn pooled_score_at(
         map: &MatchMap,
         px: usize,
@@ -598,7 +599,7 @@ mod inner {
                     continue;
                 }
                 let score = map.scores[my * map.width + mx];
-                if !score_passes(score, method, tolerance) {
+                if !score_pools_in_heatmap(score, method, tolerance) {
                     continue;
                 }
                 best = Some(match best {
@@ -944,6 +945,7 @@ mod inner {
         tolerance_match_count: usize,
         show_many_match_boxes: &mut bool,
         hover: Option<&PixelCheckHover>,
+        method: MatchMethod,
         tolerance: f32,
         tmpl_w: usize,
         tmpl_h: usize,
@@ -970,15 +972,22 @@ mod inner {
         ui.horizontal_wrapped(|ui| {
             if summary.best_score.is_finite() {
                 let label = if summary.best_passes { "pass" } else { "fail" };
-                ui.label(format!(
-                    "Best {:.4} @ ({}, {}) ({label})",
-                    summary.best_score, summary.best_x, summary.best_y
-                ));
-                ui.weak(format!(
-                    "range {:.4}–{:.4}",
-                    summary.score_min, summary.score_max
-                ));
-                ui.weak(format!("tolerance {:.3}", tolerance));
+                let best_pct = closeness_percent(summary.best_score, method, summary);
+                if method.is_normed() {
+                    ui.label(format!(
+                        "Best {best_pct:.1}% @ ({}, {}) ({label})",
+                        summary.best_x, summary.best_y
+                    ));
+                    ui.weak(format!("raw {:.4}", summary.best_score));
+                    ui.weak(format!("tolerance {:.0}%", tolerance * 100.0));
+                } else {
+                    ui.label(format!(
+                        "Best {best_pct:.1}% @ ({}, {}) ({label})",
+                        summary.best_x, summary.best_y
+                    ));
+                    ui.weak(format!("raw {:.4}", summary.best_score));
+                    ui.weak(format!("tolerance {:.3}", tolerance));
+                }
                 if tolerance_match_count > 0 {
                     ui.weak(format!("{tolerance_match_count} match(es)"));
                 } else if summary.peaks_above > 0 {
@@ -1324,11 +1333,22 @@ mod tests {
     }
 
     #[test]
-    fn hover_strict_skips_below_tolerance() {
+    fn hover_includes_heatmap_near_miss() {
+        // 0.85 is below tolerance 0.95 but within HEATMAP_VIZ_MARGIN (0.12).
+        let map = map(2, 1, &[0.85, 0.95]);
+        let summary = summary(0.85, 0.95);
+        let h = hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95)
+            .expect("near-miss should be hoverable");
+        assert!(!h.passes);
+        assert!((h.closeness_pct - 85.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn hover_skips_far_below_heatmap_margin() {
         let map = map(2, 1, &[0.5, 0.95]);
         let summary = summary(0.5, 0.95);
         assert!(
-            hover_at_image(&map, &summary, 0, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).is_none()
+            hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95).is_none()
         );
     }
 
