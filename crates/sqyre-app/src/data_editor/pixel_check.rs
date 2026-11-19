@@ -506,13 +506,63 @@ mod inner {
         [r, g, b, alpha]
     }
 
-    /// Build RGBA heatmap: template-sized blocks, max-pooled scores, graded colormap.
+    /// Soft disk radius (image pixels) around each match origin in the heatmap.
+    const HEATMAP_PEAK_RADIUS: i32 = 4;
+
+    /// Whether `a` is a better raw match score than `b` for `method`.
+    fn score_better(a: f32, b: f32, method: MatchMethod) -> bool {
+        if method.higher_is_better() {
+            a > b
+        } else {
+            a < b
+        }
+    }
+
+    /// Stamp a compact soft kernel at match origin `(ox, oy)`.
+    /// `pooled` keeps the best raw score; `weight` keeps max radial falloff for that score.
+    fn stamp_peak_kernel(
+        pooled: &mut [f32],
+        weight: &mut [f32],
+        image_w: usize,
+        image_h: usize,
+        ox: i32,
+        oy: i32,
+        score: f32,
+        method: MatchMethod,
+    ) {
+        let r = HEATMAP_PEAK_RADIUS;
+        let r2 = (r * r) as f32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let dist2 = (dx * dx + dy * dy) as f32;
+                if dist2 > r2 {
+                    continue;
+                }
+                let px = ox + dx;
+                let py = oy + dy;
+                if px < 0 || py < 0 || px as usize >= image_w || py as usize >= image_h {
+                    continue;
+                }
+                let falloff = 1.0 - (dist2 / r2).sqrt();
+                let idx = py as usize * image_w + px as usize;
+                let cur = pooled[idx];
+                if !cur.is_finite() || score_better(score, cur, method) {
+                    pooled[idx] = score;
+                    weight[idx] = falloff;
+                } else if (score - cur).abs() <= f32::EPSILON {
+                    weight[idx] = weight[idx].max(falloff);
+                }
+            }
+        }
+    }
+
+    /// Build RGBA heatmap: compact peak kernels at match origins, graded colormap.
     pub(crate) fn scores_to_heatmap_rgba(
         map: &MatchMap,
         image_w: usize,
         image_h: usize,
-        tmpl_w: usize,
-        tmpl_h: usize,
+        _tmpl_w: usize,
+        _tmpl_h: usize,
         method: MatchMethod,
         tolerance: f32,
     ) -> (Vec<u8>, MatchSummary) {
@@ -522,50 +572,46 @@ mod inner {
             return (rgba, summary);
         }
 
-        // Max-pool template footprints so each pixel shows the best overlapping match.
         let init = if method.higher_is_better() {
             f32::NEG_INFINITY
         } else {
             f32::INFINITY
         };
         let mut pooled = vec![init; image_w * image_h];
-        let tw = tmpl_w.min(image_w);
-        let th = tmpl_h.min(image_h);
+        let mut weight = vec![0.0f32; image_w * image_h];
         for y in 0..map.height {
             for x in 0..map.width {
                 let score = map.scores[y * map.width + x];
                 if !score_pools_in_heatmap(score, method, tolerance) {
                     continue;
                 }
-                let x1 = (x + tw).min(image_w);
-                let y1 = (y + th).min(image_h);
-                for py in y..y1 {
-                    for px in x..x1 {
-                        let idx = py * image_w + px;
-                        if method.higher_is_better() {
-                            if score > pooled[idx] {
-                                pooled[idx] = score;
-                            }
-                        } else if score < pooled[idx] {
-                            pooled[idx] = score;
-                        }
-                    }
-                }
+                stamp_peak_kernel(
+                    &mut pooled,
+                    &mut weight,
+                    image_w,
+                    image_h,
+                    x as i32,
+                    y as i32,
+                    score,
+                    method,
+                );
             }
         }
 
         for py in 0..image_h {
             for px in 0..image_w {
-                let score = pooled[py * image_w + px];
+                let idx = py * image_w + px;
+                let score = pooled[idx];
                 if !score.is_finite() {
                     continue;
                 }
                 let norm = score_norm_for_display(score, method, &summary);
-                let px_rgba = pixel_rgba(score, norm, method, tolerance);
+                let mut px_rgba = pixel_rgba(score, norm, method, tolerance);
+                px_rgba[3] = ((px_rgba[3] as f32) * weight[idx].clamp(0.0, 1.0)).round() as u8;
                 if px_rgba[3] == 0 {
                     continue;
                 }
-                let i = (py * image_w + px) * 4;
+                let i = idx * 4;
                 rgba[i..i + 4].copy_from_slice(&px_rgba);
             }
         }
@@ -1254,24 +1300,46 @@ mod tests {
 
     #[test]
     fn heatmap_normed_higher_is_better() {
-        let map = map(2, 1, &[0.5, 1.0]);
+        // Wide image so peak kernels at x=0 and x=10 do not overlap.
+        let mut scores = vec![0.0f32; 11];
+        scores[0] = 0.5;
+        scores[10] = 1.0;
+        let map = map(11, 1, &scores);
         let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
-        assert_eq!(rgba.len(), 8);
-        // Higher score → greener (index 1 and 5 are G channels)
-        assert!(rgba[5] > rgba[1]);
+            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
+        assert_eq!(rgba.len(), 11 * 4);
+        // 0.5 is below viz margin — origin stays unpainted; peak at 10 paints.
+        assert_eq!(rgba[3], 0, "weak origin should not paint");
+        assert!(rgba[10 * 4 + 3] > 0, "strong peak should paint");
         assert!(summary.best_score > 0.99);
-        assert!(summary.best_x == 1);
+        assert_eq!(summary.best_x, 10);
     }
 
     #[test]
     fn heatmap_sqdiff_lower_is_better() {
-        let map = map(2, 1, &[0.1, 0.9]);
+        let mut scores = vec![1.0f32; 11];
+        scores[0] = 0.1;
+        scores[10] = 0.9;
+        let map = map(11, 1, &scores);
         let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
+            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
         assert!(summary.best_score < 0.2);
         assert_eq!(summary.best_x, 0);
-        assert!(rgba[3] > rgba[7], "better match should be more opaque");
+        assert!(rgba[3] > 0, "better match peak should paint");
+        assert_eq!(
+            rgba[10 * 4 + 3],
+            0,
+            "worse score outside tolerance should not paint"
+        );
+    }
+
+    #[test]
+    fn heatmap_peak_kernel_stays_compact() {
+        let map = map(1, 1, &[1.0]);
+        let (rgba, _) = scores_to_heatmap_rgba(&map, 20, 20, 8, 8, MatchMethod::CcoeffNormed, 0.9);
+        let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
+        // Soft disk radius 4 → at most (2*4+1)^2 = 81 cells, far below an 8×8 footprint.
+        assert!(painted > 0 && painted <= 81, "painted={painted}");
     }
 
     #[test]
