@@ -514,20 +514,24 @@ impl FormState for ScreenCapForm {
 
 impl FormState for MatchCheckForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+        let (prog, name) = match (ed.selected_program.clone(), ed.selected_entity.clone()) {
+            (Some(p), Some(n)) => (p, n),
+            _ => {
+                ed.form_name.clear();
+                return;
+            }
+        };
+        let Some(item) = catalog.get(&prog).and_then(|p| p.items.get(&name)) else {
+            ed.form_name.clear();
+            return;
+        };
+        ed.form_name = item.name.clone();
         #[cfg(feature = "native-runtime")]
         {
             ed.invalidate_match_check();
-            if let (Some(prog), Some(item)) = (
-                ed.selected_program.as_deref(),
-                ed.selected_entity.as_deref(),
-            ) {
-                let variant = match_check::default_variant(CatalogView::from(catalog), prog, item);
-                ed.match_check.variant = variant;
-            }
+            let variant = match_check::default_variant(CatalogView::from(catalog), &prog, &name);
+            ed.match_check.variant = variant;
         }
-        #[cfg(not(feature = "native-runtime"))]
-        let _ = ed;
-        let _ = catalog;
     }
 
     fn is_dirty(_ed: &DataEditor, _catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {

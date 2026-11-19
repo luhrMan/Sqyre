@@ -381,18 +381,19 @@ impl DataEditor {
         }
     }
 
-    /// Seed ScreenCap form buffers from a search-area or collection-cell reference.
-    /// Returns `true` when the reference resolved to desktop bounds.
-    pub(crate) fn apply_screen_cap_reference(
+    /// Apply resolved search-area / collection-cell bounds into the form preview
+    /// fields. Does **not** change the selected program/entity (Match Check keeps
+    /// the chosen item when the search area changes).
+    pub(crate) fn apply_search_area_bounds(
         &mut self,
         catalog: CatalogView<'_>,
-        coord: CoordinateRef,
+        coord: &CoordinateRef,
     ) -> bool {
         let macro_ = Macro::new("", 0, vec![]);
-        let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
+        let (lx, ty, rx, by) = match catalog.resolve_search_area(coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
+                self.set_err(format!("{}: {e}", self.tab.label()));
                 return false;
             }
         };
@@ -411,6 +412,22 @@ impl DataEditor {
         self.form_right = rx.to_string();
         self.form_bottom = by.to_string();
         self.form_search_area = coord.0.clone();
+        self.coord_preview.reset();
+        self.coord_preview_key = None;
+        true
+    }
+
+    /// Seed ScreenCap form buffers from a search-area or collection-cell reference,
+    /// and select that reference as the current entity (Screen Cap list row).
+    /// Returns `true` when the reference resolved to desktop bounds.
+    pub(crate) fn apply_screen_cap_reference(
+        &mut self,
+        catalog: CatalogView<'_>,
+        coord: CoordinateRef,
+    ) -> bool {
+        if !self.apply_search_area_bounds(catalog, &coord) {
+            return false;
+        }
         self.form_name = match coord.cell_range() {
             Some((r1, c1, r2, c2)) if r1 == r2 && c1 == c2 => {
                 format!("{}_r{}c{}", coord.name(), r1, c1)
@@ -424,8 +441,6 @@ impl DataEditor {
             self.selected_program = Some(prog.to_string());
         }
         self.selected_entity = Some(coord.name().to_string());
-        self.coord_preview.reset();
-        self.coord_preview_key = None;
         true
     }
 
@@ -797,7 +812,10 @@ fn create_item_with_original(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::{CatalogView, ProgramCatalog};
+    use crate::data_editor::{DataEditor, EditorTab};
+    use sqyre_domain::PROGRAM_DELIMITER;
+    use sqyre_domain::{CoordinateRef, ScalarValue};
+    use sqyre_persist::{CatalogView, ProgramCatalog, ProgramSearchArea};
     use tempfile::tempdir;
 
     fn catalog_with_icons(root: &std::path::Path) -> ProgramCatalog {
@@ -805,6 +823,72 @@ mod tests {
         c.set_images_root(Some(root.to_path_buf()));
         c.create_program("Game").unwrap();
         c
+    }
+
+    fn catalog_with_bag() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080)]);
+        cat.create_program("Game").unwrap();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Bag".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(10),
+                top_y: ScalarValue::Int(20),
+                right_x: ScalarValue::Int(110),
+                bottom_y: ScalarValue::Int(120),
+            },
+        )
+        .unwrap();
+        cat
+    }
+
+    #[test]
+    fn apply_search_area_bounds_keeps_selected_item() {
+        let cat = catalog_with_bag();
+        let mut ed = DataEditor {
+            tab: EditorTab::MatchCheck,
+            selected_program: Some("Game".into()),
+            selected_entity: Some("Potion".into()),
+            form_name: "Potion".into(),
+            ..Default::default()
+        };
+        let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert!(ed.apply_search_area_bounds(CatalogView::from(&cat), &coord));
+        assert_eq!(ed.selected_entity.as_deref(), Some("Potion"));
+        assert_eq!(ed.form_name, "Potion");
+        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert_eq!(ed.form_left, "10");
+        assert_eq!(ed.form_top, "20");
+        assert_eq!(ed.form_right, "110");
+        assert_eq!(ed.form_bottom, "120");
+    }
+
+    #[test]
+    fn apply_screen_cap_reference_selects_search_area_entity() {
+        let cat = catalog_with_bag();
+        let mut ed = DataEditor {
+            tab: EditorTab::ScreenCap,
+            selected_program: Some("Game".into()),
+            selected_entity: Some("Potion".into()),
+            form_name: "Potion".into(),
+            ..Default::default()
+        };
+        let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert!(ed.apply_screen_cap_reference(CatalogView::from(&cat), coord));
+        assert_eq!(ed.selected_entity.as_deref(), Some("Bag"));
+        assert_eq!(ed.form_name, "Bag");
+        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
     }
 
     fn sample_item(name: &str) -> ProgramItem {

@@ -946,6 +946,12 @@ impl DataEditor {
             {
                 if matches!(self.tab, EditorTab::Overlay) {
                     self.form_overlay_gate_search_area = coord.0;
+                } else if matches!(self.tab, EditorTab::MatchCheck) {
+                    // Keep the selected item; only retarget the preview bounds.
+                    if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
+                        #[cfg(feature = "native-runtime")]
+                        self.invalidate_match_check();
+                    }
                 } else {
                     self.apply_screen_cap_reference(CatalogView::new(env.catalog), coord);
                 }
