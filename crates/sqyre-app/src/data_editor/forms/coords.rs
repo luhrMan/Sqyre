@@ -70,7 +70,7 @@ impl DataEditor {
         );
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
-        let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
+        let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview.transform);
         self.paint_point_tail(ui, rect, screen_click, known, is_dark, active_macro);
     }
 
@@ -105,8 +105,15 @@ impl DataEditor {
         } else {
             crate::preview_tooltip::PreviewRefresh::None
         };
-        let (rect, preview_image_size) =
-            previews.paint_search_area_panel(ui, lx, ty, rx, by, refresh, &mut self.coord_preview);
+        let (rect, preview_image_size) = previews.paint_search_area_panel(
+            ui,
+            lx,
+            ty,
+            rx,
+            by,
+            refresh,
+            &mut self.coord_preview.transform,
+        );
         self.paint_search_area_tail(
             ui,
             rect,
@@ -444,7 +451,7 @@ impl DataEditor {
                     rx,
                     by,
                     refresh,
-                    &mut self.coord_preview,
+                    &mut self.coord_preview.transform,
                 );
                 self.paint_search_area_tail(
                     ui,

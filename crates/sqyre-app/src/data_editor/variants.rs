@@ -414,8 +414,7 @@ impl DataEditor {
             by.to_string(),
         );
         self.form_search_area = coord.0.clone();
-        self.coord_preview.reset();
-        self.coord_preview_key = None;
+        self.coord_preview.clear();
         true
     }
 
@@ -766,7 +765,7 @@ impl DataEditor {
         match pending.rx.try_recv() {
             Ok(Ok(())) => {
                 icons.invalidate_path(&pending.path);
-                self.collection_preview.reset();
+                self.collection_preview.transform.reset();
                 self.set_ok("Collection image saved.");
             }
             Ok(Err(e)) => {

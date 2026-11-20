@@ -1,6 +1,7 @@
 //! Per-tab form buffers grouped off [`super::DataEditor`].
 
 use crate::data_editor::helpers::{overlay_hex_or_empty, rgba_color};
+use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
 use eframe::egui;
 use sqyre_persist::{
@@ -265,4 +266,35 @@ pub(crate) struct AtlasFields {
 pub(crate) struct PointFields {
     pub x: String,
     pub y: String,
+}
+
+/// Zoom/pan transform that resets when its identity key changes.
+#[derive(Clone, Debug)]
+pub(crate) struct KeyedPreview<K> {
+    pub transform: ImageViewTransform,
+    pub key: Option<K>,
+}
+
+impl<K> Default for KeyedPreview<K> {
+    fn default() -> Self {
+        Self {
+            transform: ImageViewTransform::default(),
+            key: None,
+        }
+    }
+}
+
+impl<K: PartialEq> KeyedPreview<K> {
+    /// Reset the transform when `key` differs from the last synced value.
+    pub(crate) fn sync_key(&mut self, key: K) {
+        if self.key.as_ref() != Some(&key) {
+            self.transform.reset();
+            self.key = Some(key);
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.transform.reset();
+        self.key = None;
+    }
 }

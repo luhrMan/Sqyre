@@ -132,10 +132,7 @@ impl DataEditor {
             self.selected_program.clone().unwrap_or_default(),
             self.selected_entity.clone().unwrap_or_default(),
         );
-        if self.coord_preview_key.as_ref() != Some(&key) {
-            self.coord_preview.reset();
-            self.coord_preview_key = Some(key);
-        }
+        self.coord_preview.sync_key(key);
     }
 
     /// Preview chrome for a coord panel: refresh / fit / zoom / record on one
@@ -155,7 +152,7 @@ impl DataEditor {
             ui,
             rect,
             true,
-            Some(&mut self.coord_preview),
+            Some(&mut self.coord_preview.transform),
             "Fit image in viewport",
             Some(RecordFloater {
                 tip: record_tip,
@@ -594,8 +591,8 @@ impl DataEditor {
             let now = web_time::Instant::now();
             // Soft recapture / rematch mid-gesture drops egui's drag target and
             // can resize the underlay — wait until the pointer is up.
-            let preview_interacting =
-                self.coord_preview.pan_drag.is_some() || ui.input(|i| i.pointer.primary_down());
+            let preview_interacting = self.coord_preview.transform.pan_drag.is_some()
+                || ui.input(|i| i.pointer.primary_down());
             let manual_force = std::mem::take(&mut self.preview_force);
             if manual_force {
                 // ↻: hard recapture + rematch once the new display is ready.
@@ -686,7 +683,7 @@ impl DataEditor {
                         rx,
                         by,
                         refresh,
-                        &mut self.coord_preview,
+                        &mut self.coord_preview.transform,
                     );
                     self.paint_area_record(
                         ui,
@@ -727,7 +724,7 @@ impl DataEditor {
                                 ui,
                                 rect,
                                 image_size,
-                                &self.coord_preview,
+                                &self.coord_preview.transform,
                                 cache,
                                 &mut hover,
                                 self.match_check.match_method,

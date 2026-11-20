@@ -109,10 +109,7 @@ impl DataEditor {
         {
             let path = catalog.collection_image_path(&prog, &col_name);
             let key = (prog.clone(), col_name.clone());
-            if self.collection_preview_key.as_ref() != Some(&key) {
-                self.collection_preview.reset();
-                self.collection_preview_key = Some(key);
-            }
+            self.collection_preview.sync_key(key);
             let mut replace = false;
             let capturing = self.collection_capture_pending.is_some();
             paint_zoomable_collection_preview(
@@ -122,7 +119,7 @@ impl DataEditor {
                 rows,
                 cols,
                 collection_area,
-                &mut self.collection_preview,
+                &mut self.collection_preview.transform,
                 &mut replace,
                 capturing,
             );
@@ -227,17 +224,14 @@ impl DataEditor {
             (self.selected_program.clone(), self.selected_entity.clone())
         {
             let key = (prog.clone(), atlas_name.clone());
-            if self.atlas_preview_key.as_ref() != Some(&key) {
-                self.atlas_preview.reset();
-                self.atlas_preview_key = Some(key);
-            }
+            self.atlas_preview.sync_key(key);
             paint_zoomable_atlas_preview(
                 ui,
                 icons,
                 catalog,
                 &prog,
                 &self.form_atlas.members,
-                &mut self.atlas_preview,
+                &mut self.atlas_preview.transform,
             );
         } else if !self.form_atlas.members.is_empty() {
             if let Some(prog) = self.selected_program.clone() {
@@ -247,7 +241,7 @@ impl DataEditor {
                     catalog,
                     &prog,
                     &self.form_atlas.members,
-                    &mut self.atlas_preview,
+                    &mut self.atlas_preview.transform,
                 );
             }
         }

@@ -393,7 +393,7 @@ impl FormState for CollectionsForm {
         ed.form_search_area = col.name.clone();
         ed.form_rows = col.rows.to_string();
         ed.form_cols = col.cols.to_string();
-        ed.collection_preview_key = Some((prog.to_string(), name.to_string()));
+        ed.collection_preview.key = Some((prog.to_string(), name.to_string()));
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -440,7 +440,7 @@ impl FormState for AtlasesForm {
         ed.form_name = atlas.name.clone();
         ed.form_atlas.members = atlas.collections.clone();
         ed.form_atlas.add.clear();
-        ed.atlas_preview_key = Some((prog.to_string(), name.to_string()));
+        ed.atlas_preview.key = Some((prog.to_string(), name.to_string()));
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {

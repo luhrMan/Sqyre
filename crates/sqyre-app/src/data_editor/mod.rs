@@ -22,14 +22,14 @@ mod variants;
 use crate::data_editor_preview::variant_display_label;
 use crate::help_text as ht;
 use crate::icon_cache::IconCache;
-use crate::image_view::ImageViewTransform;
 use crate::paint_ctx::CatalogPaint;
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
 use form_fields::{
-    AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
+    AtlasFields, ItemFields, KeyedPreview, MaskFields, OverlayFields, PointFields, ProgramFields,
+    RectFields,
 };
 use helpers::{default_editor_program, is_editor_listed_program};
 use sqyre_domain::Macro;
@@ -298,18 +298,12 @@ pub struct DataEditor {
     save_after_record: bool,
     /// Program rename changed macro or hotkey tags; refresh bindings after paint.
     hotkey_refresh: bool,
-    /// Zoom/pan for the collections-tab image preview.
-    collection_preview: ImageViewTransform,
-    /// `(program, collection)` last shown; reset transform when this changes.
-    collection_preview_key: Option<(String, String)>,
-    /// `(program, atlas)` last shown for plane preview; reset transform when this changes.
-    atlas_preview_key: Option<(String, String)>,
-    /// Zoom/pan for the atlas plane preview.
-    atlas_preview: ImageViewTransform,
-    /// Zoom/pan for point / search-area / ScreenCap live capture panels.
-    coord_preview: ImageViewTransform,
-    /// `(tab, program, entity)` last shown; reset transform when this changes.
-    coord_preview_key: Option<(EditorTab, String, String)>,
+    /// Zoom/pan for the collections-tab image preview (keyed by program+collection).
+    collection_preview: KeyedPreview<(String, String)>,
+    /// Zoom/pan for the atlas plane preview (keyed by program+atlas).
+    atlas_preview: KeyedPreview<(String, String)>,
+    /// Zoom/pan for point / search-area / ScreenCap panels (keyed by tab+program+entity).
+    coord_preview: KeyedPreview<(EditorTab, String, String)>,
     /// One-frame `force` armed by the preview's floating refresh button.
     preview_force: bool,
     /// Overlay button id whose icon picker popup is open.
@@ -386,12 +380,9 @@ impl Default for DataEditor {
             confirm: None,
             save_after_record: false,
             hotkey_refresh: false,
-            collection_preview: ImageViewTransform::default(),
-            collection_preview_key: None,
-            atlas_preview: ImageViewTransform::default(),
-            atlas_preview_key: None,
-            coord_preview: ImageViewTransform::default(),
-            coord_preview_key: None,
+            collection_preview: KeyedPreview::default(),
+            atlas_preview: KeyedPreview::default(),
+            coord_preview: KeyedPreview::default(),
             preview_force: false,
             overlay_icon_picker_for: None,
             overlay_icon_search: String::new(),
@@ -1623,7 +1614,7 @@ impl DataEditor {
         // Applying a rematch mid-drag swaps the heatmap/legend and can end the
         // user's gesture early across the whole window.
         let hold_result =
-            self.coord_preview.pan_drag.is_some() || ctx.input(|i| i.pointer.any_down());
+            self.coord_preview.transform.pan_drag.is_some() || ctx.input(|i| i.pointer.any_down());
         if let Some(rx) = self.match_check_pending.as_ref() {
             if hold_result {
                 ctx.request_repaint();
