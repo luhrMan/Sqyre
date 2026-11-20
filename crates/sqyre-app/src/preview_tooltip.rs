@@ -63,8 +63,17 @@ pub enum PreviewRefresh {
     None,
     /// Drop cached pixels and show Capturing… until the new frame lands.
     Hard,
-    /// Keep showing the last frame while a fresh capture runs in the background.
+    /// Keep showing the last frame while a recapture runs in the background.
     Soft,
+}
+
+impl PreviewRefresh {
+    /// Only manual refresh waits for a new portal frame. That wait pulses the
+    /// compositor kick, which takes activation on Mutter and cancels any drag
+    /// on the desktop. Live (soft) refresh crops the latest streamed frame.
+    fn waits_for_fresh_frame(self) -> bool {
+        self == Self::Hard
+    }
 }
 
 struct CacheEntry {
@@ -671,7 +680,8 @@ impl PreviewTooltipCache {
             if refresh == PreviewRefresh::Soft && !self.hold_pending_swaps {
                 // Recapture without dropping the visible frame. Sync platforms may
                 // finish immediately — prefer that result; otherwise keep `ready`.
-                match self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, true) {
+                let fresh = refresh.waits_for_fresh_frame();
+                match self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, fresh) {
                     Ok(fresh) => return Ok(fresh),
                     Err(_) => return Ok(ready),
                 }
@@ -687,7 +697,7 @@ impl PreviewTooltipCache {
             self.failures.remove(key);
         }
 
-        let fresh = refresh != PreviewRefresh::None;
+        let fresh = refresh.waits_for_fresh_frame();
         self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, fresh)
     }
 
@@ -2624,6 +2634,13 @@ mod tests {
         assert!(cache.failures.contains_key("panel:pt:99:99"));
         assert!(!cache.pending.contains_key("pt:Spot:m1:5:5"));
         assert!(cache.pending.contains_key("pt:Other:m1:1:1"));
+    }
+
+    #[test]
+    fn only_hard_refresh_waits_for_a_fresh_frame() {
+        assert!(PreviewRefresh::Hard.waits_for_fresh_frame());
+        assert!(!PreviewRefresh::Soft.waits_for_fresh_frame());
+        assert!(!PreviewRefresh::None.waits_for_fresh_frame());
     }
 
     #[test]
