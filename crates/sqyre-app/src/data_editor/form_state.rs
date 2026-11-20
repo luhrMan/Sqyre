@@ -602,7 +602,7 @@ impl FormState for OverlayForm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::{ProgramItem, ProgramPoint};
+    use sqyre_persist::{ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea};
 
     fn catalog() -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();
@@ -781,5 +781,68 @@ mod tests {
         assert_eq!(ed.form_name, "Game");
         assert!(!dirty_tab(EditorTab::Programs, &ed, &cat, &settings));
         assert!(valid_tab(EditorTab::Programs, &ed, None));
+    }
+
+    #[test]
+    fn masks_form_load_and_dirty() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_mask(
+            "Game",
+            ProgramMask {
+                name: "Hole".into(),
+                shape: sqyre_domain::MaskShape::Circle,
+                center_x: "10".into(),
+                center_y: "20".into(),
+                radius: "5".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Masks);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Hole".into());
+        MasksForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Hole");
+        assert_eq!(ed.form_mask.shape, "circle");
+        assert_eq!(ed.form_mask.center_x, "10");
+        assert_eq!(ed.form_mask.radius, "5");
+        assert!(!MasksForm::is_dirty(&ed, &cat, &settings));
+        assert!(MasksForm::is_valid(&ed, None));
+
+        ed.form_mask.radius = "9".into();
+        assert!(MasksForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn search_areas_form_load_and_dirty() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Zone".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(0),
+                top_y: ScalarValue::Int(0),
+                right_x: ScalarValue::Int(50),
+                bottom_y: ScalarValue::Int(50),
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::SearchAreas);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Zone".into());
+        SearchAreasForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Zone");
+        assert_eq!(ed.form_rect.left, "0");
+        assert_eq!(ed.form_rect.right, "50");
+        assert!(!SearchAreasForm::is_dirty(&ed, &cat, &settings));
+        assert!(SearchAreasForm::is_valid(&ed, None));
+
+        ed.form_rect.right = "80".into();
+        assert!(SearchAreasForm::is_dirty(&ed, &cat, &settings));
     }
 }

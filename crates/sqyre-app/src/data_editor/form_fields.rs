@@ -298,3 +298,32 @@ impl<K: PartialEq> KeyedPreview<K> {
         self.key = None;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::KeyedPreview;
+
+    #[test]
+    fn keyed_preview_resets_transform_only_when_key_changes() {
+        use crate::image_view::IMAGE_ZOOM_DEFAULT;
+
+        let mut preview = KeyedPreview::<(String, String)>::default();
+        preview.transform.zoom = 2.0;
+        preview.sync_key(("a".into(), "b".into()));
+        assert_eq!(
+            preview.key.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            Some(("a", "b"))
+        );
+        // First sync always resets.
+        assert!((preview.transform.zoom - IMAGE_ZOOM_DEFAULT).abs() < f32::EPSILON);
+
+        preview.transform.zoom = 3.0;
+        preview.sync_key(("a".into(), "b".into()));
+        assert!((preview.transform.zoom - 3.0).abs() < f32::EPSILON);
+
+        preview.sync_key(("a".into(), "c".into()));
+        assert!((preview.transform.zoom - IMAGE_ZOOM_DEFAULT).abs() < f32::EPSILON);
+        preview.clear();
+        assert!(preview.key.is_none());
+    }
+}
