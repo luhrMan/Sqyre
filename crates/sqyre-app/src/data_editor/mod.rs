@@ -5,6 +5,7 @@ const WINDOW_TITLE: &str = "Data Editor";
 /// Points per arrow-key press when the pane divider is keyboard-focused.
 const SPLIT_RESIZE_KEY_STEP: f32 = 24.0;
 
+mod form_fields;
 mod form_state;
 mod forms;
 pub(crate) mod helpers;
@@ -22,21 +23,18 @@ use crate::data_editor_preview::variant_display_label;
 use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
-use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
+use form_fields::OverlayFields;
+use helpers::{default_editor_program, is_editor_listed_program};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, CatalogView, Database, OverlayButtonConfig, OverlayVisibilityGate,
-    OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
-    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
-    DEFAULT_OVERLAY_GATE_TOLERANCE, MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
+    CatalogView, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
+    MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -301,40 +299,8 @@ pub struct DataEditor {
     form_atlas_members: Vec<String>,
     /// Draft Collection name to add to the Atlas member list.
     form_atlas_add: String,
-    /// Overlay button form: target macro name.
-    form_overlay_macro: String,
-    /// Overlay button form: whether the button is drawn on screen.
-    form_overlay_enabled: bool,
-    /// Overlay button form: built-in icon id.
-    form_overlay_icon: String,
-    /// Overlay button form: optional catalog point (`program~name`) for location.
-    form_overlay_point: String,
-    /// Overlay button form: desktop X position (fallback when no point).
-    form_overlay_x: f32,
-    /// Overlay button form: desktop Y position (fallback when no point).
-    form_overlay_y: f32,
-    /// Overlay button form: size in points.
-    form_overlay_size: f32,
-    /// Overlay button form: corner radius.
-    form_overlay_corner_radius: f32,
-    /// Overlay button form: border stroke width.
-    form_overlay_border_width: f32,
-    /// Overlay button form: border color (includes alpha).
-    form_overlay_border: egui::Color32,
-    /// Overlay button form: background fill (includes alpha; 0 = none).
-    form_overlay_bg: egui::Color32,
-    /// Overlay button form: idle icon color (includes alpha).
-    form_overlay_icon_color: egui::Color32,
-    /// Overlay button form: hover icon color (alpha follows icon color on save).
-    form_overlay_icon_hover: egui::Color32,
-    /// Overlay visibility gate: show button only when image search finds a match.
-    form_overlay_gate_enabled: bool,
-    form_overlay_gate_targets: Vec<String>,
-    form_overlay_gate_search_area: String,
-    form_overlay_gate_tolerance: f64,
-    form_overlay_gate_blur: i32,
-    form_overlay_gate_match_method: sqyre_domain::MatchMethod,
-    form_overlay_gate_interval_ms: u64,
+    /// Overlay button form draft (placement, style, visibility gate).
+    form_overlay: OverlayFields,
     /// Bound OS process path for the selected Program.
     form_process_path: String,
     /// Bound window title for the selected Program.
@@ -399,14 +365,6 @@ pub(super) struct CollectionCapturePending {
 
 impl Default for DataEditor {
     fn default() -> Self {
-        let (overlay_x, overlay_y) = default_overlay_position(
-            0.0,
-            0.0,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-            DEFAULT_OVERLAY_BUTTON_SIZE,
-            0,
-        );
         Self {
             open: false,
             tab: EditorTab::Programs,
@@ -447,26 +405,7 @@ impl Default for DataEditor {
             form_search_area: String::new(),
             form_atlas_members: Vec::new(),
             form_atlas_add: String::new(),
-            form_overlay_macro: String::new(),
-            form_overlay_enabled: true,
-            form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
-            form_overlay_point: String::new(),
-            form_overlay_x: overlay_x,
-            form_overlay_y: overlay_y,
-            form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
-            form_overlay_corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
-            form_overlay_border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
-            form_overlay_border: rgba_color([0xdc, 0x9d, 0x2e, 255]),
-            form_overlay_bg: rgba_color([0, 0, 0, 0]),
-            form_overlay_icon_color: rgba_color([0xf5, 0xe6, 0xc0, 255]),
-            form_overlay_icon_hover: rgba_color([0xdc, 0x9d, 0x2e, 255]),
-            form_overlay_gate_enabled: false,
-            form_overlay_gate_targets: Vec::new(),
-            form_overlay_gate_search_area: String::new(),
-            form_overlay_gate_tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
-            form_overlay_gate_blur: DEFAULT_OVERLAY_GATE_BLUR,
-            form_overlay_gate_match_method: sqyre_domain::MatchMethod::CcoeffNormed,
-            form_overlay_gate_interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
+            form_overlay: OverlayFields::default(),
             form_process_path: String::new(),
             form_window_title: String::new(),
             variant_name_draft: String::new(),
@@ -538,15 +477,15 @@ impl DataEditor {
             id.clone(),
             self.selected_program.clone().unwrap_or_default(),
         );
-        btn.macro_name = self.form_overlay_macro.clone();
-        btn.enabled = self.form_overlay_enabled;
-        btn.icon = self.form_overlay_icon.clone();
-        btn.point = self.form_overlay_point.clone();
-        btn.x = self.form_overlay_x;
-        btn.y = self.form_overlay_y;
-        btn.size = self.form_overlay_size;
-        btn.visibility_gate = self.overlay_gate_from_form();
-        self.apply_overlay_style_to_config(&mut btn);
+        btn.macro_name = self.form_overlay.macro_name.clone();
+        btn.enabled = self.form_overlay.enabled;
+        btn.icon = self.form_overlay.icon.clone();
+        btn.point = self.form_overlay.point.clone();
+        btn.x = self.form_overlay.x;
+        btn.y = self.form_overlay.y;
+        btn.size = self.form_overlay.size;
+        btn.visibility_gate = self.form_overlay.gate.to_config();
+        self.form_overlay.apply_style_to_config(&mut btn);
         if sqyre_persist::is_quick_access_hub_id(id) {
             btn.program = sqyre_domain::GENERAL_PROGRAM.into();
             btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
@@ -562,38 +501,6 @@ impl DataEditor {
             );
         }
         Some(btn)
-    }
-
-    pub(crate) fn overlay_gate_from_form(&self) -> OverlayVisibilityGate {
-        let mut gate = OverlayVisibilityGate {
-            mode: if self.form_overlay_gate_enabled {
-                OverlayVisibilityMode::ShowWhenFound
-            } else {
-                OverlayVisibilityMode::Off
-            },
-            targets: self.form_overlay_gate_targets.clone(),
-            search_area: self.form_overlay_gate_search_area.trim().to_string(),
-            tolerance: self.form_overlay_gate_tolerance,
-            blur: self.form_overlay_gate_blur,
-            match_method: self.form_overlay_gate_match_method,
-            interval_ms: self.form_overlay_gate_interval_ms,
-        };
-        gate.clamp();
-        gate
-    }
-
-    pub(crate) fn load_overlay_gate_from_config(&mut self, gate: &OverlayVisibilityGate) {
-        self.form_overlay_gate_enabled = gate.is_active();
-        self.form_overlay_gate_targets = gate.targets.clone();
-        self.form_overlay_gate_search_area = gate.search_area.clone();
-        self.form_overlay_gate_tolerance = gate.tolerance;
-        self.form_overlay_gate_blur = gate.blur;
-        self.form_overlay_gate_match_method = gate.match_method;
-        self.form_overlay_gate_interval_ms = gate.interval_ms;
-    }
-
-    pub(crate) fn reset_overlay_gate_form(&mut self) {
-        self.load_overlay_gate_from_config(&OverlayVisibilityGate::default());
     }
 
     /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
@@ -649,53 +556,14 @@ impl DataEditor {
             if self.selected_entity.as_deref() == Some(id.as_str())
                 && matches!(self.tab, EditorTab::Overlay)
             {
-                self.form_overlay_point.clear();
-                self.form_overlay_x = xf;
-                self.form_overlay_y = yf;
+                self.form_overlay.point.clear();
+                self.form_overlay.x = xf;
+                self.form_overlay.y = yf;
             }
         }
         if dirty {
             let _ = self.persist_overlay_settings(settings);
         }
-    }
-
-    pub(crate) fn apply_overlay_style_to_config(&self, btn: &mut OverlayButtonConfig) {
-        btn.corner_radius = self.form_overlay_corner_radius;
-        btn.border_width = self.form_overlay_border_width;
-        btn.border_color = overlay_hex_or_empty(
-            self.form_overlay_border,
-            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
-        );
-        btn.border_alpha = self.form_overlay_border.a();
-        btn.bg_color = if self.form_overlay_bg.a() == 0 {
-            String::new()
-        } else {
-            overlay_hex_or_empty(self.form_overlay_bg, "#000000")
-        };
-        btn.bg_alpha = self.form_overlay_bg.a();
-        btn.icon_color = overlay_hex_or_empty(
-            self.form_overlay_icon_color,
-            sqyre_persist::DEFAULT_OVERLAY_ICON_HEX,
-        );
-        btn.icon_alpha = self.form_overlay_icon_color.a();
-        btn.icon_hover_color = overlay_hex_or_empty(
-            self.form_overlay_icon_hover,
-            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
-        );
-    }
-
-    pub(crate) fn load_overlay_style_from_config(&mut self, btn: &OverlayButtonConfig) {
-        self.form_overlay_corner_radius = btn.corner_radius;
-        self.form_overlay_border_width = btn.border_width;
-        self.form_overlay_border = rgba_color(btn.border_rgba());
-        self.form_overlay_bg = rgba_color(btn.bg_rgba());
-        self.form_overlay_icon_color = rgba_color(btn.icon_rgba());
-        self.form_overlay_icon_hover = rgba_color(btn.icon_hover_rgba());
-    }
-
-    pub(crate) fn reset_overlay_style_form(&mut self) {
-        let defaults = OverlayButtonConfig::new("", "");
-        self.load_overlay_style_from_config(&defaults);
     }
 
     fn clear_entity_selection(&mut self) {
@@ -917,10 +785,10 @@ impl DataEditor {
                     .catalog
                     .resolve_point(&coord, &Macro::new("", 0, vec![]))
                 {
-                    self.form_overlay_x = x as f32;
-                    self.form_overlay_y = y as f32;
+                    self.form_overlay.x = x as f32;
+                    self.form_overlay.y = y as f32;
                 }
-                self.form_overlay_point = coord.0;
+                self.form_overlay.point = coord.0;
                 if matches!(self.tab, EditorTab::Overlay) {
                     if let Some(id) = self.selected_entity.clone() {
                         if let Some(btn) = env
@@ -930,9 +798,9 @@ impl DataEditor {
                             .iter_mut()
                             .find(|b| b.id == id)
                         {
-                            btn.point = self.form_overlay_point.clone();
-                            btn.x = self.form_overlay_x;
-                            btn.y = self.form_overlay_y;
+                            btn.point = self.form_overlay.point.clone();
+                            btn.x = self.form_overlay.x;
+                            btn.y = self.form_overlay.y;
                             self.persist_overlay_settings(env.settings);
                         }
                     }
@@ -945,7 +813,7 @@ impl DataEditor {
                 ) =>
             {
                 if matches!(self.tab, EditorTab::Overlay) {
-                    self.form_overlay_gate_search_area = coord.0;
+                    self.form_overlay.gate.search_area = coord.0;
                 } else if matches!(self.tab, EditorTab::MatchCheck) {
                     // Keep the selected item; only retarget the preview bounds.
                     if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
@@ -960,7 +828,7 @@ impl DataEditor {
                 targets,
                 target_tags: _,
             } if matches!(self.tab, EditorTab::Overlay) => {
-                self.form_overlay_gate_targets = targets;
+                self.form_overlay.gate.targets = targets;
             }
             _ => {}
         }

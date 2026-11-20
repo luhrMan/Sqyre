@@ -527,7 +527,7 @@ impl DataEditor {
                     btn.enabled = *enabled;
                 }
                 if self.selected_entity.as_deref() == Some(id.as_str()) {
-                    self.form_overlay_enabled = *enabled;
+                    self.form_overlay.enabled = *enabled;
                 }
             }
             self.persist_overlay_settings(settings);

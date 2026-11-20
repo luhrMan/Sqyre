@@ -75,15 +75,15 @@ impl DataEditor {
         };
         btn.enabled = enabled;
         if self.selected_entity.as_deref() == Some(id) {
-            self.form_overlay_enabled = enabled;
+            self.form_overlay.enabled = enabled;
         }
         true
     }
 
     /// Keep the open overlay form in sync when a referenced macro is renamed.
     pub(crate) fn rename_overlay_form_macro(&mut self, old_name: &str, new_name: &str) {
-        if self.form_overlay_macro == old_name {
-            self.form_overlay_macro = new_name.to_string();
+        if self.form_overlay.macro_name == old_name {
+            self.form_overlay.macro_name = new_name.to_string();
         }
     }
 
@@ -98,7 +98,7 @@ impl DataEditor {
         let Some(prog) = self.selected_program_or_err() else {
             return;
         };
-        if !hub && self.form_overlay_macro.trim().is_empty() {
+        if !hub && self.form_overlay.macro_name.trim().is_empty() {
             self.set_err("Pick a macro.");
             return;
         }
@@ -116,12 +116,12 @@ impl DataEditor {
             btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
             btn.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
             btn.point.clear();
-            btn.enabled = self.form_overlay_enabled;
-            btn.x = self.form_overlay_x;
-            btn.y = self.form_overlay_y;
-            btn.size = self.form_overlay_size;
+            btn.enabled = self.form_overlay.enabled;
+            btn.x = self.form_overlay.x;
+            btn.y = self.form_overlay.y;
+            btn.size = self.form_overlay.size;
             btn.visibility_gate = Default::default();
-            self.apply_overlay_style_to_config(btn);
+            self.form_overlay.apply_style_to_config(btn);
             btn.border_width = 0.0;
             btn.border_alpha = 0;
             btn.bg_alpha = 0;
@@ -138,20 +138,20 @@ impl DataEditor {
                 let _ = sqyre_persist::snap_hub_button_to_monitor(
                     btn, mon_x, mon_y, mon_w, mon_h, size_px,
                 );
-                self.form_overlay_x = btn.x;
-                self.form_overlay_y = btn.y;
+                self.form_overlay.x = btn.x;
+                self.form_overlay.y = btn.y;
             }
         } else {
             btn.program = prog;
-            btn.macro_name = self.form_overlay_macro.trim().to_string();
-            btn.enabled = self.form_overlay_enabled;
-            btn.icon = self.form_overlay_icon.clone();
-            btn.point = self.form_overlay_point.trim().to_string();
-            btn.x = self.form_overlay_x;
-            btn.y = self.form_overlay_y;
-            btn.size = self.form_overlay_size;
-            btn.visibility_gate = self.overlay_gate_from_form();
-            self.apply_overlay_style_to_config(btn);
+            btn.macro_name = self.form_overlay.macro_name.trim().to_string();
+            btn.enabled = self.form_overlay.enabled;
+            btn.icon = self.form_overlay.icon.clone();
+            btn.point = self.form_overlay.point.trim().to_string();
+            btn.x = self.form_overlay.x;
+            btn.y = self.form_overlay.y;
+            btn.size = self.form_overlay.size;
+            btn.visibility_gate = self.form_overlay.gate.to_config();
+            self.form_overlay.apply_style_to_config(btn);
         }
         if self.persist_overlay_settings(settings) {
             self.set_ok("Saved overlay button.");
@@ -175,7 +175,7 @@ impl DataEditor {
             self.overlay_icon_picker_for = None;
             return;
         }
-        let current = self.form_overlay_icon.clone();
+        let current = self.form_overlay.icon.clone();
         let mut open = true;
         let mut close = false;
         // Bounds only (no Window scroll). `fill_resize_body` pins content to the
@@ -211,7 +211,7 @@ impl DataEditor {
                     &current,
                     &mut self.overlay_icon_search,
                 ) {
-                    self.form_overlay_icon = id.to_string();
+                    self.form_overlay.icon = id.to_string();
                     close = true;
                 }
             });
@@ -231,6 +231,7 @@ impl DataEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_editor::form_fields::OverlayFields;
     use crate::data_editor::EditorTab;
     use egui::Context;
     use sqyre_persist::OverlayButtonConfig;
@@ -245,13 +246,16 @@ mod tests {
         let mut ed = DataEditor {
             selected_program: Some("Game".into()),
             selected_entity: Some("b1".into()),
-            form_overlay_enabled: true,
+            form_overlay: OverlayFields {
+                enabled: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
         assert!(ed.set_overlay_button_enabled(&mut settings, "b1", false));
         assert!(!settings.overlay.overlay_buttons[0].enabled);
-        assert!(!ed.form_overlay_enabled);
+        assert!(!ed.form_overlay.enabled);
         assert!(!ed.set_overlay_button_enabled(&mut settings, "missing", false));
     }
 

@@ -33,12 +33,10 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, screen_cap_path, OverlayButtonConfig, ProgramCatalog,
-    ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS,
-    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
-    MIN_OVERLAY_GATE_INTERVAL_MS,
+    screen_cap_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+    DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS, MIN_OVERLAY_BORDER_WIDTH,
+    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_GATE_INTERVAL_MS,
 };
 use sqyre_validate::{validate_entity_name, validate_numeric_expression};
 
@@ -312,43 +310,28 @@ impl DataEditor {
             self.reset_overlay_form();
             return;
         };
-        self.form_overlay_point = btn.point.clone();
-        self.form_overlay_x = btn.x;
-        self.form_overlay_y = btn.y;
-        self.form_overlay_macro = btn.macro_name.clone();
-        self.form_overlay_enabled = btn.enabled;
-        self.form_overlay_icon = if btn.icon.trim().is_empty() {
+        self.form_overlay.point = btn.point.clone();
+        self.form_overlay.x = btn.x;
+        self.form_overlay.y = btn.y;
+        self.form_overlay.macro_name = btn.macro_name.clone();
+        self.form_overlay.enabled = btn.enabled;
+        self.form_overlay.icon = if btn.icon.trim().is_empty() {
             overlay_icons::DEFAULT_ICON_ID.into()
         } else {
             btn.icon.clone()
         };
-        self.form_overlay_size = if btn.size > 0.0 {
+        self.form_overlay.size = if btn.size > 0.0 {
             btn.size
         } else {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
-        self.load_overlay_style_from_config(btn);
-        self.load_overlay_gate_from_config(&btn.visibility_gate);
+        self.form_overlay.load_style_from_config(btn);
+        self.form_overlay.gate =
+            super::form_fields::OverlayGateFields::from_config(&btn.visibility_gate);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
-        self.form_overlay_point.clear();
-        let (x, y) = default_overlay_position(
-            0.0,
-            0.0,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-            DEFAULT_OVERLAY_BUTTON_SIZE,
-            0,
-        );
-        self.form_overlay_x = x;
-        self.form_overlay_y = y;
-        self.form_overlay_macro.clear();
-        self.form_overlay_enabled = true;
-        self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
-        self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
-        self.reset_overlay_style_form();
-        self.reset_overlay_gate_form();
+        self.form_overlay = super::form_fields::OverlayFields::default();
     }
 
     pub(crate) fn reset_item_form(&mut self) {

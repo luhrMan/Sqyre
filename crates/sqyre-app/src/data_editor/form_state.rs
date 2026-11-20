@@ -1,6 +1,6 @@
 //! FormState trait: per-tab load / dirty / valid lifecycle.
 
-use super::helpers::{parse_i32, rgba_color};
+use super::helpers::parse_i32;
 #[cfg(feature = "native-runtime")]
 use super::match_check;
 use super::{DataEditor, EditorTab};
@@ -581,36 +581,16 @@ impl FormState for OverlayForm {
         let Some(btn) = settings.overlay.overlay_buttons.iter().find(|b| b.id == id) else {
             return true;
         };
-        ed.form_overlay_macro.trim() != btn.macro_name.trim()
-            || ed.form_overlay_enabled != btn.enabled
-            || ed.form_overlay_icon != btn.icon
-            || ed.form_overlay_point.trim() != btn.point.trim()
-            || sqyre_domain::f32_changed(ed.form_overlay_x, btn.x)
-            || sqyre_domain::f32_changed(ed.form_overlay_y, btn.y)
-            || sqyre_domain::f32_changed(ed.form_overlay_size, btn.size)
-            || sqyre_domain::f32_changed(ed.form_overlay_corner_radius, btn.corner_radius)
-            || sqyre_domain::f32_changed(ed.form_overlay_border_width, btn.border_width)
-            || ed.form_overlay_border != rgba_color(btn.border_rgba())
-            || ed.form_overlay_bg != rgba_color(btn.bg_rgba())
-            || ed.form_overlay_icon_color != rgba_color(btn.icon_rgba())
-            || ed.form_overlay_icon_hover != rgba_color(btn.icon_hover_rgba())
+        ed.form_overlay.placement_is_dirty_vs(btn)
+            || ed.form_overlay.style_is_dirty_vs(btn)
             || ed.selected_program.as_deref() != Some(btn.program.as_str())
-            || ed.form_overlay_gate_enabled != btn.visibility_gate.is_active()
-            || ed.form_overlay_gate_targets != btn.visibility_gate.targets
-            || ed.form_overlay_gate_search_area.trim() != btn.visibility_gate.search_area.trim()
-            || sqyre_domain::f64_changed(
-                ed.form_overlay_gate_tolerance,
-                btn.visibility_gate.tolerance,
-            )
-            || ed.form_overlay_gate_blur != btn.visibility_gate.blur
-            || ed.form_overlay_gate_match_method != btn.visibility_gate.match_method
-            || ed.form_overlay_gate_interval_ms != btn.visibility_gate.interval_ms
+            || ed.form_overlay.gate.is_dirty_vs(&btn.visibility_gate)
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
         ed.selected_program.is_some()
             && ed.selected_entity.is_some()
-            && !ed.form_overlay_macro.trim().is_empty()
+            && !ed.form_overlay.macro_name.trim().is_empty()
     }
 }
 
@@ -745,14 +725,14 @@ mod tests {
         // A real diff below the absolute f32::EPSILON (≈1.19e-7): at 0.25 the
         // representable spacing is finer, so an absolute threshold reported
         // clean while the scaled compare still catches the change.
-        ed.form_overlay_border_width += f32::EPSILON / 2.0;
+        ed.form_overlay.border_width += f32::EPSILON / 2.0;
         assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
-        ed.form_overlay_border_width -= f32::EPSILON / 2.0;
+        ed.form_overlay.border_width -= f32::EPSILON / 2.0;
         assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
 
         // Same for the f64 gate tolerance (a 0–1 ratio field): a two-ULP diff
         // at ~0.9 is smaller than an absolute f64::EPSILON would flag at 1.0.
-        ed.form_overlay_gate_tolerance += f64::EPSILON;
+        ed.form_overlay.gate.tolerance += f64::EPSILON;
         assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
     }
 
