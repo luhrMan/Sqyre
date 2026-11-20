@@ -7,9 +7,9 @@
 //! peak RSS can be released (also clears Rayon FFT/direct TLS via
 //! [`sqyre_match::clear_match_scratch`]).
 
-use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
+use crate::image_util::{flip_image_buf, flip_mask_u8, load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
-use sqyre_domain::MatchMethod;
+use sqyre_domain::{MatchMethod, PlaneFlip};
 use sqyre_match::{blur_image_owned, prepare_template, ImageBuf, PreparedTemplate};
 use sqyre_ports::PortError;
 use std::collections::HashMap;
@@ -208,25 +208,26 @@ fn drop_inflight_gate(map: &'static Mutex<HashMap<String, Arc<Mutex<()>>>>, key:
     map.lock().remove(key);
 }
 
-fn template_cache_key(path: &Path, blur_kernel: i32) -> String {
-    format!("{}\0{blur_kernel}", path.display())
+fn template_cache_key(path: &Path, blur_kernel: i32, plane_flip: PlaneFlip) -> String {
+    format!("{}\0{blur_kernel}\0{plane_flip:?}", path.display())
 }
 
-fn mask_cache_key(path: &Path, rows: usize, cols: usize) -> String {
-    format!("{}\0{rows}\0{cols}", path.display())
+fn mask_cache_key(path: &Path, rows: usize, cols: usize, plane_flip: PlaneFlip) -> String {
+    format!("{}\0{rows}\0{cols}\0{plane_flip:?}", path.display())
 }
 
-/// Prepared-template cache key: template identity (path + blur) is the same as
+/// Prepared-template cache key: template identity (path + blur + flip) is the same as
 /// [`template_cache_key`]; mask path and match method also select distinct packing.
 fn prepared_cache_key(
     icon_path: &Path,
     blur_kernel: i32,
+    plane_flip: PlaneFlip,
     mask_path: Option<&Path>,
     method: MatchMethod,
 ) -> String {
     let mask_part = mask_path.map(|p| p.display().to_string());
     format!(
-        "{}\0{blur_kernel}\0{:?}\0{}",
+        "{}\0{blur_kernel}\0{plane_flip:?}\0{:?}\0{}",
         icon_path.display(),
         method,
         mask_part.as_deref().unwrap_or("")
@@ -380,12 +381,14 @@ fn mask_cache_hit_trusted(key: &str) -> Option<Arc<Vec<u8>>> {
     Some(Arc::clone(&entry.mask))
 }
 
-/// Load (or reuse) a blurred template for `icon_path` at `blur_kernel`.
+/// Load (or reuse) a blurred template for `icon_path` at `blur_kernel`, optionally
+/// mirrored via `plane_flip` before blur.
 pub fn get_cached_blurred_template(
     icon_path: &Path,
     blur_kernel: i32,
+    plane_flip: PlaneFlip,
 ) -> Result<Arc<ImageBuf>, PortError> {
-    let key = template_cache_key(icon_path, blur_kernel);
+    let key = template_cache_key(icon_path, blur_kernel, plane_flip);
 
     // Hot path: skip `stat` when an entry is already present for this key.
     if let Some(hit) = template_cache_hit_trusted(&key, blur_kernel) {
@@ -411,8 +414,9 @@ pub fn get_cached_blurred_template(
     }
 
     let raw = load_rgb_image(icon_path)?;
+    let oriented = flip_image_buf(&raw, plane_flip);
     let blurred = Arc::new(
-        blur_image_owned(raw, blur_kernel)
+        blur_image_owned(oriented, blur_kernel)
             .map_err(|e| PortError::Message(format!("blur {}: {e}", icon_path.display())))?,
     );
     let bytes = blurred.data.len();
@@ -432,13 +436,15 @@ pub fn get_cached_blurred_template(
     Ok(blurred)
 }
 
-/// Load (or reuse) a file mask resized to `template_cols` × `template_rows` as CV_8U bytes.
+/// Load (or reuse) a file mask resized to `template_cols` × `template_rows` as CV_8U bytes,
+/// optionally mirrored via `plane_flip` to match a flipped template.
 pub fn get_cached_image_mask(
     mask_path: &Path,
     template_rows: usize,
     template_cols: usize,
+    plane_flip: PlaneFlip,
 ) -> Option<Arc<Vec<u8>>> {
-    let key = mask_cache_key(mask_path, template_rows, template_cols);
+    let key = mask_cache_key(mask_path, template_rows, template_cols, plane_flip);
 
     if let Some(hit) = mask_cache_hit_trusted(&key) {
         return Some(hit);
@@ -460,7 +466,13 @@ pub fn get_cached_image_mask(
 
     let loaded = load_rgb_image(mask_path).ok()?;
     let resized = resize_mask(&loaded, template_cols, template_rows);
-    let mask = Arc::new(mask_as_u8(&resized));
+    let flat = mask_as_u8(&resized);
+    let mask = Arc::new(flip_mask_u8(
+        &flat,
+        template_cols,
+        template_rows,
+        plane_flip,
+    ));
     let bytes = mask.len();
 
     cache().write().insert_mask(
@@ -516,12 +528,13 @@ fn prepared_cache_hit_trusted(key: &str, blur_kernel: i32) -> Option<Arc<Prepare
 pub fn get_cached_prepared_template(
     icon_path: &Path,
     blur_kernel: i32,
+    plane_flip: PlaneFlip,
     template: &ImageBuf,
     mask_path: Option<&Path>,
     mask: Option<&[u8]>,
     method: MatchMethod,
 ) -> Result<Arc<PreparedTemplate>, PortError> {
-    let key = prepared_cache_key(icon_path, blur_kernel, mask_path, method);
+    let key = prepared_cache_key(icon_path, blur_kernel, plane_flip, mask_path, method);
 
     if let Some(hit) = prepared_cache_hit_trusted(&key, blur_kernel) {
         return Ok(hit);
@@ -588,10 +601,10 @@ mod tests {
             let path = dir.path().join("icon.png");
             write_rgb(&path, 8, 8, [10, 20, 30]);
             let k = search_blur_kernel(1);
-            let a = get_cached_blurred_template(&path, k).unwrap();
+            let a = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             // Remove the file; a trusted hot hit must not re-stat / fail.
             std::fs::remove_file(&path).unwrap();
-            let b = get_cached_blurred_template(&path, k).unwrap();
+            let b = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             assert!(Arc::ptr_eq(&a, &b));
         });
     }
@@ -604,8 +617,8 @@ mod tests {
             let path = dir.path().join("icon.png");
             write_rgb(&path, 8, 8, [10, 20, 30]);
             let k = search_blur_kernel(1);
-            let a = get_cached_blurred_template(&path, k).unwrap();
-            let b = get_cached_blurred_template(&path, k).unwrap();
+            let a = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
+            let b = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             assert!(Arc::ptr_eq(&a, &b));
         });
     }
@@ -618,7 +631,8 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("icon.png");
             write_rgb(&path, 8, 8, [10, 20, 30]);
-            let _ = get_cached_blurred_template(&path, search_blur_kernel(0)).unwrap();
+            let _ =
+                get_cached_blurred_template(&path, search_blur_kernel(0), PlaneFlip::None).unwrap();
             let stats = search_cache_stats();
             assert_eq!(stats.templates, 1);
             assert!(stats.bytes > 0);
@@ -636,10 +650,11 @@ mod tests {
             let path = dir.path().join("icon.png");
             write_rgb(&path, 12, 12, [9, 8, 7]);
             let k = search_blur_kernel(0);
-            let tmpl = get_cached_blurred_template(&path, k).unwrap();
+            let tmpl = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             let _prepared = get_cached_prepared_template(
                 &path,
                 k,
+                PlaneFlip::None,
                 tmpl.as_ref(),
                 None,
                 None,
@@ -668,10 +683,10 @@ mod tests {
             let path = dir.path().join("icon.png");
             write_rgb(&path, 4, 4, [1, 2, 3]);
             let k = search_blur_kernel(0);
-            let _ = get_cached_blurred_template(&path, k).unwrap();
+            let _ = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             invalidate_search_templates_under(dir.path());
-            let a = get_cached_blurred_template(&path, k).unwrap();
-            let b = get_cached_blurred_template(&path, k).unwrap();
+            let a = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
+            let b = get_cached_blurred_template(&path, k, PlaneFlip::None).unwrap();
             assert!(Arc::ptr_eq(&a, &b));
         });
     }
@@ -687,7 +702,7 @@ mod tests {
             let paths: Vec<_> = (0..8).map(|_| path.clone()).collect();
             let results: Vec<_> = paths
                 .into_par_iter()
-                .map(|p| get_cached_blurred_template(&p, k).unwrap())
+                .map(|p| get_cached_blurred_template(&p, k, PlaneFlip::None).unwrap())
                 .collect();
             let first = &results[0];
             assert!(results.iter().all(|a| Arc::ptr_eq(a, first)));

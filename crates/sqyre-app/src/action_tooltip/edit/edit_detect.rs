@@ -69,6 +69,7 @@ pub(super) fn paint_image_search_fields(
         tolerance,
         blur,
         match_method,
+        plane_flip,
         sort_by,
         sort_then,
         tag_priority,
@@ -97,6 +98,7 @@ pub(super) fn paint_image_search_fields(
     tip_advanced(ui, |ui| {
         tip_wrapped_section(ui, |ui| {
             match_method_editor(ui, match_method);
+            match_settings::paint_plane_flip(ui, plane_flip);
         });
     });
 }

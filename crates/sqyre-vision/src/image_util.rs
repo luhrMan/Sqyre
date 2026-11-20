@@ -1,6 +1,7 @@
 use image::RgbaImage;
 use pulp::Arch;
 use rayon::prelude::*;
+use sqyre_domain::PlaneFlip;
 use sqyre_match::{map_rgb_to_gray_u8, ImageBuf};
 use sqyre_ports::{PortError, RgbCapture};
 
@@ -140,6 +141,48 @@ pub fn resize_mask(mask: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
     resize_nearest(&src, tw, th)
 }
 
+/// Mirror `img` across the requested axes. Size is unchanged.
+pub fn flip_image_buf(img: &ImageBuf, flip: PlaneFlip) -> ImageBuf {
+    if flip.is_none() {
+        return img.clone();
+    }
+    let w = img.width;
+    let h = img.height;
+    let ch = img.channels;
+    let mut out = ImageBuf::new(w, h, ch, 0);
+    let flip_h = flip.flip_horizontal();
+    let flip_v = flip.flip_vertical();
+    for y in 0..h {
+        let sy = if flip_v { h - 1 - y } else { y };
+        for x in 0..w {
+            let sx = if flip_h { w - 1 - x } else { x };
+            let si = img.pixel_offset(sx, sy);
+            let di = out.pixel_offset(x, y);
+            out.data[di..di + ch].copy_from_slice(&img.data[si..si + ch]);
+        }
+    }
+    out
+}
+
+/// Mirror a single-channel mask (length `w * h`) with the same geometry as [`flip_image_buf`].
+pub fn flip_mask_u8(mask: &[u8], w: usize, h: usize, flip: PlaneFlip) -> Vec<u8> {
+    debug_assert_eq!(mask.len(), w.saturating_mul(h));
+    if flip.is_none() || w == 0 || h == 0 {
+        return mask.to_vec();
+    }
+    let mut out = vec![0u8; w * h];
+    let flip_h = flip.flip_horizontal();
+    let flip_v = flip.flip_vertical();
+    for y in 0..h {
+        let sy = if flip_v { h - 1 - y } else { y };
+        for x in 0..w {
+            let sx = if flip_h { w - 1 - x } else { x };
+            out[y * w + x] = mask[sy * w + sx];
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +200,43 @@ mod tests {
         let gray = ImageBuf::from_raw(2, 1, 1, vec![10, 20]);
         let rgb = gray_to_rgb(&gray);
         assert_eq!(rgb.data, vec![10, 10, 10, 20, 20, 20]);
+    }
+
+    #[test]
+    fn flip_horizontal_swaps_columns() {
+        // 2x1 RGB: left=[1,2,3] right=[4,5,6]
+        let img = ImageBuf::from_raw(2, 1, 3, vec![1, 2, 3, 4, 5, 6]);
+        let flipped = flip_image_buf(&img, PlaneFlip::Horizontal);
+        assert_eq!(flipped.data, vec![4, 5, 6, 1, 2, 3]);
+    }
+
+    #[test]
+    fn flip_vertical_swaps_rows() {
+        // 1x2 RGB
+        let img = ImageBuf::from_raw(1, 2, 3, vec![1, 2, 3, 4, 5, 6]);
+        let flipped = flip_image_buf(&img, PlaneFlip::Vertical);
+        assert_eq!(flipped.data, vec![4, 5, 6, 1, 2, 3]);
+    }
+
+    #[test]
+    fn flip_both_mirrors_both_axes() {
+        // 2x2 single-channel: [[1,2],[3,4]]
+        let img = ImageBuf::from_raw(2, 2, 1, vec![1, 2, 3, 4]);
+        let flipped = flip_image_buf(&img, PlaneFlip::Both);
+        assert_eq!(flipped.data, vec![4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn flip_mask_matches_image_geometry() {
+        let mask = vec![1u8, 2, 3, 4];
+        assert_eq!(
+            flip_mask_u8(&mask, 2, 2, PlaneFlip::Horizontal),
+            vec![2, 1, 4, 3]
+        );
+        assert_eq!(
+            flip_mask_u8(&mask, 2, 2, PlaneFlip::Vertical),
+            vec![3, 4, 1, 2]
+        );
+        assert_eq!(flip_mask_u8(&mask, 2, 2, PlaneFlip::Both), vec![4, 3, 2, 1]);
     }
 }

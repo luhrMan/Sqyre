@@ -889,6 +889,10 @@ pub(crate) fn is_default_match_method(v: &MatchMethod) -> bool {
     *v == MatchMethod::CcoeffNormed
 }
 
+pub(crate) fn is_default_plane_flip(v: &crate::PlaneFlip) -> bool {
+    *v == crate::PlaneFlip::None
+}
+
 fn is_default_match_grouping(v: &MatchGrouping) -> bool {
     *v == MatchGrouping::Row
 }
@@ -932,6 +936,8 @@ pub struct ImageSearchData {
     pub tolerance: f64,
     pub blur: i32,
     pub match_method: MatchMethod,
+    /// Mirror the template before matching (`None` = upright as stored).
+    pub plane_flip: crate::PlaneFlip,
     /// Primary order for matching items and for the Items grid display.
     pub sort_by: ItemSortBy,
     /// Within-group order after [`Self::sort_by`].

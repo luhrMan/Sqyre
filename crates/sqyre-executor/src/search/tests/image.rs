@@ -837,3 +837,101 @@ fn image_search_variant_exit_early_disabled_tries_all_variants() {
         );
     });
 }
+
+#[test]
+fn image_search_plane_flip_horizontal_matches_mirrored_stamp() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("arrow.png");
+        // Asymmetric so upright ≠ horizontal mirror.
+        let tmpl = patterned_rgba(12, 10, 77);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let flipped = {
+            let mut img = RgbaImage::new(tmpl.width(), tmpl.height());
+            for (x, y, p) in tmpl.enumerate_pixels() {
+                img.put_pixel(tmpl.width() - 1 - x, y, *p);
+            }
+            img
+        };
+        let mut search = RgbaImage::from_pixel(60, 50, Rgba([18, 18, 18, 255]));
+        stamp_rgba(&mut search, &flipped, 20, 16);
+
+        let icons = icons_for(vec![(
+            "Prog~Arrow",
+            vec![tmpl_path],
+            Some(item_meta("Arrow", 1, 1, 1, &[])),
+        )]);
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+
+        // Upright template must miss the mirrored stamp.
+        let mut backend_miss = RecordingBackend::default();
+        let mut capturer_miss = capturer_next(search.clone());
+        let mut macro_miss = fast_macro_of(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
+                name: "no-flip".into(),
+                targets: vec!["Prog~Arrow".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.85,
+                plane_flip: sqyre_domain::PlaneFlip::None,
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![wait_child(1)],
+                    else_actions: vec![wait_child(9)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+        }]);
+        execute_macro_with(
+            &mut macro_miss,
+            ExecDeps::new(&mut backend_miss)
+                .capturer(&mut capturer_miss)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+        assert!(
+            backend_miss.has("sleep:9"),
+            "upright search should miss mirrored stamp: {:?}",
+            backend_miss.log
+        );
+
+        // Flipped template should hit.
+        let mut backend_hit = RecordingBackend::default();
+        let mut capturer_hit = capturer_next(search);
+        let mut macro_hit = fast_macro_of(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
+                name: "flip-h".into(),
+                targets: vec!["Prog~Arrow".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.85,
+                plane_flip: sqyre_domain::PlaneFlip::Horizontal,
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![wait_child(1)],
+                    else_actions: vec![wait_child(9)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+        }]);
+        execute_macro_with(
+            &mut macro_hit,
+            ExecDeps::new(&mut backend_hit)
+                .capturer(&mut capturer_hit)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+        assert!(
+            backend_hit.has("sleep:1"),
+            "horizontal plane flip should match mirrored stamp: {:?}",
+            backend_hit.log
+        );
+    });
+}

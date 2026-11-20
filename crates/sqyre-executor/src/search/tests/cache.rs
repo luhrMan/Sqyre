@@ -39,8 +39,10 @@ fn image_search_caches_blurred_templates() {
         .unwrap();
 
         let kernel = search_blur_kernel(5);
-        let first = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
-        let second = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
+        let first =
+            get_cached_blurred_template(&tmpl_path, kernel, sqyre_domain::PlaneFlip::None).unwrap();
+        let second =
+            get_cached_blurred_template(&tmpl_path, kernel, sqyre_domain::PlaneFlip::None).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
     });
 }

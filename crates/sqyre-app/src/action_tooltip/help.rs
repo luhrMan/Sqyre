@@ -162,6 +162,8 @@ pub const IS_TOLERANCE_UNNORMED: &str =
 pub const IS_METHOD: &str =
     "How Sqyre scores a match. Default (recommended) works for most cases. Difference methods treat lower scores as better.";
 pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise).";
+pub const IS_PLANE_FLIP: &str =
+    "Mirror the template before searching. Horizontal flips left↔right; Vertical flips top↔bottom; Both does both. Use a second Image Search if you also need the upright template.";
 
 // --- OCR ---
 

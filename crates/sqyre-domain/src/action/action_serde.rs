@@ -8,12 +8,13 @@ use super::{
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
     is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
     is_default_match_method, is_default_ocr_blur, is_default_ocr_match_mode, is_default_ocr_text,
-    is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, FindPixelData, ImageSearchData, ItemSortBy,
-    ItemSortThen, ListColumn, LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, OcrData,
-    PressState, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW,
+    is_default_plane_flip, is_default_resize, is_default_target_color, is_false, is_true,
+    is_zero_i32, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch, FindPixelData,
+    ImageSearchData, ItemSortBy, ItemSortThen, ListColumn, LoopJumpMode, MatchMethod, MouseButton,
+    NavigateSelectData, OcrData, PressState, ScalarValue, VariableAssignment,
+    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
+use crate::PlaneFlip;
 use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
@@ -91,6 +92,12 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_match_method"
         )]
         match_method: MatchMethod,
+        #[serde(
+            rename = "planeflip",
+            default,
+            skip_serializing_if = "is_default_plane_flip"
+        )]
+        plane_flip: PlaneFlip,
         #[serde(
             rename = "sortby",
             default,
@@ -394,6 +401,7 @@ impl From<ActionKindWire> for ActionKind {
                 tolerance,
                 blur,
                 match_method,
+                plane_flip,
                 sort_by,
                 sort_then,
                 tag_priority,
@@ -407,6 +415,7 @@ impl From<ActionKindWire> for ActionKind {
                 tolerance,
                 blur,
                 match_method,
+                plane_flip,
                 sort_by,
                 sort_then,
                 tag_priority,
@@ -642,6 +651,12 @@ enum ActionKindWireRef<'a> {
             skip_serializing_if = "is_default_match_method"
         )]
         match_method: MatchMethod,
+        #[serde(
+            rename = "planeflip",
+            default,
+            skip_serializing_if = "is_default_plane_flip"
+        )]
+        plane_flip: PlaneFlip,
         #[serde(
             rename = "sortby",
             default,
@@ -930,6 +945,7 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 tolerance: d.tolerance,
                 blur: d.blur,
                 match_method: d.match_method,
+                plane_flip: d.plane_flip,
                 sort_by: d.sort_by,
                 sort_then: d.sort_then,
                 tag_priority: &d.tag_priority,
