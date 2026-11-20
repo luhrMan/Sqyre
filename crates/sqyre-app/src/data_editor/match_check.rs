@@ -94,6 +94,7 @@ mod inner {
         pub tolerance: f64,
         pub blur: i32,
         pub match_method: MatchMethod,
+        pub plane_flip: sqyre_domain::PlaneFlip,
         pub variant: String,
         pub refresh_gen: u64,
         pub last_inputs: String,
@@ -118,6 +119,7 @@ mod inner {
                 tolerance: 0.95,
                 blur: 0,
                 match_method: MatchMethod::CcoeffNormed,
+                plane_flip: sqyre_domain::PlaneFlip::None,
                 variant: String::new(),
                 refresh_gen: 0,
                 last_inputs: String::new(),
@@ -204,12 +206,13 @@ mod inner {
         by: i32,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f64,
         refresh_gen: u64,
         close_matches_distance: i32,
     ) -> String {
         format!(
-            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
+            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{plane_flip:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
         )
     }
 
@@ -263,6 +266,7 @@ mod inner {
         mask_path: Option<&Path>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
     ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
         let image_w = display.width() as usize;
         let image_h = display.height() as usize;
@@ -276,7 +280,7 @@ mod inner {
         } else {
             search
         };
-        let template_full = get_cached_blurred_template(template_path, kernel)
+        let template_full = get_cached_blurred_template(template_path, kernel, plane_flip)
             .map_err(|e| format!("template: {e}"))?;
         let scale_x = if src_w > 0 {
             image_w as f32 / src_w as f32
@@ -300,7 +304,8 @@ mod inner {
         let tmpl_w = template_blurred.width;
         let tmpl_h = template_blurred.height;
         let mask_owned = mask_path.and_then(|p| {
-            let full = get_cached_image_mask(p, template_full.height, template_full.width)?;
+            let full =
+                get_cached_image_mask(p, template_full.height, template_full.width, plane_flip)?;
             if need_scale {
                 Some(scale_mask(
                     &full,
@@ -695,6 +700,7 @@ mod inner {
         mask_path: Option<PathBuf>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f32,
         close_matches_distance: i32,
     ) -> mpsc::Receiver<Result<MatchCheckResult, String>> {
@@ -709,6 +715,7 @@ mod inner {
                     mask_path.as_deref(),
                     blur,
                     method,
+                    plane_flip,
                 )?;
                 let (heatmap_rgba, summary) = scores_to_heatmap_rgba(
                     &map, image_w, image_h, tmpl_w, tmpl_h, method, tolerance,
@@ -763,6 +770,38 @@ mod inner {
         )
     }
 
+    /// Caption for the best-peak box when nothing clears tolerance.
+    pub(crate) fn no_match_box_caption(closeness_pct: f32) -> String {
+        format!("{closeness_pct:.1}% · no match")
+    }
+
+    fn paint_match_box_caption(
+        painter: &egui::Painter,
+        content: egui::Rect,
+        box_rect: egui::Rect,
+        text: &str,
+        color: Color32,
+    ) {
+        let font = egui::FontId::proportional(12.0);
+        let galley = painter.layout_no_wrap(text.to_owned(), font, color);
+        let pad = egui::vec2(5.0, 2.0);
+        let size = galley.size() + pad * 2.0;
+        // Prefer above the box; fall inside the top edge if that would clip.
+        let mut origin = egui::pos2(
+            box_rect.center().x - size.x * 0.5,
+            box_rect.min.y - size.y - 4.0,
+        );
+        if origin.y < content.min.y {
+            origin.y = box_rect.min.y + 2.0;
+        }
+        origin.x = origin
+            .x
+            .clamp(content.min.x, (content.max.x - size.x).max(content.min.x));
+        let badge = egui::Rect::from_min_size(origin, size);
+        painter.rect_filled(badge, 3.0, crate::theme::preview_scrim());
+        painter.galley(badge.min + pad, galley, color);
+    }
+
     fn paint_tolerance_match_boxes(
         painter: &egui::Painter,
         content: egui::Rect,
@@ -801,7 +840,8 @@ mod inner {
                 egui::Stroke::new(2.0, color),
                 egui::StrokeKind::Outside,
             );
-            painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
+            let pct = closeness_percent(summary.best_score, method, summary);
+            paint_match_box_caption(painter, content, rect, &no_match_box_caption(pct), color);
             return;
         }
         for m in tolerance_matches {
@@ -824,7 +864,8 @@ mod inner {
                 egui::StrokeKind::Outside,
             );
             if is_best {
-                painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
+                let pct = closeness_percent(m.score, method, summary);
+                paint_match_box_caption(painter, content, rect, &format!("{pct:.1}%"), color);
             }
         }
     }
@@ -1018,8 +1059,11 @@ mod inner {
                 }
                 if tolerance_match_count > 0 {
                     ui.weak(format!("{tolerance_match_count} match(es)"));
-                } else if summary.peaks_above > 0 {
-                    ui.weak(format!("{} ≥ tolerance (cells)", summary.peaks_above));
+                } else {
+                    ui.weak("0 matches");
+                    if summary.peaks_above > 0 {
+                        ui.weak(format!("{} ≥ tolerance (cells)", summary.peaks_above));
+                    }
                 }
             }
             if tolerance_match_count > MANY_MATCH_BOX_THRESHOLD {
@@ -1066,6 +1110,7 @@ mod inner {
         bottom: Option<i32>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f64,
         refresh_gen: u64,
         close_matches_distance: i32,
@@ -1084,6 +1129,7 @@ mod inner {
             by,
             blur,
             method,
+            plane_flip,
             tolerance,
             refresh_gen,
             close_matches_distance,
@@ -1189,6 +1235,7 @@ mod inner {
                 bottom,
                 self.match_check.blur,
                 self.match_check.match_method,
+                self.match_check.plane_flip,
                 self.match_check.tolerance,
                 refresh_gen,
                 close_matches_distance,
@@ -1252,6 +1299,7 @@ mod inner {
                 mask_path,
                 self.match_check.blur,
                 self.match_check.match_method,
+                self.match_check.plane_flip,
                 tolerance,
                 close_matches_distance,
             );
@@ -1269,11 +1317,11 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
-        hover_at_image, live_refresh_due, scale_image_buf, scores_to_heatmap_rgba,
-        should_paint_match_boxes, MatchCheckSettings, MatchSummary, LIVE_INTERVAL,
-        MANY_MATCH_BOX_THRESHOLD,
+        fingerprint, hover_at_image, live_refresh_due, no_match_box_caption, scale_image_buf,
+        scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings, MatchSummary,
+        LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
-    use sqyre_domain::MatchMethod;
+    use sqyre_domain::{MatchMethod, PlaneFlip};
     use sqyre_match::{ImageBuf, MatchMap};
     use web_time::{Duration, Instant};
 
@@ -1466,6 +1514,12 @@ mod tests {
     }
 
     #[test]
+    fn no_match_box_caption_includes_percent_and_status() {
+        assert_eq!(no_match_box_caption(87.3), "87.3% · no match");
+        assert_eq!(no_match_box_caption(0.0), "0.0% · no match");
+    }
+
+    #[test]
     fn arm_live_cycle_is_one_shot_until_flags_clear() {
         let now = Instant::now();
         let mut settings = MatchCheckSettings::default();
@@ -1485,5 +1539,41 @@ mod tests {
             false,
             now + LIVE_INTERVAL + Duration::from_millis(1)
         ));
+    }
+
+    #[test]
+    fn fingerprint_includes_plane_flip() {
+        let none = fingerprint(
+            "Prog",
+            "Item",
+            "",
+            0,
+            0,
+            10,
+            10,
+            0,
+            MatchMethod::CcoeffNormed,
+            PlaneFlip::None,
+            0.95,
+            0,
+            8,
+        );
+        let horiz = fingerprint(
+            "Prog",
+            "Item",
+            "",
+            0,
+            0,
+            10,
+            10,
+            0,
+            MatchMethod::CcoeffNormed,
+            PlaneFlip::Horizontal,
+            0.95,
+            0,
+            8,
+        );
+        assert_ne!(none, horiz);
+        assert!(horiz.contains("Horizontal"));
     }
 }
