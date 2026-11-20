@@ -137,7 +137,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 resvg = { version = "0.49", default-features = false }
 rustautogui = { version = "2.5", default-features = false, features = ["lite"] }
 arboard = { version = "3", default-features = false }
-x11 = { version = "2", features = ["xlib", "xinerama", "xfixes", "xrandr"] }
+x11 = { version = "2", features = ["xlib", "xinerama", "xfixes", "xrandr", "xtest"] }
 rdev = { version = "0.5", features = ["unstable_grab"] }
 parking_lot = "0.13"
 jni = { version = "0.22", default-features = false }

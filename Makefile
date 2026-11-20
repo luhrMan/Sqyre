@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
+.PHONY: all sqyre probe overlay-sandbox overlay-hold-check release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
 	coverage coverage-floors check check-fmt fmt clippy deny machete \
 	clean-sweep release-gate run ocr-models appimage flatpak install-desktop docs-media wasm wasm-check android android-check android-emulator android-emulator-headless android-emulator-stop help
 
@@ -87,6 +87,7 @@ help:
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
+	@echo "  overlay-hold-check - live Wayland hold regression (ignored test; needs DISPLAY)"
 	@echo "  release      - fmt + check, then cargo build --release (thin LTO) -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: dist profile + OCR embedded -> $(BIN)/sqyre-bundle/ (shipping)"
 	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (no LTO / no check gate)"
@@ -150,6 +151,11 @@ probe: $(BIN)
 overlay-sandbox: $(BIN)
 	$(CARGO) build -p sqyre-overlay --features sandbox --bin overlay_sandbox $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/overlay_sandbox$(BIN_EXT) $(BIN)/overlay_sandbox$(BIN_EXT)
+
+# Live Mutter/XWayland regression: held Button1 must survive the overlay stall-raise
+# window while click-through is armed. Not run in CI (needs a graphical session).
+overlay-hold-check:
+	$(CARGO) test -p sqyre-overlay --lib live_click_through_hold -- --ignored --nocapture $(CARGO_FLAGS)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
 # SQYRE_SKIP_GATE=1 skips it: CI release builds set it because the check job
