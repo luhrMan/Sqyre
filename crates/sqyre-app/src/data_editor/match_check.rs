@@ -775,6 +775,11 @@ mod inner {
         format!("{closeness_pct:.1}% · no match")
     }
 
+    /// Hover inspection must not run while a drag is active (pan or click).
+    pub(crate) fn heatmap_hover_allowed(pointer_down: bool, pan_dragging: bool) -> bool {
+        !pointer_down && !pan_dragging
+    }
+
     fn paint_match_box_caption(
         painter: &egui::Painter,
         content: egui::Rect,
@@ -903,19 +908,14 @@ mod inner {
         );
 
         *hover = None;
-        let hover_resp = ui.interact(
-            content,
-            ui.id().with("match_check_hover"),
-            egui::Sense::hover(),
-        );
-        hover_resp.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Image,
-                true,
-                "Pixel match map — hover a pixel to inspect its match closeness",
-            )
-        });
-        if let Some(pos) = hover_resp.hover_pos() {
+        // Read the pointer without `ui.interact` — a second interactable over the
+        // panel's click_and_drag rect steals the drag and interrupts pan/scroll.
+        let pointer_down = ui.input(|i| i.pointer.any_down());
+        let hover_pos = heatmap_hover_allowed(pointer_down, view.pan_drag.is_some())
+            .then(|| ui.input(|i| i.pointer.hover_pos()))
+            .flatten()
+            .filter(|p| content.contains(*p));
+        if let Some(pos) = hover_pos {
             let scale_x = image_size.x / content.width().max(1.0);
             let scale_y = image_size.y / content.height().max(1.0);
             let ix = ((pos.x - content.min.x) * scale_x).floor() as i32;
@@ -931,16 +931,14 @@ mod inner {
                 tolerance,
             );
         }
-        if let Some(h) = hover {
+        if let (Some(h), Some(pointer)) = (hover.as_ref(), hover_pos) {
             let tol_pct = if method.is_normed() {
                 Some(tolerance * 100.0)
             } else {
                 None
             };
-            if let Some(pointer) = hover_resp.hover_pos() {
-                paint_mouse_follow_tooltip(ui.ctx(), pointer, viewport, h, tol_pct);
-                ui.ctx().request_repaint();
-            }
+            paint_mouse_follow_tooltip(ui.ctx(), pointer, viewport, h, tol_pct);
+            ui.ctx().request_repaint();
         }
     }
 
@@ -1317,9 +1315,9 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
-        fingerprint, hover_at_image, live_refresh_due, no_match_box_caption, scale_image_buf,
-        scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings, MatchSummary,
-        LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
+        fingerprint, heatmap_hover_allowed, hover_at_image, live_refresh_due, no_match_box_caption,
+        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings,
+        MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::{MatchMethod, PlaneFlip};
     use sqyre_match::{ImageBuf, MatchMap};
@@ -1517,6 +1515,14 @@ mod tests {
     fn no_match_box_caption_includes_percent_and_status() {
         assert_eq!(no_match_box_caption(87.3), "87.3% · no match");
         assert_eq!(no_match_box_caption(0.0), "0.0% · no match");
+    }
+
+    #[test]
+    fn heatmap_hover_skips_while_pointer_or_pan_drag_active() {
+        assert!(heatmap_hover_allowed(false, false));
+        assert!(!heatmap_hover_allowed(true, false));
+        assert!(!heatmap_hover_allowed(false, true));
+        assert!(!heatmap_hover_allowed(true, true));
     }
 
     #[test]

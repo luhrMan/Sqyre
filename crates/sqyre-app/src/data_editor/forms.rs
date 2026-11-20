@@ -556,17 +556,17 @@ impl DataEditor {
                     }
                 }
             }
-            match_settings::paint_match_settings_advanced(
+            match_settings::paint_match_settings(
                 ui,
                 &mut self.match_check.tolerance,
                 &mut self.match_check.blur,
                 &mut self.match_check.match_method,
-                |ui, method| {
-                    crate::widgets::advanced_section(ui, "de_matchcheck_match", |ui| {
-                        match_settings::paint_match_method(ui, method);
-                    });
-                },
+                false,
             );
+            crate::widgets::advanced_section(ui, "de_matchcheck_match", |ui| {
+                match_settings::paint_match_method(ui, &mut self.match_check.match_method);
+                match_settings::paint_plane_flip(ui, &mut self.match_check.plane_flip);
+            });
             help::tip(
                 crate::widgets::wrap_unit(ui, |ui| {
                     self.paint_monitor_slot(ui);
@@ -604,6 +604,10 @@ impl DataEditor {
             }
             self.sync_coord_preview_view();
             let now = web_time::Instant::now();
+            // Soft recapture / rematch mid-gesture drops egui's drag target and
+            // can resize the underlay — wait until the pointer is up.
+            let preview_interacting =
+                self.coord_preview.pan_drag.is_some() || ui.input(|i| i.pointer.primary_down());
             let manual_force = std::mem::take(&mut self.preview_force);
             if manual_force {
                 // ↻: hard recapture + rematch once the new display is ready.
@@ -612,6 +616,7 @@ impl DataEditor {
                 self.match_check.paused = false;
             }
             if can_compute
+                && !preview_interacting
                 && super::match_check::live_refresh_due(
                     &self.match_check,
                     self.match_check_pending.is_some(),
@@ -662,7 +667,12 @@ impl DataEditor {
                     ui.weak("Computing heatmap…");
                 }
             });
-            let soft = std::mem::take(&mut self.match_check.capture_once);
+            // Keep one-shot flags parked while the user is dragging.
+            let soft = if preview_interacting {
+                false
+            } else {
+                std::mem::take(&mut self.match_check.capture_once)
+            };
             let refresh = if manual_force {
                 crate::preview_tooltip::PreviewRefresh::Hard
             } else if soft {
@@ -705,6 +715,7 @@ impl DataEditor {
                             by,
                             self.match_check.blur,
                             self.match_check.match_method,
+                            self.match_check.plane_flip,
                             self.match_check.tolerance,
                             self.match_check.refresh_gen,
                             settings.runtime.image_search_close_matches_distance,
@@ -778,27 +789,34 @@ impl DataEditor {
                     _ => None,
                 };
                 // Rematch only after the soft/hard panel capture has a ready frame.
-                if self.match_check.awaiting_panel && display.is_some() && !panel_pending {
+                if !preview_interacting
+                    && self.match_check.awaiting_panel
+                    && display.is_some()
+                    && !panel_pending
+                {
                     self.match_check.awaiting_panel = false;
                     self.match_check.rematch_once = true;
                 }
-                let force_match = self.match_check.rematch_once;
-                self.request_match_check(
-                    catalog,
-                    lx,
-                    ty,
-                    rx,
-                    by,
-                    force_match,
-                    settings.runtime.image_search_close_matches_distance,
-                    display,
-                );
+                let force_match = !preview_interacting && self.match_check.rematch_once;
+                if !preview_interacting || self.match_check_cache.is_none() {
+                    self.request_match_check(
+                        catalog,
+                        lx,
+                        ty,
+                        rx,
+                        by,
+                        force_match,
+                        settings.runtime.image_search_close_matches_distance,
+                        display,
+                    );
+                }
                 if self.match_check_pending.is_some() {
                     self.match_check.rematch_once = false;
                 }
             }
             if can_compute {
-                if refresh != crate::preview_tooltip::PreviewRefresh::None
+                if preview_interacting
+                    || refresh != crate::preview_tooltip::PreviewRefresh::None
                     || self.match_check_pending.is_some()
                     || self.match_check.rematch_once
                     || self.match_check.awaiting_panel
