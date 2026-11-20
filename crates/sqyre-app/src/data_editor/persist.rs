@@ -194,8 +194,8 @@ impl DataEditor {
                         Ok(()) => {
                             self.selected_program = Some(name.clone());
                             self.form_name = name;
-                            self.form_process_path.clear();
-                            self.form_window_title.clear();
+                            self.form_program.process_path.clear();
+                            self.form_program.window_title.clear();
                             self.form_tags.clear();
                             self.tag_draft.clear();
                             Ok("Created program.")
@@ -358,7 +358,7 @@ impl DataEditor {
                 let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
-                if self.form_atlas_members.is_empty() {
+                if self.form_atlas.members.is_empty() {
                     self.set_err("Add at least one Collection to the Atlas.");
                     return;
                 }
@@ -367,7 +367,7 @@ impl DataEditor {
                 });
                 let atlas = ProgramAtlas {
                     name: name.clone(),
-                    collections: self.form_atlas_members.clone(),
+                    collections: self.form_atlas.members.clone(),
                 };
                 match catalog.upsert_atlas(&prog, atlas) {
                     Ok(()) => {
@@ -595,8 +595,8 @@ impl DataEditor {
                             catalog,
                             icons,
                             &old,
-                            self.form_process_path.clone(),
-                            self.form_window_title.clone(),
+                            self.form_program.process_path.clone(),
+                            self.form_program.window_title.clone(),
                             self.form_tags.clone(),
                         )
                         .map(|()| None)
@@ -615,8 +615,8 @@ impl DataEditor {
                                 catalog,
                                 icons,
                                 &new_name,
-                                self.form_process_path.clone(),
-                                self.form_window_title.clone(),
+                                self.form_program.process_path.clone(),
+                                self.form_program.window_title.clone(),
                                 self.form_tags.clone(),
                             )?;
                             for m in macros.iter_mut() {
@@ -647,8 +647,8 @@ impl DataEditor {
                             catalog,
                             icons,
                             &new_name,
-                            self.form_process_path.clone(),
-                            self.form_window_title.clone(),
+                            self.form_program.process_path.clone(),
+                            self.form_program.window_title.clone(),
                             self.form_tags.clone(),
                         )?;
                         self.selected_program = Some(new_name.clone());
@@ -718,10 +718,10 @@ impl DataEditor {
         let prog = self.selected_program_persist()?;
         let cols = parse_i32(&self.form_cols).unwrap_or(1);
         let rows = parse_i32(&self.form_rows).unwrap_or(1);
-        let stack = parse_i32(&self.form_stack_max).unwrap_or(0);
+        let stack = parse_i32(&self.form_item.stack_max).unwrap_or(0);
         let item = ProgramItem {
             name: new_name.to_string(),
-            mask: self.form_mask.clone(),
+            mask: self.form_item.mask.clone(),
             stack_max: stack,
             grid_cols: cols,
             grid_rows: rows,
@@ -764,8 +764,8 @@ impl DataEditor {
         let pt = ProgramPoint {
             name: new_name.to_string(),
             monitor: self.form_monitor.max(1),
-            x: ScalarValue::parse_edit(&self.form_x),
-            y: ScalarValue::parse_edit(&self.form_y),
+            x: ScalarValue::parse_edit(&self.form_point.x),
+            y: ScalarValue::parse_edit(&self.form_point.y),
         };
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
@@ -802,10 +802,10 @@ impl DataEditor {
         let sa = ProgramSearchArea {
             name: new_name.to_string(),
             monitor: self.form_monitor.max(1),
-            left_x: ScalarValue::parse_edit(&self.form_left),
-            top_y: ScalarValue::parse_edit(&self.form_top),
-            right_x: ScalarValue::parse_edit(&self.form_right),
-            bottom_y: ScalarValue::parse_edit(&self.form_bottom),
+            left_x: ScalarValue::parse_edit(&self.form_rect.left),
+            top_y: ScalarValue::parse_edit(&self.form_rect.top),
+            right_x: ScalarValue::parse_edit(&self.form_rect.right),
+            bottom_y: ScalarValue::parse_edit(&self.form_rect.bottom),
         };
         let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
@@ -853,7 +853,7 @@ impl DataEditor {
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self.selected_program_persist()?;
-        let shape = if self.form_shape == "circle" {
+        let shape = if self.form_mask.shape == "circle" {
             sqyre_domain::MaskShape::Circle
         } else {
             sqyre_domain::MaskShape::Rectangle
@@ -861,12 +861,12 @@ impl DataEditor {
         let mask = ProgramMask {
             name: new_name.to_string(),
             shape,
-            center_x: self.form_center_x.trim().to_string(),
-            center_y: self.form_center_y.trim().to_string(),
-            base: self.form_base.trim().to_string(),
-            height: self.form_height.trim().to_string(),
-            radius: self.form_radius.trim().to_string(),
-            inverse: self.form_inverse,
+            center_x: self.form_mask.center_x.trim().to_string(),
+            center_y: self.form_mask.center_y.trim().to_string(),
+            base: self.form_mask.base.trim().to_string(),
+            height: self.form_mask.height.trim().to_string(),
+            radius: self.form_mask.radius.trim().to_string(),
+            inverse: self.form_mask.inverse,
         };
         let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
@@ -935,7 +935,7 @@ impl DataEditor {
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self.selected_program_persist()?;
-        if self.form_atlas_members.is_empty() {
+        if self.form_atlas.members.is_empty() {
             return Err(sqyre_persist::PersistError::Message(
                 "atlas needs at least one collection".into(),
             ));
@@ -949,7 +949,7 @@ impl DataEditor {
                     .collect::<std::collections::BTreeSet<_>>()
             })
             .unwrap_or_default();
-        for m in &self.form_atlas_members {
+        for m in &self.form_atlas.members {
             if !known.contains(m) {
                 return Err(sqyre_persist::PersistError::Message(format!(
                     "collection {m:?} not in program {prog}"
@@ -958,7 +958,7 @@ impl DataEditor {
         }
         let atlas = ProgramAtlas {
             name: new_name.to_string(),
-            collections: self.form_atlas_members.clone(),
+            collections: self.form_atlas.members.clone(),
         };
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {

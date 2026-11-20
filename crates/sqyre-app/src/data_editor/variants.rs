@@ -407,10 +407,12 @@ impl DataEditor {
             by,
         );
         self.form_monitor = monitor;
-        self.form_left = lx.to_string();
-        self.form_top = ty.to_string();
-        self.form_right = rx.to_string();
-        self.form_bottom = by.to_string();
+        self.form_rect.load_displays(
+            lx.to_string(),
+            ty.to_string(),
+            rx.to_string(),
+            by.to_string(),
+        );
         self.form_search_area = coord.0.clone();
         self.coord_preview.reset();
         self.coord_preview_key = None;
@@ -464,10 +466,10 @@ impl DataEditor {
         let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
             catalog,
             self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
+            &self.form_rect.left,
+            &self.form_rect.top,
+            &self.form_rect.right,
+            &self.form_rect.bottom,
         ) else {
             return Err(format!(
                 "{}: invalid capture dimensions.",
@@ -616,9 +618,11 @@ impl DataEditor {
                     return;
                 }
             };
-            if let Err(e) =
-                validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
-            {
+            if let Err(e) = validate_item_grid_fields(
+                &self.form_cols,
+                &self.form_rows,
+                &self.form_item.stack_max,
+            ) {
                 self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return;
             }
@@ -631,8 +635,8 @@ impl DataEditor {
             };
             let item = ProgramItem {
                 name: requested,
-                mask: self.form_mask.clone(),
-                stack_max: parse_i32(&self.form_stack_max).unwrap_or(0),
+                mask: self.form_item.mask.clone(),
+                stack_max: parse_i32(&self.form_item.stack_max).unwrap_or(0),
                 grid_cols: parse_i32(&self.form_cols).unwrap_or(1),
                 grid_rows: parse_i32(&self.form_rows).unwrap_or(1),
                 tags: self.form_tags.clone(),
@@ -868,10 +872,10 @@ mod tests {
         assert_eq!(ed.selected_entity.as_deref(), Some("Potion"));
         assert_eq!(ed.form_name, "Potion");
         assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
-        assert_eq!(ed.form_left, "10");
-        assert_eq!(ed.form_top, "20");
-        assert_eq!(ed.form_right, "110");
-        assert_eq!(ed.form_bottom, "120");
+        assert_eq!(ed.form_rect.left, "10");
+        assert_eq!(ed.form_rect.top, "20");
+        assert_eq!(ed.form_rect.right, "110");
+        assert_eq!(ed.form_rect.bottom, "120");
     }
 
     #[test]

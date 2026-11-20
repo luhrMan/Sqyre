@@ -243,9 +243,14 @@ impl DataEditor {
             is_dark,
             active_macro,
             &mut [
-                (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
                 (
-                    &mut self.form_y,
+                    &mut self.form_point.x,
+                    CardinalEdge::Left,
+                    "X",
+                    help::DE_POINT_X,
+                ),
+                (
+                    &mut self.form_point.y,
                     CardinalEdge::Bottom,
                     "Y",
                     help::DE_POINT_Y,
@@ -343,21 +348,21 @@ impl DataEditor {
     pub(crate) fn reset_item_param_fields(&mut self) {
         self.form_cols = "1".into();
         self.form_rows = "1".into();
-        self.form_stack_max = "0".into();
-        self.form_mask.clear();
+        self.form_item.stack_max = "0".into();
+        self.form_item.mask.clear();
         self.form_tags.clear();
         self.tag_draft.clear();
     }
 
     pub(crate) fn reset_mask_form(&mut self) {
         self.form_name.clear();
-        self.form_shape = "rectangle".into();
-        self.form_center_x = "50".into();
-        self.form_center_y = "50".into();
-        self.form_base.clear();
-        self.form_height.clear();
-        self.form_radius.clear();
-        self.form_inverse = false;
+        self.form_mask.shape = "rectangle".into();
+        self.form_mask.center_x = "50".into();
+        self.form_mask.center_y = "50".into();
+        self.form_mask.base.clear();
+        self.form_mask.height.clear();
+        self.form_mask.radius.clear();
+        self.form_mask.inverse = false;
     }
 
     pub(crate) fn reset_collection_form(&mut self) {
@@ -368,8 +373,8 @@ impl DataEditor {
 
     pub(crate) fn reset_atlas_form(&mut self) {
         self.form_name.clear();
-        self.form_atlas_members.clear();
-        self.form_atlas_add.clear();
+        self.form_atlas.members.clear();
+        self.form_atlas.add.clear();
     }
 
     /// Returns true when a tag was committed this frame (auto-Update).
@@ -560,10 +565,10 @@ impl DataEditor {
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,
-                &self.form_left,
-                &self.form_top,
-                &self.form_right,
-                &self.form_bottom,
+                &self.form_rect.left,
+                &self.form_rect.top,
+                &self.form_rect.right,
+                &self.form_rect.bottom,
             );
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),

@@ -12,32 +12,32 @@ use crate::image_view;
 use sqyre_domain::PROGRAM_DELIMITER;
 
 impl DataEditor {
-    /// The four area-edge chips (`form_top/bottom/left/right`) shared by the
+    /// The four area-edge chips (`form_rect.top/bottom/left/right`) shared by the
     /// point, search-area, and collection bounds forms.
     pub(super) fn area_edge_fields(
         &mut self,
     ) -> [(&mut String, CardinalEdge, &'static str, &'static str); 4] {
         [
             (
-                &mut self.form_top,
+                &mut self.form_rect.top,
                 CardinalEdge::Top,
                 "TopY",
                 help::DE_AREA_TOP,
             ),
             (
-                &mut self.form_bottom,
+                &mut self.form_rect.bottom,
                 CardinalEdge::Bottom,
                 "BottomY",
                 help::DE_AREA_BOTTOM,
             ),
             (
-                &mut self.form_left,
+                &mut self.form_rect.left,
                 CardinalEdge::Left,
                 "LeftX",
                 help::DE_AREA_LEFT,
             ),
             (
-                &mut self.form_right,
+                &mut self.form_rect.right,
                 CardinalEdge::Right,
                 "RightX",
                 help::DE_AREA_RIGHT,
@@ -65,8 +65,8 @@ impl DataEditor {
         let (x, y) = form_absolute_xy(
             catalog,
             self.form_monitor,
-            form_coord_literal(&self.form_x),
-            form_coord_literal(&self.form_y),
+            form_coord_literal(&self.form_point.x),
+            form_coord_literal(&self.form_point.y),
         );
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
@@ -92,10 +92,10 @@ impl DataEditor {
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
             self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
+            &self.form_rect.left,
+            &self.form_rect.top,
+            &self.form_rect.right,
+            &self.form_rect.bottom,
         );
         paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
@@ -225,18 +225,18 @@ impl DataEditor {
         if !has_image {
             crate::widgets::pair_labeled(ui, egui_phosphor::regular::SHAPES, "Shape", |ui| {
                 help::tip(
-                    ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle"),
+                    ui.selectable_value(&mut self.form_mask.shape, "rectangle".into(), "Rectangle"),
                     help::DE_MASK_SHAPE,
                 );
                 help::tip(
-                    ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle"),
+                    ui.selectable_value(&mut self.form_mask.shape, "circle".into(), "Circle"),
                     help::DE_MASK_SHAPE,
                 );
             });
             ui.horizontal(|ui| {
                 help::tip(
                     ui.checkbox(
-                        &mut self.form_inverse,
+                        &mut self.form_mask.inverse,
                         "Inverse (shape included, rest excluded)",
                     ),
                     help::DE_MASK_INVERSE,
@@ -267,22 +267,22 @@ impl DataEditor {
                     ui,
                     egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "Center X %",
-                    &mut self.form_center_x,
+                    &mut self.form_mask.center_x,
                     "Horizontal center of the shape (0–100%).",
                 );
                 numeric(
                     ui,
                     egui_phosphor::regular::ARROWS_VERTICAL,
                     "Center Y %",
-                    &mut self.form_center_y,
+                    &mut self.form_mask.center_y,
                     "Vertical center of the shape (0–100%).",
                 );
-                if self.form_shape == "circle" {
+                if self.form_mask.shape == "circle" {
                     numeric(
                         ui,
                         egui_phosphor::regular::CIRCLE,
                         "Radius",
-                        &mut self.form_radius,
+                        &mut self.form_mask.radius,
                         "Circle radius as a percent of the search area.",
                     );
                 } else {
@@ -290,14 +290,14 @@ impl DataEditor {
                         ui,
                         egui_phosphor::regular::ARROWS_LEFT_RIGHT,
                         "Base",
-                        &mut self.form_base,
+                        &mut self.form_mask.base,
                         "Rectangle width as a percent of the search area.",
                     );
                     numeric(
                         ui,
                         egui_phosphor::regular::ARROWS_DOWN_UP,
                         "Height",
-                        &mut self.form_height,
+                        &mut self.form_mask.height,
                         "Rectangle height as a percent of the search area.",
                     );
                 }
@@ -351,13 +351,13 @@ impl DataEditor {
         }
 
         let shape = MaskShapeParams {
-            circle: self.form_shape == "circle",
-            inverse: self.form_inverse,
-            center_x: mask_percent(&self.form_center_x, 50.0),
-            center_y: mask_percent(&self.form_center_y, 50.0),
-            base: mask_percent(&self.form_base, 50.0),
-            height: mask_percent(&self.form_height, 50.0),
-            radius: mask_percent(&self.form_radius, 50.0),
+            circle: self.form_mask.shape == "circle",
+            inverse: self.form_mask.inverse,
+            center_x: mask_percent(&self.form_mask.center_x, 50.0),
+            center_y: mask_percent(&self.form_mask.center_y, 50.0),
+            base: mask_percent(&self.form_mask.base, 50.0),
+            height: mask_percent(&self.form_mask.height, 50.0),
+            radius: mask_percent(&self.form_mask.radius, 50.0),
         };
         let png = mask_path
             .as_ref()
@@ -413,10 +413,10 @@ impl DataEditor {
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
             self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
+            &self.form_rect.left,
+            &self.form_rect.top,
+            &self.form_rect.right,
+            &self.form_rect.bottom,
         );
         self.sync_coord_preview_view();
         let refresh = if std::mem::take(&mut self.preview_force) {

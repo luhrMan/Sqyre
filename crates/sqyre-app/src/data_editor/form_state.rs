@@ -91,14 +91,14 @@ impl FormState for ProgramsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         ed.form_name = ed.selected_program.clone().unwrap_or_default();
         if let Some(p) = ed.selected_program.as_deref().and_then(|n| catalog.get(n)) {
-            ed.form_process_path = p.process_path.clone();
-            ed.form_window_title = p.window_title.clone();
+            ed.form_program.process_path = p.process_path.clone();
+            ed.form_program.window_title = p.window_title.clone();
             ed.form_tags = p.tags.clone();
             let name = ed.form_name.trim().to_string();
             ed.form_tags.retain(|tag| tag.trim() != name);
         } else {
-            ed.form_process_path.clear();
-            ed.form_window_title.clear();
+            ed.form_program.process_path.clear();
+            ed.form_program.window_title.clear();
             ed.form_tags.clear();
         }
         ed.tag_draft.clear();
@@ -107,8 +107,8 @@ impl FormState for ProgramsForm {
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let Some(sel) = ed.selected_program.as_deref() else {
             return !ed.form_name.trim().is_empty()
-                || !ed.form_process_path.is_empty()
-                || !ed.form_window_title.is_empty()
+                || !ed.form_program.process_path.is_empty()
+                || !ed.form_program.window_title.is_empty()
                 || !ed.form_tags.is_empty();
         };
         let bound = catalog.get(sel);
@@ -116,8 +116,8 @@ impl FormState for ProgramsForm {
         let title = bound.map(|p| p.window_title.as_str()).unwrap_or("");
         let tags = bound.map(|p| p.tags.as_slice()).unwrap_or(&[]);
         ed.form_name.trim() != sel
-            || ed.form_process_path != path
-            || ed.form_window_title != title
+            || ed.form_program.process_path != path
+            || ed.form_program.window_title != title
             || ed.form_tags != tags
     }
 
@@ -145,8 +145,8 @@ impl FormState for ItemsForm {
         ed.form_name = item.name.clone();
         ed.form_cols = item.grid_cols.to_string();
         ed.form_rows = item.grid_rows.to_string();
-        ed.form_stack_max = item.stack_max.to_string();
-        ed.form_mask = item.mask.clone();
+        ed.form_item.stack_max = item.stack_max.to_string();
+        ed.form_item.mask = item.mask.clone();
         ed.form_tags = item.tags.clone();
     }
 
@@ -163,14 +163,15 @@ impl FormState for ItemsForm {
         ed.form_name.trim() != item.name
             || parse_i32(&ed.form_cols) != Some(item.grid_cols)
             || parse_i32(&ed.form_rows) != Some(item.grid_rows)
-            || parse_i32(&ed.form_stack_max) != Some(item.stack_max)
-            || ed.form_mask != item.mask
+            || parse_i32(&ed.form_item.stack_max) != Some(item.stack_max)
+            || ed.form_item.mask != item.mask
             || ed.form_tags != item.tags
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
         ed.selected_program.is_some()
-            && validate_item_grid_fields(&ed.form_cols, &ed.form_rows, &ed.form_stack_max).is_ok()
+            && validate_item_grid_fields(&ed.form_cols, &ed.form_rows, &ed.form_item.stack_max)
+                .is_ok()
     }
 }
 
@@ -193,8 +194,8 @@ impl FormState for PointsForm {
         };
         ed.form_name = pt.name.clone();
         ed.form_monitor = pt.monitor.max(1);
-        ed.form_x = pt.x.as_display();
-        ed.form_y = pt.y.as_display();
+        ed.form_point.x = pt.x.as_display();
+        ed.form_point.y = pt.y.as_display();
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -214,16 +215,16 @@ impl FormState for PointsForm {
         };
         ed.form_name.trim() != pt.name
             || ed.form_monitor.max(1) != pt.monitor.max(1)
-            || ScalarValue::parse_edit(&ed.form_x) != pt.x
-            || ScalarValue::parse_edit(&ed.form_y) != pt.y
+            || ScalarValue::parse_edit(&ed.form_point.x) != pt.x
+            || ScalarValue::parse_edit(&ed.form_point.y) != pt.y
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
         ed.selected_program.is_some()
-            && !ed.form_x.trim().is_empty()
-            && !ed.form_y.trim().is_empty()
-            && !validate_numeric_expression(&ed.form_x, active_macro).blocks_submit()
-            && !validate_numeric_expression(&ed.form_y, active_macro).blocks_submit()
+            && !ed.form_point.x.trim().is_empty()
+            && !ed.form_point.y.trim().is_empty()
+            && !validate_numeric_expression(&ed.form_point.x, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.form_point.y, active_macro).blocks_submit()
     }
 }
 
@@ -250,10 +251,12 @@ impl FormState for SearchAreasForm {
         };
         ed.form_name = sa.name.clone();
         ed.form_monitor = sa.monitor.max(1);
-        ed.form_left = sa.left_x.as_display();
-        ed.form_top = sa.top_y.as_display();
-        ed.form_right = sa.right_x.as_display();
-        ed.form_bottom = sa.bottom_y.as_display();
+        ed.form_rect.load_displays(
+            sa.left_x.as_display(),
+            sa.top_y.as_display(),
+            sa.right_x.as_display(),
+            sa.bottom_y.as_display(),
+        );
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -277,29 +280,29 @@ impl FormState for SearchAreasForm {
         };
         ed.form_name.trim() != sa.name
             || ed.form_monitor.max(1) != sa.monitor.max(1)
-            || ScalarValue::parse_edit(&ed.form_left) != sa.left_x
-            || ScalarValue::parse_edit(&ed.form_top) != sa.top_y
-            || ScalarValue::parse_edit(&ed.form_right) != sa.right_x
-            || ScalarValue::parse_edit(&ed.form_bottom) != sa.bottom_y
+            || ScalarValue::parse_edit(&ed.form_rect.left) != sa.left_x
+            || ScalarValue::parse_edit(&ed.form_rect.top) != sa.top_y
+            || ScalarValue::parse_edit(&ed.form_rect.right) != sa.right_x
+            || ScalarValue::parse_edit(&ed.form_rect.bottom) != sa.bottom_y
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
         ed.selected_program.is_some()
-            && !ed.form_left.trim().is_empty()
-            && !ed.form_top.trim().is_empty()
-            && !ed.form_right.trim().is_empty()
-            && !ed.form_bottom.trim().is_empty()
+            && !ed.form_rect.left.trim().is_empty()
+            && !ed.form_rect.top.trim().is_empty()
+            && !ed.form_rect.right.trim().is_empty()
+            && !ed.form_rect.bottom.trim().is_empty()
             && validate_search_area_literal_bounds(
-                &ed.form_left,
-                &ed.form_top,
-                &ed.form_right,
-                &ed.form_bottom,
+                &ed.form_rect.left,
+                &ed.form_rect.top,
+                &ed.form_rect.right,
+                &ed.form_rect.bottom,
             )
             .is_ok()
-            && !validate_numeric_expression(&ed.form_left, active_macro).blocks_submit()
-            && !validate_numeric_expression(&ed.form_top, active_macro).blocks_submit()
-            && !validate_numeric_expression(&ed.form_right, active_macro).blocks_submit()
-            && !validate_numeric_expression(&ed.form_bottom, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.form_rect.left, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.form_rect.top, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.form_rect.right, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.form_rect.bottom, active_macro).blocks_submit()
     }
 }
 
@@ -320,13 +323,13 @@ impl FormState for MasksForm {
             return;
         };
         ed.form_name = mask.name.clone();
-        ed.form_shape = mask.shape.as_str().to_string();
-        ed.form_center_x = mask.center_x.clone();
-        ed.form_center_y = mask.center_y.clone();
-        ed.form_base = mask.base.clone();
-        ed.form_height = mask.height.clone();
-        ed.form_radius = mask.radius.clone();
-        ed.form_inverse = mask.inverse;
+        ed.form_mask.shape = mask.shape.as_str().to_string();
+        ed.form_mask.center_x = mask.center_x.clone();
+        ed.form_mask.center_y = mask.center_y.clone();
+        ed.form_mask.base = mask.base.clone();
+        ed.form_mask.height = mask.height.clone();
+        ed.form_mask.radius = mask.radius.clone();
+        ed.form_mask.inverse = mask.inverse;
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -340,33 +343,33 @@ impl FormState for MasksForm {
             return true;
         };
         ed.form_name.trim() != mask.name
-            || ed.form_shape != mask.shape.as_str()
-            || ed.form_center_x != mask.center_x
-            || ed.form_center_y != mask.center_y
-            || ed.form_base != mask.base
-            || ed.form_height != mask.height
-            || ed.form_radius != mask.radius
-            || ed.form_inverse != mask.inverse
+            || ed.form_mask.shape != mask.shape.as_str()
+            || ed.form_mask.center_x != mask.center_x
+            || ed.form_mask.center_y != mask.center_y
+            || ed.form_mask.base != mask.base
+            || ed.form_mask.height != mask.height
+            || ed.form_mask.radius != mask.radius
+            || ed.form_mask.inverse != mask.inverse
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
         if ed.selected_program.is_none()
-            || (ed.form_shape != "rectangle" && ed.form_shape != "circle")
-            || ed.form_center_x.trim().is_empty()
-            || ed.form_center_y.trim().is_empty()
+            || (ed.form_mask.shape != "rectangle" && ed.form_mask.shape != "circle")
+            || ed.form_mask.center_x.trim().is_empty()
+            || ed.form_mask.center_y.trim().is_empty()
         {
             return false;
         }
-        if validate_numeric_expression(&ed.form_center_x, active_macro).blocks_submit()
-            || validate_numeric_expression(&ed.form_center_y, active_macro).blocks_submit()
+        if validate_numeric_expression(&ed.form_mask.center_x, active_macro).blocks_submit()
+            || validate_numeric_expression(&ed.form_mask.center_y, active_macro).blocks_submit()
         {
             return false;
         }
-        if ed.form_shape == "circle" {
-            !validate_numeric_expression(&ed.form_radius, active_macro).blocks_submit()
+        if ed.form_mask.shape == "circle" {
+            !validate_numeric_expression(&ed.form_mask.radius, active_macro).blocks_submit()
         } else {
-            !validate_numeric_expression(&ed.form_base, active_macro).blocks_submit()
-                && !validate_numeric_expression(&ed.form_height, active_macro).blocks_submit()
+            !validate_numeric_expression(&ed.form_mask.base, active_macro).blocks_submit()
+                && !validate_numeric_expression(&ed.form_mask.height, active_macro).blocks_submit()
         }
     }
 }
@@ -435,8 +438,8 @@ impl FormState for AtlasesForm {
             return;
         };
         ed.form_name = atlas.name.clone();
-        ed.form_atlas_members = atlas.collections.clone();
-        ed.form_atlas_add.clear();
+        ed.form_atlas.members = atlas.collections.clone();
+        ed.form_atlas.add.clear();
         ed.atlas_preview_key = Some((prog.to_string(), name.to_string()));
     }
 
@@ -445,16 +448,16 @@ impl FormState for AtlasesForm {
             ed.selected_program.as_deref(),
             ed.selected_entity.as_deref(),
         ) else {
-            return !ed.form_name.trim().is_empty() || !ed.form_atlas_members.is_empty();
+            return !ed.form_name.trim().is_empty() || !ed.form_atlas.members.is_empty();
         };
         let Some(atlas) = catalog.get(prog).and_then(|p| p.atlases.get(ent)) else {
             return true;
         };
-        ed.form_name.trim() != atlas.name || ed.form_atlas_members != atlas.collections
+        ed.form_name.trim() != atlas.name || ed.form_atlas.members != atlas.collections
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some() && !ed.form_atlas_members.is_empty()
+        ed.selected_program.is_some() && !ed.form_atlas.members.is_empty()
     }
 }
 
@@ -497,10 +500,12 @@ impl FormState for ScreenCapForm {
         ed.form_name = sa.name.clone();
         ed.form_search_area = format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER);
         ed.form_monitor = sa.monitor.max(1);
-        ed.form_left = sa.left_x.as_display();
-        ed.form_top = sa.top_y.as_display();
-        ed.form_right = sa.right_x.as_display();
-        ed.form_bottom = sa.bottom_y.as_display();
+        ed.form_rect.load_displays(
+            sa.left_x.as_display(),
+            sa.top_y.as_display(),
+            sa.right_x.as_display(),
+            sa.bottom_y.as_display(),
+        );
     }
 
     fn is_dirty(_ed: &DataEditor, _catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
@@ -550,16 +555,16 @@ impl FormState for MatchCheckForm {
                 return false;
             }
             validate_search_area_literal_bounds(
-                &ed.form_left,
-                &ed.form_top,
-                &ed.form_right,
-                &ed.form_bottom,
+                &ed.form_rect.left,
+                &ed.form_rect.top,
+                &ed.form_rect.right,
+                &ed.form_rect.bottom,
             )
             .is_ok()
-                && !validate_numeric_expression(&ed.form_left, active_macro).blocks_submit()
-                && !validate_numeric_expression(&ed.form_top, active_macro).blocks_submit()
-                && !validate_numeric_expression(&ed.form_right, active_macro).blocks_submit()
-                && !validate_numeric_expression(&ed.form_bottom, active_macro).blocks_submit()
+                && !validate_numeric_expression(&ed.form_rect.left, active_macro).blocks_submit()
+                && !validate_numeric_expression(&ed.form_rect.top, active_macro).blocks_submit()
+                && !validate_numeric_expression(&ed.form_rect.right, active_macro).blocks_submit()
+                && !validate_numeric_expression(&ed.form_rect.bottom, active_macro).blocks_submit()
         }
         #[cfg(not(feature = "native-runtime"))]
         {
@@ -620,7 +625,7 @@ mod tests {
         ed.form_name = "a/b".into();
         ed.form_cols = "1".into();
         ed.form_rows = "1".into();
-        ed.form_stack_max = "0".into();
+        ed.form_item.stack_max = "0".into();
         assert!(!valid_tab(EditorTab::Items, &ed, None));
     }
 
@@ -636,15 +641,15 @@ mod tests {
         ed.selected_program = Some("Game".into());
         ProgramsForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.form_name, "Game");
-        assert_eq!(ed.form_process_path, "/bin/game");
-        assert_eq!(ed.form_window_title, "Game Window");
+        assert_eq!(ed.form_program.process_path, "/bin/game");
+        assert_eq!(ed.form_program.window_title, "Game Window");
         assert_eq!(ed.form_tags, vec!["farm".to_string()]);
         assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
 
         // Renaming or editing identity fields marks dirty.
-        ed.form_process_path = "/bin/other".into();
+        ed.form_program.process_path = "/bin/other".into();
         assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
-        ed.form_process_path = "/bin/game".into();
+        ed.form_program.process_path = "/bin/game".into();
         ed.form_name = "Renamed".into();
         assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
 
@@ -652,8 +657,8 @@ mod tests {
         ed.selected_program = None;
         assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
         ed.form_name.clear();
-        ed.form_process_path.clear();
-        ed.form_window_title.clear();
+        ed.form_program.process_path.clear();
+        ed.form_program.window_title.clear();
         ed.form_tags.clear();
         assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
         ed.form_name = "New".into();
@@ -684,8 +689,8 @@ mod tests {
         assert_eq!(ed.form_name, "Potion");
         assert_eq!(ed.form_cols, "2");
         assert_eq!(ed.form_rows, "3");
-        assert_eq!(ed.form_stack_max, "5");
-        assert_eq!(ed.form_mask, "circle");
+        assert_eq!(ed.form_item.stack_max, "5");
+        assert_eq!(ed.form_item.mask, "circle");
         assert_eq!(ed.form_tags, vec!["heal".to_string()]);
         assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
         assert!(ItemsForm::is_valid(&ed, None));
@@ -756,13 +761,13 @@ mod tests {
         ed.selected_entity = Some("Spawn".into());
         PointsForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.form_name, "Spawn");
-        assert_eq!(ed.form_x, "10");
-        assert_eq!(ed.form_y, "20");
+        assert_eq!(ed.form_point.x, "10");
+        assert_eq!(ed.form_point.y, "20");
         assert!(!PointsForm::is_dirty(&ed, &cat, &settings));
         assert!(PointsForm::is_valid(&ed, None));
 
         // Blank coords are invalid.
-        ed.form_x.clear();
+        ed.form_point.x.clear();
         assert!(!PointsForm::is_valid(&ed, None));
     }
 

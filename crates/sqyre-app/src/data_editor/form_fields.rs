@@ -179,3 +179,90 @@ impl OverlayFields {
             || sqyre_domain::f32_changed(self.size, btn.size)
     }
 }
+
+/// Mask geometry draft fields.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MaskFields {
+    pub shape: String,
+    pub center_x: String,
+    pub center_y: String,
+    pub base: String,
+    pub height: String,
+    pub radius: String,
+    pub inverse: bool,
+}
+
+impl Default for MaskFields {
+    fn default() -> Self {
+        Self {
+            shape: "rectangle".into(),
+            center_x: "50".into(),
+            center_y: "50".into(),
+            base: String::new(),
+            height: String::new(),
+            radius: String::new(),
+            inverse: false,
+        }
+    }
+}
+
+/// Shared left/top/right/bottom draft (Search Areas, Screen Cap, Match Check).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct RectFields {
+    pub left: String,
+    pub top: String,
+    pub right: String,
+    pub bottom: String,
+}
+
+impl RectFields {
+    pub(crate) fn load_displays(
+        &mut self,
+        left: impl Into<String>,
+        top: impl Into<String>,
+        right: impl Into<String>,
+        bottom: impl Into<String>,
+    ) {
+        self.left = left.into();
+        self.top = top.into();
+        self.right = right.into();
+        self.bottom = bottom.into();
+    }
+}
+
+/// Program binding draft fields.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct ProgramFields {
+    pub process_path: String,
+    pub window_title: String,
+}
+
+/// Item-specific draft fields (mask name + stack max).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ItemFields {
+    pub mask: String,
+    pub stack_max: String,
+}
+
+impl Default for ItemFields {
+    fn default() -> Self {
+        Self {
+            mask: String::new(),
+            stack_max: "0".into(),
+        }
+    }
+}
+
+/// Atlas member-list draft fields.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct AtlasFields {
+    pub members: Vec<String>,
+    pub add: String,
+}
+
+/// Point coordinate draft fields.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct PointFields {
+    pub x: String,
+    pub y: String,
+}

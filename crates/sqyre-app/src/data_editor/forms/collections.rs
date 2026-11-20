@@ -152,7 +152,7 @@ impl DataEditor {
             .map(|prog| {
                 prog.collections
                     .keys()
-                    .filter(|k| !self.form_atlas_members.iter().any(|m| m == *k))
+                    .filter(|k| !self.form_atlas.members.iter().any(|m| m == *k))
                     .cloned()
                     .collect()
             })
@@ -168,7 +168,7 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
-            let can_add = !self.form_atlas_add.trim().is_empty();
+            let can_add = !self.form_atlas.add.trim().is_empty();
             let mut add_clicked = false;
             let mut trailing = |ui: &mut egui::Ui| {
                 if crate::widgets::add_button(ui, "Add collection", can_add).clicked() {
@@ -181,7 +181,7 @@ impl DataEditor {
                 "Collections",
                 help::DE_ATLAS_MEMBERS,
                 "atlas_add_member",
-                &mut self.form_atlas_add,
+                &mut self.form_atlas.add,
                 SearchableComboOpts {
                     options: &available,
                     empty_text: "(add collection)",
@@ -195,15 +195,15 @@ impl DataEditor {
                 Some(&mut trailing),
             );
             if add_clicked {
-                let name = self.form_atlas_add.trim().to_string();
-                if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {
-                    self.form_atlas_members.push(name);
+                let name = self.form_atlas.add.trim().to_string();
+                if !name.is_empty() && !self.form_atlas.members.iter().any(|m| m == &name) {
+                    self.form_atlas.members.push(name);
                 }
-                self.form_atlas_add.clear();
+                self.form_atlas.add.clear();
             }
         }
         let mut remove_at: Option<usize> = None;
-        for (i, member) in self.form_atlas_members.iter().enumerate() {
+        for (i, member) in self.form_atlas.members.iter().enumerate() {
             let label = ui.label(format!("• {member}"));
             if let Some(prog) = self.selected_program.as_deref() {
                 previews.show_for_entity(
@@ -221,7 +221,7 @@ impl DataEditor {
             }
         }
         if let Some(i) = remove_at {
-            self.form_atlas_members.remove(i);
+            self.form_atlas.members.remove(i);
         }
         if let (Some(prog), Some(atlas_name)) =
             (self.selected_program.clone(), self.selected_entity.clone())
@@ -236,17 +236,17 @@ impl DataEditor {
                 icons,
                 catalog,
                 &prog,
-                &self.form_atlas_members,
+                &self.form_atlas.members,
                 &mut self.atlas_preview,
             );
-        } else if !self.form_atlas_members.is_empty() {
+        } else if !self.form_atlas.members.is_empty() {
             if let Some(prog) = self.selected_program.clone() {
                 paint_zoomable_atlas_preview(
                     ui,
                     icons,
                     catalog,
                     &prog,
-                    &self.form_atlas_members,
+                    &self.form_atlas.members,
                     &mut self.atlas_preview,
                 );
             }

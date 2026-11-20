@@ -28,7 +28,9 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use form_fields::OverlayFields;
+use form_fields::{
+    AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
+};
 use helpers::{default_editor_program, is_editor_listed_program};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
@@ -271,40 +273,23 @@ pub struct DataEditor {
     form_name: String,
     /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
     form_monitor: u32,
-    form_x: String,
-    form_y: String,
-    form_left: String,
-    form_top: String,
-    form_right: String,
-    form_bottom: String,
+    form_point: PointFields,
+    form_rect: RectFields,
     form_cols: String,
     form_rows: String,
-    form_stack_max: String,
-    form_mask: String,
+    form_item: ItemFields,
     form_tags: Vec<String>,
     tag_draft: String,
-    form_shape: String,
-    form_center_x: String,
-    form_center_y: String,
-    form_base: String,
-    form_height: String,
-    form_radius: String,
-    form_inverse: bool,
+    form_mask: MaskFields,
     /// Masks-tab items grid filter (session-only).
     mask_items_filter: mask_preview::MaskItemsFilter,
     /// Cached scrim texture for the Masks items preview.
     mask_scrim_cache: Option<mask_preview::MaskScrimCache>,
     form_search_area: String,
-    /// Atlas member Collection names (ordered).
-    form_atlas_members: Vec<String>,
-    /// Draft Collection name to add to the Atlas member list.
-    form_atlas_add: String,
+    form_atlas: AtlasFields,
     /// Overlay button form draft (placement, style, visibility gate).
     form_overlay: OverlayFields,
-    /// Bound OS process path for the selected Program.
-    form_process_path: String,
-    /// Bound window title for the selected Program.
-    form_window_title: String,
+    form_program: ProgramFields,
     variant_name_draft: String,
     variant_prompt: Option<VariantPrompt>,
     status_banner: StatusBanner,
@@ -381,33 +366,20 @@ impl Default for DataEditor {
             scroll_left_list_to_selection: false,
             form_name: String::new(),
             form_monitor: 1,
-            form_x: String::new(),
-            form_y: String::new(),
-            form_left: String::new(),
-            form_top: String::new(),
-            form_right: String::new(),
-            form_bottom: String::new(),
+            form_point: PointFields::default(),
+            form_rect: RectFields::default(),
             form_cols: "1".into(),
             form_rows: "1".into(),
-            form_stack_max: "0".into(),
-            form_mask: String::new(),
+            form_item: ItemFields::default(),
             form_tags: Vec::new(),
             tag_draft: String::new(),
-            form_shape: "rectangle".into(),
-            form_center_x: "50".into(),
-            form_center_y: "50".into(),
-            form_base: String::new(),
-            form_height: String::new(),
-            form_radius: String::new(),
-            form_inverse: false,
+            form_mask: MaskFields::default(),
             mask_items_filter: mask_preview::MaskItemsFilter::default(),
             mask_scrim_cache: None,
             form_search_area: String::new(),
-            form_atlas_members: Vec::new(),
-            form_atlas_add: String::new(),
+            form_atlas: AtlasFields::default(),
             form_overlay: OverlayFields::default(),
-            form_process_path: String::new(),
-            form_window_title: String::new(),
+            form_program: ProgramFields::default(),
             variant_name_draft: String::new(),
             variant_prompt: None,
             status_banner: StatusBanner::default(),
@@ -777,8 +749,8 @@ impl DataEditor {
                 process_path,
                 window_title,
             } => {
-                self.form_process_path = process_path;
-                self.form_window_title = window_title;
+                self.form_program.process_path = process_path;
+                self.form_program.window_title = window_title;
             }
             PickerResult::Point(coord) => {
                 if let Ok((x, y)) = env
@@ -844,8 +816,8 @@ impl DataEditor {
             let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
             self.form_monitor = monitor;
-            self.form_x = rx.to_string();
-            self.form_y = ry.to_string();
+            self.form_point.x = rx.to_string();
+            self.form_point.y = ry.to_string();
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!("Recorded point monitor {monitor} ({rx}, {ry})."));
             captured = true;
@@ -855,10 +827,12 @@ impl DataEditor {
             let (monitor, lx, ty, rx, by) =
                 sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
             self.form_monitor = monitor;
-            self.form_left = lx.to_string();
-            self.form_top = ty.to_string();
-            self.form_right = rx.to_string();
-            self.form_bottom = by.to_string();
+            self.form_rect.load_displays(
+                lx.to_string(),
+                ty.to_string(),
+                rx.to_string(),
+                by.to_string(),
+            );
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!(
                 "Recorded search area monitor {monitor} ({lx},{ty})–({rx},{by})."
@@ -1622,10 +1596,10 @@ impl DataEditor {
         let (lx, ty, rx, by) = form_desktop_area(
             CatalogView::from(catalog),
             self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
+            &self.form_rect.left,
+            &self.form_rect.top,
+            &self.form_rect.right,
+            &self.form_rect.bottom,
         );
         let coords_ok = match (
             self.selected_program.as_deref(),
