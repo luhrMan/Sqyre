@@ -680,6 +680,9 @@ impl DataEditor {
             } else {
                 crate::preview_tooltip::PreviewRefresh::None
             };
+            // Freeze underlay swaps for the whole paint so an in-flight soft
+            // capture cannot resize the texture under an active drag.
+            previews.set_hold_pending_swaps(preview_interacting);
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
@@ -756,6 +759,7 @@ impl DataEditor {
                     );
                 },
             );
+            previews.set_hold_pending_swaps(false);
             if let Some(cache) = &self.match_check_cache {
                 super::match_check::paint_legend(
                     ui,

@@ -121,6 +121,11 @@ pub struct PreviewTooltipCache {
     pending: HashMap<String, PendingCapture>,
     /// Failed captures — avoids respawning on every repaint for permanent errors.
     failures: HashMap<String, FailureEntry>,
+    /// When set, keep showing the cached frame and do not apply finished captures.
+    ///
+    /// Live Match Check soft-refresh must not swap textures mid-drag — a size
+    /// change ends egui's drag target and feels like the gesture "finished early".
+    hold_pending_swaps: bool,
     /// Desktop outline from an embedded preview (action tooltip body, edit form).
     desktop_outline: Option<(i32, i32, i32, i32)>,
     /// Desktop outline from a hovered list row / coord label; wins over embedded.
@@ -146,6 +151,11 @@ impl PreviewTooltipCache {
             capture_disabled: true,
             ..Self::default()
         }
+    }
+
+    /// Freeze finished capture swaps (and soft-refresh starts) while the user drags.
+    pub fn set_hold_pending_swaps(&mut self, hold: bool) {
+        self.hold_pending_swaps = hold;
     }
 
     pub fn invalidate_entity(&mut self, name: &str) {
@@ -579,8 +589,16 @@ impl PreviewTooltipCache {
         }
 
         // Always poll in-flight work before returning a cached entry so soft
-        // refreshes can swap in without dropping the visible frame.
+        // refreshes can swap in without dropping the visible frame — unless a
+        // drag is holding swaps so the underlay size stays stable.
         if self.pending.contains_key(key) {
+            if self.hold_pending_swaps {
+                if let Some(ready) = self.ready_from_entry(key) {
+                    ctx.request_repaint();
+                    return Ok(ready);
+                }
+                // First capture (no cached frame): fall through and poll.
+            }
             let recv = self.pending[key].rx.try_recv();
             match recv {
                 Ok(Ok(captured)) => {
@@ -650,7 +668,7 @@ impl PreviewTooltipCache {
         }
 
         if let Some(ready) = self.ready_from_entry(key) {
-            if refresh == PreviewRefresh::Soft {
+            if refresh == PreviewRefresh::Soft && !self.hold_pending_swaps {
                 // Recapture without dropping the visible frame. Sync platforms may
                 // finish immediately — prefer that result; otherwise keep `ready`.
                 match self.spawn_capture(ctx, key, caption, coords, max_dim, keep_region, true) {
@@ -2606,6 +2624,81 @@ mod tests {
         assert!(cache.failures.contains_key("panel:pt:99:99"));
         assert!(!cache.pending.contains_key("pt:Spot:m1:5:5"));
         assert!(cache.pending.contains_key("pt:Other:m1:1:1"));
+    }
+
+    #[test]
+    fn hold_pending_swaps_keeps_stale_frame_without_consuming_ready() {
+        let ctx = egui::Context::default();
+        let mut cache = PreviewTooltipCache::new();
+        let coords = PreviewCoords::SearchArea {
+            left: 0,
+            top: 0,
+            right: 10,
+            bottom: 10,
+            grid: None,
+        };
+        let key = "panel:sa:0:0:10:10";
+        let color = ColorImage::new([4, 4], vec![egui::Color32::GREEN; 16]);
+        let tex = ctx.load_texture(key, color, TextureOptions::LINEAR);
+        cache.insert(
+            key.into(),
+            CacheEntry {
+                texture: tex,
+                caption: "stale".into(),
+                coords,
+                marker: PreviewMarker::Area {
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 10.0,
+                    y1: 10.0,
+                    grid: None,
+                    src_w: 10,
+                    src_h: 10,
+                },
+                region: None,
+                display: None,
+            },
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        // Finished capture waiting to be applied.
+        tx.send(Ok(CapturedPreview {
+            display: image::RgbaImage::new(4, 4),
+            region: None,
+            marker: PreviewMarker::Area {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 10.0,
+                y1: 10.0,
+                grid: None,
+                src_w: 10,
+                src_h: 10,
+            },
+        }))
+        .unwrap();
+        cache.pending.insert(
+            key.into(),
+            PendingCapture {
+                caption: "fresh".into(),
+                coords,
+                rx,
+            },
+        );
+        cache.set_hold_pending_swaps(true);
+        let ready = cache
+            .texture_for(
+                &ctx,
+                key,
+                "fresh",
+                coords,
+                PreviewRefresh::None,
+                PANEL_MAX_DIM,
+            )
+            .expect("hold must keep the stale frame");
+        assert_eq!(ready.caption, "stale");
+        assert!(
+            cache.pending.contains_key(key),
+            "ready capture must stay queued until the drag ends"
+        );
     }
 
     #[test]

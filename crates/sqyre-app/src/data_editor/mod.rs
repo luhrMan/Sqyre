@@ -1778,39 +1778,47 @@ impl DataEditor {
         if !coords_ok && self.match_check_pending.is_some() {
             self.stop_match_check_compute();
         }
+        // Applying a rematch mid-drag swaps the heatmap/legend and can end the
+        // user's gesture early across the whole window.
+        let hold_result =
+            self.coord_preview.pan_drag.is_some() || ctx.input(|i| i.pointer.any_down());
         if let Some(rx) = self.match_check_pending.as_ref() {
-            match rx.try_recv() {
-                Ok(Ok(result)) => {
-                    self.match_check_pending = None;
-                    if result.data.fingerprint == self.match_check.last_inputs {
-                        if result.data.tolerance_matches.len()
-                            > match_check::MANY_MATCH_BOX_THRESHOLD
-                        {
-                            self.match_check.show_many_match_boxes = false;
-                        }
-                        self.match_check_cache = Some(match_check::finish_cache(ctx, result));
-                        self.match_check.last_live_at = Some(web_time::Instant::now());
-                        if !self.match_check.paused {
-                            ctx.request_repaint_after(match_check::LIVE_INTERVAL);
+            if hold_result {
+                ctx.request_repaint();
+            } else {
+                match rx.try_recv() {
+                    Ok(Ok(result)) => {
+                        self.match_check_pending = None;
+                        if result.data.fingerprint == self.match_check.last_inputs {
+                            if result.data.tolerance_matches.len()
+                                > match_check::MANY_MATCH_BOX_THRESHOLD
+                            {
+                                self.match_check.show_many_match_boxes = false;
+                            }
+                            self.match_check_cache = Some(match_check::finish_cache(ctx, result));
+                            self.match_check.last_live_at = Some(web_time::Instant::now());
+                            if !self.match_check.paused {
+                                ctx.request_repaint_after(match_check::LIVE_INTERVAL);
+                            }
                         }
                     }
-                }
-                Ok(Err(e)) => {
-                    self.match_check_pending = None;
-                    self.match_check.paused = true;
-                    self.set_err(format!(
-                        "{}: {}",
-                        EditorTab::MatchCheck.label(),
-                        crate::status_banner::user_error_detail(&e)
-                    ));
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    ctx.request_repaint();
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.match_check_pending = None;
-                    self.match_check.paused = true;
-                    self.set_err(format!("{}: match failed", EditorTab::MatchCheck.label()));
+                    Ok(Err(e)) => {
+                        self.match_check_pending = None;
+                        self.match_check.paused = true;
+                        self.set_err(format!(
+                            "{}: {}",
+                            EditorTab::MatchCheck.label(),
+                            crate::status_banner::user_error_detail(&e)
+                        ));
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        ctx.request_repaint();
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.match_check_pending = None;
+                        self.match_check.paused = true;
+                        self.set_err(format!("{}: match failed", EditorTab::MatchCheck.label()));
+                    }
                 }
             }
         }

@@ -40,6 +40,8 @@ impl PreviewTooltipCache {
 
     pub fn invalidate_entity(&mut self, _name: &str) {}
 
+    pub fn set_hold_pending_swaps(&mut self, _hold: bool) {}
+
     pub fn show_for_entity(
         &mut self,
         _ui: &mut egui::Ui,
