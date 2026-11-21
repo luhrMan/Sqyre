@@ -15,6 +15,7 @@ mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
 mod overlay_omit;
+mod overlay_omit_gate;
 mod pixel_convert;
 mod selection_grab;
 #[macro_use]
