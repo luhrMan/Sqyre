@@ -5,73 +5,79 @@
 //! A grab alone restores after a short idle, which is shorter than the gap
 //! between attempts, so the buttons flash back on during the macro. The macro
 //! span keeps them hidden the whole run.
+//!
+//! Gate transitions live in [`crate::overlay_omit_gate`]; this module owns the
+//! mutex, omit hook, and restore worker.
 
+use crate::overlay_omit_gate::{OmitEffect, OmitGate};
 use parking_lot::{Condvar, Mutex};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use web_time::Instant;
 
-const RESTORE_IDLE: Duration = Duration::from_millis(150);
-
 type Hook = Arc<dyn Fn(bool) + Send + Sync>;
 
 struct State {
-    /// When true, detection captures include overlay buttons.
-    include: bool,
+    gate: OmitGate,
     hook: Option<Hook>,
-    omitted: bool,
-    depth: u32,
-    /// Bumped whenever a restore is scheduled or cancelled.
-    generation: u64,
-    restore_at: Option<Instant>,
 }
 
 /// Serializes hook(true) / hook(false) with the state change that decides them.
 static GATE: Mutex<()> = Mutex::new(());
 static STATE: Mutex<State> = Mutex::new(State {
-    include: true,
+    gate: OmitGate {
+        include: true,
+        omitted: false,
+        depth: 0,
+        generation: 0,
+        restore_at: None,
+    },
     hook: None,
-    omitted: false,
-    depth: 0,
-    generation: 0,
-    restore_at: None,
 });
 static WAKE: Condvar = Condvar::new();
 static WORKER: std::sync::Once = std::sync::Once::new();
+
+fn apply_effect(effect: OmitEffect, hook: &Option<Hook>) {
+    match effect {
+        OmitEffect::Hide => {
+            if let Some(hook) = hook {
+                hook(true);
+            }
+        }
+        OmitEffect::Show => {
+            if let Some(hook) = hook {
+                hook(false);
+            }
+        }
+        OmitEffect::ScheduleRestore => {
+            WAKE.notify_one();
+        }
+        OmitEffect::None => {}
+    }
+}
 
 /// Publish the user setting. `true` means detection captures include the buttons.
 pub fn set_overlay_buttons_in_detection(include: bool) {
     ensure_span_hooks();
     let _gate = GATE.lock();
-    let pending = {
+    let (effect, hook) = {
         let mut state = STATE.lock();
-        if state.include == include {
-            return;
-        }
-        state.include = include;
-        if include && state.omitted && state.depth == 0 {
-            Pending::Show(begin_restore(&mut state))
-        } else if !include
-            && !state.omitted
-            && state.depth == 0
-            && sqyre_ports::overlay_macro_hide_held()
-        {
-            Pending::Hide(arm_omit(&mut state))
-        } else {
-            Pending::None
-        }
+        let effect = state
+            .gate
+            .set_include(include, sqyre_ports::overlay_macro_hide_held());
+        (effect, state.hook.clone())
     };
-    dispatch(pending);
+    apply_effect(effect, &hook);
 }
 
 pub fn overlay_buttons_in_detection() -> bool {
-    STATE.lock().include
+    STATE.lock().gate.include
 }
 
 /// Buttons are currently left out of the next detection grab.
 pub fn overlay_capture_omitted() -> bool {
-    STATE.lock().omitted
+    STATE.lock().gate.omitted
 }
 
 /// `hook(true)` omits buttons; `hook(false)` shows them again. Replaces any previous hook.
@@ -90,15 +96,13 @@ pub fn detection_omit_guard() -> DetectionOmitGuard {
     ensure_worker();
     let _gate = GATE.lock();
     let mut state = STATE.lock();
-    if state.include {
+    if state.gate.include {
         return DetectionOmitGuard { active: false };
     }
-    state.depth += 1;
-    let hook = arm_omit(&mut state);
+    let effect = state.gate.enter_detection();
+    let hook = state.hook.clone();
     drop(state);
-    if let Some(hook) = hook {
-        hook(true);
-    }
+    apply_effect(effect, &hook);
     DetectionOmitGuard { active: true }
 }
 
@@ -113,7 +117,7 @@ pub fn detection_omit_needs_fresh_frame() -> bool {
 #[cfg(not(target_os = "windows"))]
 pub fn detection_omit_needs_fresh_frame() -> bool {
     let state = STATE.lock();
-    state.omitted && !state.include
+    state.gate.omitted && !state.gate.include
 }
 
 pub struct DetectionOmitGuard {
@@ -126,69 +130,15 @@ impl Drop for DetectionOmitGuard {
             return;
         }
         let _gate = GATE.lock();
-        let mut state = STATE.lock();
-        state.depth = state.depth.saturating_sub(1);
-        let pending = release_omit(&mut state);
-        drop(state);
-        dispatch(pending);
+        let (effect, hook) = {
+            let mut state = STATE.lock();
+            let effect = state
+                .gate
+                .leave_detection(sqyre_ports::overlay_macro_hide_held(), Instant::now());
+            (effect, state.hook.clone())
+        };
+        apply_effect(effect, &hook);
     }
-}
-
-/// Caller holds `STATE`. Cancel a pending show and hide if the buttons are up.
-fn arm_omit(state: &mut State) -> Option<Hook> {
-    state.restore_at = None;
-    state.generation = state.generation.wrapping_add(1);
-    if state.omitted {
-        None
-    } else {
-        state.omitted = true;
-        state.hook.clone()
-    }
-}
-
-/// Caller holds `STATE`. Show now when the setting is on; otherwise wait out the
-/// idle unless a macro hide span is still open.
-fn release_omit(state: &mut State) -> Pending {
-    if state.depth > 0 || !state.omitted {
-        return Pending::None;
-    }
-    if sqyre_ports::overlay_macro_hide_held() && !state.include {
-        return Pending::None;
-    }
-    if state.include {
-        return Pending::Show(begin_restore(state));
-    }
-    state.generation = state.generation.wrapping_add(1);
-    state.restore_at = Some(Instant::now() + RESTORE_IDLE);
-    WAKE.notify_one();
-    Pending::None
-}
-
-enum Pending {
-    None,
-    Hide(Option<Hook>),
-    Show(Option<Hook>),
-}
-
-fn dispatch(pending: Pending) {
-    match pending {
-        Pending::Hide(Some(hook)) => hook(true),
-        Pending::Show(Some(hook)) => hook(false),
-        Pending::None | Pending::Hide(None) | Pending::Show(None) => {}
-    }
-}
-
-/// Caller holds `STATE`. Marks a restore in progress and returns the hook to run
-/// after the lock is dropped. `None` hook means there is nothing to show.
-fn begin_restore(state: &mut State) -> Option<Hook> {
-    state.omitted = false;
-    state.restore_at = None;
-    state.generation = state.generation.wrapping_add(1);
-    state.hook.clone()
-}
-
-fn finish_restore(hook: Option<Hook>) {
-    dispatch(Pending::Show(hook));
 }
 
 fn ensure_span_hooks() {
@@ -204,15 +154,12 @@ fn ensure_span_hooks() {
 fn enter_macro_hide() {
     ensure_worker();
     let _gate = GATE.lock();
-    let mut state = STATE.lock();
-    if state.include {
-        return;
-    }
-    let hook = arm_omit(&mut state);
-    drop(state);
-    if let Some(hook) = hook {
-        hook(true);
-    }
+    let (effect, hook) = {
+        let mut state = STATE.lock();
+        let effect = state.gate.enter_macro_hide();
+        (effect, state.hook.clone())
+    };
+    apply_effect(effect, &hook);
 }
 
 fn leave_macro_hide() {
@@ -220,10 +167,12 @@ fn leave_macro_hide() {
     if sqyre_ports::overlay_macro_hide_held() {
         return;
     }
-    let mut state = STATE.lock();
-    let pending = release_omit(&mut state);
-    drop(state);
-    dispatch(pending);
+    let (effect, hook) = {
+        let mut state = STATE.lock();
+        let effect = state.gate.leave_macro_hide(Instant::now());
+        (effect, state.hook.clone())
+    };
+    apply_effect(effect, &hook);
 }
 
 fn ensure_worker() {
@@ -232,27 +181,24 @@ fn ensure_worker() {
             .name("sqyre-overlay-omit".into())
             .spawn(|| loop {
                 let mut state = STATE.lock();
-                let wait = match state.restore_at {
+                let wait = match state.gate.restore_at {
                     Some(at) => at.saturating_duration_since(Instant::now()),
                     None => Duration::from_secs(3600),
                 };
-                let generation = state.generation;
+                let generation = state.gate.generation;
                 let _timed_out = WAKE.wait_for(&mut state, wait);
                 drop(state);
                 let _gate = GATE.lock();
-                let mut state = STATE.lock();
-                let hook = if state.depth == 0
-                    && state.omitted
-                    && !sqyre_ports::overlay_macro_hide_held()
-                    && state.generation == generation
-                    && state.restore_at.is_some_and(|at| Instant::now() >= at)
-                {
-                    begin_restore(&mut state)
-                } else {
-                    None
+                let (effect, hook) = {
+                    let mut state = STATE.lock();
+                    let effect = state.gate.try_idle_restore(
+                        generation,
+                        sqyre_ports::overlay_macro_hide_held(),
+                        Instant::now(),
+                    );
+                    (effect, state.hook.clone())
                 };
-                drop(state);
-                finish_restore(hook);
+                apply_effect(effect, &hook);
             });
     });
 }
@@ -260,15 +206,20 @@ fn ensure_worker() {
 #[cfg(test)]
 pub fn restore_overlay_omit_now() {
     let _gate = GATE.lock();
-    let hook = {
+    let (effect, hook) = {
         let mut state = STATE.lock();
-        if state.omitted && state.depth == 0 && !sqyre_ports::overlay_macro_hide_held() {
-            begin_restore(&mut state)
+        let effect = if state.gate.omitted
+            && state.gate.depth == 0
+            && !sqyre_ports::overlay_macro_hide_held()
+        {
+            state.gate.begin_restore();
+            OmitEffect::Show
         } else {
-            None
-        }
+            OmitEffect::None
+        };
+        (effect, state.hook.clone())
     };
-    finish_restore(hook);
+    apply_effect(effect, &hook);
 }
 
 #[cfg(test)]
