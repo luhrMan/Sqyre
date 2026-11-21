@@ -18,12 +18,12 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
-        fingerprint, heatmap_hover_allowed, hover_at_image, live_refresh_due, no_match_box_caption,
-        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings,
-        MatchCheckTool, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
+        display_xy_to_match, fingerprint, heatmap_hover_allowed, hover_at_image, live_refresh_due,
+        match_xy_to_display, no_match_box_caption, scores_to_heatmap_rgba, HeatmapStampMap,
+        MatchCheckSettings, MatchCheckTool, MatchSummary, LIVE_INTERVAL,
     };
     use sqyre_domain::{MatchMethod, PlaneFlip};
-    use sqyre_match::{ImageBuf, MatchMap};
+    use sqyre_match::MatchMap;
     use std::sync::mpsc;
     use web_time::{Duration, Instant};
 
@@ -50,8 +50,16 @@ mod tests {
         scores[0] = 0.5;
         scores[10] = 1.0;
         let map = map(11, 1, &scores);
-        let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
+        let (rgba, summary) = scores_to_heatmap_rgba(
+            &map,
+            11,
+            1,
+            1,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.9,
+            HeatmapStampMap::display_space(11, 1),
+        );
         assert_eq!(rgba.len(), 11 * 4);
         // 0.5 is below viz margin — origin stays unpainted; peak at 10 paints.
         assert_eq!(rgba[3], 0, "weak origin should not paint");
@@ -66,8 +74,16 @@ mod tests {
         scores[0] = 0.1;
         scores[10] = 0.9;
         let map = map(11, 1, &scores);
-        let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
+        let (rgba, summary) = scores_to_heatmap_rgba(
+            &map,
+            11,
+            1,
+            1,
+            1,
+            MatchMethod::SqdiffNormed,
+            0.5,
+            HeatmapStampMap::display_space(11, 1),
+        );
         assert!(summary.best_score < 0.2);
         assert_eq!(summary.best_x, 0);
         assert!(rgba[3] > 0, "better match peak should paint");
@@ -79,21 +95,33 @@ mod tests {
     }
 
     #[test]
-    fn scale_image_buf_halves_dims() {
-        let mut img = ImageBuf::new(4, 2, 3, 0);
-        img.data[0] = 10;
-        let corner = img.pixel_offset(3, 1);
-        img.data[corner] = 20;
-        let out = scale_image_buf(&img, 2, 1);
-        assert_eq!(out.width, 2);
-        assert_eq!(out.height, 1);
-        assert_eq!(out.data[0], 10);
+    fn match_xy_maps_through_area_and_display_scale() {
+        // Region peak (4,2) with area origin (10,20) on 100x100 src → 50x50 display.
+        let (dx, dy) = match_xy_to_display(4, 2, 1.0, 10.0, 20.0, 100, 100, 50, 50);
+        assert_eq!((dx, dy), (7, 11));
+        let back = display_xy_to_match(dx, dy, 1.0, 10.0, 20.0, 100, 100, 50, 50).unwrap();
+        assert_eq!(back, (4, 2));
+    }
+
+    #[test]
+    fn match_xy_remaps_half_scale_peaks() {
+        let (dx, dy) = match_xy_to_display(4, 2, 0.5, 0.0, 0.0, 40, 20, 40, 20);
+        assert_eq!((dx, dy), (8, 4));
     }
 
     #[test]
     fn heatmap_peak_kernel_stays_compact() {
         let map = map(1, 1, &[1.0]);
-        let (rgba, _) = scores_to_heatmap_rgba(&map, 20, 20, 8, 8, MatchMethod::CcoeffNormed, 0.9);
+        let (rgba, _) = scores_to_heatmap_rgba(
+            &map,
+            20,
+            20,
+            8,
+            8,
+            MatchMethod::CcoeffNormed,
+            0.9,
+            HeatmapStampMap::display_space(20, 20),
+        );
         let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
         // Soft disk radius 4 → at most (2*4+1)^2 = 81 cells, far below an 8×8 footprint.
         assert!(painted > 0 && painted <= 81, "painted={painted}");
@@ -102,7 +130,16 @@ mod tests {
     #[test]
     fn heatmap_fades_weak_scores() {
         let map = map(1, 1, &[0.1]);
-        let (rgba, _) = scores_to_heatmap_rgba(&map, 4, 4, 2, 2, MatchMethod::CcoeffNormed, 0.95);
+        let (rgba, _) = scores_to_heatmap_rgba(
+            &map,
+            4,
+            4,
+            2,
+            2,
+            MatchMethod::CcoeffNormed,
+            0.95,
+            HeatmapStampMap::display_space(4, 4),
+        );
         // Far below tolerance — should not paint any heat.
         let alphas: Vec<u8> = rgba.chunks(4).map(|p| p[3]).collect();
         assert!(
@@ -115,7 +152,16 @@ mod tests {
     fn heatmap_suppresses_clustered_weak_scores() {
         // Tight score range that used to normalize to full-span yellow streaks.
         let map = map(4, 1, &[0.38, 0.39, 0.40, 0.41]);
-        let (rgba, _) = scores_to_heatmap_rgba(&map, 8, 2, 2, 1, MatchMethod::CcoeffNormed, 0.95);
+        let (rgba, _) = scores_to_heatmap_rgba(
+            &map,
+            8,
+            2,
+            2,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.95,
+            HeatmapStampMap::display_space(8, 2),
+        );
         let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
         assert_eq!(painted, 0, "clustered weak scores should not paint");
     }
@@ -132,10 +178,34 @@ mod tests {
     fn hover_out_of_bounds() {
         let map = map(2, 2, &[0.5, 0.6, 0.7, 0.8]);
         let summary = summary(0.5, 0.8);
-        assert!(
-            hover_at_image(&map, &summary, -1, 0, 1, 1, MatchMethod::CcoeffNormed, 0.5).is_none()
-        );
-        let h = hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.4).unwrap();
+        assert!(hover_at_image(
+            &map,
+            &summary,
+            -1,
+            0,
+            1,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.5,
+            HeatmapStampMap::display_space(2, 2),
+            2,
+            2,
+        )
+        .is_none());
+        let h = hover_at_image(
+            &map,
+            &summary,
+            0,
+            0,
+            1,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.4,
+            HeatmapStampMap::display_space(2, 2),
+            2,
+            2,
+        )
+        .unwrap();
         assert!((h.closeness_pct - 50.0).abs() < 0.1);
         assert!(h.passes);
     }
@@ -153,7 +223,20 @@ mod tests {
         let map = map(2, 1, &[0.5, 0.95]);
         let summary = summary(0.5, 0.95);
         // Pixel inside the high-score template block should inherit 0.95.
-        let h = hover_at_image(&map, &summary, 1, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).unwrap();
+        let h = hover_at_image(
+            &map,
+            &summary,
+            1,
+            0,
+            2,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.9,
+            HeatmapStampMap::display_space(2, 1),
+            2,
+            1,
+        )
+        .unwrap();
         assert!((h.closeness_pct - 95.0).abs() < 0.1);
     }
 
@@ -162,8 +245,20 @@ mod tests {
         // 0.85 is below tolerance 0.95 but within HEATMAP_VIZ_MARGIN (0.12).
         let map = map(2, 1, &[0.85, 0.95]);
         let summary = summary(0.85, 0.95);
-        let h = hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95)
-            .expect("near-miss should be hoverable");
+        let h = hover_at_image(
+            &map,
+            &summary,
+            0,
+            0,
+            1,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.95,
+            HeatmapStampMap::display_space(2, 1),
+            2,
+            1,
+        )
+        .expect("near-miss should be hoverable");
         assert!(!h.passes);
         assert!((h.closeness_pct - 85.0).abs() < 0.1);
     }
@@ -172,9 +267,20 @@ mod tests {
     fn hover_skips_far_below_heatmap_margin() {
         let map = map(2, 1, &[0.5, 0.95]);
         let summary = summary(0.5, 0.95);
-        assert!(
-            hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95).is_none()
-        );
+        assert!(hover_at_image(
+            &map,
+            &summary,
+            0,
+            0,
+            1,
+            1,
+            MatchMethod::CcoeffNormed,
+            0.95,
+            HeatmapStampMap::display_space(2, 1),
+            2,
+            1,
+        )
+        .is_none());
     }
 
     #[test]
@@ -184,17 +290,6 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].x, 2);
         assert!(matches[0].score >= 0.95);
-    }
-
-    #[test]
-    fn should_paint_match_boxes_threshold() {
-        assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD, false));
-        assert!(should_paint_match_boxes(50, false));
-        assert!(!should_paint_match_boxes(
-            MANY_MATCH_BOX_THRESHOLD + 1,
-            false
-        ));
-        assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, true));
     }
 
     #[test]
@@ -262,6 +357,7 @@ mod tests {
             10,
             10,
             0,
+            100,
             MatchMethod::CcoeffNormed,
             PlaneFlip::None,
             0.95,
@@ -277,6 +373,7 @@ mod tests {
             10,
             10,
             0,
+            100,
             MatchMethod::CcoeffNormed,
             PlaneFlip::Horizontal,
             0.95,
@@ -288,17 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn invalidate_clears_job_and_many_boxes_flag() {
+    fn invalidate_clears_pending_job_and_cache() {
         let (_tx, rx) = mpsc::channel();
         let mut tool = MatchCheckTool {
             pending: Some(rx),
             ..Default::default()
         };
-        tool.settings.show_many_match_boxes = true;
         tool.invalidate();
         assert!(tool.pending.is_none());
         assert!(tool.cache.is_none());
-        assert!(!tool.settings.show_many_match_boxes);
     }
 
     #[test]

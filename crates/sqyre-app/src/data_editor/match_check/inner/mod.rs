@@ -3,7 +3,7 @@
 mod heatmap;
 mod paint;
 use heatmap::similarity_rgb;
-pub(crate) use heatmap::{closeness_percent, scores_to_heatmap_rgba};
+pub(crate) use heatmap::{closeness_percent, scores_to_heatmap_rgba, HeatmapStampMap};
 #[cfg(test)]
 pub(crate) use heatmap::{heatmap_hover_allowed, hover_at_image};
 pub(crate) use paint::paint_heatmap_overlay;
@@ -11,28 +11,27 @@ pub(crate) use paint::paint_heatmap_overlay;
 use crate::data_editor::EditorTab;
 use crate::data_editor_preview::variant_display_label;
 use crate::icon_variants::variant_path;
-use crate::preview_tooltip::PreviewTooltipCache;
+use crate::preview_tooltip::{PanelMatchSource, PreviewTooltipCache};
 use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
-use image::RgbaImage;
-use sqyre_domain::MatchMethod;
-use sqyre_match::ImageBuf;
+use sqyre_domain::{MatchMethod, DEFAULT_MATCH_SCALE_PERCENT};
 use sqyre_match::{
     blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
     prepare_template, search_blur_kernel, MatchMap,
 };
 use sqyre_persist::{CatalogView, ProgramCatalog};
-use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
+use sqyre_vision::{
+    get_cached_blurred_template, get_cached_image_mask, remap_point_to_source, rgba_to_rgb_buf,
+    scale_for_match,
+};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::thread;
 use web_time::{Duration, Instant};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);
 /// Wall-clock gap between live recapture+rematch cycles (~5 Hz).
 pub(crate) const LIVE_INTERVAL: Duration = Duration::from_millis(200);
-/// Above this count, match boxes are hidden until the user opts in (paint cost).
-pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
 
 /// Peak match stats shown in the legend and best-match marker.
 #[derive(Clone, Copy, Debug, Default)]
@@ -59,10 +58,21 @@ pub(crate) struct ToleranceMatch {
 pub(crate) struct MatchCheckData {
     pub fingerprint: String,
     pub match_map: MatchMap,
+    /// Display underlay size (heatmap texture / paint space).
     pub image_w: usize,
     pub image_h: usize,
+    /// Template footprint in display pixels (match boxes).
     pub tmpl_w: usize,
     pub tmpl_h: usize,
+    /// Template footprint in match-map space (hover pooling).
+    pub tmpl_match_w: usize,
+    pub tmpl_match_h: usize,
+    /// Factor applied before matching (`1.0` = full-res region).
+    pub match_scale: f32,
+    pub area_x0: f32,
+    pub area_y0: f32,
+    pub src_w: u32,
+    pub src_h: u32,
     pub summary: MatchSummary,
     pub tolerance_matches: Vec<ToleranceMatch>,
     /// A mask was configured but unreadable — the preview ran unmasked.
@@ -92,6 +102,7 @@ pub(crate) struct MatchCheckHover {
 pub(crate) struct MatchCheckSettings {
     pub tolerance: f64,
     pub blur: i32,
+    pub match_scale_percent: i32,
     pub match_method: MatchMethod,
     pub plane_flip: sqyre_domain::PlaneFlip,
     pub variant: String,
@@ -100,8 +111,6 @@ pub(crate) struct MatchCheckSettings {
     pub last_request: Option<Instant>,
     /// When true, live recapture/rematch and debounced retries are suppressed until ↻ or unpause.
     pub paused: bool,
-    /// Opt-in paint for match boxes when count exceeds [`MANY_MATCH_BOX_THRESHOLD`].
-    pub show_many_match_boxes: bool,
     /// When the last live cycle was armed (gates [`LIVE_INTERVAL`]).
     pub last_live_at: Option<Instant>,
     /// One-shot soft panel recapture (keeps the last frame visible).
@@ -117,6 +126,7 @@ impl Default for MatchCheckSettings {
         Self {
             tolerance: 0.95,
             blur: 0,
+            match_scale_percent: DEFAULT_MATCH_SCALE_PERCENT,
             match_method: MatchMethod::CcoeffNormed,
             plane_flip: sqyre_domain::PlaneFlip::None,
             variant: String::new(),
@@ -124,7 +134,6 @@ impl Default for MatchCheckSettings {
             last_inputs: String::new(),
             last_request: None,
             paused: false,
-            show_many_match_boxes: false,
             last_live_at: None,
             capture_once: false,
             awaiting_panel: false,
@@ -146,7 +155,6 @@ impl MatchCheckTool {
     pub(crate) fn invalidate(&mut self) {
         self.cache = None;
         self.pending = None;
-        self.settings.show_many_match_boxes = false;
     }
 
     /// Stop live matching and pause until the user resumes.
@@ -182,10 +190,6 @@ pub(crate) fn arm_live_cycle(settings: &mut MatchCheckSettings, now: Instant) {
     settings.capture_once = true;
     settings.awaiting_panel = true;
     settings.rematch_once = false;
-}
-
-pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
-    match_count <= MANY_MATCH_BOX_THRESHOLD || show_many
 }
 
 /// All bounds are literal integers forming a non-empty rectangle.
@@ -228,6 +232,7 @@ pub(crate) fn fingerprint(
     rx: i32,
     by: i32,
     blur: i32,
+    match_scale_percent: i32,
     method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
     tolerance: f64,
@@ -235,68 +240,88 @@ pub(crate) fn fingerprint(
     close_matches_distance: i32,
 ) -> String {
     format!(
-        "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{plane_flip:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
+        "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{match_scale_percent}\0{method:?}\0{plane_flip:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
     )
 }
 
-/// Nearest-neighbor scale of an RGB `ImageBuf` to `(nw, nh)`.
-pub(crate) fn scale_image_buf(img: &ImageBuf, nw: usize, nh: usize) -> ImageBuf {
-    if img.width == nw && img.height == nh {
-        return img.clone();
-    }
-    let nw = nw.max(1);
-    let nh = nh.max(1);
-    let mut out = ImageBuf::new(nw, nh, img.channels, 0);
-    for y in 0..nh {
-        let sy = y * img.height / nh;
-        for x in 0..nw {
-            let sx = x * img.width / nw;
-            let si = img.pixel_offset(sx, sy);
-            let di = out.pixel_offset(x, y);
-            out.data[di..di + img.channels].copy_from_slice(&img.data[si..si + img.channels]);
-        }
-    }
-    out
-}
-
-/// Scale a single-channel mask to template size (nearest-neighbor).
-fn scale_mask(mask: &[u8], src_w: usize, src_h: usize, nw: usize, nh: usize) -> Vec<u8> {
-    if src_w == nw && src_h == nh && mask.len() == nw * nh {
-        return mask.to_vec();
-    }
-    let nw = nw.max(1);
-    let nh = nh.max(1);
-    let mut out = vec![0u8; nw * nh];
-    for y in 0..nh {
-        let sy = y * src_h / nh;
-        for x in 0..nw {
-            let sx = x * src_w / nw;
-            out[y * nw + x] = mask[sy * src_w + sx];
-        }
-    }
-    out
-}
-
-/// Match the template against a shared panel display capture.
-///
-/// When the display was downscaled from `src_w`×`src_h`, the template (and
-/// mask) are scaled by the same factors so sizes stay consistent.
-fn compute_match(
-    display: &RgbaImage,
+/// Map a match-space peak into display underlay pixels.
+pub(crate) fn match_xy_to_display(
+    mx: i32,
+    my: i32,
+    match_scale: f32,
+    area_x0: f32,
+    area_y0: f32,
     src_w: u32,
     src_h: u32,
+    display_w: usize,
+    display_h: usize,
+) -> (i32, i32) {
+    let src = remap_point_to_source(sqyre_match::Point { x: mx, y: my }, match_scale);
+    let sx = src_w.max(1) as f32;
+    let sy = src_h.max(1) as f32;
+    let dx = ((area_x0 + src.x as f32) * display_w as f32 / sx).round() as i32;
+    let dy = ((area_y0 + src.y as f32) * display_h as f32 / sy).round() as i32;
+    (dx, dy)
+}
+
+/// Map a display underlay pixel into match-map space for hover pooling.
+pub(crate) fn display_xy_to_match(
+    ix: i32,
+    iy: i32,
+    match_scale: f32,
+    area_x0: f32,
+    area_y0: f32,
+    src_w: u32,
+    src_h: u32,
+    display_w: usize,
+    display_h: usize,
+) -> Option<(i32, i32)> {
+    if display_w == 0 || display_h == 0 || src_w == 0 || src_h == 0 {
+        return None;
+    }
+    let src_x = ix as f32 * src_w as f32 / display_w as f32;
+    let src_y = iy as f32 * src_h as f32 / display_h as f32;
+    let region_x = src_x - area_x0;
+    let region_y = src_y - area_y0;
+    if region_x < 0.0 || region_y < 0.0 {
+        return None;
+    }
+    let mx = (region_x * match_scale).round() as i32;
+    let my = (region_y * match_scale).round() as i32;
+    Some((mx, my))
+}
+
+struct ComputeMatchOut {
+    map: MatchMap,
+    display_w: usize,
+    display_h: usize,
+    tmpl_display_w: usize,
+    tmpl_display_h: usize,
+    tmpl_match_w: usize,
+    tmpl_match_h: usize,
+    match_scale: f32,
+    mask_missing: bool,
+}
+
+/// Match the template against the full-res exclusive search-area crop.
+fn compute_match(
+    source: &PanelMatchSource,
     template_path: &Path,
     mask_path: Option<&Path>,
     blur: i32,
+    match_scale_percent: i32,
     method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
-) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
-    let image_w = display.width() as usize;
-    let image_h = display.height() as usize;
-    if image_w == 0 || image_h == 0 {
+) -> Result<ComputeMatchOut, String> {
+    let display_w = source.display.width() as usize;
+    let display_h = source.display.height() as usize;
+    if display_w == 0 || display_h == 0 {
         return Err("empty display image".into());
     }
-    let search = rgba_to_rgb_buf(display);
+    if source.region.width() == 0 || source.region.height() == 0 {
+        return Err("empty search region".into());
+    }
+    let search = rgba_to_rgb_buf(&source.region);
     let kernel = search_blur_kernel(blur);
     let search_blurred = if kernel > 0 {
         blur_image_owned(search, kernel).map_err(|e| e.to_string())?
@@ -305,53 +330,47 @@ fn compute_match(
     };
     let template_full = get_cached_blurred_template(template_path, kernel, plane_flip)
         .map_err(|e| format!("template: {e}"))?;
-    let scale_x = if src_w > 0 {
-        image_w as f32 / src_w as f32
-    } else {
-        1.0
-    };
-    let scale_y = if src_h > 0 {
-        image_h as f32 / src_h as f32
-    } else {
-        1.0
-    };
-    let need_scale = (scale_x - 1.0).abs() > f32::EPSILON || (scale_y - 1.0).abs() > f32::EPSILON;
-    let template_blurred = if need_scale {
-        let nw = ((template_full.width as f32) * scale_x).round().max(1.0) as usize;
-        let nh = ((template_full.height as f32) * scale_y).round().max(1.0) as usize;
-        Arc::new(scale_image_buf(&template_full, nw, nh))
-    } else {
-        Arc::clone(&template_full)
-    };
-    let tmpl_w = template_blurred.width;
-    let tmpl_h = template_blurred.height;
-    let mask_owned = mask_path.and_then(|p| {
-        let full = get_cached_image_mask(p, template_full.height, template_full.width, plane_flip)?;
-        if need_scale {
-            Some(scale_mask(
-                &full,
-                template_full.width,
-                template_full.height,
-                tmpl_w,
-                tmpl_h,
-            ))
-        } else {
-            Some(full.as_ref().clone())
-        }
+    let mask_full = mask_path.and_then(|p| {
+        get_cached_image_mask(p, template_full.height, template_full.width, plane_flip)
     });
-    let mask_missing = mask_path.is_some() && mask_owned.is_none();
-    let mask_ref = mask_owned.as_deref();
-    let prepared =
-        prepare_template(&template_blurred, mask_ref, method).map_err(|e| e.to_string())?;
-    let search_prep = prepare_search(&search_blurred);
-    let map = match_template_with_prepared(
+    let mask_missing = mask_path.is_some() && mask_full.is_none();
+    let scaled = scale_for_match(
         &search_blurred,
-        &template_blurred,
+        template_full.as_ref(),
+        mask_full.as_ref().map(|m| m.as_slice()),
+        match_scale_percent,
+    );
+    let tmpl_match_w = scaled.template.width;
+    let tmpl_match_h = scaled.template.height;
+    let prepared = prepare_template(&scaled.template, scaled.mask.as_deref(), method)
+        .map_err(|e| e.to_string())?;
+    let search_prep = prepare_search(&scaled.search);
+    let map = match_template_with_prepared(
+        &scaled.search,
+        &scaled.template,
         &prepared,
         Some(&search_prep),
     )
     .map_err(|e| e.to_string())?;
-    Ok((map, image_w, image_h, tmpl_w, tmpl_h, mask_missing))
+    let sx = source.src_w.max(1) as f32;
+    let sy = source.src_h.max(1) as f32;
+    let tmpl_display_w = ((template_full.width as f32) * display_w as f32 / sx)
+        .round()
+        .max(1.0) as usize;
+    let tmpl_display_h = ((template_full.height as f32) * display_h as f32 / sy)
+        .round()
+        .max(1.0) as usize;
+    Ok(ComputeMatchOut {
+        map,
+        display_w,
+        display_h,
+        tmpl_display_w,
+        tmpl_display_h,
+        tmpl_match_w,
+        tmpl_match_h,
+        match_scale: scaled.scale,
+        mask_missing,
+    })
 }
 
 fn score_passes(score: f32, method: MatchMethod, tolerance: f32) -> bool {
@@ -467,12 +486,11 @@ fn compute_match_summary(map: &MatchMap, method: MatchMethod, tolerance: f32) ->
 
 pub(crate) fn spawn_compute(
     fingerprint: String,
-    display: Arc<RgbaImage>,
-    src_w: u32,
-    src_h: u32,
+    source: PanelMatchSource,
     template_path: PathBuf,
     mask_path: Option<PathBuf>,
     blur: i32,
+    match_scale_percent: i32,
     method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
     tolerance: f32,
@@ -481,31 +499,85 @@ pub(crate) fn spawn_compute(
     let (tx, job_rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| {
-            let (map, image_w, image_h, tmpl_w, tmpl_h, mask_missing) = compute_match(
-                &display,
-                src_w,
-                src_h,
+            let out = compute_match(
+                &source,
                 &template_path,
                 mask_path.as_deref(),
                 blur,
+                match_scale_percent,
                 method,
                 plane_flip,
             )?;
-            let (heatmap_rgba, summary) =
-                scores_to_heatmap_rgba(&map, image_w, image_h, tmpl_w, tmpl_h, method, tolerance);
+            let stamp = HeatmapStampMap {
+                match_scale: out.match_scale,
+                area_x0: source.area_x0,
+                area_y0: source.area_y0,
+                src_w: source.src_w,
+                src_h: source.src_h,
+            };
+            let (heatmap_rgba, mut summary) = scores_to_heatmap_rgba(
+                &out.map,
+                out.display_w,
+                out.display_h,
+                out.tmpl_display_w,
+                out.tmpl_display_h,
+                method,
+                tolerance,
+                stamp,
+            );
+            let (best_dx, best_dy) = match_xy_to_display(
+                summary.best_x,
+                summary.best_y,
+                out.match_scale,
+                source.area_x0,
+                source.area_y0,
+                source.src_w,
+                source.src_h,
+                out.display_w,
+                out.display_h,
+            );
+            summary.best_x = best_dx;
+            summary.best_y = best_dy;
             let tolerance_matches =
-                collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
+                collect_tolerance_matches(&out.map, tolerance, close_matches_distance, method)
+                    .into_iter()
+                    .map(|m| {
+                        let (x, y) = match_xy_to_display(
+                            m.x,
+                            m.y,
+                            out.match_scale,
+                            source.area_x0,
+                            source.area_y0,
+                            source.src_w,
+                            source.src_h,
+                            out.display_w,
+                            out.display_h,
+                        );
+                        ToleranceMatch {
+                            x,
+                            y,
+                            score: m.score,
+                        }
+                    })
+                    .collect();
             Ok(MatchCheckResult {
                 data: MatchCheckData {
                     fingerprint,
-                    match_map: map,
-                    image_w,
-                    image_h,
-                    tmpl_w,
-                    tmpl_h,
+                    match_map: out.map,
+                    image_w: out.display_w,
+                    image_h: out.display_h,
+                    tmpl_w: out.tmpl_display_w,
+                    tmpl_h: out.tmpl_display_h,
+                    tmpl_match_w: out.tmpl_match_w,
+                    tmpl_match_h: out.tmpl_match_h,
+                    match_scale: out.match_scale,
+                    area_x0: source.area_x0,
+                    area_y0: source.area_y0,
+                    src_w: source.src_w,
+                    src_h: source.src_h,
                     summary,
                     tolerance_matches,
-                    mask_missing,
+                    mask_missing: out.mask_missing,
                 },
                 heatmap_rgba,
             })
@@ -612,7 +684,6 @@ pub(crate) fn paint_legend(
     ui: &mut egui::Ui,
     summary: &MatchSummary,
     tolerance_match_count: usize,
-    show_many_match_boxes: &mut bool,
     hover: Option<&MatchCheckHover>,
     method: MatchMethod,
     tolerance: f32,
@@ -666,20 +737,6 @@ pub(crate) fn paint_legend(
                 }
             }
         }
-        if tolerance_match_count > MANY_MATCH_BOX_THRESHOLD {
-            let hiding = !should_paint_match_boxes(tolerance_match_count, *show_many_match_boxes);
-            let btn = if *show_many_match_boxes {
-                "Hide match boxes".to_string()
-            } else {
-                format!("Show {tolerance_match_count} match boxes")
-            };
-            if ui.small_button(btn).clicked() {
-                *show_many_match_boxes = !*show_many_match_boxes;
-            }
-            if hiding {
-                ui.weak("match boxes hidden (too many to paint by default)");
-            }
-        }
         if let Some(h) = hover {
             let label = if h.passes { "pass" } else { "fail" };
             ui.label(format!(
@@ -708,6 +765,7 @@ pub(crate) fn inputs_key(
     right: Option<i32>,
     bottom: Option<i32>,
     blur: i32,
+    match_scale_percent: i32,
     method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
     tolerance: f64,
@@ -727,6 +785,7 @@ pub(crate) fn inputs_key(
         rx,
         by,
         blur,
+        match_scale_percent,
         method,
         plane_flip,
         tolerance,
@@ -792,7 +851,7 @@ impl crate::data_editor::DataEditor {
         bottom: Option<i32>,
         force: bool,
         close_matches_distance: i32,
-        display: Option<(Arc<RgbaImage>, u32, u32)>,
+        source: Option<PanelMatchSource>,
     ) {
         if force {
             // Unpause and prepare a new fingerprint, but keep the prior heatmap
@@ -833,6 +892,7 @@ impl crate::data_editor::DataEditor {
             right,
             bottom,
             self.match_check.settings.blur,
+            self.match_check.settings.match_scale_percent,
             self.match_check.settings.match_method,
             self.match_check.settings.plane_flip,
             self.match_check.settings.tolerance,
@@ -879,7 +939,7 @@ impl crate::data_editor::DataEditor {
             self.match_check.stop_compute();
             return;
         }
-        let Some((display, src_w, src_h)) = display else {
+        let Some(source) = source else {
             // Panel capture not ready yet — retry next frame once underlay lands.
             return;
         };
@@ -892,12 +952,11 @@ impl crate::data_editor::DataEditor {
         let tolerance = self.match_check.settings.tolerance as f32;
         let job_rx = spawn_compute(
             inputs.clone(),
-            display,
-            src_w,
-            src_h,
+            source,
             template_path,
             mask_path,
             self.match_check.settings.blur,
+            self.match_check.settings.match_scale_percent,
             self.match_check.settings.match_method,
             self.match_check.settings.plane_flip,
             tolerance,
@@ -959,9 +1018,6 @@ impl crate::data_editor::DataEditor {
                     Ok(Ok(result)) => {
                         self.match_check.pending = None;
                         if result.data.fingerprint == self.match_check.settings.last_inputs {
-                            if result.data.tolerance_matches.len() > MANY_MATCH_BOX_THRESHOLD {
-                                self.match_check.settings.show_many_match_boxes = false;
-                            }
                             self.match_check.cache = Some(finish_cache(ctx, result));
                             self.match_check.settings.last_live_at = Some(web_time::Instant::now());
                             if !self.match_check.settings.paused {

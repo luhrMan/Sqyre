@@ -47,11 +47,7 @@ pub(crate) fn paint_tolerance_match_boxes(
     tmpl_h: usize,
     method: MatchMethod,
     tolerance: f32,
-    show_match_boxes: bool,
 ) {
-    if !show_match_boxes {
-        return;
-    }
     if tmpl_w == 0 || tmpl_h == 0 || !summary.best_score.is_finite() {
         return;
     }
@@ -113,7 +109,6 @@ pub(crate) fn paint_heatmap_overlay(
     hover: &mut Option<MatchCheckHover>,
     method: MatchMethod,
     tolerance: f32,
-    show_match_boxes: bool,
 ) {
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
     let painter = ui.painter_at(viewport);
@@ -133,7 +128,6 @@ pub(crate) fn paint_heatmap_overlay(
         cache.data.tmpl_h,
         method,
         tolerance,
-        show_match_boxes,
     );
 
     *hover = None;
@@ -149,15 +143,25 @@ pub(crate) fn paint_heatmap_overlay(
         let scale_y = image_size.y / content.height().max(1.0);
         let ix = ((pos.x - content.min.x) * scale_x).floor() as i32;
         let iy = ((pos.y - content.min.y) * scale_y).floor() as i32;
+        let stamp = super::HeatmapStampMap {
+            match_scale: cache.data.match_scale,
+            area_x0: cache.data.area_x0,
+            area_y0: cache.data.area_y0,
+            src_w: cache.data.src_w,
+            src_h: cache.data.src_h,
+        };
         *hover = hover_at_image(
             &cache.data.match_map,
             &cache.data.summary,
             ix,
             iy,
-            cache.data.tmpl_w,
-            cache.data.tmpl_h,
+            cache.data.tmpl_match_w,
+            cache.data.tmpl_match_h,
             method,
             tolerance,
+            stamp,
+            cache.data.image_w,
+            cache.data.image_h,
         );
     }
     if let (Some(h), Some(pointer)) = (hover.as_ref(), hover_pos) {
