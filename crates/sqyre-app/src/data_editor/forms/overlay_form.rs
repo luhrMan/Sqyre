@@ -51,8 +51,7 @@ impl DataEditor {
                 });
             if !hub && preview.clicked() {
                 if let Some(id) = self.selected_entity.clone() {
-                    self.overlay_icon_search.clear();
-                    self.overlay_icon_picker_for = Some(id);
+                    self.prompts.open_overlay_icon_picker(id);
                 }
             }
         });
@@ -100,7 +99,7 @@ impl DataEditor {
                 ui,
                 catalog,
                 icons,
-                &mut self.window_picker,
+                &mut self.prompts.window_picker,
                 CoordKind::Point,
                 &point_val,
                 pickers::CoordRefFieldOpts {
@@ -229,7 +228,7 @@ impl DataEditor {
                             ui,
                             catalog,
                             icons,
-                            &mut self.window_picker,
+                            &mut self.prompts.window_picker,
                             CoordKind::SearchArea,
                             &area_val,
                             pickers::CoordRefFieldOpts {
@@ -269,7 +268,7 @@ impl DataEditor {
                             )
                             .clicked()
                             {
-                                self.window_picker = pickers::ActivePicker::Items {
+                                self.prompts.window_picker = pickers::ActivePicker::Items {
                                     search: String::new(),
                                     staged: self.form_overlay.gate.targets.clone(),
                                     staged_tags: None,

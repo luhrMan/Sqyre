@@ -467,7 +467,7 @@ impl DataEditor {
     ) {
         // Check overwrite for renames onto existing keys
         if let Some((kind, name)) = self.would_overwrite(env.catalog) {
-            self.confirm = Some(PendingConfirm::Overwrite { kind, name });
+            self.prompts.confirm = Some(PendingConfirm::Overwrite { kind, name });
             return;
         }
         self.apply_update(env, false, previews);
@@ -979,6 +979,27 @@ impl DataEditor {
         Ok(None)
     }
 
+    /// Carry out a confirm the user accepted in [`super::dialogs::EditorPrompts`].
+    pub(super) fn apply_confirm(
+        &mut self,
+        confirmed: PendingConfirm,
+        env: &mut DataEditorCtx<'_>,
+        previews: &mut PreviewTooltipCache,
+    ) {
+        let catalog = CatalogView::new(env.catalog);
+        match confirmed {
+            PendingConfirm::Delete { .. } => self.on_delete(env, previews),
+            PendingConfirm::Overwrite { .. } => self.apply_update(env, true, previews),
+            PendingConfirm::DeleteVariant { variant } => {
+                self.delete_icon_variant(catalog, env.icons, env.settings, &variant);
+            }
+            PendingConfirm::OverwriteVariant { variant, source } => {
+                self.overwrite_icon_variant(catalog, env.icons, &variant, &source);
+            }
+            PendingConfirm::DeleteMaskImage => self.remove_mask_image(catalog, env.icons),
+        }
+    }
+
     pub(crate) fn on_delete(
         &mut self,
         env: &mut DataEditorCtx<'_>,
@@ -1002,8 +1023,8 @@ impl DataEditor {
                 return;
             }
             settings.overlay.overlay_buttons.retain(|b| b.id != id);
-            if self.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
-                self.overlay_icon_picker_for = None;
+            if self.prompts.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
+                self.prompts.overlay_icon_picker_for = None;
             }
             self.selected_entity = None;
             self.reset_overlay_form();
@@ -1021,9 +1042,9 @@ impl DataEditor {
                 };
                 catalog.delete_program(&name).inspect(|_| {
                     if settings.remove_overlay_buttons_for_program(&name) {
-                        if let Some(id) = self.overlay_icon_picker_for.as_deref() {
+                        if let Some(id) = self.prompts.overlay_icon_picker_for.as_deref() {
                             if !settings.overlay.overlay_buttons.iter().any(|b| b.id == id) {
-                                self.overlay_icon_picker_for = None;
+                                self.prompts.overlay_icon_picker_for = None;
                             }
                         }
                         let _ = self.persist_overlay_settings(settings);

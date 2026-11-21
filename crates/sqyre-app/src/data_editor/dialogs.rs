@@ -1,14 +1,17 @@
-//! Data Editor confirm and variant-name dialogs.
+//! Data Editor modal prompts: confirm, variant name, overlay icon picker, window picker.
+//!
+//! Draw methods return the user's decision; [`super::DataEditor`] applies it, so this
+//! module never imports the editor and can be exercised with a bare `egui::Context`.
 
-use super::{DataEditor, DataEditorCtx};
 use crate::data_editor_preview::variant_display_label;
 use crate::icon_cache::IconCache;
-use crate::preview_tooltip::PreviewTooltipCache;
+use crate::pickers::ActivePicker;
+use crate::widgets::ViewportScaleEvent;
 use eframe::egui;
-use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
+use sqyre_persist::CatalogView;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PendingConfirm {
     Delete {
         label: String,
@@ -28,21 +31,68 @@ pub(crate) enum PendingConfirm {
     DeleteMaskImage,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum VariantPrompt {
     /// Ask for a name before adding a non-first variant.
     Name { source: PathBuf },
 }
 
-impl DataEditor {
-    pub(super) fn draw_confirm(
+/// Selection the confirm body describes (program icon, mask entity name).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct ConfirmSubject<'a> {
+    pub program: Option<&'a str>,
+    pub entity: Option<&'a str>,
+}
+
+/// Modal prompt state owned by the Data Editor.
+#[derive(Debug, Default)]
+pub(crate) struct EditorPrompts {
+    pub confirm: Option<PendingConfirm>,
+    pub variant_prompt: Option<VariantPrompt>,
+    pub variant_name_draft: String,
+    /// Overlay button id whose icon picker popup is open.
+    pub overlay_icon_picker_for: Option<String>,
+    /// Filter text for the overlay icon picker.
+    pub overlay_icon_search: String,
+    /// Running-window / coordinate / items picker for the active form.
+    pub window_picker: ActivePicker,
+}
+
+impl EditorPrompts {
+    /// Any prompt that owns keyboard input (Enter / Delete) over the editor body.
+    pub(crate) fn any_open(&self) -> bool {
+        self.confirm.is_some()
+            || self.variant_prompt.is_some()
+            || self.window_picker.is_open()
+            || self.overlay_icon_picker_for.is_some()
+    }
+
+    /// Close prompts tied to the current entity selection.
+    pub(crate) fn clear_entity_prompts(&mut self) {
+        self.variant_prompt = None;
+        self.overlay_icon_picker_for = None;
+    }
+
+    pub(crate) fn ask_variant_name(&mut self, source: PathBuf) {
+        self.variant_name_draft.clear();
+        self.variant_prompt = Some(VariantPrompt::Name { source });
+    }
+
+    pub(crate) fn open_overlay_icon_picker(&mut self, button_id: String) {
+        self.overlay_icon_search.clear();
+        self.overlay_icon_picker_for = Some(button_id);
+    }
+
+    /// Draw the pending confirm; returns it once the user confirms.
+    pub(crate) fn draw_confirm(
         &mut self,
-        env: &mut DataEditorCtx<'_>,
-        previews: &mut PreviewTooltipCache,
-    ) {
-        let Some(confirm) = self.confirm.clone() else {
-            return;
-        };
+        ctx: &egui::Context,
+        catalog: CatalogView<'_>,
+        icons: &mut IconCache,
+        subject: ConfirmSubject<'_>,
+        pending_scale: Option<&ViewportScaleEvent>,
+    ) -> Option<PendingConfirm> {
+        let confirm = self.confirm.clone()?;
         let (title, confirm_label) = match &confirm {
             PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
                 ("Delete", "Delete")
@@ -52,18 +102,13 @@ impl DataEditor {
                 ("Overwrite", "Overwrite")
             }
         };
-        let ctx = env.ctx;
-        let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {
+        let mut outcome = crate::widgets::ConfirmCancel::None;
+        let open = crate::widgets::confirm_window(ctx, title, pending_scale, |ui| {
             match &confirm {
                 PendingConfirm::Delete { label } => {
                     ui.horizontal(|ui| {
-                        if let Some(prog) = self.selected_program.as_deref() {
-                            crate::icon_cache::paint_program_icon(
-                                ui,
-                                CatalogView::new(env.catalog),
-                                env.icons,
-                                prog,
-                            );
+                        if let Some(prog) = subject.program {
+                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                         }
                         ui.label(format!("Delete {label}? This cannot be undone."));
                     });
@@ -86,66 +131,40 @@ impl DataEditor {
                     ));
                 }
                 PendingConfirm::DeleteMaskImage => {
-                    let name = self.selected_entity.as_deref().unwrap_or_default();
+                    let name = subject.entity.unwrap_or_default();
                     ui.label(format!(
                         "Remove the mask image for “{name}”? Searches fall back to the shape settings. This cannot be undone."
                     ));
                 }
             }
-            match crate::widgets::confirm_cancel_row(ui, confirm_label) {
-                crate::widgets::ConfirmCancel::Cancel => {
+            outcome = crate::widgets::confirm_cancel_row(ui, confirm_label);
+        });
+        match outcome {
+            crate::widgets::ConfirmCancel::Confirm => {
+                self.confirm = None;
+                Some(confirm)
+            }
+            crate::widgets::ConfirmCancel::Cancel => {
+                self.confirm = None;
+                None
+            }
+            crate::widgets::ConfirmCancel::None => {
+                if !open {
                     self.confirm = None;
                 }
-                crate::widgets::ConfirmCancel::Confirm => match confirm {
-                    PendingConfirm::Delete { .. } => {
-                        self.confirm = None;
-                        self.on_delete(env, previews);
-                    }
-                    PendingConfirm::Overwrite { .. } => {
-                        self.confirm = None;
-                        self.apply_update(env, true, previews);
-                    }
-                    PendingConfirm::DeleteVariant { variant } => {
-                        self.confirm = None;
-                        self.delete_icon_variant(
-                            CatalogView::new(env.catalog),
-                            env.icons,
-                            env.settings,
-                            &variant,
-                        );
-                    }
-                    PendingConfirm::OverwriteVariant { variant, source } => {
-                        self.confirm = None;
-                        self.overwrite_icon_variant(
-                            CatalogView::new(env.catalog),
-                            env.icons,
-                            &variant,
-                            &source,
-                        );
-                    }
-                    PendingConfirm::DeleteMaskImage => {
-                        self.confirm = None;
-                        self.remove_mask_image(CatalogView::new(env.catalog), env.icons);
-                    }
-                },
-                crate::widgets::ConfirmCancel::None => {}
+                None
             }
-        });
-        if !open {
-            self.confirm = None;
         }
     }
 
-    pub(super) fn draw_variant_name_prompt(
+    /// Draw the variant-name prompt; returns `(name, source)` on submit.
+    pub(crate) fn draw_variant_name_prompt(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        settings: &UserSettings,
-        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
-    ) {
+        pending_scale: Option<&ViewportScaleEvent>,
+    ) -> Option<(String, PathBuf)> {
         let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() else {
-            return;
+            return None;
         };
         let mut submit = false;
         let mut cancel = false;
@@ -159,16 +178,61 @@ impl DataEditor {
                 crate::widgets::ConfirmCancel::None => {}
             }
         });
-        if !open || cancel {
-            self.variant_prompt = None;
-            self.variant_name_draft.clear();
-            return;
-        }
-        if submit {
+        if !open || cancel || submit {
             let name = self.variant_name_draft.trim().to_string();
             self.variant_prompt = None;
             self.variant_name_draft.clear();
-            self.add_icon_variant(CatalogView::from(catalog), icons, settings, &name, &source);
+            return submit.then_some((name, source));
         }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn any_open_tracks_each_prompt() {
+        let mut p = EditorPrompts::default();
+        assert!(!p.any_open());
+        p.confirm = Some(PendingConfirm::DeleteMaskImage);
+        assert!(p.any_open());
+        p.confirm = None;
+        p.ask_variant_name(PathBuf::from("a.png"));
+        assert!(p.any_open());
+        p.clear_entity_prompts();
+        assert!(!p.any_open());
+        p.open_overlay_icon_picker("btn".into());
+        assert!(p.any_open());
+        p.clear_entity_prompts();
+        assert!(!p.any_open());
+    }
+
+    #[test]
+    fn ask_variant_name_resets_draft() {
+        let mut p = EditorPrompts {
+            variant_name_draft: "stale".into(),
+            ..Default::default()
+        };
+        p.ask_variant_name(PathBuf::from("b.png"));
+        assert!(p.variant_name_draft.is_empty());
+        assert_eq!(
+            p.variant_prompt,
+            Some(VariantPrompt::Name {
+                source: PathBuf::from("b.png")
+            })
+        );
+    }
+
+    #[test]
+    fn open_overlay_icon_picker_resets_search() {
+        let mut p = EditorPrompts {
+            overlay_icon_search: "old".into(),
+            ..Default::default()
+        };
+        p.open_overlay_icon_picker("btn".into());
+        assert!(p.overlay_icon_search.is_empty());
+        assert_eq!(p.overlay_icon_picker_for.as_deref(), Some("btn"));
     }
 }

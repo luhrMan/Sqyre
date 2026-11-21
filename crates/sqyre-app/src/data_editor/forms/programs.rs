@@ -69,7 +69,7 @@ impl DataEditor {
                 crate::widgets::icon_button(ui, crate::model_icons::WINDOW, ht::ED_PICK_WINDOW)
             };
             if pick.clicked() {
-                self.window_picker = pickers::open_window_picker(
+                self.prompts.window_picker = pickers::open_window_picker(
                     &self.form_program.process_path,
                     &self.form_program.window_title,
                 );

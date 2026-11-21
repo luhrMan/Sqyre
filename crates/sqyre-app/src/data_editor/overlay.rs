@@ -164,15 +164,15 @@ impl DataEditor {
         settings: &mut UserSettings,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
-        let Some(button_id) = self.overlay_icon_picker_for.clone() else {
+        let Some(button_id) = self.prompts.overlay_icon_picker_for.clone() else {
             return;
         };
         if sqyre_persist::is_quick_access_hub_id(&button_id) {
-            self.overlay_icon_picker_for = None;
+            self.prompts.overlay_icon_picker_for = None;
             return;
         }
         if self.selected_entity.as_deref() != Some(button_id.as_str()) {
-            self.overlay_icon_picker_for = None;
+            self.prompts.overlay_icon_picker_for = None;
             return;
         }
         let current = self.form_overlay.icon.clone();
@@ -209,7 +209,7 @@ impl DataEditor {
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,
                     &current,
-                    &mut self.overlay_icon_search,
+                    &mut self.prompts.overlay_icon_search,
                 ) {
                     self.form_overlay.icon = id.to_string();
                     close = true;
@@ -222,7 +222,7 @@ impl DataEditor {
             close |= crate::widgets::consume_escape(ui);
         });
         if !open || close {
-            self.overlay_icon_picker_for = None;
+            self.prompts.overlay_icon_picker_for = None;
         }
         let _ = settings; // form-edited; persist via Save
     }

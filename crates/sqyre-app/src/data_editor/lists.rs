@@ -700,7 +700,7 @@ impl DataEditor {
         };
         self.selected_program = Some(prog.to_string());
         self.selected_entity = Some(col.name.clone());
-        self.window_picker = pickers::ActivePicker::Coord {
+        self.prompts.window_picker = pickers::ActivePicker::Coord {
             kind: pickers::CoordKind::SearchArea,
             search: String::new(),
             value: self.form_search_area.clone(),

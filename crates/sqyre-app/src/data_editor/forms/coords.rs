@@ -226,7 +226,7 @@ impl DataEditor {
             self.request_mask_image_pick();
         }
         if remove_clicked {
-            self.confirm = Some(PendingConfirm::DeleteMaskImage);
+            self.prompts.confirm = Some(PendingConfirm::DeleteMaskImage);
         }
 
         if !has_image {

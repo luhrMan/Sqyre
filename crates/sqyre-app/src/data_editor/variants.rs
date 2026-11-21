@@ -3,7 +3,7 @@
 use super::helpers::copy_image_as_png;
 #[cfg(any(test, feature = "native-runtime"))]
 use super::helpers::{parse_i32, unique_name};
-use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm, VariantPrompt};
+use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
 };
@@ -164,7 +164,7 @@ impl DataEditor {
                     "Delete",
                     !deny,
                 ) {
-                    self.confirm = Some(PendingConfirm::DeleteVariant {
+                    self.prompts.confirm = Some(PendingConfirm::DeleteVariant {
                         variant: variant.clone(),
                     });
                 }
@@ -202,8 +202,7 @@ impl DataEditor {
         if existing.is_empty() {
             self.add_icon_variant(catalog, icons, settings, "Original", &path);
         } else {
-            self.variant_name_draft.clear();
-            self.variant_prompt = Some(VariantPrompt::Name { source: path });
+            self.prompts.ask_variant_name(path);
         }
     }
 
@@ -239,7 +238,7 @@ impl DataEditor {
                 let _ = settings;
             }
             Err(AddVariantError::Exists(e)) => {
-                self.confirm = Some(PendingConfirm::OverwriteVariant {
+                self.prompts.confirm = Some(PendingConfirm::OverwriteVariant {
                     variant: e.variant_name,
                     source: source.to_path_buf(),
                 });

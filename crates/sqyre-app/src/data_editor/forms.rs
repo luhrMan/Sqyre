@@ -485,7 +485,7 @@ impl DataEditor {
                 ui,
                 catalog,
                 icons,
-                &mut self.window_picker,
+                &mut self.prompts.window_picker,
                 CoordKind::SearchArea,
                 &ref_val,
                 pickers::CoordRefFieldOpts {

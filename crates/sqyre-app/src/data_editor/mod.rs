@@ -25,10 +25,10 @@ mod variants;
 use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::CatalogPaint;
-use crate::pickers::{self, ActivePicker, PickerResult};
+use crate::pickers::{self, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
-use dialogs::{PendingConfirm, VariantPrompt};
+use dialogs::{ConfirmSubject, EditorPrompts, PendingConfirm};
 use eframe::egui;
 use form_fields::{
     AtlasFields, ItemFields, KeyedPreview, MaskFields, OverlayFields, PointFields, ProgramFields,
@@ -119,10 +119,9 @@ pub struct DataEditor {
     /// Overlay button form draft (placement, style, visibility gate).
     form_overlay: OverlayFields,
     form_program: ProgramFields,
-    variant_name_draft: String,
-    variant_prompt: Option<VariantPrompt>,
+    /// Confirm / variant-name / icon-picker / window-picker modals.
+    prompts: EditorPrompts,
     status_banner: StatusBanner,
-    confirm: Option<PendingConfirm>,
     /// After New Point/Search Area: auto-arm record and persist on capture.
     save_after_record: bool,
     /// Program rename changed macro or hotkey tags; refresh bindings after paint.
@@ -135,12 +134,6 @@ pub struct DataEditor {
     coord_preview: KeyedPreview<(EditorTab, String, String)>,
     /// One-frame `force` armed by the preview's floating refresh button.
     preview_force: bool,
-    /// Overlay button id whose icon picker popup is open.
-    overlay_icon_picker_for: Option<String>,
-    /// Filter text for the overlay icon picker.
-    overlay_icon_search: String,
-    /// Running-window picker for Program process binding.
-    window_picker: ActivePicker,
     /// Background ScreenCap capture+save; polled each frame.
     screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Create a catalog item from the current ScreenCap preview (processed after paint).
@@ -203,19 +196,14 @@ impl Default for DataEditor {
             form_atlas: AtlasFields::default(),
             form_overlay: OverlayFields::default(),
             form_program: ProgramFields::default(),
-            variant_name_draft: String::new(),
-            variant_prompt: None,
+            prompts: EditorPrompts::default(),
             status_banner: StatusBanner::default(),
-            confirm: None,
             save_after_record: false,
             hotkey_refresh: false,
             collection_preview: KeyedPreview::default(),
             atlas_preview: KeyedPreview::default(),
             coord_preview: KeyedPreview::default(),
             preview_force: false,
-            overlay_icon_picker_for: None,
-            overlay_icon_search: String::new(),
-            window_picker: ActivePicker::None,
             screen_cap_pending: None,
             screen_cap_new_item: false,
             collection_capture_pending: None,
@@ -360,8 +348,7 @@ impl DataEditor {
 
     fn clear_entity_selection(&mut self) {
         self.selected_entity = None;
-        self.variant_prompt = None;
-        self.overlay_icon_picker_for = None;
+        self.prompts.clear_entity_prompts();
     }
 
     fn switch_tab(&mut self, tab: EditorTab, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -524,8 +511,31 @@ impl DataEditor {
         });
         // `.open` reports the titlebar close; `self.open` the Esc path.
         self.open = open && self.open;
-        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
-        self.draw_confirm(env, previews);
+        if let Some((name, source)) = self
+            .prompts
+            .draw_variant_name_prompt(ctx, env.pending_scale)
+        {
+            self.add_icon_variant(
+                CatalogView::new(env.catalog),
+                env.icons,
+                env.settings,
+                &name,
+                &source,
+            );
+        }
+        let subject = ConfirmSubject {
+            program: self.selected_program.as_deref(),
+            entity: self.selected_entity.as_deref(),
+        };
+        if let Some(confirmed) = self.prompts.draw_confirm(
+            ctx,
+            CatalogView::new(env.catalog),
+            env.icons,
+            subject,
+            env.pending_scale,
+        ) {
+            self.apply_confirm(confirmed, env, previews);
+        }
         self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
@@ -545,7 +555,7 @@ impl DataEditor {
         env: &mut DataEditorCtx<'_>,
         previews: &mut PreviewTooltipCache,
     ) {
-        if !self.window_picker.is_open() {
+        if !self.prompts.window_picker.is_open() {
             return;
         }
         let macro_opts: Vec<(String, Vec<String>)> = env
@@ -555,7 +565,7 @@ impl DataEditor {
             .collect();
         match pickers::show_active_picker(
             env.ctx,
-            &mut self.window_picker,
+            &mut self.prompts.window_picker,
             &mut CatalogPaint {
                 catalog: sqyre_persist::CatalogView::new(env.catalog),
                 icons: env.icons,
@@ -948,7 +958,7 @@ impl DataEditor {
     /// Ask to delete the selected program / entity (list row right-click → Delete).
     pub(crate) fn request_delete_selected(&mut self) {
         if let Some(label) = self.selected_delete_label() {
-            self.confirm = Some(PendingConfirm::Delete { label });
+            self.prompts.confirm = Some(PendingConfirm::Delete { label });
         }
     }
 
@@ -965,10 +975,7 @@ impl DataEditor {
     }
 
     fn owns_delete_key(&self, ui: &egui::Ui) -> bool {
-        self.confirm.is_none()
-            && self.variant_prompt.is_none()
-            && !self.window_picker.is_open()
-            && self.overlay_icon_picker_for.is_none()
+        !self.prompts.any_open()
             && !ui.ctx().any_popup_open()
             && !ui.ctx().text_edit_focused()
             && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
@@ -976,10 +983,7 @@ impl DataEditor {
 
     /// Enter → Update only when this window is in front and no overlay owns the key.
     fn enter_commits_update(&self, ui: &egui::Ui) -> bool {
-        self.confirm.is_none()
-            && self.variant_prompt.is_none()
-            && !self.window_picker.is_open()
-            && self.overlay_icon_picker_for.is_none()
+        !self.prompts.any_open()
             && !ui.ctx().any_popup_open()
             && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
             && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
