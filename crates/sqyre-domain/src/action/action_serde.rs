@@ -4,15 +4,16 @@
 //! struct that includes `type` plus flattened detection/condition/nav fields.
 
 use super::{
-    default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
-    default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
-    is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
-    is_default_match_method, is_default_ocr_blur, is_default_ocr_match_mode, is_default_ocr_text,
-    is_default_plane_flip, is_default_resize, is_default_target_color, is_false, is_true,
-    is_zero_i32, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch, FindPixelData,
-    ImageSearchData, ItemSortBy, ItemSortThen, ListColumn, LoopJumpMode, MatchMethod, MouseButton,
-    NavigateSelectData, OcrData, PressState, ScalarValue, VariableAssignment,
-    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    default_assignments, default_image_blur, default_loop_count, default_match_scale_percent,
+    default_ocr_blur, default_ocr_text, default_resize, default_target_color, default_true,
+    default_wait_time, is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
+    is_default_match_method, is_default_match_scale_percent, is_default_ocr_blur,
+    is_default_ocr_match_mode, is_default_ocr_text, is_default_plane_flip, is_default_resize,
+    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
+    CoordinateRef, DetectionBranch, FindPixelData, ImageSearchData, ItemSortBy, ItemSortThen,
+    ListColumn, LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, OcrData, PressState,
+    ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
+    DEFAULT_SMOOTH_LOW,
 };
 use crate::PlaneFlip;
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,12 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_image_blur"
         )]
         blur: i32,
+        #[serde(
+            rename = "matchscalepercent",
+            default = "default_match_scale_percent",
+            skip_serializing_if = "is_default_match_scale_percent"
+        )]
+        match_scale_percent: i32,
         #[serde(
             rename = "matchmethod",
             default,
@@ -400,6 +407,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_scale_percent,
                 match_method,
                 plane_flip,
                 sort_by,
@@ -414,6 +422,7 @@ impl From<ActionKindWire> for ActionKind {
                 search_area,
                 tolerance,
                 blur,
+                match_scale_percent: crate::clamp_match_scale_percent(match_scale_percent),
                 match_method,
                 plane_flip,
                 sort_by,
@@ -645,6 +654,12 @@ enum ActionKindWireRef<'a> {
             skip_serializing_if = "is_default_image_blur"
         )]
         blur: i32,
+        #[serde(
+            rename = "matchscalepercent",
+            default = "default_match_scale_percent",
+            skip_serializing_if = "is_default_match_scale_percent"
+        )]
+        match_scale_percent: i32,
         #[serde(
             rename = "matchmethod",
             default,
@@ -944,6 +959,7 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 search_area: &d.search_area,
                 tolerance: d.tolerance,
                 blur: d.blur,
+                match_scale_percent: d.match_scale_percent,
                 match_method: d.match_method,
                 plane_flip: d.plane_flip,
                 sort_by: d.sort_by,

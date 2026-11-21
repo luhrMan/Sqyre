@@ -18,6 +18,7 @@ pub(crate) struct OverlayGateFields {
     pub search_area: String,
     pub tolerance: f64,
     pub blur: i32,
+    pub match_scale_percent: i32,
     pub match_method: sqyre_domain::MatchMethod,
     pub interval_ms: u64,
 }
@@ -30,6 +31,7 @@ impl Default for OverlayGateFields {
             search_area: String::new(),
             tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
             blur: DEFAULT_OVERLAY_GATE_BLUR,
+            match_scale_percent: sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT,
             match_method: sqyre_domain::MatchMethod::CcoeffNormed,
             interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
         }
@@ -44,6 +46,7 @@ impl OverlayGateFields {
             search_area: gate.search_area.clone(),
             tolerance: gate.tolerance,
             blur: gate.blur,
+            match_scale_percent: gate.match_scale_percent,
             match_method: gate.match_method,
             interval_ms: gate.interval_ms,
         }
@@ -60,6 +63,7 @@ impl OverlayGateFields {
             search_area: self.search_area.trim().to_string(),
             tolerance: self.tolerance,
             blur: self.blur,
+            match_scale_percent: self.match_scale_percent,
             match_method: self.match_method,
             interval_ms: self.interval_ms,
         };
@@ -73,6 +77,7 @@ impl OverlayGateFields {
             || self.search_area.trim() != gate.search_area.trim()
             || sqyre_domain::f64_changed(self.tolerance, gate.tolerance)
             || self.blur != gate.blur
+            || self.match_scale_percent != gate.match_scale_percent
             || self.match_method != gate.match_method
             || self.interval_ms != gate.interval_ms
     }

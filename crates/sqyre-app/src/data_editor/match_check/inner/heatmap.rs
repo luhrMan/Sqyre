@@ -117,6 +117,30 @@ pub(super) fn stamp_peak_kernel(
     }
 }
 
+/// How match-map coordinates map onto the display heatmap canvas.
+#[derive(Clone, Copy)]
+pub(crate) struct HeatmapStampMap {
+    pub match_scale: f32,
+    pub area_x0: f32,
+    pub area_y0: f32,
+    pub src_w: u32,
+    pub src_h: u32,
+}
+
+impl HeatmapStampMap {
+    /// Match map already lives in display pixels (`src` size == canvas).
+    #[cfg(test)]
+    pub fn display_space(image_w: usize, image_h: usize) -> Self {
+        Self {
+            match_scale: 1.0,
+            area_x0: 0.0,
+            area_y0: 0.0,
+            src_w: image_w.max(1) as u32,
+            src_h: image_h.max(1) as u32,
+        }
+    }
+}
+
 /// Build RGBA heatmap: compact peak kernels at match origins, graded colormap.
 pub(crate) fn scores_to_heatmap_rgba(
     map: &MatchMap,
@@ -126,6 +150,7 @@ pub(crate) fn scores_to_heatmap_rgba(
     _tmpl_h: usize,
     method: MatchMethod,
     tolerance: f32,
+    stamp: HeatmapStampMap,
 ) -> (Vec<u8>, MatchSummary) {
     let summary = compute_match_summary(map, method, tolerance);
     let mut rgba = vec![0u8; image_w * image_h * 4];
@@ -146,13 +171,24 @@ pub(crate) fn scores_to_heatmap_rgba(
             if !score_pools_in_heatmap(score, method, tolerance) {
                 continue;
             }
+            let (ox, oy) = super::match_xy_to_display(
+                x as i32,
+                y as i32,
+                stamp.match_scale,
+                stamp.area_x0,
+                stamp.area_y0,
+                stamp.src_w,
+                stamp.src_h,
+                image_w,
+                image_h,
+            );
             stamp_peak_kernel(
                 &mut pooled,
                 &mut weight,
                 image_w,
                 image_h,
-                x as i32,
-                y as i32,
+                ox,
+                oy,
                 score,
                 method,
             );
@@ -215,26 +251,43 @@ pub(super) fn pooled_score_at(
     best
 }
 
-/// Hover probe at an image-space pixel (anywhere under the cursor).
+/// Hover probe at a display underlay pixel (anywhere under the cursor).
 pub(crate) fn hover_at_image(
     map: &MatchMap,
     summary: &MatchSummary,
     ix: i32,
     iy: i32,
-    tmpl_w: usize,
-    tmpl_h: usize,
+    tmpl_match_w: usize,
+    tmpl_match_h: usize,
     method: MatchMethod,
     tolerance: f32,
+    stamp: HeatmapStampMap,
+    display_w: usize,
+    display_h: usize,
 ) -> Option<MatchCheckHover> {
     if ix < 0 || iy < 0 {
         return None;
     }
+    let (mx, my) = super::display_xy_to_match(
+        ix,
+        iy,
+        stamp.match_scale,
+        stamp.area_x0,
+        stamp.area_y0,
+        stamp.src_w,
+        stamp.src_h,
+        display_w,
+        display_h,
+    )?;
+    if mx < 0 || my < 0 {
+        return None;
+    }
     let score = pooled_score_at(
         map,
-        ix as usize,
-        iy as usize,
-        tmpl_w,
-        tmpl_h,
+        mx as usize,
+        my as usize,
+        tmpl_match_w,
+        tmpl_match_h,
         method,
         tolerance,
     )?;

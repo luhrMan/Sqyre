@@ -2,6 +2,7 @@
 
 mod find_pixel;
 mod image_util;
+mod match_scale;
 mod ocr_boxes;
 #[cfg(not(target_arch = "wasm32"))]
 mod ocr_engine;
@@ -13,6 +14,7 @@ pub use image_util::{
     flip_image_buf, flip_mask_u8, gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask,
     resize_nearest, rgb_capture_to_image_buf, rgb_to_grayscale, rgba_to_rgb_buf,
 };
+pub use match_scale::{remap_point_to_source, scale_for_match, ScaledMatchInputs};
 pub use ocr_boxes::{
     find_target_occurrences, ocr_text_matches, text_from_ocr_boxes, OcrMatch, OcrMatchError,
     OcrRecognition, OcrWordBox, TargetOccurrence,

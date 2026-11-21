@@ -316,6 +316,11 @@ pub struct OverlayVisibilityGate {
     pub tolerance: f64,
     #[serde(default = "default_overlay_gate_blur")]
     pub blur: i32,
+    #[serde(
+        default = "default_overlay_gate_match_scale_percent",
+        skip_serializing_if = "is_default_overlay_gate_match_scale_percent"
+    )]
+    pub match_scale_percent: i32,
     #[serde(default)]
     pub match_method: MatchMethod,
     /// Milliseconds between capture+match polls.
@@ -331,6 +336,7 @@ impl Default for OverlayVisibilityGate {
             search_area: String::new(),
             tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
             blur: DEFAULT_OVERLAY_GATE_BLUR,
+            match_scale_percent: sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT,
             match_method: MatchMethod::CcoeffNormed,
             interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
         }
@@ -348,6 +354,8 @@ impl OverlayVisibilityGate {
 
     pub fn clamp(&mut self) {
         self.blur = clamp_match_blur(self.blur);
+        self.match_scale_percent =
+            sqyre_domain::clamp_match_scale_percent(self.match_scale_percent);
         self.tolerance = clamp_match_tolerance(self.tolerance, self.match_method);
         if self.interval_ms == 0 {
             self.interval_ms = DEFAULT_OVERLAY_GATE_INTERVAL_MS;
@@ -460,6 +468,14 @@ fn default_overlay_gate_tolerance() -> f64 {
 
 fn default_overlay_gate_blur() -> i32 {
     DEFAULT_OVERLAY_GATE_BLUR
+}
+
+fn default_overlay_gate_match_scale_percent() -> i32 {
+    sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT
+}
+
+fn is_default_overlay_gate_match_scale_percent(v: &i32) -> bool {
+    *v == sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT
 }
 
 fn default_overlay_gate_interval_ms() -> u64 {

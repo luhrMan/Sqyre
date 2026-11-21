@@ -16,12 +16,13 @@ use sqyre_domain::{
 };
 use sqyre_match::{
     blur_image_owned, cluster_points, find_peaks_for_method, match_template_with_prepared,
-    prepare_search, search_blur_kernel, ImageBuf, MatchError, MatchMap, Point, SearchPrep,
+    prepare_search, prepare_template, search_blur_kernel, ImageBuf, MatchError, MatchMap, Point,
+    SearchPrep,
 };
 use sqyre_ports::{highlight_clear, highlight_fill, FindContext, LogFind};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
-    load_rgb_image,
+    load_rgb_image, remap_point_to_source, scale_for_match,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -44,6 +45,7 @@ pub(crate) fn execute_image_search(
         search_area,
         tolerance,
         blur,
+        match_scale_percent,
         match_method,
         plane_flip,
         sort_by,
@@ -87,6 +89,7 @@ pub(crate) fn execute_image_search(
         let params = MatchParams {
             tolerance: *tolerance,
             blur: *blur,
+            match_scale_percent: *match_scale_percent,
             match_method: *match_method,
             plane_flip: *plane_flip,
         };
@@ -189,6 +192,7 @@ struct VariantMatchOutcome {
 struct MatchParams {
     tolerance: f64,
     blur: i32,
+    match_scale_percent: i32,
     match_method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
 }
@@ -204,6 +208,7 @@ fn capture_and_match(
     let &MatchParams {
         tolerance,
         blur,
+        match_scale_percent,
         match_method,
         plane_flip,
     } = params;
@@ -370,6 +375,7 @@ fn capture_and_match(
 
     let match_ctx = MatchCtx {
         kernel,
+        match_scale_percent,
         method,
         plane_flip,
         threshold,
@@ -902,6 +908,7 @@ fn warm_search_ffts(
 
 struct MatchCtx<'a> {
     kernel: i32,
+    match_scale_percent: i32,
     method: MatchMethod,
     plane_flip: sqyre_domain::PlaneFlip,
     threshold: f32,
@@ -980,36 +987,77 @@ fn match_one_variant(
     };
 
     let t0 = Instant::now();
-    let (matches, best_score) = match get_cached_prepared_template(
-        &variant.path,
-        ctx.kernel,
-        ctx.plane_flip,
-        template_blurred.as_ref(),
-        target.mask_path.as_deref(),
-        mask_bytes.as_deref().map(|m| m.as_slice()),
-        ctx.method,
-    )
-    .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", variant.path)))
-    .and_then(|prepared| {
-        match_template_with_prepared(search_img, template_blurred.as_ref(), &prepared, prep)
-            .map_err(SearchError::from)
-    }) {
-        Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => (Ok(Vec::new()), None),
-        Err(e) => (Err(e), None),
-        Ok(map) => {
-            let mut pts = find_peaks_for_method(&map, ctx.threshold, ctx.close_dist, ctx.method);
-            // The best score is only logged on a miss; on a hit the extra
-            // full-map scan would be wasted.
-            let best = if pts.is_empty() {
-                compute_best_score(&map, ctx.method)
-            } else {
-                None
-            };
-            for p in &mut pts {
-                p.x += ox;
-                p.y += oy;
+    let scale_percent = sqyre_domain::clamp_match_scale_percent(ctx.match_scale_percent);
+    let (matches, best_score) = if scale_percent < sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT {
+        let scaled = scale_for_match(
+            search_img,
+            template_blurred.as_ref(),
+            mask_bytes.as_deref().map(|m| m.as_slice()),
+            scale_percent,
+        );
+        match prepare_template(&scaled.template, scaled.mask.as_deref(), ctx.method)
+            .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", variant.path)))
+            .and_then(|prepared| {
+                let search_prep = prepare_search(&scaled.search);
+                match_template_with_prepared(
+                    &scaled.search,
+                    &scaled.template,
+                    &prepared,
+                    Some(&search_prep),
+                )
+                .map_err(SearchError::from)
+            }) {
+            Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => (Ok(Vec::new()), None),
+            Err(e) => (Err(e), None),
+            Ok(map) => {
+                let mut pts =
+                    find_peaks_for_method(&map, ctx.threshold, ctx.close_dist, ctx.method);
+                let best = if pts.is_empty() {
+                    compute_best_score(&map, ctx.method)
+                } else {
+                    None
+                };
+                for p in &mut pts {
+                    *p = remap_point_to_source(*p, scaled.scale);
+                    p.x += ox;
+                    p.y += oy;
+                }
+                (Ok(pts), best)
             }
-            (Ok(pts), best)
+        }
+    } else {
+        match get_cached_prepared_template(
+            &variant.path,
+            ctx.kernel,
+            ctx.plane_flip,
+            template_blurred.as_ref(),
+            target.mask_path.as_deref(),
+            mask_bytes.as_deref().map(|m| m.as_slice()),
+            ctx.method,
+        )
+        .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", variant.path)))
+        .and_then(|prepared| {
+            match_template_with_prepared(search_img, template_blurred.as_ref(), &prepared, prep)
+                .map_err(SearchError::from)
+        }) {
+            Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => (Ok(Vec::new()), None),
+            Err(e) => (Err(e), None),
+            Ok(map) => {
+                let mut pts =
+                    find_peaks_for_method(&map, ctx.threshold, ctx.close_dist, ctx.method);
+                // The best score is only logged on a miss; on a hit the extra
+                // full-map scan would be wasted.
+                let best = if pts.is_empty() {
+                    compute_best_score(&map, ctx.method)
+                } else {
+                    None
+                };
+                for p in &mut pts {
+                    p.x += ox;
+                    p.y += oy;
+                }
+                (Ok(pts), best)
+            }
         }
     };
     let match_ms = t0.elapsed().as_secs_f64() * 1000.0;

@@ -318,6 +318,7 @@ impl DataEditor {
                         ui,
                         &mut self.drafts.overlay.gate.tolerance,
                         &mut self.drafts.overlay.gate.blur,
+                        &mut self.drafts.overlay.gate.match_scale_percent,
                         &mut self.drafts.overlay.gate.match_method,
                         |ui, method| {
                             crate::widgets::advanced_section(ui, "de_overlay_gate_adv", |ui| {
