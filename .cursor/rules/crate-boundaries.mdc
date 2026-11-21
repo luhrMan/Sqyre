@@ -44,9 +44,18 @@ When touching a known hub, prefer extract over add:
 | Hub | Prefer |
 |-----|--------|
 | `SqyreApp` | New subsystem types / modules; `impl` blocks on extracted types — not more fields on `SqyreApp` |
+| `DataEditor` | Owned sub-states (`EditorNav`, `FormDrafts`, `EditorPrompts`, `PreviewState`, `BackgroundJobs`, `MatchCheckTool`); paint/list take `CatalogView` / `CatalogPaint`; `DataEditorCtx` stays the mutable persist/jobs host |
 | `ProgramCatalog` | Read-only views for UI; mutate API stays in persist |
 | `UserSettings` / settings UI | Partitioned structs + smaller settings panels |
 | `x11_buttons` / `win_buttons` / large portal files | Shared OS-neutral modules beside platform files (`cross-platform`) |
+
+Already-extracted app hosts (compose these; do not flatten back onto `SqyreApp`):
+
+| Type | Owns |
+|------|------|
+| `MacroListPanel` | Left macro-list open/filter/delete-confirm |
+| `ViewportScaleState` | Main-viewport size tracker + one-frame dialog scale event |
+| `paint_metrics` | Shared row/pill sizing (`row_height`, `summary_pill_height`) — leaf used by `tree_chrome` and `var_pills` (no cycle) |
 
 Soft signals to extract before adding: file already multi-thousand LOC, or a type that many unrelated modules import. A hub split is one concern — update **all** call sites in that change (`no-backwards-compatibility`); do not leave shims.
 
