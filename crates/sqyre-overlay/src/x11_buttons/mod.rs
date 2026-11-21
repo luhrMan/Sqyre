@@ -76,6 +76,7 @@ use x11::xlib::{
 mod geometry;
 mod host_loop;
 mod visibility;
+mod paint;
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
 const SHAPE_BOUNDING: c_int = 0;
@@ -600,7 +601,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                     live.spec.face.corner_radius,
                     live.spec.input_enabled,
                 );
-                paint_button(state, &live, true);
+                paint::paint_button(state, &live, true);
                 apply_button_cursor(state, live.hit, live.hovered);
                 state.buttons.insert(live.spec.id.clone(), live);
             }
@@ -614,7 +615,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
-                    paint_button(state, live, true);
+                    paint::paint_button(state, live, true);
                     // Transparent faces re-derive hit after paint — but not while
                     // this id is mid-relocate drag (hit must stay empty until commit).
                     let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
@@ -1037,7 +1038,7 @@ fn begin_relocate_drag(state: &mut HostState, id: &str, root_x: i32, root_y: i32
     unsafe {
         XUngrabPointer(state.display, CurrentTime);
     }
-    apply_empty_input_shape(state.display, bhit);
+    paint::apply_empty_input_shape(state.display, bhit);
     // SAFETY: HostState display invariant; cursor created on this display.
     unsafe {
         if state.move_cursor != 0 {
@@ -1294,9 +1295,9 @@ fn sync_relocate_shield(state: &mut HostState) {
             })
             .collect();
         if local.is_empty() {
-            apply_empty_input_shape(state.display, shield.win);
+            paint::apply_empty_input_shape(state.display, shield.win);
         } else {
-            apply_shape_region(state.display, shield.win, SHAPE_INPUT, &mut local);
+            paint::apply_shape_region(state.display, shield.win, SHAPE_INPUT, &mut local);
         }
         shield.shape_sig = root_rects;
     }
@@ -1577,14 +1578,14 @@ fn create_button(
             return Err(OverlayError::CreateWindow("button face"));
         };
         register_overlay_window(state.display, state.root, win, OVERLAY_WM_TITLE);
-        apply_empty_input_shape(state.display, win);
+        paint::apply_empty_input_shape(state.display, win);
         // Shape the hit before map. A full-window region on the first commit
         // is the cursor wall; click-through stays empty, everything else is
         // the rounded target the compositor can deliver events to.
         if state.passthrough_hits && state.click_through {
-            apply_empty_input_shape(state.display, hit);
+            paint::apply_empty_input_shape(state.display, hit);
         } else {
-            apply_hit_rounded_input(
+            paint::apply_hit_rounded_input(
                 state.display,
                 hit,
                 spec.face.w,
@@ -1660,52 +1661,6 @@ fn create_button(
     })
 }
 
-fn paint_button(state: &HostState, btn: &LiveButton, update_shape: bool) {
-    let paint = ButtonPaint::from_face(&btn.spec.face, btn.hovered, btn.spec.busy, btn.busy_phase);
-    let rgba = if btn.argb {
-        raster::rasterize_argb(&paint)
-    } else {
-        raster::rasterize(&paint)
-    };
-    // ARGB faces carry no Bounding — the painted alpha is the shape, and an
-    // empty ShapeInput already routes clicks to the hit cover.
-    if update_shape && !btn.argb {
-        if paint.busy {
-            // The spinner animates with pixels-only repaints (reapplying
-            // Shape* every frame made the face eat clicks on XWayland), so
-            // the bounding must cover the whole orbit — a single frame's ink
-            // would clip the strokes wherever they leave it. The union is
-            // phase-invariant: apply once per busy stint, not on every
-            // expose/hover repaint.
-            if btn.face_bounding.get() != FaceBounding::BusyUnion {
-                // Grow the bounding BEFORE the blit: PutImage is clipped by
-                // the current bounding, so the ink must land inside the
-                // union that will display it.
-                let alpha = raster::busy_shape_alpha(&paint);
-                apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &alpha);
-                btn.face_bounding.set(FaceBounding::BusyUnion);
-            }
-        } else if btn.face_bounding.get() == FaceBounding::Chrome {
-            // Idle face: derive the Bounding from the painted alpha so the
-            // clip is pixel-exact with the blit. The old integer-circle
-            // XRectangle shape disagreed with the SDF fill at corner rows —
-            // inside-shape gaps showed unpainted flecks past the border ring.
-            // Apply the shape first so the clipped blit below covers ink that
-            // grew since the last frame.
-            apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
-        } else {
-            // Union→chrome shrink: overwrite the stale S ink while the union
-            // bounding still covers it, then shrink — otherwise the clipped
-            // PutImage leaves old S pixels in the backing store, which
-            // composite through as a ghost when the shape lags.
-            btn.face_bounding.set(FaceBounding::Chrome);
-            blit_rgba(state, btn.win, paint.w, paint.h, &rgba, false);
-            apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
-            return;
-        }
-    }
-    blit_rgba(state, btn.win, paint.w, paint.h, &rgba, btn.argb);
-}
 
 fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
     // SAFETY: caller passes host-thread display and live face+hit for one button.
@@ -1812,8 +1767,8 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         tip.mapped = true;
     }
     if let Some(tip) = state.tip.as_ref() {
-        apply_tip_shape(state.display, tip.win, tip.w, tip.h, tip.ui_scale);
-        blit_rgba(state, tip.win, tip.w, tip.h, &rgba, false);
+        paint::apply_tip_shape(state.display, tip.win, tip.w, tip.h, tip.ui_scale);
+        paint::blit_rgba(state, tip.win, tip.w, tip.h, &rgba, false);
         // Keep tip under button hits. ConfigureWindow can synthesize Leave/Enter —
         // suppress crossing and discard those events before re-enabling tip logic.
         state.suppress_crossing = true;
@@ -1916,7 +1871,7 @@ fn repaint_chooser(state: &mut HostState) {
         return;
     }
     let win = ch.win;
-    blit_rgba(state, win, tw, th, &rgba, false);
+    paint::blit_rgba(state, win, tw, th, &rgba, false);
     if let Some(ch) = state.chooser.as_mut() {
         ch.rows = rows;
         ch.w = tw;
@@ -1997,7 +1952,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
         note("overlay-x11: chooser create failed");
         return;
     };
-    blit_rgba(state, win, tw, th, &rgba, false);
+    paint::blit_rgba(state, win, tw, th, &rgba, false);
     // SAFETY: HostState display invariant.
     unsafe {
         XMapRaised(state.display, win);
@@ -2156,29 +2111,13 @@ fn create_chooser_window(
         }
         register_overlay_window(state.display, state.root, face, OVERLAY_WM_TITLE);
         let radius = TIP_CORNER_PX.round().max(0.0) as i32;
-        let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-        apply_shape_region(state.display, face, SHAPE_BOUNDING, &mut rects);
-        apply_chooser_input_shape(state.display, face, w, h, TIP_CORNER_PX);
+        let mut rects = paint::rounded_rect_xrectangles(w as i32, h as i32, radius);
+        paint::apply_shape_region(state.display, face, SHAPE_BOUNDING, &mut rects);
+        paint::apply_chooser_input_shape(state.display, face, w, h, TIP_CORNER_PX);
         Ok(face)
     }
 }
 
-fn apply_chooser_input_shape(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
-    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-        return;
-    }
-    let radius = radius_px.round().max(0.0) as i32;
-    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-    if rects.is_empty() {
-        rects.push(XRectangle {
-            x: 0,
-            y: 0,
-            width: w as u16,
-            height: h as u16,
-        });
-    }
-    apply_shape_region(display, hit, SHAPE_INPUT, &mut rects);
-}
 
 fn create_tip_window(
     state: &HostState,
@@ -2216,7 +2155,7 @@ fn create_tip_window(
             return Err(OverlayError::CreateWindow("tip"));
         }
         register_overlay_window(state.display, state.root, win, OVERLAY_TIP_WM_TITLE);
-        apply_tip_shape(state.display, win, w, h, ui_scale);
+        paint::apply_tip_shape(state.display, win, w, h, ui_scale);
         // Map without raising — show_tip stacks tip below button hits.
         XMapWindow(state.display, win);
         XFlush(state.display);
@@ -2224,96 +2163,9 @@ fn create_tip_window(
     }
 }
 
-/// Rounded bounding + empty input so the tip never steals hover from the button.
-fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32, ui_scale: f32) {
-    apply_rounded_shape(display, win, w, h, tip_corner_px(ui_scale));
-}
 
-fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8], argb: bool) {
-    // SAFETY: HostState display/gc invariant; `win` is a button/tip on this display.
-    // `XCreateImage` borrows `packed` until we null `data` and destroy the image.
-    unsafe {
-        let (visual, depth, gc, alpha_mask) = if argb {
-            let Some(av) = state.argb else {
-                return;
-            };
-            if state.argb_gc.is_null() {
-                return;
-            }
-            // In a 32-bit TrueColor pixel the alpha byte lives in whatever
-            // bits the RGB masks do not claim (top byte in practice).
-            (
-                av.visual,
-                av.depth,
-                state.argb_gc,
-                !(av.red_mask | av.green_mask | av.blue_mask) & 0xFF00_0000,
-            )
-        } else {
-            (
-                XDefaultVisual(state.display, state.screen),
-                XDefaultDepth(state.display, state.screen),
-                state.gc,
-                0,
-            )
-        };
-        let (red_mask, green_mask, blue_mask) = if visual.is_null() {
-            (0x00FF_0000u64, 0x0000_FF00, 0x0000_00FF)
-        } else {
-            (
-                (*visual).red_mask,
-                (*visual).green_mask,
-                (*visual).blue_mask,
-            )
-        };
-        let mut packed = pack_truecolor(rgba, red_mask, green_mask, blue_mask, alpha_mask);
-        let ximage = XCreateImage(
-            state.display,
-            visual,
-            depth as c_uint,
-            ZPixmap,
-            0,
-            packed.as_mut_ptr().cast::<c_char>(),
-            w,
-            h,
-            32,
-            (w * 4) as c_int,
-        );
-        if ximage.is_null() {
-            return;
-        }
-        (*ximage).byte_order = LSBFirst;
-        (*ximage).bits_per_pixel = 32;
-        XPutImage(state.display, win, gc, ximage, 0, 0, 0, 0, w, h);
-        (*ximage).data = std::ptr::null_mut();
-        XDestroyImage(ximage);
-    }
-}
 
-fn pack_truecolor(
-    rgba: &[u8],
-    red_mask: u64,
-    green_mask: u64,
-    blue_mask: u64,
-    alpha_mask: u64,
-) -> Vec<u8> {
-    let mut out = Vec::with_capacity(rgba.len());
-    for px in rgba.chunks_exact(4) {
-        let packed = place_channel(px[0], red_mask)
-            | place_channel(px[1], green_mask)
-            | place_channel(px[2], blue_mask)
-            | place_channel(px[3], alpha_mask);
-        out.extend_from_slice(&packed.to_le_bytes());
-    }
-    out
-}
 
-fn place_channel(value: u8, mask: u64) -> u32 {
-    if mask == 0 {
-        return 0;
-    }
-    let shift = mask.trailing_zeros();
-    (u32::from(value) << shift) & mask as u32
-}
 
 fn drain_x_events(state: &mut HostState) -> bool {
     let mut saw_pointer = false;
@@ -2363,7 +2215,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 if let Some(tip) = state.tip.as_ref() {
                     let (tw, th, rgba) = raster::rasterize_tip(&tip.text, tip.ui_scale);
                     if tw > 0 && th > 0 && !rgba.is_empty() {
-                        blit_rgba(state, tip.win, tw, th, &rgba, false);
+                        paint::blit_rgba(state, tip.win, tw, th, &rgba, false);
                     }
                 }
                 continue;
@@ -2371,7 +2223,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
             let id = button_id_for_event_win(state, win);
             if let Some(id) = id {
                 if let Some(b) = state.buttons.get(&id) {
-                    paint_button(state, b, true);
+                    paint::paint_button(state, b, true);
                 }
             }
             continue;
@@ -2433,7 +2285,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                     if let Some(b) = state.buttons.get(&id) {
                         // Do not raise/restack here — that synthesizes more Leave/Enter
                         // and used to loop tip show↔hide (~1ms) freezing the host.
-                        paint_button(state, b, true);
+                        paint::paint_button(state, b, true);
                         apply_button_cursor(state, b.hit, b.hovered);
                     }
                 }
@@ -2886,32 +2738,6 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
     }
 }
 
-/// Transparent face: chrome-only Bounding + empty Input (hollow stays clickable via hit).
-fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32, rgba: &[u8]) {
-    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-        return;
-    }
-    let runs = raster::shape_rects_from_alpha(rgba, w, h);
-    let mut bound: Vec<XRectangle> = runs
-        .into_iter()
-        .map(|(x, y, width, height)| XRectangle {
-            x,
-            y,
-            width,
-            height,
-        })
-        .collect();
-    if bound.is_empty() {
-        bound.push(XRectangle {
-            x: (w / 2) as i16,
-            y: (h / 2) as i16,
-            width: 1,
-            height: 1,
-        });
-    }
-    apply_shape_region(display, win, SHAPE_BOUNDING, &mut bound);
-    apply_empty_input_shape(display, win);
-}
 
 use crate::host_press::{overlay_press_kind, OverlayPressKind};
 
@@ -2925,9 +2751,9 @@ fn sync_hit_input(
     input_enabled: bool,
 ) {
     if (state.passthrough_hits && state.click_through) || !input_enabled {
-        apply_empty_input_shape(state.display, hit);
+        paint::apply_empty_input_shape(state.display, hit);
     } else {
-        apply_hit_rounded_input(state.display, hit, w, h, radius);
+        paint::apply_hit_rounded_input(state.display, hit, w, h, radius);
     }
 }
 
@@ -3034,7 +2860,7 @@ fn resume_x_hover_after_click_through(state: &mut HostState, id: &str) {
         btn.hit
     };
     if let Some(btn) = state.buttons.get(id) {
-        paint_button(state, btn, true);
+        paint::paint_button(state, btn, true);
         apply_button_cursor(state, hit, true);
     }
     if !state.relocate_mode {
@@ -3387,7 +3213,7 @@ fn sync_passthrough_hover(state: &mut HostState, id: Option<&str>) {
             btn.hovered = false;
         }
         if let Some(btn) = state.buttons.get(&prev) {
-            paint_button(state, btn, true);
+            paint::paint_button(state, btn, true);
         }
         if state.tip.as_ref().is_some_and(|t| t.for_id == prev) {
             hide_tip(state);
@@ -3403,7 +3229,7 @@ fn sync_passthrough_hover(state: &mut HostState, id: Option<&str>) {
             btn.hovered = true;
         }
         if let Some(btn) = state.buttons.get(id) {
-            paint_button(state, btn, true);
+            paint::paint_button(state, btn, true);
         }
     }
 }
@@ -3540,135 +3366,12 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bo
     );
 }
 
-/// Hit cover: rounded ShapeInput matching the button disk.
-fn apply_hit_rounded_input(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
-    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-        return;
-    }
-    let radius = radius_px.round().max(0.0) as i32;
-    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-    if rects.is_empty() {
-        rects.push(XRectangle {
-            x: 0,
-            y: 0,
-            width: w as u16,
-            height: h as u16,
-        });
-    }
-    apply_shape_region(display, hit, SHAPE_INPUT, &mut rects);
-}
 
-/// Tip / face: no pointer events (visual-only).
-fn apply_empty_input_shape(display: *mut Display, win: Window) {
-    if !xfixes_supported(display) {
-        return;
-    }
-    // SAFETY: callers pass the host-thread display and a window created on it.
-    unsafe {
-        let empty = XFixesCreateRegion(display, std::ptr::null_mut(), 0);
-        if empty == 0 {
-            return;
-        }
-        XFixesSetWindowShapeRegion(display, win, SHAPE_INPUT, 0, 0, empty);
-        XFixesDestroyRegion(display, empty);
-    }
-}
 
-/// Opaque tip panel: rounded Bounding + empty Input.
-fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
-    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-        return;
-    }
-    let radius = radius_px.round().max(0.0) as i32;
-    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-    apply_shape_region(display, win, SHAPE_BOUNDING, &mut rects);
-    apply_empty_input_shape(display, win);
-}
 
-/// Cached XFixes probe — every shape update used to repeat the
-/// `XFixesQueryExtension` + `XFixesQueryVersion` round-trips. Host-thread only.
-fn xfixes_supported(display: *mut Display) -> bool {
-    thread_local! {
-        static CACHED: Cell<Option<bool>> = const { Cell::new(None) };
-    }
-    CACHED.with(|c| {
-        if let Some(ok) = c.get() {
-            return ok;
-        }
-        // SAFETY: callers pass the host-thread display; version out-params are
-        // stack locals. The `x11` binding declares `minor_version` as
-        // `*const c_int` even though the C API writes through it — pass a real
-        // slot (NULL would crash the server call that writes to it).
-        let ok = unsafe {
-            let mut event_base = 0;
-            let mut error_base = 0;
-            if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
-                false
-            } else {
-                let mut major: c_int = 4;
-                let mut minor: c_int = 0;
-                XFixesQueryVersion(
-                    display,
-                    &mut major,
-                    &mut minor as *mut c_int as *const c_int,
-                ) != 0
-            }
-        };
-        c.set(Some(ok));
-        ok
-    })
-}
 
-fn apply_shape_region(display: *mut Display, win: Window, kind: c_int, rects: &mut [XRectangle]) {
-    if rects.is_empty() || !xfixes_supported(display) {
-        return;
-    }
-    // SAFETY: callers pass the host-thread display and a window created on it.
-    unsafe {
-        let region = XFixesCreateRegion(display, rects.as_mut_ptr(), rects.len() as c_int);
-        if region == 0 {
-            return;
-        }
-        XFixesSetWindowShapeRegion(display, win, kind, 0, 0, region);
-        XFixesDestroyRegion(display, region);
-    }
-}
 
-fn rounded_rect_xrectangles(w: i32, h: i32, radius: i32) -> Vec<XRectangle> {
-    if w <= 0 || h <= 0 {
-        return Vec::new();
-    }
-    let r = radius.max(0).min(w / 2).min(h / 2);
-    let mut out = Vec::with_capacity(h as usize);
-    for y in 0..h {
-        let inset = if r == 0 {
-            0
-        } else if y < r {
-            circle_inset(r, r - 1 - y)
-        } else if y >= h - r {
-            circle_inset(r, y - (h - r))
-        } else {
-            0
-        };
-        let width = (w - 2 * inset).max(0);
-        if width > 0 {
-            out.push(XRectangle {
-                x: inset as i16,
-                y: y as i16,
-                width: width as u16,
-                height: 1,
-            });
-        }
-    }
-    out
-}
 
-fn circle_inset(r: i32, y_from_edge: i32) -> i32 {
-    let r = r as f64;
-    let y = y_from_edge.clamp(0, r as i32) as f64;
-    let inside = (r * r - y * y).max(0.0).sqrt();
-    (r - inside).ceil().max(0.0) as i32
-}
 
 #[cfg(test)]
 mod tests;

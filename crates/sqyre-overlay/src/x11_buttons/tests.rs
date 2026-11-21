@@ -1,6 +1,7 @@
 //! Unit tests for the X11 button host.
 
 use super::visibility::{allow_map_raised, MAP_RAISED_SKIP_COUNT};
+use super::paint::{circle_inset, rounded_rect_xrectangles};
 use super::*;
 
 #[test]

@@ -1,6 +1,7 @@
 //! Gate map/unmap and busy-hit visibility for the X11 overlay host.
 
 use super::*;
+use super::paint::{apply_empty_input_shape, apply_hit_rounded_input, paint_button};
 
 /// `XMapRaised` over a focused XWayland game freezes the next drag and drops
 /// held mouse buttons on Mutter. Same gate as relocate `keep_above=false`.
