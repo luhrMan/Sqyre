@@ -24,7 +24,7 @@ pub(crate) struct FlowLoopCtx<'a> {
 }
 
 /// Callback used by flow loops so this module never imports [`crate::run`].
-pub(crate) type RunChildrenFn = fn(&mut Executor<'_>, &[Action], &mut Macro) -> Result<()>;
+pub(crate) use crate::ctx::RunChildrenFn;
 
 pub(crate) fn execute_while(
     exec: &mut Executor<'_>,

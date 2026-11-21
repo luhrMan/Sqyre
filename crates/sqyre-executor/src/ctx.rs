@@ -5,7 +5,7 @@ use crate::backends::{
     OcrEngine, ScreenCapturer, WindowFocuser,
 };
 use crate::error::{FlowSignal, Result};
-use sqyre_domain::{ActionId, Macro};
+use sqyre_domain::{Action, ActionId, Macro, ScalarValue};
 use sqyre_ports::{ActionHighlighter, ActionLogger, ClickFxSink, FocusedWindow, RuntimeVarSink};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -495,5 +495,27 @@ impl<'a> ExecDeps<'a> {
     pub fn variables_dir(mut self, dir: &'a Path) -> Self {
         self.variables_dir = Some(dir);
         self
+    }
+}
+
+/// Runs a list of child actions — injected into flow/navigate so those modules
+/// do not import `run` and recreate a cycle.
+pub(crate) type RunChildrenFn = fn(&mut Executor<'_>, &[Action], &mut Macro) -> Result<()>;
+
+/// Set `monitorNWidth` / `monitorNHeight` builtins.
+pub(crate) fn apply_monitor_sizes(macro_: &mut Macro, sizes: &[(i32, i32)]) {
+    if sizes.is_empty() {
+        macro_.variables.set("monitor1Width", ScalarValue::Int(0));
+        macro_.variables.set("monitor1Height", ScalarValue::Int(0));
+        return;
+    }
+    for (i, (w, h)) in sizes.iter().enumerate() {
+        let n = i + 1;
+        macro_
+            .variables
+            .set(format!("monitor{n}Width"), ScalarValue::Int(i64::from(*w)));
+        macro_
+            .variables
+            .set(format!("monitor{n}Height"), ScalarValue::Int(i64::from(*h)));
     }
 }

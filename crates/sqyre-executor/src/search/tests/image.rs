@@ -239,7 +239,14 @@ fn image_search_break_stops_match_loop() {
     };
     let targets = ["a".into(), "b".into()];
     let area = CoordinateRef::default();
-    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &targets, &branch);
+    let ctx = DetectionCtx::new(
+        ActionId::new(),
+        "test",
+        &area,
+        &targets,
+        &branch,
+        crate::run::run_children,
+    );
     run_matches(&mut exec, &ctx, &results, &mut macro_).unwrap();
     assert_eq!(
         backend

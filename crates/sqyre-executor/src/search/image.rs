@@ -5,9 +5,9 @@ use super::common::{
     sort_hits, DetectionCtx, DetectionExtras, DetectionHit, FrameMemo,
 };
 use crate::backends::{CollectionArea, DesktopRect, ItemMeta};
+use crate::ctx::{Executor, RunChildrenFn};
 use crate::error::{ExecError, FlowSignal, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
-use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
     action_type_label, expand_image_search_targets, grid_item_placements, ordered_item_targets,
@@ -33,6 +33,7 @@ pub(crate) fn execute_image_search(
     exec: &mut Executor<'_>,
     action: &Action,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let ActionKind::ImageSearch(d) = &action.kind else {
         return Err(ExecError::Message("not image search".into()));
@@ -71,7 +72,14 @@ pub(crate) fn execute_image_search(
     let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
     let sorted_targets =
         ordered_search_targets(exec, &expanded, *sort_by, *sort_then, tag_priority);
-    let ctx = DetectionCtx::new(action_id, label, search_area, &sorted_targets, detection);
+    let ctx = DetectionCtx::new(
+        action_id,
+        label,
+        search_area,
+        &sorted_targets,
+        detection,
+        run_children,
+    );
     let wait = &detection.wait;
     let macro_name = macro_.name.clone();
     let result = (|| {

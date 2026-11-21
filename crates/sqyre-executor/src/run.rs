@@ -40,7 +40,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
         None => vec![(0, 0)],
     };
-    apply_monitor_sizes(macro_, &monitor_sizes);
+    crate::ctx::apply_monitor_sizes(macro_, &monitor_sizes);
     exec.publish_runtime_vars(macro_);
     let root = macro_.root.clone();
     let root_id = root.id;
@@ -54,24 +54,6 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         exec.release_held_inputs();
     }
     result
-}
-
-/// Set `monitorNWidth` / `monitorNHeight` builtins.
-pub(crate) fn apply_monitor_sizes(macro_: &mut Macro, sizes: &[(i32, i32)]) {
-    if sizes.is_empty() {
-        macro_.variables.set("monitor1Width", ScalarValue::Int(0));
-        macro_.variables.set("monitor1Height", ScalarValue::Int(0));
-        return;
-    }
-    for (i, (w, h)) in sizes.iter().enumerate() {
-        let n = i + 1;
-        macro_
-            .variables
-            .set(format!("monitor{n}Width"), ScalarValue::Int(i64::from(*w)));
-        macro_
-            .variables
-            .set(format!("monitor{n}Height"), ScalarValue::Int(i64::from(*h)));
-    }
 }
 
 fn action_headline(action: &Action) -> String {
@@ -248,8 +230,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::SetVariable { assignments } => {
             execute_set_variable(exec, action.id, assignments, macro_)
         }
-        ActionKind::ImageSearch(_) => execute_image_search(exec, action, macro_),
-        ActionKind::FindPixel(_) => execute_find_pixel(exec, action, macro_),
+        ActionKind::ImageSearch(_) => execute_image_search(exec, action, macro_, run_children),
+        ActionKind::FindPixel(_) => execute_find_pixel(exec, action, macro_, run_children),
         ActionKind::FocusWindow {
             process_path,
             window_title,
@@ -333,10 +315,12 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             macro_,
         ),
         ActionKind::RunMacro { macro_name } => {
-            execute_run_macro(exec, action.id, macro_name, macro_)
+            execute_run_macro(exec, action.id, macro_name, macro_, execute_action)
         }
-        ActionKind::Ocr(_) => execute_ocr(exec, action, macro_),
-        ActionKind::NavigateSelect(_) => execute_navigate_select(exec, action, macro_),
+        ActionKind::Ocr(_) => execute_ocr(exec, action, macro_, run_children),
+        ActionKind::NavigateSelect(_) => {
+            execute_navigate_select(exec, action, macro_, run_children)
+        }
         ActionKind::NavigateKey { .. } => execute_navigate_key(exec, action, macro_),
     }
 }
@@ -382,9 +366,10 @@ mod tests {
     use crate::test_support::{fast_macro_of, macro_of, FixedResolver};
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
-        VariableAssignment,
+        root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, MatchMode,
+        ScalarValue, VariableAssignment,
     };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 

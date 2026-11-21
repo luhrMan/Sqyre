@@ -4,8 +4,8 @@ use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
     sort_hits, DetectionCtx, DetectionHit, FrameMemo,
 };
+use crate::ctx::{Executor, RunChildrenFn};
 use crate::error::{ExecError, Result};
-use crate::run::Executor;
 use sqyre_domain::{action_type_label, Action, ActionKind, FindPixelData, Macro};
 use sqyre_ports::{DesktopRect, FindContext, LogFind, LogImage};
 use sqyre_vision::find_pixels_clustered;
@@ -22,6 +22,7 @@ pub(crate) fn execute_find_pixel(
     exec: &mut Executor<'_>,
     action: &Action,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let ActionKind::FindPixel(d) = &action.kind else {
         return Err(ExecError::Message("not find pixel".into()));
@@ -36,7 +37,7 @@ pub(crate) fn execute_find_pixel(
 
     let action_id = action.id;
     let label = action_type_label(action.type_key());
-    let ctx = DetectionCtx::new(action_id, label, search_area, &[], detection);
+    let ctx = DetectionCtx::new(action_id, label, search_area, &[], detection, run_children);
     let mut memo = FrameMemo::new();
     run_detection_shell(
         exec,

@@ -4,9 +4,9 @@ use super::common::{
     apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionCtx,
     DetectionHit, FrameMemo,
 };
+use crate::ctx::{Executor, RunChildrenFn};
 use crate::error::{ExecError, Result};
 use crate::log_draw::{draw_rect_rgb, scale_rect_for_log};
-use crate::run::Executor;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro, OcrData, ScalarValue};
 use sqyre_ports::{FindContext, ImageAnnotation, LogFind};
 use std::sync::Arc;
@@ -18,6 +18,7 @@ pub(crate) fn execute_ocr(
     exec: &mut Executor<'_>,
     action: &Action,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let ActionKind::Ocr(d) = &action.kind else {
         return Err(ExecError::Message("not ocr".into()));
@@ -56,7 +57,14 @@ pub(crate) fn execute_ocr(
     } else {
         vec![target.clone()]
     };
-    let ctx = DetectionCtx::new(action_id, label, search_area, &targets, detection);
+    let ctx = DetectionCtx::new(
+        action_id,
+        label,
+        search_area,
+        &targets,
+        detection,
+        run_children,
+    );
 
     let mut memo = FrameMemo::new();
     let attempt0 = ocr_attempt(exec, &ctx, &ocr_params, macro_, false, &mut memo);

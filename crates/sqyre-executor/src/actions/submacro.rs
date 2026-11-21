@@ -1,15 +1,20 @@
 //! Nested macro orchestration: RunMacro.
 
+use crate::ctx::{apply_monitor_sizes, Executor};
 use crate::error::{ExecError, Result};
-use crate::run::{execute_action, Executor};
-use sqyre_domain::{ActionId, ActionKind, Macro};
+use sqyre_domain::{Action, ActionId, ActionKind, Macro};
 use sqyre_ports::{highlight_clear, highlight_cursor, highlight_fill};
+
+/// Runs one action (typically [`crate::run::execute_action`]) — injected so this
+/// module does not import `run` and recreate a cycle.
+pub(crate) type RunActionFn = fn(&mut Executor<'_>, &Action, &mut Macro) -> Result<()>;
 
 pub(crate) fn execute_run_macro(
     exec: &mut Executor<'_>,
     action_id: ActionId,
     macro_name: &str,
     caller: &mut Macro,
+    run_action: RunActionFn,
 ) -> Result<()> {
     if macro_name.trim().is_empty() {
         return Err(ExecError::Message("run macro: macro name not set".into()));
@@ -49,7 +54,7 @@ pub(crate) fn execute_run_macro(
         Some(c) => c.monitor_sizes().unwrap_or_else(|_| vec![(0, 0)]),
         None => vec![(0, 0)],
     };
-    crate::run::apply_monitor_sizes(&mut target, &monitor_sizes);
+    apply_monitor_sizes(&mut target, &monitor_sizes);
     exec.log(action_id, format!("Run Macro: {macro_name}"));
 
     let caller_name = caller.name.clone();
@@ -57,7 +62,7 @@ pub(crate) fn execute_run_macro(
 
     exec.run_macro_stack.push(macro_name.to_string());
     // Run the target root Loop so its count and Break/Continue semantics match a direct run.
-    let result = execute_action(exec, &target.root.clone(), &mut target);
+    let result = run_action(exec, &target.root.clone(), &mut target);
     exec.run_macro_stack.pop();
 
     highlight_clear(exec.deps.highlighter, &caller_name, action_id);
