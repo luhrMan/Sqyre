@@ -1,5 +1,8 @@
 //! X11 overlay host thread loop and HostCmd dispatch.
 
+use super::visibility::{
+    apply_gate_visibility, apply_running_busy, raise_all_hits, sync_press_stops,
+};
 use super::*;
 
 pub(super) fn host_loop(
