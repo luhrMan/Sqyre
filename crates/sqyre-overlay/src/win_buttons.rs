@@ -1466,6 +1466,17 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // `None` = panic: DefWindowProc outside the catch (never run it eagerly).
+    sqyre_ports::catch_ffi("win_buttons.wnd_proc", None, || {
+        Some(wnd_proc_inner(hwnd, msg, wparam, lparam))
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: the system passes a live window of our class and its message params.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
+}
+
+fn wnd_proc_inner(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: the host thread sets HOST before pumping and clears it after destroy.
     let state = HOST.with(|slot| slot.get());
     if state.is_null() {
