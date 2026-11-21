@@ -143,16 +143,18 @@ impl DataEditor {
             ..
         } = ctx;
         let has_image = self
+            .nav
             .selected_program
             .as_deref()
-            .zip(self.selected_entity.as_deref())
+            .zip(self.nav.selected_entity.as_deref())
             .map(|(p, m)| catalog.mask_image_path(p, m).is_file())
             .unwrap_or(false);
-        let can_upload = self.selected_program.is_some() && self.selected_entity.is_some();
+        let can_upload = self.nav.selected_program.is_some() && self.nav.selected_entity.is_some();
         let mask_path = self
+            .nav
             .selected_program
             .as_deref()
-            .zip(self.selected_entity.as_deref())
+            .zip(self.nav.selected_entity.as_deref())
             .map(|(p, m)| catalog.mask_image_path(p, m));
 
         // fill_row trailing is right-to-left: first widget is rightmost.
@@ -330,11 +332,11 @@ impl DataEditor {
             help::DE_MASK_ITEMS,
         );
 
-        let Some(prog) = self.selected_program.as_deref() else {
+        let Some(prog) = self.nav.selected_program.as_deref() else {
             crate::widgets::list_vacancy(ui, "", 0, "items");
             return;
         };
-        let mask_name = self.selected_entity.as_deref().unwrap_or("");
+        let mask_name = self.nav.selected_entity.as_deref().unwrap_or("");
         let filter = self.previews.mask_items_filter;
         let targets: Vec<String> = catalog
             .get(prog)

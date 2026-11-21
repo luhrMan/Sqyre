@@ -1,7 +1,9 @@
 //! Left entity list + program selector (cached against catalog generation).
 
 use super::helpers::{default_editor_program, editor_program_names, is_editor_listed_program};
-use super::{DataEditor, EditorTab, ListCache, SearchScope};
+use super::nav::ListCache;
+use super::tabs::SearchScope;
+use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
 use crate::help_text as ht;
@@ -21,8 +23,8 @@ impl DataEditor {
     /// Expand/collapse-all for All-programs entity lists — trailing control on
     /// the header search row (same placement as item/coord pickers).
     pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: CatalogView<'_>) {
-        let grouped = matches!(self.search_scope, SearchScope::AllPrograms)
-            && self.tab != EditorTab::Programs;
+        let grouped = matches!(self.nav.search_scope, SearchScope::AllPrograms)
+            && self.nav.tab != EditorTab::Programs;
         if !grouped {
             return;
         }
@@ -30,7 +32,7 @@ impl DataEditor {
         if program_names.is_empty() {
             return;
         }
-        let tab = self.tab;
+        let tab = self.nav.tab;
         let ids: Vec<egui::Id> = match tab {
             EditorTab::Items | EditorTab::MatchCheck => program_names
                 .iter()
@@ -67,7 +69,7 @@ impl DataEditor {
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
     ) {
-        let id_salt = match self.tab {
+        let id_salt = match self.nav.tab {
             EditorTab::Programs => "data_editor_programs",
             EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::MatchCheck => {
                 "data_editor_items"
@@ -78,20 +80,20 @@ impl DataEditor {
             | EditorTab::Collections
             | EditorTab::Atlases => "data_editor_coords",
         };
-        let tab = self.tab;
+        let tab = self.nav.tab;
         // Entity tabs list only the selected program by default; the All
         // programs scope brings back the collapsible program sections.
         let grouped =
-            matches!(self.search_scope, SearchScope::AllPrograms) && tab != EditorTab::Programs;
+            matches!(self.nav.search_scope, SearchScope::AllPrograms) && tab != EditorTab::Programs;
         let mut opts = PickerScrollOpts::pane();
         opts.id_salt = Some(id_salt);
         // The query field lives in the window header, not the pane.
         opts.hint_text = None;
 
         let mut item_selection: Vec<String> = match (
-            self.tab,
-            self.selected_program.as_deref(),
-            self.selected_entity.as_deref(),
+            self.nav.tab,
+            self.nav.selected_program.as_deref(),
+            self.nav.selected_entity.as_deref(),
         ) {
             (EditorTab::Items | EditorTab::MatchCheck, Some(p), Some(e)) => {
                 vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
@@ -107,15 +109,15 @@ impl DataEditor {
 
         // The header query filters only while its field is expanded; the text
         // itself is kept while hidden.
-        let search_open = self.search_open;
+        let search_open = self.nav.search_open;
         let mut search = if search_open {
-            std::mem::take(&mut self.search)
+            std::mem::take(&mut self.nav.search)
         } else {
             String::new()
         };
         // Cells: group headers and row painters share the scroll arm without
         // overlapping `&mut` borrows.
-        let scroll_to = Cell::new(std::mem::take(&mut self.scroll_left_list_to_selection));
+        let scroll_to = Cell::new(std::mem::take(&mut self.nav.scroll_left_list_to_selection));
         let did_scroll = Cell::new(false);
 
         #[cfg(feature = "native-runtime")]
@@ -124,7 +126,7 @@ impl DataEditor {
         let running_pending = self.add_running_programs_pending();
         pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
             let mut visible = 0usize;
-            let entity = match self.tab {
+            let entity = match self.nav.tab {
                 EditorTab::Programs => "programs",
                 EditorTab::Items | EditorTab::MatchCheck => "items",
                 EditorTab::Overlay => "overlay buttons",
@@ -135,7 +137,7 @@ impl DataEditor {
                 EditorTab::Atlases => "atlases",
                 EditorTab::ScreenCap => "captures",
             };
-            match self.tab {
+            match self.nav.tab {
                 EditorTab::Programs => {
                     #[cfg(feature = "native-runtime")]
                     {
@@ -163,7 +165,7 @@ impl DataEditor {
                             continue;
                         }
                         visible += 1;
-                        let selected = self.selected_program.as_deref() == Some(name.as_str());
+                        let selected = self.nav.selected_program.as_deref() == Some(name.as_str());
                         let resp = crate::icon_cache::paint_program_label(
                             ui,
                             catalog,
@@ -196,7 +198,7 @@ impl DataEditor {
                     };
                     // Match Check reuses the items grid read-only.
                     let menu: Option<&mut pickers::IconCellMenu<'_>> =
-                        if matches!(self.tab, EditorTab::Items) {
+                        if matches!(self.nav.tab, EditorTab::Items) {
                             Some(&mut item_menu)
                         } else {
                             None
@@ -213,7 +215,7 @@ impl DataEditor {
                             q,
                             &mut item_selection,
                             false,
-                            self.selected_program.as_deref(),
+                            self.nav.selected_program.as_deref(),
                             &mut clicked_program,
                             settings.ui.compact_program_headers,
                             settings.ui.show_empty_program_headers,
@@ -240,7 +242,7 @@ impl DataEditor {
                                 )
                             })
                             .sum();
-                    } else if let Some(prog) = self.selected_program.clone() {
+                    } else if let Some(prog) = self.nav.selected_program.clone() {
                         // Flat grid of just the selected program's items.
                         if let Some(pdata) = catalog.get(&prog) {
                             let targets = pickers::program_item_targets(
@@ -268,7 +270,7 @@ impl DataEditor {
                 | EditorTab::Masks
                 | EditorTab::Collections
                 | EditorTab::Atlases => {
-                    let kind = match self.tab {
+                    let kind = match self.nav.tab {
                         EditorTab::Points => Some(PreviewKind::Point),
                         EditorTab::SearchAreas => Some(PreviewKind::SearchArea),
                         EditorTab::Collections => Some(PreviewKind::Collection),
@@ -299,7 +301,8 @@ impl DataEditor {
                         if !prog_match && !any_entity {
                             continue;
                         }
-                        let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                        let prog_selected =
+                            self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = entities.len();
                         if grouped {
                             visible += 1;
@@ -315,7 +318,7 @@ impl DataEditor {
                                 prog,
                                 &entities,
                                 prog_selected,
-                                self.selected_entity.as_deref(),
+                                self.nav.selected_entity.as_deref(),
                                 q,
                                 prog_match,
                                 &scroll_to,
@@ -362,7 +365,8 @@ impl DataEditor {
                         if !prog_match && !any_sa && !any_col {
                             continue;
                         }
-                        let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                        let prog_selected =
+                            self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = search_areas.len() + collections.len();
                         if grouped {
                             visible += 1;
@@ -380,7 +384,7 @@ impl DataEditor {
                                 }
                                 visible += 1;
                                 let selected = prog_selected
-                                    && self.selected_entity.as_deref() == Some(ent.as_str())
+                                    && self.nav.selected_entity.as_deref() == Some(ent.as_str())
                                     && !in_collection;
                                 let resp = entity_row(
                                     ui,
@@ -439,7 +443,7 @@ impl DataEditor {
                     let progs: Vec<String> = if grouped {
                         editor_program_names(catalog).cloned().collect()
                     } else {
-                        self.selected_program.clone().into_iter().collect()
+                        self.nav.selected_program.clone().into_iter().collect()
                     };
                     let mut g = GroupCtx {
                         tab,
@@ -476,7 +480,8 @@ impl DataEditor {
                         if !prog_match && !any_btn {
                             continue;
                         }
-                        let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                        let prog_selected =
+                            self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = buttons.len();
                         if grouped {
                             visible += 1;
@@ -488,7 +493,7 @@ impl DataEditor {
                                 &buttons,
                                 live_preview.as_ref(),
                                 prog_selected,
-                                self.selected_entity.as_deref(),
+                                self.nav.selected_entity.as_deref(),
                                 q,
                                 prog_match,
                                 &scroll_to,
@@ -505,7 +510,7 @@ impl DataEditor {
             crate::widgets::list_vacancy(ui, q, visible, entity);
         });
         if search_open {
-            self.search = search;
+            self.nav.search = search;
         }
 
         #[cfg(feature = "native-runtime")]
@@ -514,7 +519,7 @@ impl DataEditor {
         }
         // Keep an unconsumed arm so a filtered-out selection can still scroll
         // into view later; the header search field re-arms it on edits.
-        self.scroll_left_list_to_selection = scroll_to.get();
+        self.nav.scroll_left_list_to_selection = scroll_to.get();
 
         if !overlay_enabled_updates.is_empty() {
             for (id, enabled) in &overlay_enabled_updates {
@@ -526,7 +531,7 @@ impl DataEditor {
                 {
                     btn.enabled = *enabled;
                 }
-                if self.selected_entity.as_deref() == Some(id.as_str()) {
+                if self.nav.selected_entity.as_deref() == Some(id.as_str()) {
                     self.drafts.overlay.enabled = *enabled;
                 }
             }
@@ -545,11 +550,11 @@ impl DataEditor {
             self.select_entity(&prog, &id, catalog, settings);
         } else if let Some((prog, ent)) = clicked_entity {
             self.select_entity(&prog, &ent, catalog, settings);
-        } else if matches!(self.tab, EditorTab::Items | EditorTab::MatchCheck) {
+        } else if matches!(self.nav.tab, EditorTab::Items | EditorTab::MatchCheck) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
-                    let changed = self.selected_program.as_deref() != Some(prog)
-                        || self.selected_entity.as_deref() != Some(item);
+                    let changed = self.nav.selected_program.as_deref() != Some(prog)
+                        || self.nav.selected_entity.as_deref() != Some(item);
                     if changed {
                         self.select_entity(prog, item, catalog, settings);
                     }
@@ -565,7 +570,7 @@ impl DataEditor {
         settings: &UserSettings,
         program: &str,
     ) -> usize {
-        match self.tab {
+        match self.nav.tab {
             // Screen Cap lists search areas and collections together.
             EditorTab::ScreenCap => {
                 self.entity_names(catalog, program).len()
@@ -588,7 +593,8 @@ impl DataEditor {
     /// Cached entity keys for `program` on the current tab.
     pub(crate) fn entity_names(&mut self, catalog: CatalogView<'_>, program: &str) -> Vec<String> {
         self.ensure_list_cache(catalog);
-        self.list_cache
+        self.nav
+            .list_cache
             .entities_by_program
             .get(program)
             .cloned()
@@ -599,18 +605,18 @@ impl DataEditor {
     fn grouped_program_list(&mut self, catalog: CatalogView<'_>, grouped: bool) -> Vec<String> {
         self.ensure_list_cache(catalog);
         if grouped {
-            self.list_cache.program_names.clone()
+            self.nav.list_cache.program_names.clone()
         } else {
-            self.selected_program.clone().into_iter().collect()
+            self.nav.selected_program.clone().into_iter().collect()
         }
     }
 
     pub(crate) fn ensure_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key();
-        if self.list_cache.catalog_generation == gen
-            && self.list_cache.resolution_key == res
-            && self.list_cache.tab == self.tab
+        if self.nav.list_cache.catalog_generation == gen
+            && self.nav.list_cache.resolution_key == res
+            && self.nav.list_cache.tab == self.nav.tab
         {
             return;
         }
@@ -620,14 +626,14 @@ impl DataEditor {
     pub(crate) fn rebuild_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key().to_string();
-        let tab = self.tab;
+        let tab = self.nav.tab;
         let mut entities_by_program: HashMap<String, Vec<String>> = HashMap::new();
         let program_names: Vec<String> = editor_program_names(catalog).cloned().collect();
         for prog in &program_names {
             let names = compute_entity_names(catalog, tab, prog);
             entities_by_program.insert(prog.clone(), names);
         }
-        self.list_cache = ListCache {
+        self.nav.list_cache = ListCache {
             catalog_generation: gen,
             resolution_key: res,
             tab,
@@ -645,8 +651,8 @@ impl DataEditor {
         if !is_editor_listed_program(name) {
             return;
         }
-        self.selected_program = Some(name.to_string());
-        self.selected_entity = None;
+        self.nav.selected_program = Some(name.to_string());
+        self.nav.selected_entity = None;
         self.load_form(catalog.inner(), settings);
     }
 
@@ -658,7 +664,7 @@ impl DataEditor {
         catalog: CatalogView<'_>,
     ) {
         let settings = UserSettings::default();
-        self.open = true;
+        self.nav.open = true;
         self.switch_tab(EditorTab::Points, catalog.inner(), &settings);
         self.select_entity(program, point, catalog, &settings);
     }
@@ -666,7 +672,7 @@ impl DataEditor {
     /// Open the editor on the Programs tab (docs / interaction harnesses).
     pub(crate) fn open_programs_for_docs(&mut self, catalog: CatalogView<'_>) {
         let settings = UserSettings::default();
-        self.open = true;
+        self.nav.open = true;
         self.switch_tab(EditorTab::Programs, catalog.inner(), &settings);
     }
 
@@ -680,8 +686,8 @@ impl DataEditor {
         if !is_editor_listed_program(program) {
             return;
         }
-        self.selected_program = Some(program.to_string());
-        self.selected_entity = Some(entity.to_string());
+        self.nav.selected_program = Some(program.to_string());
+        self.nav.selected_entity = Some(entity.to_string());
         self.load_form(catalog.inner(), settings);
     }
 
@@ -698,8 +704,8 @@ impl DataEditor {
         } else {
             None
         };
-        self.selected_program = Some(prog.to_string());
-        self.selected_entity = Some(col.name.clone());
+        self.nav.selected_program = Some(prog.to_string());
+        self.nav.selected_entity = Some(col.name.clone());
         self.prompts.window_picker = pickers::ActivePicker::Coord {
             kind: pickers::CoordKind::SearchArea,
             search: String::new(),
@@ -727,18 +733,19 @@ impl DataEditor {
         // otherwise) until the user picks a program; the choice then persists.
         // Programs manages its own selection in the left list — auto-picking
         // would fill the name field and make New clone the default program.
-        if self.selected_program.is_none() && !matches!(self.tab, EditorTab::Programs) {
+        if self.nav.selected_program.is_none() && !matches!(self.nav.tab, EditorTab::Programs) {
             if let Some(name) = default_editor_program(catalog) {
                 self.select_program(&name, catalog, settings);
             }
         }
-        let tip = match self.selected_program.as_deref() {
+        let tip = match self.nav.selected_program.as_deref() {
             Some(p) => format!("Program: {p}"),
             None => "Program".to_string(),
         };
         // The collapsed icon doubles as the selection readout: the bound
         // app's process icon when the catalog has one, the program glyph else.
         let tex = self
+            .nav
             .selected_program
             .as_deref()
             .and_then(|p| icons.for_program(ui.ctx(), catalog, p));
@@ -752,7 +759,7 @@ impl DataEditor {
                         egui::Vec2::splat(crate::icon_cache::PROCESS_ICON_SIDE),
                     )))
                     .frame_when_inactive(false)
-                    .selected(self.program_open),
+                    .selected(self.nav.program_open),
                 );
                 resp.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip.clone())
@@ -762,13 +769,13 @@ impl DataEditor {
             None => ui.add(crate::widgets::IconButton::new(
                 crate::model_icons::PROGRAM,
                 &tip,
-                self.program_open.then_some(crate::theme::accent()),
+                self.nav.program_open.then_some(crate::theme::accent()),
             )),
         };
         if resp.clicked() {
-            self.program_open = !self.program_open;
-            if self.program_open {
-                self.search_open = false;
+            self.nav.program_open = !self.nav.program_open;
+            if self.nav.program_open {
+                self.nav.search_open = false;
             }
         }
     }
@@ -782,10 +789,10 @@ impl DataEditor {
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
-        let names = self.list_cache.program_names.clone();
+        let names = self.nav.list_cache.program_names.clone();
         // Per-tab model count appended to each option ("Demo Program (3)");
         // Programs has no entity kind to count.
-        let counts: HashMap<String, usize> = if matches!(self.tab, EditorTab::Programs) {
+        let counts: HashMap<String, usize> = if matches!(self.nav.tab, EditorTab::Programs) {
             HashMap::new()
         } else {
             names
@@ -797,7 +804,7 @@ impl DataEditor {
             Some(count) => format!("{name} ({count})"),
             None => name.to_string(),
         };
-        let mut current = self.selected_program.clone().unwrap_or_default();
+        let mut current = self.nav.selected_program.clone().unwrap_or_default();
         let before = current.clone();
         let mut option_icon =
             |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
@@ -822,7 +829,7 @@ impl DataEditor {
         );
         if !current.is_empty() && current != before {
             self.select_program(&current, catalog, settings);
-            self.program_open = false;
+            self.nav.program_open = false;
         }
     }
 }
@@ -1221,6 +1228,7 @@ fn compute_entity_names(catalog: CatalogView<'_>, tab: EditorTab, program: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_editor::nav::EditorNav;
     use sqyre_domain::{ScalarValue, TEMPORARY_PROGRAM};
     use sqyre_persist::{
         CatalogView, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
@@ -1358,7 +1366,10 @@ mod tests {
         )
         .unwrap();
         let mut ed = DataEditor {
-            tab: EditorTab::Items,
+            nav: EditorNav {
+                tab: EditorTab::Items,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1366,7 +1377,7 @@ mod tests {
             ed.entity_names(CatalogView::from(&cat), "Game"),
             vec!["Potion"]
         );
-        let gen0 = ed.list_cache.catalog_generation;
+        let gen0 = ed.nav.list_cache.catalog_generation;
 
         // Mutating the catalog bumps generation → cache rebuild sees the new item.
         cat.upsert_item(
@@ -1379,12 +1390,12 @@ mod tests {
         .unwrap();
         let names = ed.entity_names(CatalogView::from(&cat), "Game");
         assert_eq!(names, vec!["Elixir", "Potion"]);
-        assert!(ed.list_cache.catalog_generation > gen0);
+        assert!(ed.nav.list_cache.catalog_generation > gen0);
 
         // Switching tabs rebuilds the entity view.
-        ed.tab = EditorTab::Masks;
+        ed.nav.tab = EditorTab::Masks;
         assert!(ed.entity_names(CatalogView::from(&cat), "Game").is_empty());
-        assert_eq!(ed.list_cache.tab, EditorTab::Masks);
+        assert_eq!(ed.nav.list_cache.tab, EditorTab::Masks);
     }
 
     #[test]
@@ -1448,7 +1459,10 @@ mod tests {
             ..Default::default()
         };
         let mut ed = DataEditor {
-            tab: EditorTab::Items,
+            nav: EditorNav {
+                tab: EditorTab::Items,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1456,23 +1470,23 @@ mod tests {
             ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
             2
         );
-        ed.tab = EditorTab::Points;
+        ed.nav.tab = EditorTab::Points;
         assert_eq!(
             ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
             1
         );
         // Screen Cap counts search areas and collections together.
-        ed.tab = EditorTab::ScreenCap;
+        ed.nav.tab = EditorTab::ScreenCap;
         assert_eq!(
             ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
             2
         );
-        ed.tab = EditorTab::Overlay;
+        ed.nav.tab = EditorTab::Overlay;
         assert_eq!(
             ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
             2
         );
-        ed.tab = EditorTab::Programs;
+        ed.nav.tab = EditorTab::Programs;
         assert_eq!(
             ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
             0
@@ -1487,19 +1501,19 @@ mod tests {
         let mut ed = DataEditor::default();
 
         ed.select_program(TEMPORARY_PROGRAM, CatalogView::from(&cat), &settings);
-        assert!(ed.selected_program.is_none());
+        assert!(ed.nav.selected_program.is_none());
 
         ed.select_program("Game", CatalogView::from(&cat), &settings);
-        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
+        assert_eq!(ed.nav.selected_program.as_deref(), Some("Game"));
         // Selecting a program clears the entity selection.
-        ed.selected_entity = Some("old".into());
+        ed.nav.selected_entity = Some("old".into());
         ed.select_program("Game", CatalogView::from(&cat), &settings);
-        assert!(ed.selected_entity.is_none());
+        assert!(ed.nav.selected_entity.is_none());
 
         ed.select_entity(TEMPORARY_PROGRAM, "x", CatalogView::from(&cat), &settings);
-        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
+        assert_eq!(ed.nav.selected_program.as_deref(), Some("Game"));
 
         ed.select_entity("Game", "Spawn", CatalogView::from(&cat), &settings);
-        assert_eq!(ed.selected_entity.as_deref(), Some("Spawn"));
+        assert_eq!(ed.nav.selected_entity.as_deref(), Some("Spawn"));
     }
 }

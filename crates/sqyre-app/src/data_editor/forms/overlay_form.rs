@@ -17,10 +17,11 @@ impl DataEditor {
             icons, previews, ..
         } = paint;
         let FormCtx { macros, .. } = ctx;
-        if self.selected_program.is_none() || self.selected_entity.is_none() {
+        if self.nav.selected_program.is_none() || self.nav.selected_entity.is_none() {
             return false;
         }
         let hub = self
+            .nav
             .selected_entity
             .as_deref()
             .is_some_and(sqyre_persist::is_quick_access_hub_id);
@@ -50,7 +51,7 @@ impl DataEditor {
                     help::DE_OVERLAY_ICON
                 });
             if !hub && preview.clicked() {
-                if let Some(id) = self.selected_entity.clone() {
+                if let Some(id) = self.nav.selected_entity.clone() {
                     self.prompts.open_overlay_icon_picker(id);
                 }
             }

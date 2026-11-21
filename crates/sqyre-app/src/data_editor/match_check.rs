@@ -1229,8 +1229,8 @@ mod inner {
                 self.match_check.settings.paused = false;
             }
             let (Some(prog), Some(item)) = (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) else {
                 self.match_check.stop_compute();
                 return;
@@ -1343,7 +1343,7 @@ mod inner {
             catalog: &ProgramCatalog,
             previews: &mut PreviewTooltipCache,
         ) {
-            if !matches!(self.tab, EditorTab::MatchCheck) {
+            if !matches!(self.nav.tab, EditorTab::MatchCheck) {
                 if self.match_check.pending.is_some() {
                     self.match_check.stop_compute();
                 }
@@ -1359,8 +1359,8 @@ mod inner {
                 &self.drafts.rect.bottom,
             );
             let coords_ok = match (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) {
                 (Some(prog), Some(item)) => can_compute_match_check(
                     CatalogView::from(catalog),

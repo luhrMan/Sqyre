@@ -42,7 +42,7 @@ impl DataEditor {
                         &self.drafts.program.window_title,
                     )
                     .or_else(|| {
-                        let prog = self.selected_program.as_deref()?;
+                        let prog = self.nav.selected_program.as_deref()?;
                         let bound = catalog.get(prog)?;
                         if bound.process_path.trim() != path {
                             return None;
@@ -122,7 +122,8 @@ impl DataEditor {
                         &self.drafts.program.window_title,
                     )
                     .or_else(|| {
-                        self.selected_program
+                        self.nav
+                            .selected_program
                             .as_deref()
                             .and_then(|prog| icons.for_program(ui.ctx(), catalog, prog))
                     })
@@ -167,9 +168,10 @@ impl DataEditor {
         let CatalogPaint { icons, .. } = paint;
         paint_name_field(ui, &mut self.drafts.name);
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
-        if let (Some(prog), Some(item)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        {
+        if let (Some(prog), Some(item)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) {
             let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
             self.paint_item_variants_ui(ui, icons, catalog, &target, &item);
         }
@@ -184,6 +186,7 @@ impl DataEditor {
         icons: &mut crate::icon_cache::IconCache,
     ) -> bool {
         let program_tags = self
+            .nav
             .selected_program
             .as_deref()
             .map(|prog| collect_program_item_tags(catalog, prog))
@@ -237,12 +240,13 @@ impl DataEditor {
             }
         });
         let masks: Vec<String> = self
+            .nav
             .selected_program
             .as_deref()
             .and_then(|p| catalog.get(p))
             .map(|p| p.masks.keys().cloned().collect())
             .unwrap_or_default();
-        let prog = self.selected_program.clone();
+        let prog = self.nav.selected_program.clone();
         let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
             if name.is_empty() {
                 return;
@@ -278,7 +282,7 @@ impl DataEditor {
             None,
         );
         if let (Some(prog), mask) = (
-            self.selected_program.as_deref(),
+            self.nav.selected_program.as_deref(),
             self.drafts.item.mask.as_str(),
         ) {
             if !mask.is_empty() {

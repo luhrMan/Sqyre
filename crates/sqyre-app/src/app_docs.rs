@@ -250,12 +250,12 @@ impl SqyreApp {
 
     /// Whether the data editor window is showing (docs / interaction harnesses).
     pub fn docs_data_editor_open(&self) -> bool {
-        self.data_editor.open
+        self.data_editor.nav.open
     }
 
     /// Active Data Editor tab label (docs / interaction harnesses).
     pub fn docs_data_editor_tab(&self) -> &'static str {
-        self.data_editor.tab.label()
+        self.data_editor.nav.tab.label()
     }
 
     /// Program catalog (docs / interaction harnesses).

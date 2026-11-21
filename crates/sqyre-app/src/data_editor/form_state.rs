@@ -89,8 +89,13 @@ pub(crate) struct OverlayForm;
 
 impl FormState for ProgramsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
-        ed.drafts.name = ed.selected_program.clone().unwrap_or_default();
-        if let Some(p) = ed.selected_program.as_deref().and_then(|n| catalog.get(n)) {
+        ed.drafts.name = ed.nav.selected_program.clone().unwrap_or_default();
+        if let Some(p) = ed
+            .nav
+            .selected_program
+            .as_deref()
+            .and_then(|n| catalog.get(n))
+        {
             ed.drafts.program.process_path = p.process_path.clone();
             ed.drafts.program.window_title = p.window_title.clone();
             ed.drafts.tags = p.tags.clone();
@@ -105,7 +110,7 @@ impl FormState for ProgramsForm {
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
-        let Some(sel) = ed.selected_program.as_deref() else {
+        let Some(sel) = ed.nav.selected_program.as_deref() else {
             return !ed.drafts.name.trim().is_empty()
                 || !ed.drafts.program.process_path.is_empty()
                 || !ed.drafts.program.window_title.is_empty()
@@ -129,8 +134,8 @@ impl FormState for ProgramsForm {
 impl FormState for ItemsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => {
@@ -152,8 +157,8 @@ impl FormState for ItemsForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.name.trim().is_empty();
         };
@@ -169,7 +174,7 @@ impl FormState for ItemsForm {
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some()
+        ed.nav.selected_program.is_some()
             && validate_item_grid_fields(
                 &ed.drafts.cols,
                 &ed.drafts.rows,
@@ -182,8 +187,8 @@ impl FormState for ItemsForm {
 impl FormState for PointsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => return,
@@ -204,8 +209,8 @@ impl FormState for PointsForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.name.trim().is_empty();
         };
@@ -224,7 +229,7 @@ impl FormState for PointsForm {
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some()
+        ed.nav.selected_program.is_some()
             && !ed.drafts.point.x.trim().is_empty()
             && !ed.drafts.point.y.trim().is_empty()
             && !validate_numeric_expression(&ed.drafts.point.x, active_macro).blocks_submit()
@@ -235,8 +240,8 @@ impl FormState for PointsForm {
 impl FormState for SearchAreasForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => return,
@@ -265,8 +270,8 @@ impl FormState for SearchAreasForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.name.trim().is_empty();
         };
@@ -291,7 +296,7 @@ impl FormState for SearchAreasForm {
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some()
+        ed.nav.selected_program.is_some()
             && !ed.drafts.rect.left.trim().is_empty()
             && !ed.drafts.rect.top.trim().is_empty()
             && !ed.drafts.rect.right.trim().is_empty()
@@ -313,8 +318,8 @@ impl FormState for SearchAreasForm {
 impl FormState for MasksForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => {
@@ -338,8 +343,8 @@ impl FormState for MasksForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.name.trim().is_empty();
         };
@@ -357,7 +362,7 @@ impl FormState for MasksForm {
     }
 
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
-        if ed.selected_program.is_none()
+        if ed.nav.selected_program.is_none()
             || (ed.drafts.mask.shape != "rectangle" && ed.drafts.mask.shape != "circle")
             || ed.drafts.mask.center_x.trim().is_empty()
             || ed.drafts.mask.center_y.trim().is_empty()
@@ -382,8 +387,8 @@ impl FormState for MasksForm {
 impl FormState for CollectionsForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => {
@@ -403,8 +408,8 @@ impl FormState for CollectionsForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.search_area.trim().is_empty()
                 || ed.drafts.rows != "1"
@@ -419,7 +424,7 @@ impl FormState for CollectionsForm {
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some()
+        ed.nav.selected_program.is_some()
             && !ed.drafts.search_area.trim().is_empty()
             && parse_i32(&ed.drafts.rows).map(|n| n >= 1).unwrap_or(false)
             && parse_i32(&ed.drafts.cols).map(|n| n >= 1).unwrap_or(false)
@@ -429,8 +434,8 @@ impl FormState for CollectionsForm {
 impl FormState for AtlasesForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => {
@@ -450,8 +455,8 @@ impl FormState for AtlasesForm {
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.nav.selected_program.as_deref(),
+            ed.nav.selected_entity.as_deref(),
         ) else {
             return !ed.drafts.name.trim().is_empty() || !ed.drafts.atlas.members.is_empty();
         };
@@ -462,13 +467,16 @@ impl FormState for AtlasesForm {
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some() && !ed.drafts.atlas.members.is_empty()
+        ed.nav.selected_program.is_some() && !ed.drafts.atlas.members.is_empty()
     }
 }
 
 impl FormState for ScreenCapForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
-        let (prog, name) = match (ed.selected_program.clone(), ed.selected_entity.clone()) {
+        let (prog, name) = match (
+            ed.nav.selected_program.clone(),
+            ed.nav.selected_entity.clone(),
+        ) {
             (Some(p), Some(n)) => (p, n),
             _ => return,
         };
@@ -524,7 +532,10 @@ impl FormState for ScreenCapForm {
 
 impl FormState for MatchCheckForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
-        let (prog, name) = match (ed.selected_program.clone(), ed.selected_entity.clone()) {
+        let (prog, name) = match (
+            ed.nav.selected_program.clone(),
+            ed.nav.selected_entity.clone(),
+        ) {
             (Some(p), Some(n)) => (p, n),
             _ => {
                 ed.drafts.name.clear();
@@ -556,7 +567,7 @@ impl FormState for MatchCheckForm {
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
         #[cfg(feature = "native-runtime")]
         {
-            if ed.selected_program.is_none() || ed.selected_entity.is_none() {
+            if ed.nav.selected_program.is_none() || ed.nav.selected_entity.is_none() {
                 return false;
             }
             validate_search_area_literal_bounds(
@@ -586,7 +597,7 @@ impl FormState for OverlayForm {
     }
 
     fn is_dirty(ed: &DataEditor, _catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
-        let Some(id) = ed.selected_entity.as_deref() else {
+        let Some(id) = ed.nav.selected_entity.as_deref() else {
             return false;
         };
         let Some(btn) = settings.overlay.overlay_buttons.iter().find(|b| b.id == id) else {
@@ -594,13 +605,13 @@ impl FormState for OverlayForm {
         };
         ed.drafts.overlay.placement_is_dirty_vs(btn)
             || ed.drafts.overlay.style_is_dirty_vs(btn)
-            || ed.selected_program.as_deref() != Some(btn.program.as_str())
+            || ed.nav.selected_program.as_deref() != Some(btn.program.as_str())
             || ed.drafts.overlay.gate.is_dirty_vs(&btn.visibility_gate)
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
-        ed.selected_program.is_some()
-            && ed.selected_entity.is_some()
+        ed.nav.selected_program.is_some()
+            && ed.nav.selected_entity.is_some()
             && !ed.drafts.overlay.macro_name.trim().is_empty()
     }
 }
@@ -608,6 +619,7 @@ impl FormState for OverlayForm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_editor::nav::EditorNav;
     use sqyre_persist::{ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea};
 
     fn catalog() -> ProgramCatalog {
@@ -619,7 +631,10 @@ mod tests {
 
     fn editor_on(tab: EditorTab) -> DataEditor {
         DataEditor {
-            tab,
+            nav: EditorNav {
+                tab,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -627,7 +642,7 @@ mod tests {
     #[test]
     fn valid_tab_rejects_bad_entity_names_everywhere() {
         let mut ed = editor_on(EditorTab::Items);
-        ed.selected_program = Some("Game".into());
+        ed.nav.selected_program = Some("Game".into());
         ed.drafts.name = "a/b".into();
         ed.drafts.cols = "1".into();
         ed.drafts.rows = "1".into();
@@ -644,7 +659,7 @@ mod tests {
         cat.set_program_tags("Game", vec!["farm".into()]).unwrap();
 
         let mut ed = editor_on(EditorTab::Programs);
-        ed.selected_program = Some("Game".into());
+        ed.nav.selected_program = Some("Game".into());
         ProgramsForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Game");
         assert_eq!(ed.drafts.program.process_path, "/bin/game");
@@ -660,7 +675,7 @@ mod tests {
         assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
 
         // Unselected + any entered content → dirty (new entity in progress).
-        ed.selected_program = None;
+        ed.nav.selected_program = None;
         assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
         ed.drafts.name.clear();
         ed.drafts.program.process_path.clear();
@@ -689,8 +704,8 @@ mod tests {
         .unwrap();
 
         let mut ed = editor_on(EditorTab::Items);
-        ed.selected_program = Some("Game".into());
-        ed.selected_entity = Some("Potion".into());
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("Potion".into());
         ItemsForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Potion");
         assert_eq!(ed.drafts.cols, "2");
@@ -706,11 +721,11 @@ mod tests {
         assert!(!ItemsForm::is_valid(&ed, None));
 
         // Missing entity → dirty forces the form to look edited.
-        ed.selected_entity = Some("ghost".into());
+        ed.nav.selected_entity = Some("ghost".into());
         assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
         // Unselected + blank name → clean.
-        ed.selected_program = None;
-        ed.selected_entity = None;
+        ed.nav.selected_program = None;
+        ed.nav.selected_entity = None;
         ed.drafts.name.clear();
         assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
     }
@@ -728,8 +743,8 @@ mod tests {
         settings.overlay.overlay_buttons.push(btn);
 
         let mut ed = editor_on(EditorTab::Overlay);
-        ed.selected_program = Some("Game".into());
-        ed.selected_entity = Some("b1".into());
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("b1".into());
         OverlayForm::load(&mut ed, &cat, &settings);
         assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
 
@@ -763,8 +778,8 @@ mod tests {
         .unwrap();
 
         let mut ed = editor_on(EditorTab::Points);
-        ed.selected_program = Some("Game".into());
-        ed.selected_entity = Some("Spawn".into());
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("Spawn".into());
         PointsForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Spawn");
         assert_eq!(ed.drafts.point.x, "10");
@@ -782,7 +797,7 @@ mod tests {
         let cat = catalog();
         let settings = UserSettings::default();
         let mut ed = editor_on(EditorTab::Programs);
-        ed.selected_program = Some("Game".into());
+        ed.nav.selected_program = Some("Game".into());
         load_tab(EditorTab::Programs, &mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Game");
         assert!(!dirty_tab(EditorTab::Programs, &ed, &cat, &settings));
@@ -807,8 +822,8 @@ mod tests {
         .unwrap();
 
         let mut ed = editor_on(EditorTab::Masks);
-        ed.selected_program = Some("Game".into());
-        ed.selected_entity = Some("Hole".into());
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("Hole".into());
         MasksForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Hole");
         assert_eq!(ed.drafts.mask.shape, "circle");
@@ -839,8 +854,8 @@ mod tests {
         .unwrap();
 
         let mut ed = editor_on(EditorTab::SearchAreas);
-        ed.selected_program = Some("Game".into());
-        ed.selected_entity = Some("Zone".into());
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("Zone".into());
         SearchAreasForm::load(&mut ed, &cat, &settings);
         assert_eq!(ed.drafts.name, "Zone");
         assert_eq!(ed.drafts.rect.left, "0");

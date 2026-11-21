@@ -15,6 +15,7 @@ mod lists;
 pub(crate) mod mask_preview;
 #[cfg(feature = "native-runtime")]
 mod match_check;
+pub(crate) mod nav;
 mod overlay;
 mod persist;
 mod preview_state;
@@ -35,6 +36,7 @@ use eframe::egui;
 use form_fields::FormDrafts;
 use helpers::{default_editor_program, is_editor_listed_program};
 use jobs::BackgroundJobs;
+use nav::EditorNav;
 use preview_state::PreviewState;
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
@@ -42,9 +44,7 @@ use sqyre_persist::{
     CatalogView, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
     MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
-use std::collections::HashMap;
 pub(crate) use tabs::EditorTab;
-use tabs::SearchScope;
 
 /// Shared session borrows for Data Editor (egui ctx, persist, catalog, capture).
 pub struct DataEditorCtx<'a> {
@@ -60,44 +60,10 @@ pub struct DataEditorCtx<'a> {
     pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
-/// Cached left-list / program-selector data; invalidated via [`ProgramCatalog::generation`].
-#[derive(Debug, Clone, Default)]
-struct ListCache {
-    catalog_generation: u64,
-    resolution_key: String,
-    tab: EditorTab,
-    program_names: Vec<String>,
-    entities_by_program: HashMap<String, Vec<String>>,
-}
-
+#[derive(Default)]
 pub struct DataEditor {
-    pub open: bool,
-    pub(crate) tab: EditorTab,
-    /// Header search query — applies to the left list while `search_open`,
-    /// and is preserved (unfiltered) while the field is hidden.
-    search: String,
-    /// Header search field is expanded (magnifier toggle).
-    search_open: bool,
-    /// Header program selector is expanded (program-icon toggle). Exclusive
-    /// with `search_open` — the two pairs share the same header slot.
-    program_open: bool,
-    /// Left-list scope for entity tabs (flat selected program vs all programs).
-    search_scope: SearchScope,
-    /// Draft for the Items / Match Check tag-priority chip editor (ephemeral).
-    items_tag_priority_draft: String,
-    /// Width of the left list pane (drag-adjustable).
-    left_width: f32,
-    /// Set when the pane divider was moved via arrow keys; persisted on key release.
-    split_key_moved: bool,
-    /// Selected program name (all tabs).
-    selected_program: Option<String>,
-    /// Focused catalog program (from overlay last-foreign / active window).
-    /// When set, New entity actions target this program.
-    focused_program_hint: Option<String>,
-    /// Selected entity within program (items / points / search areas).
-    selected_entity: Option<String>,
-    /// Expand + scroll the left list to [`Self::selected_program`] (armed on tab switch).
-    scroll_left_list_to_selection: bool,
+    /// Window open state, tab, search/scope, selection, and list cache.
+    pub nav: EditorNav,
     /// Editable form buffers for the currently selected entity.
     drafts: FormDrafts,
     /// Confirm / variant-name / icon-picker / window-picker modals.
@@ -107,38 +73,8 @@ pub struct DataEditor {
     previews: PreviewState,
     /// ScreenCap / collection / running-program jobs and related one-shot flags.
     jobs: BackgroundJobs,
-    /// Cached program/entity name lists keyed by catalog generation.
-    list_cache: ListCache,
     #[cfg(feature = "native-runtime")]
     match_check: match_check::MatchCheckTool,
-}
-
-impl Default for DataEditor {
-    fn default() -> Self {
-        Self {
-            open: false,
-            tab: EditorTab::Programs,
-            search: String::new(),
-            search_open: false,
-            program_open: false,
-            search_scope: SearchScope::default(),
-            items_tag_priority_draft: String::new(),
-            left_width: 0.0,
-            split_key_moved: false,
-            selected_program: None,
-            focused_program_hint: None,
-            selected_entity: None,
-            scroll_left_list_to_selection: false,
-            drafts: FormDrafts::default(),
-            prompts: EditorPrompts::default(),
-            status_banner: StatusBanner::default(),
-            previews: PreviewState::default(),
-            jobs: BackgroundJobs::default(),
-            list_cache: ListCache::default(),
-            #[cfg(feature = "native-runtime")]
-            match_check: match_check::MatchCheckTool::default(),
-        }
-    }
 }
 
 impl DataEditor {
@@ -149,7 +85,7 @@ impl DataEditor {
 
     /// Open the editor, expanding it if it was collapsed to the title bar.
     pub fn request_open(&mut self, ctx: &egui::Context) {
-        self.open = true;
+        self.nav.open = true;
         let area_id = egui::Id::new(WINDOW_TITLE);
         let mut collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(
             ctx,
@@ -170,13 +106,13 @@ impl DataEditor {
         allow(dead_code, reason = "used only by live overlay buttons")
     )]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
-        if !self.open || !matches!(self.tab, EditorTab::Overlay) {
+        if !self.nav.open || !matches!(self.nav.tab, EditorTab::Overlay) {
             return None;
         }
-        let id = self.selected_entity.as_ref()?;
+        let id = self.nav.selected_entity.as_ref()?;
         let mut btn = OverlayButtonConfig::new(
             id.clone(),
-            self.selected_program.clone().unwrap_or_default(),
+            self.nav.selected_program.clone().unwrap_or_default(),
         );
         btn.macro_name = self.drafts.overlay.macro_name.clone();
         btn.enabled = self.drafts.overlay.enabled;
@@ -210,7 +146,7 @@ impl DataEditor {
         allow(dead_code, reason = "used only by live overlay buttons")
     )]
     pub fn overlay_relocate_mode(&self) -> bool {
-        self.open && matches!(self.tab, EditorTab::Overlay)
+        self.nav.open && matches!(self.nav.tab, EditorTab::Overlay)
     }
 
     /// Program whose overlay buttons are shown while relocate mode is active.
@@ -223,7 +159,7 @@ impl DataEditor {
     )]
     pub fn overlay_relocate_program(&self) -> Option<&str> {
         if self.overlay_relocate_mode() {
-            self.selected_program.as_deref()
+            self.nav.selected_program.as_deref()
         } else {
             None
         }
@@ -254,8 +190,8 @@ impl DataEditor {
                 btn.y = yf;
                 dirty = true;
             }
-            if self.selected_entity.as_deref() == Some(id.as_str())
-                && matches!(self.tab, EditorTab::Overlay)
+            if self.nav.selected_entity.as_deref() == Some(id.as_str())
+                && matches!(self.nav.tab, EditorTab::Overlay)
             {
                 self.drafts.overlay.point.clear();
                 self.drafts.overlay.x = xf;
@@ -268,7 +204,7 @@ impl DataEditor {
     }
 
     fn clear_entity_selection(&mut self) {
-        self.selected_entity = None;
+        self.nav.selected_entity = None;
         self.prompts.clear_entity_prompts();
     }
 
@@ -279,10 +215,10 @@ impl DataEditor {
         } else {
             tab
         };
-        if self.tab != tab {
-            self.tab = tab;
+        if self.nav.tab != tab {
+            self.nav.tab = tab;
             self.clear_entity_selection();
-            self.scroll_left_list_to_selection = self.selected_program.is_some();
+            self.nav.scroll_left_list_to_selection = self.nav.selected_program.is_some();
             if tab == EditorTab::ScreenCap {
                 self.reset_item_param_fields();
             }
@@ -300,7 +236,7 @@ impl DataEditor {
     ) {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
-        if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
+        if !matches!(tab, EditorTab::Programs) && self.nav.selected_program.is_none() {
             if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
                 self.select_program(&name, CatalogView::from(catalog), settings);
             }
@@ -313,9 +249,9 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         settings: &UserSettings,
     ) {
-        self.open = true;
+        self.nav.open = true;
         self.switch_tab(tab, catalog, settings);
-        if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
+        if !matches!(tab, EditorTab::Programs) && self.nav.selected_program.is_none() {
             if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
                 self.select_program(&name, CatalogView::from(catalog), settings);
             }
@@ -324,7 +260,7 @@ impl DataEditor {
 
     /// Prefer the focused application when creating a new model, if known.
     pub(crate) fn set_focused_program_hint(&mut self, program: Option<String>) {
-        self.focused_program_hint = program.filter(|p| is_editor_listed_program(p));
+        self.nav.focused_program_hint = program.filter(|p| is_editor_listed_program(p));
     }
 
     /// Select [`Self::focused_program_hint`] when creating under an entity tab.
@@ -333,16 +269,16 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         settings: &UserSettings,
     ) {
-        if matches!(self.tab, EditorTab::Programs) {
+        if matches!(self.nav.tab, EditorTab::Programs) {
             return;
         }
-        let Some(name) = self.focused_program_hint.clone() else {
+        let Some(name) = self.nav.focused_program_hint.clone() else {
             return;
         };
         if catalog.get(&name).is_none() {
             return;
         }
-        if self.selected_program.as_deref() == Some(name.as_str()) {
+        if self.nav.selected_program.as_deref() == Some(name.as_str()) {
             return;
         }
         self.select_program(&name, CatalogView::from(catalog), settings);
@@ -388,21 +324,22 @@ impl DataEditor {
         selected_macro: usize,
         previews: &mut PreviewTooltipCache,
     ) {
-        if !self.open {
+        if !self.nav.open {
             return;
         }
         if self
+            .nav
             .selected_program
             .as_deref()
             .is_some_and(|n| !is_editor_listed_program(n))
         {
-            self.selected_program = None;
+            self.nav.selected_program = None;
             self.clear_entity_selection();
         }
         self.poll_screen_click(env, previews);
-        let mut open = self.open;
+        let mut open = self.nav.open;
         let ctx = env.ctx;
-        let title = format!("{WINDOW_TITLE} ({})", self.tab.label());
+        let title = format!("{WINDOW_TITLE} ({})", self.nav.tab.label());
         // Bounds only — this pane allocates body/footer and owns its ScrollAreas.
         // An outer window scroll (fit_dialog_window) caused intermittent H bars and
         // clipped header buttons when children claimed available_width as min_width.
@@ -427,11 +364,11 @@ impl DataEditor {
             // through to the macro tree while this window is in front.
             self.consume_delete_selection(ui);
             if crate::widgets::consume_escape(ui) {
-                self.open = false;
+                self.nav.open = false;
             }
         });
-        // `.open` reports the titlebar close; `self.open` the Esc path.
-        self.open = open && self.open;
+        // `.open` reports the titlebar close; `self.nav.open` the Esc path.
+        self.nav.open = open && self.nav.open;
         if let Some((name, source)) = self
             .prompts
             .draw_variant_name_prompt(ctx, env.pending_scale)
@@ -445,8 +382,8 @@ impl DataEditor {
             );
         }
         let subject = ConfirmSubject {
-            program: self.selected_program.as_deref(),
-            entity: self.selected_entity.as_deref(),
+            program: self.nav.selected_program.as_deref(),
+            entity: self.nav.selected_entity.as_deref(),
         };
         if let Some(confirmed) = self.prompts.draw_confirm(
             ctx,
@@ -512,8 +449,8 @@ impl DataEditor {
                     self.drafts.overlay.y = y as f32;
                 }
                 self.drafts.overlay.point = coord.0;
-                if matches!(self.tab, EditorTab::Overlay) {
-                    if let Some(id) = self.selected_entity.clone() {
+                if matches!(self.nav.tab, EditorTab::Overlay) {
+                    if let Some(id) = self.nav.selected_entity.clone() {
                         if let Some(btn) = env
                             .settings
                             .overlay
@@ -531,13 +468,13 @@ impl DataEditor {
             }
             PickerResult::SearchArea(coord)
                 if matches!(
-                    self.tab,
+                    self.nav.tab,
                     EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay
                 ) =>
             {
-                if matches!(self.tab, EditorTab::Overlay) {
+                if matches!(self.nav.tab, EditorTab::Overlay) {
                     self.drafts.overlay.gate.search_area = coord.0;
-                } else if matches!(self.tab, EditorTab::MatchCheck) {
+                } else if matches!(self.nav.tab, EditorTab::MatchCheck) {
                     // Keep the selected item; only retarget the preview bounds.
                     if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
                         #[cfg(feature = "native-runtime")]
@@ -550,7 +487,7 @@ impl DataEditor {
             PickerResult::Items {
                 targets,
                 target_tags: _,
-            } if matches!(self.tab, EditorTab::Overlay) => {
+            } if matches!(self.nav.tab, EditorTab::Overlay) => {
                 self.drafts.overlay.gate.targets = targets;
             }
             _ => {}
@@ -661,12 +598,12 @@ impl DataEditor {
             .ui
             .data_editor_left_split
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
-        self.left_width = (avail_w * frac).clamp(min_left, max_left);
+        self.nav.left_width = (avail_w * frac).clamp(min_left, max_left);
         let crate::widgets::SplitView {
             left: mut left_ui,
             right: mut right_ui,
             splitter: split_rect,
-        } = crate::widgets::split_view(ui, body_rect, self.left_width);
+        } = crate::widgets::split_view(ui, body_rect, self.nav.left_width);
 
         let mut tag_submit = false;
 
@@ -715,9 +652,9 @@ impl DataEditor {
         );
         if split_resp.dragged() {
             if let Some(pos) = split_resp.interact_pointer_pos() {
-                self.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
+                self.nav.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
                 if avail_w > 1.0 {
-                    env.settings.ui.data_editor_left_split = (self.left_width / avail_w)
+                    env.settings.ui.data_editor_left_split = (self.nav.left_width / avail_w)
                         .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                 }
             }
@@ -742,22 +679,22 @@ impl DataEditor {
                 0.0
             };
             if dx != 0.0 {
-                let next = (self.left_width + dx).clamp(min_left, max_left);
-                if next != self.left_width {
-                    self.left_width = next;
+                let next = (self.nav.left_width + dx).clamp(min_left, max_left);
+                if next != self.nav.left_width {
+                    self.nav.left_width = next;
                     if avail_w > 1.0 {
-                        env.settings.ui.data_editor_left_split = (self.left_width / avail_w)
+                        env.settings.ui.data_editor_left_split = (self.nav.left_width / avail_w)
                             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                     }
-                    self.split_key_moved = true;
+                    self.nav.split_key_moved = true;
                 }
             }
-            if self.split_key_moved
+            if self.nav.split_key_moved
                 && ui.input(|i| {
                     i.key_released(egui::Key::ArrowLeft) || i.key_released(egui::Key::ArrowRight)
                 })
             {
-                self.split_key_moved = false;
+                self.nav.split_key_moved = false;
                 env.settings.clamp();
                 if let Err(e) = env.settings.save_default() {
                     self.set_err(format!(
@@ -812,7 +749,7 @@ impl DataEditor {
         // Footer chrome floats over the form's bottom-right instead of
         // reserving a full-width strip. Tools tabs (ScreenCap / MatchCheck)
         // draw their own action row inside the form — no floating chip.
-        if !matches!(self.tab, EditorTab::ScreenCap | EditorTab::MatchCheck) {
+        if !matches!(self.nav.tab, EditorTab::ScreenCap | EditorTab::MatchCheck) {
             let right_pane = egui::Rect::from_min_max(
                 egui::pos2(split_rect.right(), body_rect.top()),
                 body_rect.max,
@@ -832,6 +769,7 @@ impl DataEditor {
                     self.on_update(env, previews);
                 }
                 let new_tip = self
+                    .nav
                     .tab
                     .entity_noun()
                     .map(|noun| format!("New {noun}"))
@@ -842,6 +780,7 @@ impl DataEditor {
                 // Leftmost: remove the current selection via the same confirm
                 // the list's right-click Delete uses.
                 let delete_tip = self
+                    .nav
                     .tab
                     .entity_noun()
                     .map(|noun| format!("Delete {noun}"))
@@ -862,13 +801,18 @@ impl DataEditor {
     /// `{subject} “{name}”` for the delete confirm when the current selection
     /// is deletable on this tab; `None` on Tools tabs or with nothing selected.
     fn selected_delete_label(&self) -> Option<String> {
-        let subject = self.tab.entity_noun()?;
-        let name = if self.tab == EditorTab::Programs {
-            self.selected_program.as_deref().unwrap_or("")
-        } else if self.selected_program.as_deref().is_none_or(str::is_empty) {
+        let subject = self.nav.tab.entity_noun()?;
+        let name = if self.nav.tab == EditorTab::Programs {
+            self.nav.selected_program.as_deref().unwrap_or("")
+        } else if self
+            .nav
+            .selected_program
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
             ""
         } else {
-            self.selected_entity.as_deref().unwrap_or("")
+            self.nav.selected_entity.as_deref().unwrap_or("")
         };
         if name.is_empty() {
             return None;
@@ -920,7 +864,7 @@ impl DataEditor {
 
     /// Selected program name; sets the UI error and returns `None` when unset.
     pub(crate) fn selected_program_or_err(&mut self) -> Option<String> {
-        let prog = self.selected_program.clone();
+        let prog = self.nav.selected_program.clone();
         if prog.is_none() {
             self.set_err("Select a program first.");
         }

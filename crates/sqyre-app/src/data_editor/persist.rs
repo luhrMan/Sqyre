@@ -164,7 +164,8 @@ fn first_free_search_area(catalog: &ProgramCatalog, program: &str) -> Option<Str
 impl DataEditor {
     /// Selected program name as a `PersistError` when unset.
     fn selected_program_persist(&self) -> Result<String, sqyre_persist::PersistError> {
-        self.selected_program
+        self.nav
+            .selected_program
             .clone()
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))
     }
@@ -181,7 +182,7 @@ impl DataEditor {
         self.clear_status();
         self.jobs.save_after_record = false;
         self.prefer_focused_program_for_new(catalog, settings);
-        let created = match self.tab {
+        let created = match self.nav.tab {
             EditorTab::Programs => {
                 let requested = self.drafts.name.trim();
                 if !requested.is_empty() && !is_editor_listed_program(requested) {
@@ -192,7 +193,7 @@ impl DataEditor {
                     });
                     match catalog.create_program(&name) {
                         Ok(()) => {
-                            self.selected_program = Some(name.clone());
+                            self.nav.selected_program = Some(name.clone());
                             self.drafts.name = name;
                             self.drafts.program.process_path.clear();
                             self.drafts.program.window_title.clear();
@@ -221,7 +222,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_item(&prog, item) {
                     Ok(()) => {
-                        self.selected_entity = Some(name.clone());
+                        self.nav.selected_entity = Some(name.clone());
                         self.load_form(catalog, settings);
                         Ok("Created item.")
                     }
@@ -248,7 +249,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_point(&prog, pt) {
                     Ok(()) => {
-                        self.selected_entity = Some(name);
+                        self.nav.selected_entity = Some(name);
                         self.load_form(catalog, settings);
                         Ok("Created point.")
                     }
@@ -277,7 +278,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_search_area(&prog, sa) {
                     Ok(()) => {
-                        self.selected_entity = Some(name);
+                        self.nav.selected_entity = Some(name);
                         self.load_form(catalog, settings);
                         Ok("Created search area.")
                     }
@@ -297,7 +298,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_mask(&prog, mask) {
                     Ok(()) => {
-                        self.selected_entity = Some(name);
+                        self.nav.selected_entity = Some(name);
                         self.load_form(catalog, settings);
                         Ok("Created mask.")
                     }
@@ -342,7 +343,7 @@ impl DataEditor {
                         Some((prog.clone(), name.clone())),
                     ) {
                         Ok(()) => {
-                            self.selected_entity = Some(name);
+                            self.nav.selected_entity = Some(name);
                             self.load_form(catalog, settings);
                             Ok("Created collection; capturing image…")
                         }
@@ -371,7 +372,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_atlas(&prog, atlas) {
                     Ok(()) => {
-                        self.selected_entity = Some(name);
+                        self.nav.selected_entity = Some(name);
                         self.load_form(catalog, settings);
                         Ok("Created atlas.")
                     }
@@ -426,7 +427,7 @@ impl DataEditor {
                 }
                 let id = btn.id.clone();
                 settings.overlay.overlay_buttons.push(btn);
-                self.selected_entity = Some(id);
+                self.nav.selected_entity = Some(id);
                 self.load_form(catalog, settings);
                 if self.persist_overlay_settings(settings) {
                     self.set_ok("Created overlay button.");
@@ -441,7 +442,7 @@ impl DataEditor {
                     self.set_err(e);
                 } else {
                     play_ui_add_sound(settings);
-                    match self.tab {
+                    match self.nav.tab {
                         EditorTab::Points if !screen_click.is_armed() => {
                             self.jobs.save_after_record = true;
                             screen_click.arm_point();
@@ -478,23 +479,23 @@ impl DataEditor {
         catalog: &ProgramCatalog,
     ) -> Option<(&'static str, String)> {
         let new = self.drafts.name.trim();
-        match self.tab {
+        match self.nav.tab {
             EditorTab::Programs => {
-                let old = self.selected_program.as_deref()?;
+                let old = self.nav.selected_program.as_deref()?;
                 if old != new && catalog.get(new).is_some() {
                     return Some(("Program", new.to_string()));
                 }
             }
             EditorTab::Items => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 if old != new && catalog.get(prog).and_then(|p| p.items.get(new)).is_some() {
                     return Some(("Item", new.to_string()));
                 }
             }
             EditorTab::Points => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 let res = catalog.resolution_key();
                 if old != new
                     && catalog
@@ -507,8 +508,8 @@ impl DataEditor {
                 }
             }
             EditorTab::SearchAreas => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 let res = catalog.resolution_key();
                 if old != new
                     && catalog
@@ -521,15 +522,15 @@ impl DataEditor {
                 }
             }
             EditorTab::Masks => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 if old != new && catalog.get(prog).and_then(|p| p.masks.get(new)).is_some() {
                     return Some(("Mask", new.to_string()));
                 }
             }
             EditorTab::Collections => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 let new = self.drafts.search_area.trim();
                 if old != new
                     && catalog
@@ -541,8 +542,8 @@ impl DataEditor {
                 }
             }
             EditorTab::Atlases => {
-                let prog = self.selected_program.as_deref()?;
-                let old = self.selected_entity.as_deref()?;
+                let prog = self.nav.selected_program.as_deref()?;
+                let old = self.nav.selected_entity.as_deref()?;
                 if old != new && catalog.get(prog).and_then(|p| p.atlases.get(new)).is_some() {
                     return Some(("Atlas", new.to_string()));
                 }
@@ -570,12 +571,12 @@ impl DataEditor {
             ..
         } = env;
         self.clear_status();
-        if matches!(self.tab, EditorTab::Overlay) {
+        if matches!(self.nav.tab, EditorTab::Overlay) {
             self.apply_overlay_update(settings, overlay_ppp);
             return;
         }
         // Collections take the search-area name; other tabs use the Name field.
-        let new_name = if self.tab == EditorTab::Collections {
+        let new_name = if self.nav.tab == EditorTab::Collections {
             self.drafts.search_area.trim().to_string()
         } else {
             self.drafts.name.trim().to_string()
@@ -585,11 +586,11 @@ impl DataEditor {
             return;
         }
 
-        let old_entity = self.selected_entity.clone();
+        let old_entity = self.nav.selected_entity.clone();
         let mut overlay_settings_dirty = false;
-        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.tab {
+        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.nav.tab {
             EditorTab::Programs => {
-                if let Some(old) = self.selected_program.clone() {
+                if let Some(old) = self.nav.selected_program.clone() {
                     if old == new_name {
                         set_program_identity(
                             catalog,
@@ -637,7 +638,7 @@ impl DataEditor {
                             }
                             overlay_settings_dirty = true;
                             self.jobs.hotkey_refresh = true;
-                            self.selected_program = Some(new_name.clone());
+                            self.nav.selected_program = Some(new_name.clone());
                             Ok(fs_warn)
                         })
                     }
@@ -651,7 +652,7 @@ impl DataEditor {
                             self.drafts.program.window_title.clone(),
                             self.drafts.tags.clone(),
                         )?;
-                        self.selected_program = Some(new_name.clone());
+                        self.nav.selected_program = Some(new_name.clone());
                         Ok(None)
                     })
                 }
@@ -681,7 +682,7 @@ impl DataEditor {
 
         match result {
             Ok(fs_warn) => {
-                if matches!(self.tab, EditorTab::Points | EditorTab::SearchAreas) {
+                if matches!(self.nav.tab, EditorTab::Points | EditorTab::SearchAreas) {
                     if let Some(old) = old_entity.as_deref() {
                         previews.invalidate_entity(old);
                     }
@@ -728,7 +729,7 @@ impl DataEditor {
             tags: self.drafts.tags.clone(),
         };
         let mut fs_warn = None;
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     if let Ok(w) = catalog.delete_item(&prog, new_name) {
@@ -741,12 +742,12 @@ impl DataEditor {
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_item(&prog, item)?;
         } else {
             catalog.upsert_item(&prog, item)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(fs_warn)
     }
@@ -767,7 +768,7 @@ impl DataEditor {
             x: ScalarValue::parse_edit(&self.drafts.point.x),
             y: ScalarValue::parse_edit(&self.drafts.point.y),
         };
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     let _ = catalog.delete_point(&prog, new_name);
@@ -779,12 +780,12 @@ impl DataEditor {
                 if settings.rename_overlay_point_entity(&prog, &old, new_name) {
                     *overlay_settings_dirty = true;
                 }
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_point(&prog, pt)?;
         } else {
             catalog.upsert_point(&prog, pt)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(None)
     }
@@ -808,7 +809,7 @@ impl DataEditor {
             bottom_y: ScalarValue::parse_edit(&self.drafts.rect.bottom),
         };
         let mut fs_warn = None;
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     if let Ok(w) = catalog.delete_search_area(&prog, new_name) {
@@ -836,12 +837,12 @@ impl DataEditor {
                 if settings.rename_overlay_search_area_entity(&prog, &old, new_name) {
                     *overlay_settings_dirty = true;
                 }
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_search_area(&prog, sa)?;
         } else {
             catalog.upsert_search_area(&prog, sa)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(fs_warn)
     }
@@ -869,7 +870,7 @@ impl DataEditor {
             inverse: self.drafts.mask.inverse,
         };
         let mut fs_warn = None;
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     if let Ok(w) = catalog.delete_mask(&prog, new_name) {
@@ -877,12 +878,12 @@ impl DataEditor {
                     }
                 }
                 merge_fs_warning(&mut fs_warn, catalog.rename_mask(&prog, &old, new_name)?);
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_mask(&prog, mask)?;
         } else {
             catalog.upsert_mask(&prog, mask)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(fs_warn)
     }
@@ -903,7 +904,7 @@ impl DataEditor {
             cols,
         };
         let mut fs_warn = None;
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     if let Ok(w) = catalog.delete_collection(&prog, new_name) {
@@ -917,12 +918,12 @@ impl DataEditor {
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Collection, &prog, &old, new_name);
                 }
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_collection(&prog, col)?;
         } else {
             catalog.upsert_collection(&prog, col)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(fs_warn)
     }
@@ -960,7 +961,7 @@ impl DataEditor {
             name: new_name.to_string(),
             collections: self.drafts.atlas.members.clone(),
         };
-        if let Some(old) = self.selected_entity.clone() {
+        if let Some(old) = self.nav.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
                     let _ = catalog.delete_atlas(&prog, new_name);
@@ -969,12 +970,12 @@ impl DataEditor {
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Atlas, &prog, &old, new_name);
                 }
-                self.selected_entity = Some(new_name.to_string());
+                self.nav.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_atlas(&prog, atlas)?;
         } else {
             catalog.upsert_atlas(&prog, atlas)?;
-            self.selected_entity = Some(new_name.to_string());
+            self.nav.selected_entity = Some(new_name.to_string());
         }
         Ok(None)
     }
@@ -1014,8 +1015,8 @@ impl DataEditor {
             ..
         } = env;
         self.clear_status();
-        if matches!(self.tab, EditorTab::Overlay) {
-            let Some(id) = self.selected_entity.clone() else {
+        if matches!(self.nav.tab, EditorTab::Overlay) {
+            let Some(id) = self.nav.selected_entity.clone() else {
                 return;
             };
             if sqyre_persist::is_quick_access_hub_id(&id) {
@@ -1026,7 +1027,7 @@ impl DataEditor {
             if self.prompts.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
                 self.prompts.overlay_icon_picker_for = None;
             }
-            self.selected_entity = None;
+            self.nav.selected_entity = None;
             self.reset_overlay_form();
             if self.persist_overlay_settings(settings) {
                 self.set_ok("Deleted overlay button.");
@@ -1034,10 +1035,10 @@ impl DataEditor {
             }
             return;
         }
-        let deleted_name = self.selected_entity.clone();
-        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.tab {
+        let deleted_name = self.nav.selected_entity.clone();
+        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.nav.tab {
             EditorTab::Programs => {
-                let Some(name) = self.selected_program.clone() else {
+                let Some(name) = self.nav.selected_program.clone() else {
                     return;
                 };
                 catalog.delete_program(&name).inspect(|_| {
@@ -1049,81 +1050,87 @@ impl DataEditor {
                         }
                         let _ = self.persist_overlay_settings(settings);
                     }
-                    self.selected_program = None;
+                    self.nav.selected_program = None;
                     self.drafts.name.clear();
                 })
             }
             EditorTab::Items => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_item(&prog, &name).inspect(|_| {
                     icons.invalidate_item(CatalogView::new(catalog), &prog, &name);
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.reset_item_form();
                 })
             }
             EditorTab::Points => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_point(&prog, &name).map(|()| {
                     if settings.clear_overlay_point_refs(&prog, &name) {
                         let _ = self.persist_overlay_settings(settings);
                     }
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.drafts.name.clear();
                     None
                 })
             }
             EditorTab::SearchAreas => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_search_area(&prog, &name).inspect(|_| {
                     if settings.clear_overlay_search_area_refs(&prog, &name) {
                         let _ = self.persist_overlay_settings(settings);
                     }
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.drafts.name.clear();
                 })
             }
             EditorTab::Masks => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_mask(&prog, &name).inspect(|_| {
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.reset_mask_form();
                 })
             }
             EditorTab::Collections => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_collection(&prog, &name).inspect(|_| {
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.reset_collection_form();
                 })
             }
             EditorTab::Atlases => {
-                let (Some(prog), Some(name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                else {
+                let (Some(prog), Some(name)) = (
+                    self.nav.selected_program.clone(),
+                    self.nav.selected_entity.clone(),
+                ) else {
                     return;
                 };
                 catalog.delete_atlas(&prog, &name).map(|()| {
-                    self.selected_entity = None;
+                    self.nav.selected_entity = None;
                     self.reset_atlas_form();
                     None
                 })
@@ -1132,7 +1139,7 @@ impl DataEditor {
         };
         match result {
             Ok(fs_warn) => {
-                if matches!(self.tab, EditorTab::Points | EditorTab::SearchAreas) {
+                if matches!(self.nav.tab, EditorTab::Points | EditorTab::SearchAreas) {
                     if let Some(name) = deleted_name.as_deref() {
                         previews.invalidate_entity(name);
                     }
@@ -1169,6 +1176,7 @@ impl DataEditor {
 mod tests {
     use super::*;
     use crate::data_editor::form_fields::FormDrafts;
+    use crate::data_editor::nav::EditorNav;
     use sqyre_persist::{
         ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
     };
@@ -1182,9 +1190,12 @@ mod tests {
 
     fn editor(tab: EditorTab, program: &str, entity: &str, form_name: &str) -> DataEditor {
         DataEditor {
-            tab,
-            selected_program: (!program.is_empty()).then(|| program.to_string()),
-            selected_entity: (!entity.is_empty()).then(|| entity.to_string()),
+            nav: EditorNav {
+                tab,
+                selected_program: (!program.is_empty()).then(|| program.to_string()),
+                selected_entity: (!entity.is_empty()).then(|| entity.to_string()),
+                ..Default::default()
+            },
             drafts: FormDrafts {
                 name: form_name.to_string(),
                 ..Default::default()

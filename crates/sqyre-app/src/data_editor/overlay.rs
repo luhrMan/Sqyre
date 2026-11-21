@@ -74,7 +74,7 @@ impl DataEditor {
             return false;
         };
         btn.enabled = enabled;
-        if self.selected_entity.as_deref() == Some(id) {
+        if self.nav.selected_entity.as_deref() == Some(id) {
             self.drafts.overlay.enabled = enabled;
         }
         true
@@ -90,7 +90,7 @@ impl DataEditor {
     pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings, ppp: f32) {
         #[cfg(not(all(feature = "native-runtime", feature = "overlay-buttons")))]
         let _ = ppp;
-        let Some(id) = self.selected_entity.clone() else {
+        let Some(id) = self.nav.selected_entity.clone() else {
             self.set_err("Select an overlay button first.");
             return;
         };
@@ -171,7 +171,7 @@ impl DataEditor {
             self.prompts.overlay_icon_picker_for = None;
             return;
         }
-        if self.selected_entity.as_deref() != Some(button_id.as_str()) {
+        if self.nav.selected_entity.as_deref() != Some(button_id.as_str()) {
             self.prompts.overlay_icon_picker_for = None;
             return;
         }
@@ -232,6 +232,7 @@ impl DataEditor {
 mod tests {
     use super::*;
     use crate::data_editor::form_fields::{FormDrafts, OverlayFields};
+    use crate::data_editor::nav::EditorNav;
     use crate::data_editor::EditorTab;
     use egui::Context;
     use sqyre_persist::OverlayButtonConfig;
@@ -244,8 +245,11 @@ mod tests {
         settings.overlay.overlay_buttons.push(btn);
 
         let mut ed = DataEditor {
-            selected_program: Some("Game".into()),
-            selected_entity: Some("b1".into()),
+            nav: EditorNav {
+                selected_program: Some("Game".into()),
+                selected_entity: Some("b1".into()),
+                ..Default::default()
+            },
             drafts: FormDrafts {
                 overlay: OverlayFields {
                     enabled: true,
@@ -275,9 +279,9 @@ mod tests {
         let ctx = Context::default();
         let mut ed = DataEditor::default();
         ed.open_entity(&ctx, EditorTab::Overlay, "Game", "b1", &cat, &settings);
-        assert!(ed.open);
-        assert_eq!(ed.tab, EditorTab::Overlay);
-        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
-        assert_eq!(ed.selected_entity.as_deref(), Some("b1"));
+        assert!(ed.nav.open);
+        assert_eq!(ed.nav.tab, EditorTab::Overlay);
+        assert_eq!(ed.nav.selected_program.as_deref(), Some("Game"));
+        assert_eq!(ed.nav.selected_entity.as_deref(), Some("b1"));
     }
 }

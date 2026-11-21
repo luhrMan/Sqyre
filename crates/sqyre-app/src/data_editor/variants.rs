@@ -173,7 +173,7 @@ impl DataEditor {
     }
 
     pub(crate) fn request_variant_pick(&mut self) {
-        if self.selected_program.is_none() || self.selected_entity.is_none() {
+        if self.nav.selected_program.is_none() || self.nav.selected_entity.is_none() {
             self.set_err("Select an item first.");
             return;
         }
@@ -192,9 +192,10 @@ impl DataEditor {
         settings: &UserSettings,
         path: PathBuf,
     ) {
-        let (Some(prog), Some(item)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(item)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             self.set_err("Select an item first.");
             return;
         };
@@ -214,9 +215,10 @@ impl DataEditor {
         name: &str,
         source: &std::path::Path,
     ) {
-        let (Some(prog), Some(item)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(item)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             self.set_err("Select an item first.");
             return;
         };
@@ -254,9 +256,10 @@ impl DataEditor {
         variant: &str,
         source: &std::path::Path,
     ) {
-        let (Some(prog), Some(item)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(item)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             return;
         };
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
@@ -279,9 +282,10 @@ impl DataEditor {
         settings: &UserSettings,
         variant: &str,
     ) {
-        let (Some(prog), Some(item)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(item)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             return;
         };
         let names = icon_variants::variant_names(catalog, &prog, &item);
@@ -315,7 +319,7 @@ impl DataEditor {
     }
 
     pub(crate) fn request_mask_image_pick(&mut self) {
-        if self.selected_program.is_none() || self.selected_entity.is_none() {
+        if self.nav.selected_program.is_none() || self.nav.selected_entity.is_none() {
             self.set_err("Select a mask first.");
             return;
         }
@@ -329,9 +333,10 @@ impl DataEditor {
         icons: &mut IconCache,
         src: PathBuf,
     ) {
-        let (Some(prog), Some(mask)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(mask)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             self.set_err("Select a mask first.");
             return;
         };
@@ -357,9 +362,10 @@ impl DataEditor {
     }
 
     pub(crate) fn remove_mask_image(&mut self, catalog: CatalogView<'_>, icons: &mut IconCache) {
-        let (Some(prog), Some(mask)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        else {
+        let (Some(prog), Some(mask)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) else {
             return;
         };
         let path = catalog.mask_image_path(&prog, &mask);
@@ -392,7 +398,7 @@ impl DataEditor {
         let (lx, ty, rx, by) = match catalog.resolve_search_area(coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("{}: {e}", self.tab.label()));
+                self.set_err(format!("{}: {e}", self.nav.tab.label()));
                 return false;
             }
         };
@@ -438,9 +444,9 @@ impl DataEditor {
             None => coord.name().to_string(),
         };
         if let Some(prog) = coord.program() {
-            self.selected_program = Some(prog.to_string());
+            self.nav.selected_program = Some(prog.to_string());
         }
-        self.selected_entity = Some(coord.name().to_string());
+        self.nav.selected_entity = Some(coord.name().to_string());
         true
     }
 
@@ -602,7 +608,7 @@ impl DataEditor {
                 settings,
                 ..
             } = env;
-            let Some(prog) = self.selected_program.clone() else {
+            let Some(prog) = self.nav.selected_program.clone() else {
                 self.set_err(format!(
                     "{}: select a program for the new item.",
                     EditorTab::ScreenCap.label()
@@ -815,6 +821,7 @@ fn create_item_with_original(
 mod tests {
     use super::*;
     use crate::data_editor::form_fields::FormDrafts;
+    use crate::data_editor::nav::EditorNav;
     use crate::data_editor::{DataEditor, EditorTab};
     use sqyre_domain::PROGRAM_DELIMITER;
     use sqyre_domain::{CoordinateRef, ScalarValue};
@@ -860,9 +867,12 @@ mod tests {
     fn apply_search_area_bounds_keeps_selected_item() {
         let cat = catalog_with_bag();
         let mut ed = DataEditor {
-            tab: EditorTab::MatchCheck,
-            selected_program: Some("Game".into()),
-            selected_entity: Some("Potion".into()),
+            nav: EditorNav {
+                tab: EditorTab::MatchCheck,
+                selected_program: Some("Game".into()),
+                selected_entity: Some("Potion".into()),
+                ..Default::default()
+            },
             drafts: FormDrafts {
                 name: "Potion".into(),
                 ..Default::default()
@@ -871,7 +881,7 @@ mod tests {
         };
         let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
         assert!(ed.apply_search_area_bounds(CatalogView::from(&cat), &coord));
-        assert_eq!(ed.selected_entity.as_deref(), Some("Potion"));
+        assert_eq!(ed.nav.selected_entity.as_deref(), Some("Potion"));
         assert_eq!(ed.drafts.name, "Potion");
         assert_eq!(ed.drafts.search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
         assert_eq!(ed.drafts.rect.left, "10");
@@ -884,9 +894,12 @@ mod tests {
     fn apply_screen_cap_reference_selects_search_area_entity() {
         let cat = catalog_with_bag();
         let mut ed = DataEditor {
-            tab: EditorTab::ScreenCap,
-            selected_program: Some("Game".into()),
-            selected_entity: Some("Potion".into()),
+            nav: EditorNav {
+                tab: EditorTab::ScreenCap,
+                selected_program: Some("Game".into()),
+                selected_entity: Some("Potion".into()),
+                ..Default::default()
+            },
             drafts: FormDrafts {
                 name: "Potion".into(),
                 ..Default::default()
@@ -895,7 +908,7 @@ mod tests {
         };
         let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
         assert!(ed.apply_screen_cap_reference(CatalogView::from(&cat), coord));
-        assert_eq!(ed.selected_entity.as_deref(), Some("Bag"));
+        assert_eq!(ed.nav.selected_entity.as_deref(), Some("Bag"));
         assert_eq!(ed.drafts.name, "Bag");
         assert_eq!(ed.drafts.search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
     }

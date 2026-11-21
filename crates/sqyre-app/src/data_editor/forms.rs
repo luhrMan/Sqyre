@@ -128,9 +128,9 @@ fn paint_coord_chips(
 impl DataEditor {
     fn sync_coord_preview_view(&mut self) {
         let key = (
-            self.tab,
-            self.selected_program.clone().unwrap_or_default(),
-            self.selected_entity.clone().unwrap_or_default(),
+            self.nav.tab,
+            self.nav.selected_program.clone().unwrap_or_default(),
+            self.nav.selected_entity.clone().unwrap_or_default(),
         );
         self.previews.coord.sync_key(key);
     }
@@ -300,11 +300,11 @@ impl DataEditor {
 
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
         self.clear_status();
-        form_state::load_tab(self.tab, self, catalog, settings);
+        form_state::load_tab(self.nav.tab, self, catalog, settings);
     }
 
     pub(crate) fn load_overlay_form(&mut self, settings: &UserSettings) {
-        let Some(id) = self.selected_entity.as_deref() else {
+        let Some(id) = self.nav.selected_entity.as_deref() else {
             self.reset_overlay_form();
             return;
         };
@@ -394,7 +394,7 @@ impl DataEditor {
             known: &known,
             is_dark: ui.visuals().dark_mode,
         };
-        match self.tab {
+        match self.nav.tab {
             EditorTab::Programs => self.draw_programs_form(ui, paint, ctx),
             EditorTab::Items => self.draw_items_form(ui, paint),
             EditorTab::Points => {
@@ -474,7 +474,7 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            if self.selected_entity.is_none() {
+            if self.nav.selected_entity.is_none() {
                 self.match_check.stop_compute();
                 return;
             }
@@ -518,8 +518,8 @@ impl DataEditor {
                 },
             );
             if let (Some(prog), Some(item)) = (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) {
                 let variants = super::match_check::variant_options(catalog, prog, item);
                 if !variants.is_empty() {
@@ -569,8 +569,8 @@ impl DataEditor {
                 &self.drafts.rect.bottom,
             );
             let (Some(prog), Some(item)) = (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) else {
                 self.match_check.stop_compute();
                 return;
@@ -695,8 +695,8 @@ impl DataEditor {
                     );
                     if let Some(cache) = &self.match_check.cache {
                         let inputs = super::match_check::inputs_key(
-                            self.selected_program.as_deref().unwrap_or(""),
-                            self.selected_entity.as_deref().unwrap_or(""),
+                            self.nav.selected_program.as_deref().unwrap_or(""),
+                            self.nav.selected_entity.as_deref().unwrap_or(""),
                             &self.match_check.settings.variant,
                             lx,
                             ty,
@@ -821,10 +821,10 @@ impl DataEditor {
     }
 
     pub(crate) fn is_dirty(&self, catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
-        form_state::dirty_tab(self.tab, self, catalog, settings)
+        form_state::dirty_tab(self.nav.tab, self, catalog, settings)
     }
 
     pub(crate) fn form_valid(&self, active_macro: Option<&Macro>) -> bool {
-        form_state::valid_tab(self.tab, self, active_macro)
+        form_state::valid_tab(self.nav.tab, self, active_macro)
     }
 }

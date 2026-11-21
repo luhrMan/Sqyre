@@ -15,7 +15,7 @@ impl DataEditor {
         let CatalogPaint {
             icons, previews, ..
         } = paint;
-        let collection_area = self.selected_program.as_deref().and_then(|prog| {
+        let collection_area = self.nav.selected_program.as_deref().and_then(|prog| {
             let sa = self.drafts.search_area.trim();
             if sa.is_empty() {
                 return None;
@@ -27,8 +27,9 @@ impl DataEditor {
         {
             // Collection name == search-area name; offer areas that are free or
             // the currently selected collection (so retarget/rename still works).
-            let selected = self.selected_entity.clone();
+            let selected = self.nav.selected_entity.clone();
             let areas: Vec<String> = self
+                .nav
                 .selected_program
                 .as_deref()
                 .map(|p| {
@@ -50,7 +51,7 @@ impl DataEditor {
                         .collect()
                 })
                 .unwrap_or_default();
-            let prog = self.selected_program.clone();
+            let prog = self.nav.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
                     return;
@@ -104,9 +105,10 @@ impl DataEditor {
                 },
             );
         });
-        if let (Some(prog), Some(col_name)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        {
+        if let (Some(prog), Some(col_name)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) {
             let path = catalog.collection_image_path(&prog, &col_name);
             let key = (prog.clone(), col_name.clone());
             self.previews.collection.sync_key(key);
@@ -143,6 +145,7 @@ impl DataEditor {
         } = paint;
         paint_name_field(ui, &mut self.drafts.name);
         let available: Vec<String> = self
+            .nav
             .selected_program
             .as_deref()
             .and_then(|p| catalog.get(p))
@@ -155,7 +158,7 @@ impl DataEditor {
             })
             .unwrap_or_default();
         {
-            let prog = self.selected_program.clone();
+            let prog = self.nav.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
                     return;
@@ -202,7 +205,7 @@ impl DataEditor {
         let mut remove_at: Option<usize> = None;
         for (i, member) in self.drafts.atlas.members.iter().enumerate() {
             let label = ui.label(format!("• {member}"));
-            if let Some(prog) = self.selected_program.as_deref() {
+            if let Some(prog) = self.nav.selected_program.as_deref() {
                 previews.show_for_entity(
                     ui,
                     &label,
@@ -220,9 +223,10 @@ impl DataEditor {
         if let Some(i) = remove_at {
             self.drafts.atlas.members.remove(i);
         }
-        if let (Some(prog), Some(atlas_name)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        {
+        if let (Some(prog), Some(atlas_name)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) {
             let key = (prog.clone(), atlas_name.clone());
             self.previews.atlas.sync_key(key);
             paint_zoomable_atlas_preview(
@@ -234,7 +238,7 @@ impl DataEditor {
                 &mut self.previews.atlas.transform,
             );
         } else if !self.drafts.atlas.members.is_empty() {
-            if let Some(prog) = self.selected_program.clone() {
+            if let Some(prog) = self.nav.selected_program.clone() {
                 paint_zoomable_atlas_preview(
                     ui,
                     icons,

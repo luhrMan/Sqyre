@@ -780,9 +780,9 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.add_action_picker = AddActionPicker::default();
         app.add_action_picker
             .load_from_settings(app.settings_ui.settings());
-        let editor_open = app.data_editor.open;
+        let editor_open = app.data_editor.nav.open;
         app.data_editor = DataEditor::default();
-        app.data_editor.open = editor_open;
+        app.data_editor.nav.open = editor_open;
         let vars_open = app.variables_panel.open;
         app.variables_panel = variables_panel::VariablesPanelUi::default();
         app.variables_panel.open = vars_open;
