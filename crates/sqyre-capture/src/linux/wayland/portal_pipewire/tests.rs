@@ -6,6 +6,7 @@ use super::frame_slot::{
     note_region_copy, note_starved_kick, region_generation, release_slot_cache,
     shrink_cpu_frame_cache, wait_until_region_after, FrameSlot,
 };
+use super::pw_thread::screencast_stream_props;
 use super::spa_params::{
     cpu_buffer_type_mask, cursor_meta_size, pw_buffers_param_bytes, pw_cursor_meta_bytes,
     pw_header_meta_bytes,
