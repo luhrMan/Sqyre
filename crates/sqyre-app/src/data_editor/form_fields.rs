@@ -1,7 +1,6 @@
 //! Per-tab form buffers grouped off [`super::DataEditor`].
 
 use crate::data_editor::helpers::{overlay_hex_or_empty, rgba_color};
-use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
 use eframe::egui;
 use sqyre_persist::{
@@ -266,64 +265,4 @@ pub(crate) struct AtlasFields {
 pub(crate) struct PointFields {
     pub x: String,
     pub y: String,
-}
-
-/// Zoom/pan transform that resets when its identity key changes.
-#[derive(Clone, Debug)]
-pub(crate) struct KeyedPreview<K> {
-    pub transform: ImageViewTransform,
-    pub key: Option<K>,
-}
-
-impl<K> Default for KeyedPreview<K> {
-    fn default() -> Self {
-        Self {
-            transform: ImageViewTransform::default(),
-            key: None,
-        }
-    }
-}
-
-impl<K: PartialEq> KeyedPreview<K> {
-    /// Reset the transform when `key` differs from the last synced value.
-    pub(crate) fn sync_key(&mut self, key: K) {
-        if self.key.as_ref() != Some(&key) {
-            self.transform.reset();
-            self.key = Some(key);
-        }
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.transform.reset();
-        self.key = None;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::KeyedPreview;
-
-    #[test]
-    fn keyed_preview_resets_transform_only_when_key_changes() {
-        use crate::image_view::IMAGE_ZOOM_DEFAULT;
-
-        let mut preview = KeyedPreview::<(String, String)>::default();
-        preview.transform.zoom = 2.0;
-        preview.sync_key(("a".into(), "b".into()));
-        assert_eq!(
-            preview.key.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-            Some(("a", "b"))
-        );
-        // First sync always resets.
-        assert!((preview.transform.zoom - IMAGE_ZOOM_DEFAULT).abs() < f32::EPSILON);
-
-        preview.transform.zoom = 3.0;
-        preview.sync_key(("a".into(), "b".into()));
-        assert!((preview.transform.zoom - 3.0).abs() < f32::EPSILON);
-
-        preview.sync_key(("a".into(), "c".into()));
-        assert!((preview.transform.zoom - IMAGE_ZOOM_DEFAULT).abs() < f32::EPSILON);
-        preview.clear();
-        assert!(preview.key.is_none());
-    }
 }

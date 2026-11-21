@@ -132,7 +132,7 @@ impl DataEditor {
             self.selected_program.clone().unwrap_or_default(),
             self.selected_entity.clone().unwrap_or_default(),
         );
-        self.coord_preview.sync_key(key);
+        self.previews.coord.sync_key(key);
     }
 
     /// Preview chrome for a coord panel: refresh / fit / zoom / record on one
@@ -152,7 +152,7 @@ impl DataEditor {
             ui,
             rect,
             true,
-            Some(&mut self.coord_preview.transform),
+            Some(&mut self.previews.coord.transform),
             "Fit image in viewport",
             Some(RecordFloater {
                 tip: record_tip,
@@ -160,7 +160,7 @@ impl DataEditor {
             }),
         );
         if clicks.refresh {
-            self.preview_force = true;
+            self.previews.request_force();
         }
         if clicks.record {
             self.save_after_record = false;
@@ -591,9 +591,9 @@ impl DataEditor {
             let now = web_time::Instant::now();
             // Soft recapture / rematch mid-gesture drops egui's drag target and
             // can resize the underlay — wait until the pointer is up.
-            let preview_interacting = self.coord_preview.transform.pan_drag.is_some()
-                || ui.input(|i| i.pointer.primary_down());
-            let manual_force = std::mem::take(&mut self.preview_force);
+            let preview_interacting =
+                self.previews.coord_panning() || ui.input(|i| i.pointer.primary_down());
+            let manual_force = self.previews.take_force();
             if manual_force {
                 // ↻: hard recapture + rematch once the new display is ready.
                 self.match_check.awaiting_panel = true;
@@ -683,7 +683,7 @@ impl DataEditor {
                         rx,
                         by,
                         refresh,
-                        &mut self.coord_preview.transform,
+                        &mut self.previews.coord.transform,
                     );
                     self.paint_area_record(
                         ui,
@@ -724,7 +724,7 @@ impl DataEditor {
                                 ui,
                                 rect,
                                 image_size,
-                                &self.coord_preview.transform,
+                                &self.previews.coord.transform,
                                 cache,
                                 &mut hover,
                                 self.match_check.match_method,

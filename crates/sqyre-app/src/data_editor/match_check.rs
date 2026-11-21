@@ -1350,8 +1350,7 @@ mod inner {
             }
             // Applying a rematch mid-drag swaps the heatmap/legend and can end the
             // user's gesture early across the whole window.
-            let hold_result = self.coord_preview.transform.pan_drag.is_some()
-                || ctx.input(|i| i.pointer.any_down());
+            let hold_result = self.previews.coord_panning() || ctx.input(|i| i.pointer.any_down());
             if let Some(rx) = self.match_check_pending.as_ref() {
                 if hold_result {
                     ctx.request_repaint();

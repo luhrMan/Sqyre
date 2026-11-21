@@ -69,8 +69,8 @@ impl DataEditor {
             form_coord_literal(&self.form_point.y),
         );
         self.sync_coord_preview_view();
-        let force = std::mem::take(&mut self.preview_force);
-        let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview.transform);
+        let force = self.previews.take_force();
+        let rect = previews.paint_point_panel(ui, x, y, force, &mut self.previews.coord.transform);
         self.paint_point_tail(ui, rect, screen_click, known, is_dark, active_macro);
     }
 
@@ -100,7 +100,7 @@ impl DataEditor {
         paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
-        let refresh = if std::mem::take(&mut self.preview_force) {
+        let refresh = if self.previews.take_force() {
             crate::preview_tooltip::PreviewRefresh::Hard
         } else {
             crate::preview_tooltip::PreviewRefresh::None
@@ -112,7 +112,7 @@ impl DataEditor {
             rx,
             by,
             refresh,
-            &mut self.coord_preview.transform,
+            &mut self.previews.coord.transform,
         );
         self.paint_search_area_tail(
             ui,
@@ -317,7 +317,7 @@ impl DataEditor {
             crate::model_icons::ITEM,
             "Items",
             help::DE_MASK_ITEMS_FILTER,
-            &mut self.mask_items_filter,
+            &mut self.previews.mask_items_filter,
             &MaskItemsFilter::ALL,
             MaskItemsFilter::label,
         );
@@ -331,7 +331,7 @@ impl DataEditor {
             return;
         };
         let mask_name = self.selected_entity.as_deref().unwrap_or("");
-        let filter = self.mask_items_filter;
+        let filter = self.previews.mask_items_filter;
         let targets: Vec<String> = catalog
             .get(prog)
             .map(|p| {
@@ -370,7 +370,13 @@ impl DataEditor {
             .as_ref()
             .filter(|p| p.is_file())
             .map(|p| p.as_path());
-        let overlay = ensure_mask_scrim(ui.ctx(), &mut self.mask_scrim_cache, 64, png, shape);
+        let overlay = ensure_mask_scrim(
+            ui.ctx(),
+            &mut self.previews.mask_scrim_cache,
+            64,
+            png,
+            shape,
+        );
         let mut after_icon = |painter: &egui::Painter, icon_rect: egui::Rect, _target: &str| {
             if let Some(tex) = overlay.as_ref() {
                 paint_mask_scrim_over(painter, icon_rect, tex);
@@ -426,7 +432,7 @@ impl DataEditor {
             &self.form_rect.bottom,
         );
         self.sync_coord_preview_view();
-        let refresh = if std::mem::take(&mut self.preview_force) {
+        let refresh = if self.previews.take_force() {
             crate::preview_tooltip::PreviewRefresh::Hard
         } else {
             crate::preview_tooltip::PreviewRefresh::None
@@ -451,7 +457,7 @@ impl DataEditor {
                     rx,
                     by,
                     refresh,
-                    &mut self.coord_preview.transform,
+                    &mut self.previews.coord.transform,
                 );
                 self.paint_search_area_tail(
                     ui,

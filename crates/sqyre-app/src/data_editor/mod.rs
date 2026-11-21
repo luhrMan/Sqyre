@@ -16,6 +16,7 @@ pub(crate) mod mask_preview;
 mod match_check;
 mod overlay;
 mod persist;
+mod preview_state;
 #[cfg(feature = "native-runtime")]
 mod running_programs;
 mod tabs;
@@ -31,10 +32,10 @@ use crate::status_banner::StatusBanner;
 use dialogs::{ConfirmSubject, EditorPrompts, PendingConfirm};
 use eframe::egui;
 use form_fields::{
-    AtlasFields, ItemFields, KeyedPreview, MaskFields, OverlayFields, PointFields, ProgramFields,
-    RectFields,
+    AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
 };
 use helpers::{default_editor_program, is_editor_listed_program};
+use preview_state::PreviewState;
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
@@ -110,10 +111,6 @@ pub struct DataEditor {
     form_tags: Vec<String>,
     tag_draft: String,
     form_mask: MaskFields,
-    /// Masks-tab items grid filter (session-only).
-    mask_items_filter: mask_preview::MaskItemsFilter,
-    /// Cached scrim texture for the Masks items preview.
-    mask_scrim_cache: Option<mask_preview::MaskScrimCache>,
     form_search_area: String,
     form_atlas: AtlasFields,
     /// Overlay button form draft (placement, style, visibility gate).
@@ -126,14 +123,8 @@ pub struct DataEditor {
     save_after_record: bool,
     /// Program rename changed macro or hotkey tags; refresh bindings after paint.
     hotkey_refresh: bool,
-    /// Zoom/pan for the collections-tab image preview (keyed by program+collection).
-    collection_preview: KeyedPreview<(String, String)>,
-    /// Zoom/pan for the atlas plane preview (keyed by program+atlas).
-    atlas_preview: KeyedPreview<(String, String)>,
-    /// Zoom/pan for point / search-area / ScreenCap panels (keyed by tab+program+entity).
-    coord_preview: KeyedPreview<(EditorTab, String, String)>,
-    /// One-frame `force` armed by the preview's floating refresh button.
-    preview_force: bool,
+    /// Zoom/pan, refresh, and mask-grid state for the form previews.
+    previews: PreviewState,
     /// Background ScreenCap capture+save; polled each frame.
     screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Create a catalog item from the current ScreenCap preview (processed after paint).
@@ -190,8 +181,6 @@ impl Default for DataEditor {
             form_tags: Vec::new(),
             tag_draft: String::new(),
             form_mask: MaskFields::default(),
-            mask_items_filter: mask_preview::MaskItemsFilter::default(),
-            mask_scrim_cache: None,
             form_search_area: String::new(),
             form_atlas: AtlasFields::default(),
             form_overlay: OverlayFields::default(),
@@ -200,10 +189,7 @@ impl Default for DataEditor {
             status_banner: StatusBanner::default(),
             save_after_record: false,
             hotkey_refresh: false,
-            collection_preview: KeyedPreview::default(),
-            atlas_preview: KeyedPreview::default(),
-            coord_preview: KeyedPreview::default(),
-            preview_force: false,
+            previews: PreviewState::default(),
             screen_cap_pending: None,
             screen_cap_new_item: false,
             collection_capture_pending: None,
