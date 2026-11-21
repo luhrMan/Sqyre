@@ -6,114 +6,135 @@
 //! Windows: `SendInput` / `WH_KEYBOARD_LL` cannot reach a higher-integrity
 //! process (UIPI). Sqyre must run at the same elevation as the target app.
 
+use crate::held::{
+    canonical_button, canonical_key, release_held_into, HeldInputs, HeldReleaseSink,
+};
 use arboard::Clipboard;
 use rustautogui::{MouseClick, RustAutoGui};
 #[cfg(target_os = "linux")]
 use sqyre_ports::PortalRemoteInput;
 use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
-use std::collections::HashSet;
 #[cfg(target_os = "linux")]
 use std::sync::Arc;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-/// Keys currently held via [`OsAutomation::key_down`] (rustautogui names).
-static HELD_KEYS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
-/// Mouse buttons currently held via [`OsAutomation::click`] down.
-static HELD_BUTTONS: LazyLock<Mutex<HashSet<String>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+/// Keys/buttons currently held via [`OsAutomation::key_down`] / click-down.
+static HELD: LazyLock<Mutex<HeldInputs>> = LazyLock::new(|| Mutex::new(HeldInputs::default()));
 
 #[cfg(target_os = "linux")]
 static PROCESS_PORTAL: Mutex<Option<Arc<dyn PortalRemoteInput>>> = Mutex::new(None);
 
 #[cfg(target_os = "linux")]
 fn install_process_portal(portal: Arc<dyn PortalRemoteInput>) {
-    if let Ok(mut g) = PROCESS_PORTAL.lock() {
-        *g = Some(portal);
-    }
+    *PROCESS_PORTAL.lock().unwrap_or_else(|e| e.into_inner()) = Some(portal);
 }
 
 #[cfg(target_os = "linux")]
 fn process_portal() -> Option<Arc<dyn PortalRemoteInput>> {
-    PROCESS_PORTAL.lock().ok().and_then(|g| g.clone())
+    PROCESS_PORTAL
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
+fn with_held<R>(f: impl FnOnce(&mut HeldInputs) -> R) -> R {
+    let mut g = HELD.lock().unwrap_or_else(|e| e.into_inner());
+    f(&mut g)
 }
 
 fn note_key_down(key: &str) {
-    if let Ok(mut g) = HELD_KEYS.lock() {
-        g.insert(key.to_string());
-    }
+    with_held(|h| h.note_key_down(key));
 }
 
 fn note_key_up(key: &str) {
-    if let Ok(mut g) = HELD_KEYS.lock() {
-        g.remove(key);
-    }
+    with_held(|h| h.note_key_up(key));
 }
 
 fn note_button_down(button: &str) {
-    if let Ok(mut g) = HELD_BUTTONS.lock() {
-        g.insert(button.to_string());
-    }
+    with_held(|h| h.note_button_down(button));
 }
 
 fn note_button_up(button: &str) {
-    if let Ok(mut g) = HELD_BUTTONS.lock() {
-        g.remove(button);
-    }
+    with_held(|h| h.note_button_up(button));
 }
 
-fn take_held() -> (HashSet<String>, HashSet<String>) {
-    let keys = HELD_KEYS
-        .lock()
-        .map(|mut g| std::mem::take(&mut *g))
-        .unwrap_or_default();
-    let buttons = HELD_BUTTONS
-        .lock()
-        .map(|mut g| std::mem::take(&mut *g))
-        .unwrap_or_default();
-    (keys, buttons)
-}
-
-/// Canonical button name used for hold tracking (`left` / `right` / `middle`).
-fn canonical_button(button: &str) -> &'static str {
-    match button {
-        "right" => "right",
-        "center" | "middle" => "middle",
-        _ => "left",
-    }
+fn take_held() -> (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
+    with_held(|h| h.take())
 }
 
 /// Best-effort release of every key/button this process still has held.
 ///
 /// Safe to call from any thread (including failsafe / `process::exit` paths).
-/// No-ops when nothing is held or when the OS input backend cannot start.
+/// When no input backend is available, held state is re-inserted so a later
+/// call can retry.
 pub fn release_held_inputs() {
     let (keys, buttons) = take_held();
     if keys.is_empty() && buttons.is_empty() {
         return;
     }
+    let leftover = release_held_with_backends(keys, buttons);
+    if !leftover.0.is_empty() || !leftover.1.is_empty() {
+        with_held(|h| h.reinsert(leftover.0, leftover.1));
+    }
+}
+
+fn release_held_with_backends(
+    keys: std::collections::HashSet<String>,
+    buttons: std::collections::HashSet<String>,
+) -> (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
     #[cfg(target_os = "linux")]
     if let Some(portal) = process_portal() {
         if portal.ready() {
-            for key in &keys {
-                if let Some(evdev) = evdev_for_name(key) {
-                    let _ = portal.key(evdev, false);
-                }
-            }
-            for button in &buttons {
-                let _ = portal.click(button, false);
-            }
-            return;
+            let mut sink = PortalHeldSink { portal };
+            return release_held_into(keys, buttons, Some(&mut sink as &mut dyn HeldReleaseSink));
         }
     }
-    let Ok(gui) = open_rustautogui() else {
-        return;
-    };
-    for key in keys {
-        let _ = gui.key_up(&key);
+    match open_rustautogui() {
+        Ok(gui) => {
+            let mut sink = GuiHeldSink { gui };
+            release_held_into(keys, buttons, Some(&mut sink as &mut dyn HeldReleaseSink))
+        }
+        Err(_) => release_held_into(keys, buttons, None),
     }
-    for button in buttons {
-        let _ = gui.click_up(OsAutomation::map_button(&button));
+}
+
+#[cfg(target_os = "linux")]
+struct PortalHeldSink {
+    portal: Arc<dyn PortalRemoteInput>,
+}
+
+#[cfg(target_os = "linux")]
+impl HeldReleaseSink for PortalHeldSink {
+    fn key_up(&mut self, key: &str) -> Result<(), String> {
+        let evdev = evdev_for_name(key).ok_or_else(|| format!("unknown key: {key}"))?;
+        self.portal.key(evdev, false).map_err(|e| e.to_string())
+    }
+
+    fn button_up(&mut self, button: &str) -> Result<(), String> {
+        self.portal.click(button, false).map_err(|e| e.to_string())
+    }
+}
+
+struct GuiHeldSink {
+    gui: RustAutoGui,
+}
+
+impl HeldReleaseSink for GuiHeldSink {
+    fn key_up(&mut self, key: &str) -> Result<(), String> {
+        self.gui.key_up(key).map_err(|e| e.to_string())
+    }
+
+    fn button_up(&mut self, button: &str) -> Result<(), String> {
+        self.gui
+            .click_up(OsAutomation::map_button(button))
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -565,15 +586,7 @@ impl OsAutomation {
     }
 
     fn map_key(key: &str) -> String {
-        // Legacy key names → rustautogui US keyboard names.
-        match key.to_ascii_lowercase().as_str() {
-            "ctrl" | "control" => "control".into(),
-            "cmd" | "command" | "super" | "win" => "command".into(),
-            "esc" | "escape" => "escape".into(),
-            "return" | "enter" => "enter".into(),
-            "space" | "spacebar" => "space".into(),
-            other => other.to_string(),
-        }
+        canonical_key(key)
     }
 
     fn gui(&mut self) -> Result<&mut RustAutoGui, AutomationError> {
@@ -1179,31 +1192,6 @@ mod tests {
         assert!((1..65535).contains(&nx));
         assert!((0..65535).contains(&ny));
         assert!(virtual_desk_normalized(0, 0, 0, 0, 0, 0).is_none());
-    }
-
-    #[test]
-    fn hold_tracking_take_clears() {
-        let _ = take_held(); // isolate from other tests
-        note_key_down("control");
-        note_key_down("a");
-        note_button_down("left");
-        note_key_up("a");
-        let (keys, buttons) = take_held();
-        assert!(keys.contains("control"));
-        assert!(!keys.contains("a"));
-        assert!(buttons.contains("left"));
-        let (keys2, buttons2) = take_held();
-        assert!(keys2.is_empty());
-        assert!(buttons2.is_empty());
-    }
-
-    #[test]
-    fn canonical_button_aliases() {
-        assert_eq!(canonical_button("left"), "left");
-        assert_eq!(canonical_button("right"), "right");
-        assert_eq!(canonical_button("middle"), "middle");
-        assert_eq!(canonical_button("center"), "middle");
-        assert_eq!(canonical_button("other"), "left");
     }
 
     /// When `setxkbmap` is absent, rustautogui must not be opened (it would panic).
