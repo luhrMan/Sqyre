@@ -602,7 +602,7 @@ pub(crate) fn show_action_view_tip(
     let description = action_type_description(type_key);
     let params = action.display_params_for_tree();
     let (_, extra) = split_display_params(&params);
-    let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
+    let pastel = crate::theme::rgba(action_pastel_color(type_key, is_dark));
     let coord_preview = crate::preview_tooltip::coordinate_ref_for_preview(action);
     let summary_pills = action.tree_summary_pills();
 
@@ -656,7 +656,7 @@ pub(crate) fn show_action_view_tip(
                             crate::theme::add_section_gap(ui);
                             sections::tip_wrapped_section(ui, |ui| {
                                 ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
-                                let band_h = var_pills::summary_pill_height(ui);
+                                let band_h = crate::paint_metrics::summary_pill_height(ui);
                                 for pill in &summary_pills {
                                     tree_chrome::paint_summary_pill_cell(
                                         ui,
@@ -791,7 +791,7 @@ fn show_edit_window(
     };
 
     let label = action_type_label(type_key);
-    let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
+    let pastel = crate::theme::rgba(action_pastel_color(type_key, is_dark));
     let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(screen.width());
     // Grow with content from a modest default; ScrollArea caps at the window height.

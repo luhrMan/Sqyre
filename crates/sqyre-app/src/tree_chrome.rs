@@ -2,6 +2,7 @@
 
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::VarTheme;
+use crate::paint_metrics;
 use crate::theme::{
     highlight_cursor_fill, highlight_invalid_fill, highlight_owner_fill, highlight_progress_fill,
     paint_galley_centered,
@@ -23,8 +24,7 @@ pub(crate) use image_search::{
     paint_image_search_tooltip_thumbs_pub,
 };
 
-/// Icon badge edge length.
-const ICON_SIZE: f32 = 18.0;
+use paint_metrics::ICON_SIZE;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = crate::theme::SPACE_4 as i8;
 const PILL_MARGIN_Y: i8 = crate::theme::SPACE_2 as i8;
@@ -36,27 +36,13 @@ const TARGET_THUMB_MAX_W: f32 = 30.0;
 /// Tight gap between image-search thumbs (default item_spacing leaves them sparse).
 const TARGET_THUMB_GAP: f32 = 2.0;
 
-/// Default tree-row height (icon column + chrome).
-pub fn default_row_height(interact_y: f32) -> f32 {
-    interact_y.max(ICON_SIZE)
-}
-
-/// Row height including type-badge, summary pills, and icon-button glyphs that track Font size.
-pub fn row_height(ui: &egui::Ui) -> f32 {
-    let btn_h = crate::widgets::icon_btn_side(ui);
-    default_row_height(ui.spacing().interact_size.y)
-        .max(type_badge_side(ui))
-        .max(btn_h)
-        .max(var_pills::summary_pill_height(ui))
+/// Row height for a painted tree label (item thumbs fit in the standard band).
+pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
+    paint_metrics::default_row_height(interact_y)
 }
 
 fn type_badge_side(ui: &egui::Ui) -> f32 {
     ui.text_style_height(&egui::TextStyle::Small).max(ICON_SIZE)
-}
-
-/// Row height for a painted tree label (item thumbs fit in the standard band).
-pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
-    default_row_height(interact_y)
 }
 
 /// Entry picked from a tree row's right-click menu.
@@ -125,10 +111,6 @@ fn extend_drag_handle(acc: &mut egui::Rect, part: egui::Rect) {
     } else {
         acc.union(part)
     };
-}
-
-pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
-    crate::theme::rgba(c)
 }
 
 fn rgba(c: [u8; 4]) -> Color32 {
@@ -311,7 +293,7 @@ pub fn paint_action_row(
 ) -> RowInteraction {
     let mut tip_hovered = false;
     // Match TreeView node height.
-    let interact_y = row_height(ui);
+    let interact_y = paint_metrics::row_height(ui);
     let row_h = action_row_height(action, interact_y);
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
@@ -567,7 +549,7 @@ mod tests {
     #[test]
     fn row_height_stays_uniform_with_image_search_targets() {
         let interact = 18.0;
-        assert_eq!(default_row_height(interact), ICON_SIZE);
+        assert_eq!(paint_metrics::default_row_height(interact), ICON_SIZE);
 
         let wait = Action::new(ActionKind::Wait {
             time: ScalarValue::Int(100),
@@ -632,7 +614,7 @@ mod tests {
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.set_max_width(400.0);
                 ui.horizontal_wrapped(|ui| {
-                    let band_h = var_pills::summary_pill_height(ui);
+                    let band_h = paint_metrics::summary_pill_height(ui);
                     cells = action
                         .tree_summary_pills()
                         .iter()

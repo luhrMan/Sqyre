@@ -10,8 +10,7 @@ use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
 use crate::paint_ctx::VarTheme;
-use crate::theme::{contrast_fg, paint_galley_centered, SPACE_2};
-use crate::tree_chrome::rgba_pub;
+use crate::theme::{contrast_fg, paint_galley_centered, rgba, SPACE_2};
 use crate::widgets::elide::{single_line_galley, text_hover_if};
 
 const VAR_AC_LIMIT: usize = 12;
@@ -24,28 +23,11 @@ const OUTER_MARGIN_X: i8 = 4;
 const OUTER_MARGIN_Y: i8 = 2;
 const OUTER_RADIUS: f32 = 5.0;
 
-/// Tallest summary pill (outer chrome around a nested chip) at the current Small font.
-///
-/// Measured from a laid-out galley, not `text_style_height`, so pixel-snapped
-/// glyph bounds at fractional/HiDPI scales are included. Rounded up to a whole
-/// physical pixel so it can serve as a layout band height.
-pub fn summary_pill_height(ui: &egui::Ui) -> f32 {
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let text_h = ui
-        .painter()
-        .layout_no_wrap("Ag".to_owned(), font, Color32::WHITE)
-        .size()
-        .y;
-    let h = text_h + (OUTER_MARGIN_Y as f32 + NESTED_MARGIN_Y as f32) * 2.0;
-    let ppp = ui.ctx().pixels_per_point();
-    (h * ppp).ceil() / ppp
-}
-
 fn nested_fill(unknown: bool, is_dark: bool) -> Color32 {
     if unknown {
-        rgba_pub(action_pastel_color("warning", is_dark))
+        rgba(action_pastel_color("warning", is_dark))
     } else {
-        rgba_pub(nested_var_ref_color(is_dark))
+        rgba(nested_var_ref_color(is_dark))
     }
 }
 
@@ -184,9 +166,9 @@ pub fn paint_value_pill(
     is_dark: bool,
 ) -> egui::Response {
     let fill = if text == sqyre_domain::CoordinateRef::UNSET_LABEL {
-        rgba_pub(action_pastel_color("warning", is_dark))
+        rgba(action_pastel_color("warning", is_dark))
     } else {
-        rgba_pub(action_pastel_color(action_type, is_dark))
+        rgba(action_pastel_color(action_type, is_dark))
     };
     let plain_fg = contrast_fg(fill);
     // Paint segments directly into outer_frame's LTR layout so name pills and
@@ -218,7 +200,7 @@ pub fn paint_variable_name_pill(
     known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
-    let fill = rgba_pub(action_pastel_color(action_type, is_dark));
+    let fill = rgba(action_pastel_color(action_type, is_dark));
     let name = var_name.trim();
     let fg = contrast_fg(fill);
     // Paint directly into outer_frame's LTR Center layout (no nested horizontal).
@@ -323,9 +305,9 @@ fn summary_pill_text(pill: &SummaryPill) -> String {
 
 fn summary_fill(action_type: &str, pill: &SummaryPill, is_dark: bool) -> Color32 {
     if pill.text == sqyre_domain::CoordinateRef::UNSET_LABEL {
-        rgba_pub(action_pastel_color("warning", is_dark))
+        rgba(action_pastel_color("warning", is_dark))
     } else {
-        rgba_pub(action_pastel_color(action_type, is_dark))
+        rgba(action_pastel_color(action_type, is_dark))
     }
 }
 
@@ -1023,7 +1005,7 @@ mod tests {
                 .insert(egui::TextStyle::Button, egui::FontId::proportional(base));
             ctx.set_global_style(style);
             ctx.run_ui(egui::RawInput::default(), |ui| {
-                let row_h = crate::tree_chrome::row_height(ui);
+                let row_h = crate::paint_metrics::row_height(ui);
                 ui.horizontal(|ui| {
                     let value = paint_value_pill(ui, "${count}", "click", &known, true);
                     let name = paint_variable_name_pill(ui, "Var", "count", "click", &known, true);
@@ -1104,7 +1086,7 @@ mod tests {
                 ui.set_max_width(tip_w);
                 crate::widgets::wrapped_row(ui, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
-                    let band_h = summary_pill_height(ui);
+                    let band_h = crate::paint_metrics::summary_pill_height(ui);
                     // Leave only a narrow leftover so the expression cannot fit
                     // mid-row (the old wrapping-Label overflow path).
                     let prev_h = ui.spacing().interact_size.y;

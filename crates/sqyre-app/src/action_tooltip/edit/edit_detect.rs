@@ -12,7 +12,6 @@ use crate::action_tooltip::help as h;
 use crate::action_tooltip::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use crate::paint_ctx::{CatalogPaint, VarTheme};
 use crate::pickers::ActivePicker;
-use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
     combo_enum, configure_match_blur_drag, drag_field, match_settings, text_field, wrap_unit, W_VAR,
@@ -244,7 +243,7 @@ pub(super) fn paint_find_pixel_fields(
                 ui.painter().rect(
                     rect,
                     3.0,
-                    tree_chrome::rgba_pub(rgba),
+                    crate::theme::rgba(rgba),
                     crate::theme::inner_stroke(),
                     egui::StrokeKind::Outside,
                 );

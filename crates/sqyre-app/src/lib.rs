@@ -68,6 +68,7 @@ mod overlay_context;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 mod overlay_visibility;
 mod paint_ctx;
+mod paint_metrics;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_intro;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]

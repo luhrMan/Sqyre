@@ -223,7 +223,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         .tree
                         .known_vars_cached(&app.workspace.macros[idx])
                         .clone();
-                    let interact_y = tree_chrome::row_height(ui);
+                    let interact_y = crate::paint_metrics::row_height(ui);
                     let primary_id = app.tree.selected_actions.last().copied();
                     let selected_action = primary_id.and_then(|id| root.find_by_id(id));
                     let paint_revision = app.tree.paint_revision;
@@ -282,7 +282,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         let (_, tree_actions) = TreeView::new(id)
                             .allow_drag_and_drop(allow_dnd)
                             .allow_multi_selection(true)
-                            .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
+                            .default_node_height(Some(crate::paint_metrics::default_row_height(
+                                interact_y,
+                            )))
                             .show_state(
                                 &mut tree_ui,
                                 &mut state,
@@ -320,7 +322,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h = tree_chrome::row_height(&tree_ui)
+                                let row_h = crate::paint_metrics::row_height(&tree_ui)
                                     + tree_ui.spacing().item_spacing.y;
                                 let y = tree_origin.y + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
@@ -997,7 +999,7 @@ fn build_else_dir(
         .else_children()
         .map(|kids| kids.len())
         .unwrap_or(0);
-    let row_h = tree_chrome::default_row_height(walk.interact_y);
+    let row_h = crate::paint_metrics::default_row_height(walk.interact_y);
     let should_scroll = walk.scroll_to == Some(else_id);
     let is_open = builder.node(
         NodeBuilder::dir(else_id)
