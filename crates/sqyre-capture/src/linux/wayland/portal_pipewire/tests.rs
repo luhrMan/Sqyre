@@ -1,5 +1,9 @@
 //! Unit tests for portal PipeWire helpers.
 
+use super::frame_slot::{
+    ensure_cache_contains, fresh_region_stuck_while_others_advance, kick_damage_rect,
+    note_region_copy, note_starved_kick, region_generation, wait_until_region_after, FrameSlot,
+};
 use super::spa_params::{
     cpu_buffer_type_mask, cursor_meta_size, pw_buffers_param_bytes, pw_cursor_meta_bytes,
     pw_header_meta_bytes,

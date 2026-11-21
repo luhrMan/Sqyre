@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 mod frame_slot;
 mod spa_params;
-use frame_slot::{CacheCrop, FrameCache, FrameSlot};
+use frame_slot::{FrameCache, FrameSlot};
 
 /// Overall budget to obtain a PipeWire frame newer than the cache at call start.
 /// Idle / emit-on-damage streams may need a kick + one frame interval after input.

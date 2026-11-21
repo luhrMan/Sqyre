@@ -1,17 +1,13 @@
 //! Frame cache / slot helpers for portal PipeWire capture.
 
+use super::{KICK_RECT_MAX, LOGGED_FRAME_DROUGHT, STALE_REGION_AGE, STARVED_KICKS_DEAD};
 use crate::error::CaptureError;
 use crate::linux::wayland::portal_session::{rects_overlap, union_rect};
-use crate::pixel_convert::{strip_rgba_row_to_rgb, PARALLEL_ROW_GATE};
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
-use rayon::prelude::*;
-use sqyre_ports::{cap_log, mark_site, DesktopRect, RgbCapture};
-use std::collections::HashMap;
+use sqyre_ports::{cap_log, DesktopRect, RgbCapture};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-
-use super::{KICK_RECT_MAX, LOGGED_FRAME_DROUGHT, STALE_REGION_AGE, STARVED_KICKS_DEAD};
 
 pub(super) struct FrameSlot {
     pub(super) cache: FrameCache,
