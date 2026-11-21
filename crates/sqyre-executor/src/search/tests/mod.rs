@@ -1,4 +1,6 @@
-use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, DetectionHit};
+use super::common::{
+    capture_search_buf, run_matches, set_coord_outputs, sort_hits, DetectionCtx, DetectionHit,
+};
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{
