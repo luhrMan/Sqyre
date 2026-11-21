@@ -579,18 +579,12 @@ pub struct SqyreApp {
     lifecycle: NativeLifecycle,
     /// Edge hub radial fan animation state.
     quick_access: quick_access::QuickAccessFan,
-    /// Left macro-list side panel visibility.
-    macro_list_open: bool,
-    /// Filter text for the macro list (name / tags fuzzy match).
-    macro_list_filter: String,
+    /// Left macro-list panel (open, filter, delete confirm).
+    macro_list: crate::ui_macro_list::MacroListPanel,
     #[cfg(not(target_arch = "wasm32"))]
     tray: tray::SystemTray,
-    /// Confirm dialog for deleting the selected macro.
-    pending_delete_macro: Option<String>,
-    /// Last main-viewport [`egui::Context::content_rect`] for dialog scaling.
-    last_viewport_content: Option<egui::Rect>,
-    /// One-frame OS-resize event for proportional floating-dialog scale.
-    pending_viewport_scale: Option<crate::widgets::ViewportScaleEvent>,
+    /// Main-viewport size tracker for proportional floating-dialog scale.
+    viewport_scale: crate::widgets::ViewportScaleState,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -861,13 +855,10 @@ impl SqyreApp {
                 hotkeys_deferred,
             },
             quick_access: quick_access::QuickAccessFan::default(),
-            macro_list_open: true,
-            macro_list_filter: String::new(),
+            macro_list: crate::ui_macro_list::MacroListPanel::default(),
             #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
-            pending_delete_macro: None,
-            last_viewport_content: None,
-            pending_viewport_scale: None,
+            viewport_scale: crate::widgets::ViewportScaleState::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };

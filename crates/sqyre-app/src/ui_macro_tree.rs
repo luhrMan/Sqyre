@@ -460,7 +460,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .tree
             .known_vars_cached(&app.workspace.macros[idx])
             .clone();
-        let pending = app.pending_viewport_scale;
+        let pending = app.viewport_scale.pending;
         let discarded = {
             let macro_ = &mut app.workspace.macros[idx];
             let mut tip_ui = TipUiCtx {

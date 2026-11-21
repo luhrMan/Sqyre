@@ -485,7 +485,7 @@ impl SqyreApp {
 
     fn quick_access_new_entity(&mut self, tab: EditorTab, ctx: &egui::Context) {
         self.refresh_focused_program_hint();
-        let pending = self.pending_viewport_scale;
+        let pending = self.viewport_scale.pending;
         self.data_editor.open_new(
             tab,
             &mut DataEditorCtx {

@@ -22,6 +22,24 @@ const UNTAGGED_KEY: &str = "";
 /// change row spacing, not tree indentation).
 const NEST_INDENT: f32 = SPACE_12;
 
+/// Left macro-list panel: open flag, filter text, and pending delete confirm.
+#[derive(Debug)]
+pub struct MacroListPanel {
+    pub open: bool,
+    pub filter: String,
+    pub pending_delete: Option<String>,
+}
+
+impl Default for MacroListPanel {
+    fn default() -> Self {
+        Self {
+            open: true,
+            filter: String::new(),
+            pending_delete: None,
+        }
+    }
+}
+
 /// Absolute collapsing id so expand/collapse-all (on the search row) can target
 /// the same state as each tag header inside the scroll list.
 fn macro_list_tag_collapse_id(path: &str) -> egui::Id {
@@ -547,7 +565,7 @@ fn select_macro_row(app: &mut SqyreApp, i: usize) {
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     // Local copy: `show_collapsible` borrows `&mut bool` for the whole call,
     // and the content closure also needs `&mut app`.
-    let mut open = app.macro_list_open;
+    let mut open = app.macro_list.open;
     // Panel size is a fraction of the window body it splits, not absolute points,
     // so the 15%–75% limits track window resizes.
     let win_w = ui.max_rect().width().max(1.0);
@@ -623,7 +641,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 |ui| {
                     crate::widgets::search_field(
                         ui,
-                        &mut app.macro_list_filter,
+                        &mut app.macro_list.filter,
                         crate::widgets::SearchFieldOpts {
                             hint: "Search macros or tags…",
                             focus_id: None,
@@ -681,7 +699,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             crate::widgets::show_dialog_scroll(&mut list_ui, pane_w, list_h, |ui| {
                 let list_w = ui.available_width().min(pane_w);
                 ui.set_max_width(list_w);
-                let filter = app.macro_list_filter.trim().to_string();
+                let filter = app.macro_list.filter.trim().to_string();
                 let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
                 let tag_icons = program_tag_icons(
                     ui.ctx(),
@@ -723,8 +741,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                             row_nav.focus = visible;
                         }
                         ListNavAction::Cancel => {
-                            if !app.macro_list_filter.is_empty() {
-                                app.macro_list_filter.clear();
+                            if !app.macro_list.filter.is_empty() {
+                                app.macro_list.filter.clear();
                             } else {
                                 search_resp.surrender_focus();
                             }
@@ -782,7 +800,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     }
                     Some(MacroRowAction::Delete(i)) => {
                         if let Some(m) = app.workspace.macros.get(i) {
-                            app.pending_delete_macro = Some(m.name.clone());
+                            app.macro_list.pending_delete = Some(m.name.clone());
                         }
                     }
                     None => {}
@@ -790,7 +808,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             });
             paint_hotkey_tag_footer(app, ui);
         });
-    app.macro_list_open = open;
+    app.macro_list.open = open;
 
     // Persist user-resized panel width only when a divider drag ends. Reading
     // PanelState on every idle frame would corrupt the fraction: it is absolute
@@ -815,24 +833,24 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         }
     }
 
-    if let Some(name) = app.pending_delete_macro.clone() {
-        let pending = app.pending_viewport_scale;
+    if let Some(name) = app.macro_list.pending_delete.clone() {
+        let pending = app.viewport_scale.pending;
         let open =
             crate::widgets::confirm_window(ui.ctx(), "Delete Macro", pending.as_ref(), |ui| {
                 ui.label(format!("Delete macro \"{name}\"?"));
                 match crate::widgets::confirm_cancel_row(ui, "Delete") {
                     crate::widgets::ConfirmCancel::Cancel => {
-                        app.pending_delete_macro = None;
+                        app.macro_list.pending_delete = None;
                     }
                     crate::widgets::ConfirmCancel::Confirm => {
-                        app.pending_delete_macro = None;
+                        app.macro_list.pending_delete = None;
                         app.delete_macro_named(&name);
                     }
                     crate::widgets::ConfirmCancel::None => {}
                 }
             });
         if !open {
-            app.pending_delete_macro = None;
+            app.macro_list.pending_delete = None;
         }
     }
 }

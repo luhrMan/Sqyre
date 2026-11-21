@@ -30,6 +30,24 @@ pub struct ViewportScaleEvent {
     pub new_content: egui::Rect,
 }
 
+/// Main-viewport size tracker + one-frame scale event for floating dialogs.
+#[derive(Debug, Default, Clone)]
+pub struct ViewportScaleState {
+    pub last_content: Option<egui::Rect>,
+    pub pending: Option<ViewportScaleEvent>,
+}
+
+impl ViewportScaleState {
+    /// Update from the current content rect; sets [`Self::pending`] for one frame on resize.
+    pub fn sync(&mut self, ctx: &egui::Context) {
+        sync_viewport_window_scale(ctx, &mut self.last_content, &mut self.pending);
+    }
+
+    pub fn pending_ref(&self) -> Option<&ViewportScaleEvent> {
+        self.pending.as_ref()
+    }
+}
+
 fn viewport_size_changed(a: egui::Rect, b: egui::Rect) -> bool {
     (a.width() - b.width()).abs() > VIEWPORT_SIZE_EPSILON
         || (a.height() - b.height()).abs() > VIEWPORT_SIZE_EPSILON
