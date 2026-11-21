@@ -179,7 +179,7 @@ impl DataEditor {
             ..
         } = env;
         self.clear_status();
-        self.save_after_record = false;
+        self.jobs.save_after_record = false;
         self.prefer_focused_program_for_new(catalog, settings);
         let created = match self.tab {
             EditorTab::Programs => {
@@ -443,12 +443,12 @@ impl DataEditor {
                     play_ui_add_sound(settings);
                     match self.tab {
                         EditorTab::Points if !screen_click.is_armed() => {
-                            self.save_after_record = true;
+                            self.jobs.save_after_record = true;
                             screen_click.arm_point();
                             self.set_ok(format!("{msg} Recording… left-click to capture X/Y."));
                         }
                         EditorTab::SearchAreas if !screen_click.is_armed() => {
-                            self.save_after_record = true;
+                            self.jobs.save_after_record = true;
                             screen_click.arm_search_area();
                             self.set_ok(format!("{msg} Recording… click two corners."));
                         }
@@ -636,7 +636,7 @@ impl DataEditor {
                                 settings.runtime.hotkey_tag_filters.clone_from(live_filters);
                             }
                             overlay_settings_dirty = true;
-                            self.hotkey_refresh = true;
+                            self.jobs.hotkey_refresh = true;
                             self.selected_program = Some(new_name.clone());
                             Ok(fs_warn)
                         })

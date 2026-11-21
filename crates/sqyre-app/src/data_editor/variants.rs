@@ -505,7 +505,7 @@ impl DataEditor {
         }
         #[cfg(feature = "native-runtime")]
         {
-            if self.screen_cap_pending.is_some() {
+            if self.jobs.screen_cap_pending.is_some() {
                 self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
                 return;
             }
@@ -574,7 +574,7 @@ impl DataEditor {
                 })();
                 let _ = tx.send(result);
             });
-            self.screen_cap_pending = Some(result_rx);
+            self.jobs.screen_cap_pending = Some(result_rx);
             self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
         }
     }
@@ -675,23 +675,23 @@ impl DataEditor {
     }
 
     pub(crate) fn poll_screen_cap(&mut self, ctx: &egui::Context) {
-        let Some(rx) = self.screen_cap_pending.as_ref() else {
+        let Some(rx) = self.jobs.screen_cap_pending.as_ref() else {
             return;
         };
         match rx.try_recv() {
             Ok(Ok(msg)) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_ok(msg);
             }
             Ok(Err(e)) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_err(e);
             }
             Err(TryRecvError::Empty) => {
                 ctx.request_repaint();
             }
             Err(TryRecvError::Disconnected) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_err(format!("{}: capture failed", EditorTab::ScreenCap.label()));
             }
         }
@@ -717,7 +717,7 @@ impl DataEditor {
             use std::sync::mpsc;
             use std::thread;
 
-            if self.collection_capture_pending.is_some() {
+            if self.jobs.collection_capture_pending.is_some() {
                 self.set_ok("Collection: capturing…");
                 return Ok(());
             }
@@ -740,7 +740,7 @@ impl DataEditor {
                 })();
                 let _ = tx.send(result);
             });
-            self.collection_capture_pending = Some(super::CollectionCapturePending {
+            self.jobs.collection_capture_pending = Some(super::jobs::CollectionCapturePending {
                 path,
                 rollback_collection,
                 rx,
@@ -758,7 +758,7 @@ impl DataEditor {
     ) {
         use std::sync::mpsc::TryRecvError;
 
-        let Some(pending) = self.collection_capture_pending.take() else {
+        let Some(pending) = self.jobs.collection_capture_pending.take() else {
             return;
         };
         match pending.rx.try_recv() {
@@ -774,7 +774,7 @@ impl DataEditor {
                 self.set_err(e);
             }
             Err(TryRecvError::Empty) => {
-                self.collection_capture_pending = Some(pending);
+                self.jobs.collection_capture_pending = Some(pending);
                 ctx.request_repaint();
             }
             Err(TryRecvError::Disconnected) => {

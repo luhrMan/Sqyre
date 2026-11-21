@@ -473,7 +473,7 @@ impl DataEditor {
                 );
             },
         );
-        let saving = self.screen_cap_pending.is_some();
+        let saving = self.jobs.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
             if saving {
                 crate::widgets::brand_spinner(ui);
@@ -503,7 +503,7 @@ impl DataEditor {
             )
             .clicked()
             {
-                self.screen_cap_new_item = true;
+                self.jobs.screen_cap_new_item = true;
             }
         });
     }

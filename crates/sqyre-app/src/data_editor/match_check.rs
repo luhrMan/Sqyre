@@ -1439,9 +1439,9 @@ mod tests {
         scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings,
         MatchCheckTool, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
-    use std::sync::mpsc;
     use sqyre_domain::{MatchMethod, PlaneFlip};
     use sqyre_match::{ImageBuf, MatchMap};
+    use std::sync::mpsc;
     use web_time::{Duration, Instant};
 
     fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {

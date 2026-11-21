@@ -111,7 +111,7 @@ impl DataEditor {
             let key = (prog.clone(), col_name.clone());
             self.previews.collection.sync_key(key);
             let mut replace = false;
-            let capturing = self.collection_capture_pending.is_some();
+            let capturing = self.jobs.collection_capture_pending.is_some();
             paint_zoomable_collection_preview(
                 ui,
                 icons,

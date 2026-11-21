@@ -163,7 +163,7 @@ impl DataEditor {
             self.previews.request_force();
         }
         if clicks.record {
-            self.save_after_record = false;
+            self.jobs.save_after_record = false;
             arm(screen_click);
             self.set_ok(recording_msg);
         }

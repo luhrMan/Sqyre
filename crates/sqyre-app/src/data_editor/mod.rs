@@ -10,6 +10,7 @@ mod form_fields;
 mod form_state;
 mod forms;
 pub(crate) mod helpers;
+mod jobs;
 mod lists;
 pub(crate) mod mask_preview;
 #[cfg(feature = "native-runtime")]
@@ -35,6 +36,7 @@ use form_fields::{
     AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
 };
 use helpers::{default_editor_program, is_editor_listed_program};
+use jobs::BackgroundJobs;
 use preview_state::PreviewState;
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
@@ -43,7 +45,6 @@ use sqyre_persist::{
     MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
 pub(crate) use tabs::EditorTab;
 use tabs::SearchScope;
 
@@ -119,32 +120,14 @@ pub struct DataEditor {
     /// Confirm / variant-name / icon-picker / window-picker modals.
     prompts: EditorPrompts,
     status_banner: StatusBanner,
-    /// After New Point/Search Area: auto-arm record and persist on capture.
-    save_after_record: bool,
-    /// Program rename changed macro or hotkey tags; refresh bindings after paint.
-    hotkey_refresh: bool,
     /// Zoom/pan, refresh, and mask-grid state for the form previews.
     previews: PreviewState,
-    /// Background ScreenCap capture+save; polled each frame.
-    screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
-    /// Create a catalog item from the current ScreenCap preview (processed after paint).
-    screen_cap_new_item: bool,
-    /// Background collection image capture+save; polled each frame.
-    collection_capture_pending: Option<CollectionCapturePending>,
+    /// ScreenCap / collection / running-program jobs and related one-shot flags.
+    jobs: BackgroundJobs,
     /// Cached program/entity name lists keyed by catalog generation.
     list_cache: ListCache,
     #[cfg(feature = "native-runtime")]
     match_check: match_check::MatchCheckTool,
-    /// Background open-window fetch for Programs "Add running".
-    #[cfg(feature = "native-runtime")]
-    running_programs_pending: Option<running_programs::RunningProgramsRx>,
-}
-
-pub(super) struct CollectionCapturePending {
-    pub path: PathBuf,
-    /// When set, delete this collection if capture fails (new-collection flow).
-    pub rollback_collection: Option<(String, String)>,
-    pub rx: std::sync::mpsc::Receiver<Result<(), String>>,
 }
 
 impl Default for DataEditor {
@@ -179,17 +162,11 @@ impl Default for DataEditor {
             form_program: ProgramFields::default(),
             prompts: EditorPrompts::default(),
             status_banner: StatusBanner::default(),
-            save_after_record: false,
-            hotkey_refresh: false,
             previews: PreviewState::default(),
-            screen_cap_pending: None,
-            screen_cap_new_item: false,
-            collection_capture_pending: None,
+            jobs: BackgroundJobs::default(),
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
             match_check: match_check::MatchCheckTool::default(),
-            #[cfg(feature = "native-runtime")]
-            running_programs_pending: None,
         }
     }
 }
@@ -197,7 +174,7 @@ impl Default for DataEditor {
 impl DataEditor {
     /// Take the one-shot flag set when a program rename rewrote name tags.
     pub(crate) fn take_hotkey_refresh(&mut self) -> bool {
-        std::mem::take(&mut self.hotkey_refresh)
+        self.jobs.take_hotkey_refresh()
     }
 
     /// Open the editor, expanding it if it was collapsed to the title bar.
@@ -513,8 +490,8 @@ impl DataEditor {
         self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
-        if self.screen_cap_new_item {
-            self.screen_cap_new_item = false;
+        if self.jobs.screen_cap_new_item {
+            self.jobs.screen_cap_new_item = false;
             self.create_item_from_screen_cap(env, previews);
         }
         self.poll_collection_capture(ctx, env.catalog, env.icons);
@@ -644,11 +621,11 @@ impl DataEditor {
             captured = true;
         }
         if env.screen_click.take_cancelled() {
-            self.save_after_record = false;
+            self.jobs.save_after_record = false;
             self.set_ok("Recording cancelled.");
         }
-        if captured && self.save_after_record {
-            self.save_after_record = false;
+        if captured && self.jobs.save_after_record {
+            self.jobs.save_after_record = false;
             self.on_update(env, previews);
             if !self.status_banner.status_error {
                 self.set_ok("Recorded and saved.");
