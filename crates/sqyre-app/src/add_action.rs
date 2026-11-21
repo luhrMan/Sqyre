@@ -192,12 +192,16 @@ impl AddActionPicker {
         crate::recorded_action::apply_recorded_key(&mut edit.draft.kind, recorded);
     }
 
-    /// Apply a chord onto a Pause continue-key defaults draft. Returns true when applied.
-    pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
+    /// Apply a chord onto an open defaults draft. Returns true when applied.
+    pub fn apply_recorded_chord(
+        &mut self,
+        recorded: Vec<String>,
+        target: crate::recorded_action::ChordRecordTarget,
+    ) -> bool {
         let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() else {
             return false;
         };
-        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded)
+        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded, target)
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto a defaults draft.
