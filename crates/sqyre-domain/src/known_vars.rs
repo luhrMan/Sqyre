@@ -1,7 +1,7 @@
 //! Known-variable-name collection for a macro (leaf over `Macro` + `variables`).
 
 use crate::{
-    is_known_variable, monitor_builtin_var_names, Action, ActionKind, KnownVariableNames, Macro,
+    monitor_builtin_var_names, Action, ActionKind, KnownVariableNames, Macro,
     FOREACH_CELL_BUILTIN_VARS, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
     IMAGE_SEARCH_BUILTIN_VARS,
 };
