@@ -6,7 +6,7 @@ const WINDOW_TITLE: &str = "Data Editor";
 const SPLIT_RESIZE_KEY_STEP: f32 = 24.0;
 
 mod dialogs;
-mod form_fields;
+pub(crate) mod form_fields;
 mod form_state;
 mod forms;
 pub(crate) mod helpers;
@@ -32,9 +32,7 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use dialogs::{ConfirmSubject, EditorPrompts, PendingConfirm};
 use eframe::egui;
-use form_fields::{
-    AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
-};
+use form_fields::FormDrafts;
 use helpers::{default_editor_program, is_editor_listed_program};
 use jobs::BackgroundJobs;
 use preview_state::PreviewState;
@@ -100,23 +98,8 @@ pub struct DataEditor {
     selected_entity: Option<String>,
     /// Expand + scroll the left list to [`Self::selected_program`] (armed on tab switch).
     scroll_left_list_to_selection: bool,
-    // Form buffers
-    form_name: String,
-    /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
-    form_monitor: u32,
-    form_point: PointFields,
-    form_rect: RectFields,
-    form_cols: String,
-    form_rows: String,
-    form_item: ItemFields,
-    form_tags: Vec<String>,
-    tag_draft: String,
-    form_mask: MaskFields,
-    form_search_area: String,
-    form_atlas: AtlasFields,
-    /// Overlay button form draft (placement, style, visibility gate).
-    form_overlay: OverlayFields,
-    form_program: ProgramFields,
+    /// Editable form buffers for the currently selected entity.
+    drafts: FormDrafts,
     /// Confirm / variant-name / icon-picker / window-picker modals.
     prompts: EditorPrompts,
     status_banner: StatusBanner,
@@ -146,20 +129,7 @@ impl Default for DataEditor {
             focused_program_hint: None,
             selected_entity: None,
             scroll_left_list_to_selection: false,
-            form_name: String::new(),
-            form_monitor: 1,
-            form_point: PointFields::default(),
-            form_rect: RectFields::default(),
-            form_cols: "1".into(),
-            form_rows: "1".into(),
-            form_item: ItemFields::default(),
-            form_tags: Vec::new(),
-            tag_draft: String::new(),
-            form_mask: MaskFields::default(),
-            form_search_area: String::new(),
-            form_atlas: AtlasFields::default(),
-            form_overlay: OverlayFields::default(),
-            form_program: ProgramFields::default(),
+            drafts: FormDrafts::default(),
             prompts: EditorPrompts::default(),
             status_banner: StatusBanner::default(),
             previews: PreviewState::default(),
@@ -208,15 +178,15 @@ impl DataEditor {
             id.clone(),
             self.selected_program.clone().unwrap_or_default(),
         );
-        btn.macro_name = self.form_overlay.macro_name.clone();
-        btn.enabled = self.form_overlay.enabled;
-        btn.icon = self.form_overlay.icon.clone();
-        btn.point = self.form_overlay.point.clone();
-        btn.x = self.form_overlay.x;
-        btn.y = self.form_overlay.y;
-        btn.size = self.form_overlay.size;
-        btn.visibility_gate = self.form_overlay.gate.to_config();
-        self.form_overlay.apply_style_to_config(&mut btn);
+        btn.macro_name = self.drafts.overlay.macro_name.clone();
+        btn.enabled = self.drafts.overlay.enabled;
+        btn.icon = self.drafts.overlay.icon.clone();
+        btn.point = self.drafts.overlay.point.clone();
+        btn.x = self.drafts.overlay.x;
+        btn.y = self.drafts.overlay.y;
+        btn.size = self.drafts.overlay.size;
+        btn.visibility_gate = self.drafts.overlay.gate.to_config();
+        self.drafts.overlay.apply_style_to_config(&mut btn);
         if sqyre_persist::is_quick_access_hub_id(id) {
             btn.program = sqyre_domain::GENERAL_PROGRAM.into();
             btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
@@ -287,9 +257,9 @@ impl DataEditor {
             if self.selected_entity.as_deref() == Some(id.as_str())
                 && matches!(self.tab, EditorTab::Overlay)
             {
-                self.form_overlay.point.clear();
-                self.form_overlay.x = xf;
-                self.form_overlay.y = yf;
+                self.drafts.overlay.point.clear();
+                self.drafts.overlay.x = xf;
+                self.drafts.overlay.y = yf;
             }
         }
         if dirty {
@@ -382,7 +352,7 @@ impl DataEditor {
     pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
         self.open_tab(env.ctx, tab, env.catalog, env.settings);
         self.prefer_focused_program_for_new(env.catalog, env.settings);
-        self.form_name.clear();
+        self.drafts.name.clear();
         self.on_new(env);
     }
 
@@ -530,18 +500,18 @@ impl DataEditor {
                 process_path,
                 window_title,
             } => {
-                self.form_program.process_path = process_path;
-                self.form_program.window_title = window_title;
+                self.drafts.program.process_path = process_path;
+                self.drafts.program.window_title = window_title;
             }
             PickerResult::Point(coord) => {
                 if let Ok((x, y)) = env
                     .catalog
                     .resolve_point(&coord, &Macro::new("", 0, vec![]))
                 {
-                    self.form_overlay.x = x as f32;
-                    self.form_overlay.y = y as f32;
+                    self.drafts.overlay.x = x as f32;
+                    self.drafts.overlay.y = y as f32;
                 }
-                self.form_overlay.point = coord.0;
+                self.drafts.overlay.point = coord.0;
                 if matches!(self.tab, EditorTab::Overlay) {
                     if let Some(id) = self.selected_entity.clone() {
                         if let Some(btn) = env
@@ -551,9 +521,9 @@ impl DataEditor {
                             .iter_mut()
                             .find(|b| b.id == id)
                         {
-                            btn.point = self.form_overlay.point.clone();
-                            btn.x = self.form_overlay.x;
-                            btn.y = self.form_overlay.y;
+                            btn.point = self.drafts.overlay.point.clone();
+                            btn.x = self.drafts.overlay.x;
+                            btn.y = self.drafts.overlay.y;
                             self.persist_overlay_settings(env.settings);
                         }
                     }
@@ -566,7 +536,7 @@ impl DataEditor {
                 ) =>
             {
                 if matches!(self.tab, EditorTab::Overlay) {
-                    self.form_overlay.gate.search_area = coord.0;
+                    self.drafts.overlay.gate.search_area = coord.0;
                 } else if matches!(self.tab, EditorTab::MatchCheck) {
                     // Keep the selected item; only retarget the preview bounds.
                     if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
@@ -581,7 +551,7 @@ impl DataEditor {
                 targets,
                 target_tags: _,
             } if matches!(self.tab, EditorTab::Overlay) => {
-                self.form_overlay.gate.targets = targets;
+                self.drafts.overlay.gate.targets = targets;
             }
             _ => {}
         }
@@ -596,10 +566,10 @@ impl DataEditor {
         if let Some((x, y)) = env.screen_click.take_point() {
             let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
-            self.form_monitor = monitor;
-            self.form_point.x = rx.to_string();
-            self.form_point.y = ry.to_string();
-            previews.invalidate_entity(self.form_name.trim());
+            self.drafts.monitor = monitor;
+            self.drafts.point.x = rx.to_string();
+            self.drafts.point.y = ry.to_string();
+            previews.invalidate_entity(self.drafts.name.trim());
             self.set_ok(format!("Recorded point monitor {monitor} ({rx}, {ry})."));
             captured = true;
         }
@@ -607,14 +577,14 @@ impl DataEditor {
             let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, lx, ty, rx, by) =
                 sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
-            self.form_monitor = monitor;
-            self.form_rect.load_displays(
+            self.drafts.monitor = monitor;
+            self.drafts.rect.load_displays(
                 lx.to_string(),
                 ty.to_string(),
                 rx.to_string(),
                 by.to_string(),
             );
-            previews.invalidate_entity(self.form_name.trim());
+            previews.invalidate_entity(self.drafts.name.trim());
             self.set_ok(format!(
                 "Recorded search area monitor {monitor} ({lx},{ty})–({rx},{by})."
             ));

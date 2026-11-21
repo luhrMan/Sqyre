@@ -266,3 +266,63 @@ pub(crate) struct PointFields {
     pub x: String,
     pub y: String,
 }
+
+/// Editable form buffers for the currently selected entity.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FormDrafts {
+    pub name: String,
+    /// 1-based monitor slot for Points / Search Areas (relative coords in point/rect).
+    pub monitor: u32,
+    pub point: PointFields,
+    pub rect: RectFields,
+    pub cols: String,
+    pub rows: String,
+    pub item: ItemFields,
+    pub tags: Vec<String>,
+    pub tag_draft: String,
+    pub mask: MaskFields,
+    pub search_area: String,
+    pub atlas: AtlasFields,
+    /// Overlay button form draft (placement, style, visibility gate).
+    pub overlay: OverlayFields,
+    pub program: ProgramFields,
+}
+
+impl Default for FormDrafts {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            monitor: 1,
+            point: PointFields::default(),
+            rect: RectFields::default(),
+            cols: "1".into(),
+            rows: "1".into(),
+            item: ItemFields::default(),
+            tags: Vec::new(),
+            tag_draft: String::new(),
+            mask: MaskFields::default(),
+            search_area: String::new(),
+            atlas: AtlasFields::default(),
+            overlay: OverlayFields::default(),
+            program: ProgramFields::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod drafts_tests {
+    use super::*;
+
+    #[test]
+    fn default_drafts_match_prior_editor_defaults() {
+        let d = FormDrafts::default();
+        assert!(d.name.is_empty());
+        assert_eq!(d.monitor, 1);
+        assert_eq!(d.cols, "1");
+        assert_eq!(d.rows, "1");
+        assert_eq!(d.item.stack_max, "0");
+        assert!(d.tags.is_empty());
+        assert!(d.tag_draft.is_empty());
+        assert!(d.search_area.is_empty());
+    }
+}

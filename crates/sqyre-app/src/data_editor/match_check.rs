@@ -1352,11 +1352,11 @@ mod inner {
             use crate::data_editor::helpers::form_desktop_area;
             let (lx, ty, rx, by) = form_desktop_area(
                 CatalogView::from(catalog),
-                self.form_monitor,
-                &self.form_rect.left,
-                &self.form_rect.top,
-                &self.form_rect.right,
-                &self.form_rect.bottom,
+                self.drafts.monitor,
+                &self.drafts.rect.left,
+                &self.drafts.rect.top,
+                &self.drafts.rect.right,
+                &self.drafts.rect.bottom,
             );
             let coords_ok = match (
                 self.selected_program.as_deref(),

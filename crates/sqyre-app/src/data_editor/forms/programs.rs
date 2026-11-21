@@ -17,9 +17,9 @@ impl DataEditor {
         let catalog = paint.catalog;
         let CatalogPaint { icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
-        paint_name_field(ui, &mut self.form_name);
-        let title = self.form_program.window_title.trim().to_string();
-        let path = self.form_program.process_path.trim().to_string();
+        paint_name_field(ui, &mut self.drafts.name);
+        let title = self.drafts.program.window_title.trim().to_string();
+        let path = self.drafts.program.process_path.trim().to_string();
         // Program name is the window title when bound; the path falls back to
         // being the name, with the folder glyph tooltip carrying the full path.
         let name = if path.is_empty() {
@@ -38,8 +38,8 @@ impl DataEditor {
                 let tex = icons
                     .for_process(
                         ui.ctx(),
-                        &self.form_program.process_path,
-                        &self.form_program.window_title,
+                        &self.drafts.program.process_path,
+                        &self.drafts.program.window_title,
                     )
                     .or_else(|| {
                         let prog = self.selected_program.as_deref()?;
@@ -70,8 +70,8 @@ impl DataEditor {
             };
             if pick.clicked() {
                 self.prompts.window_picker = pickers::open_window_picker(
-                    &self.form_program.process_path,
-                    &self.form_program.window_title,
+                    &self.drafts.program.process_path,
+                    &self.drafts.program.window_title,
                 );
             }
             // Clear sits next to the picker it empties, not at the row's far end.
@@ -86,8 +86,8 @@ impl DataEditor {
                 )
                 .clicked()
             {
-                self.form_program.process_path.clear();
-                self.form_program.window_title.clear();
+                self.drafts.program.process_path.clear();
+                self.drafts.program.window_title.clear();
             }
             help::tip(
                 ui.label(egui::RichText::new(name.as_str()).monospace()),
@@ -103,23 +103,23 @@ impl DataEditor {
         let program_names: Vec<String> = catalog.program_names().cloned().collect();
         let macro_tag_completions =
             crate::macro_meta::collect_macro_tag_completions(macros, &program_names);
-        let name_tag = self.form_name.trim().to_string();
+        let name_tag = self.drafts.name.trim().to_string();
         // The name is a locked tag. Drop a typed duplicate so it is not saved again.
         if !name_tag.is_empty() {
-            self.form_tags.retain(|tag| tag.trim() != name_tag);
+            self.drafts.tags.retain(|tag| tag.trim() != name_tag);
         }
         let mut program_icons = icons.program_name_icons(ui.ctx(), catalog);
         if !name_tag.is_empty() {
             // The name chip follows the draft name. A picked window wins; the
             // saved program icon covers a closed app and a rename in progress.
-            let draft_icon = if self.form_program.process_path.trim().is_empty() {
+            let draft_icon = if self.drafts.program.process_path.trim().is_empty() {
                 None
             } else {
                 icons
                     .for_process(
                         ui.ctx(),
-                        &self.form_program.process_path,
-                        &self.form_program.window_title,
+                        &self.drafts.program.process_path,
+                        &self.drafts.program.window_title,
                     )
                     .or_else(|| {
                         self.selected_program
@@ -143,8 +143,8 @@ impl DataEditor {
         };
         crate::widgets::tag_chip_editor(
             ui,
-            &mut self.form_tags,
-            &mut self.tag_draft,
+            &mut self.drafts.tags,
+            &mut self.drafts.tag_draft,
             &macro_tag_completions,
             crate::widgets::TagChipOptions {
                 label_name: Some("Macro tags"),
@@ -165,7 +165,7 @@ impl DataEditor {
     ) -> bool {
         let catalog = paint.catalog;
         let CatalogPaint { icons, .. } = paint;
-        paint_name_field(ui, &mut self.form_name);
+        paint_name_field(ui, &mut self.drafts.name);
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
         if let (Some(prog), Some(item)) =
             (self.selected_program.clone(), self.selected_entity.clone())
@@ -191,8 +191,8 @@ impl DataEditor {
         let program_icons = icons.program_name_icons(ui.ctx(), catalog);
         let tag_submit = crate::widgets::tag_chip_editor(
             ui,
-            &mut self.form_tags,
-            &mut self.tag_draft,
+            &mut self.drafts.tags,
+            &mut self.drafts.tag_draft,
             &program_tags,
             crate::widgets::TagChipOptions {
                 label_name: Some("Tags"),
@@ -208,21 +208,21 @@ impl DataEditor {
                     egui_phosphor::regular::COLUMNS,
                     "Cols",
                     help::DE_COLS,
-                    &mut self.form_cols,
+                    &mut self.drafts.cols,
                     1..=i32::MAX,
                 ),
                 (
                     egui_phosphor::regular::ROWS,
                     "Rows",
                     help::DE_ROWS,
-                    &mut self.form_rows,
+                    &mut self.drafts.rows,
                     1..=i32::MAX,
                 ),
                 (
                     egui_phosphor::regular::STACK,
                     "Stack max",
                     help::DE_STACK_MAX,
-                    &mut self.form_item.stack_max,
+                    &mut self.drafts.item.stack_max,
                     0..=i32::MAX,
                 ),
             ] {
@@ -264,7 +264,7 @@ impl DataEditor {
             "Mask",
             help::DE_MASK,
             "item_mask",
-            &mut self.form_item.mask,
+            &mut self.drafts.item.mask,
             crate::widgets::SearchableComboOpts {
                 options: &masks,
                 empty_text: sqyre_domain::EMPTY_NONE,
@@ -279,7 +279,7 @@ impl DataEditor {
         );
         if let (Some(prog), mask) = (
             self.selected_program.as_deref(),
-            self.form_item.mask.as_str(),
+            self.drafts.item.mask.as_str(),
         ) {
             if !mask.is_empty() {
                 if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {

@@ -405,14 +405,14 @@ impl DataEditor {
             rx,
             by,
         );
-        self.form_monitor = monitor;
-        self.form_rect.load_displays(
+        self.drafts.monitor = monitor;
+        self.drafts.rect.load_displays(
             lx.to_string(),
             ty.to_string(),
             rx.to_string(),
             by.to_string(),
         );
-        self.form_search_area = coord.0.clone();
+        self.drafts.search_area = coord.0.clone();
         self.previews.coord.clear();
         true
     }
@@ -428,7 +428,7 @@ impl DataEditor {
         if !self.apply_search_area_bounds(catalog, &coord) {
             return false;
         }
-        self.form_name = match coord.cell_range() {
+        self.drafts.name = match coord.cell_range() {
             Some((r1, c1, r2, c2)) if r1 == r2 && c1 == c2 => {
                 format!("{}_r{}c{}", coord.name(), r1, c1)
             }
@@ -446,7 +446,7 @@ impl DataEditor {
 
     #[cfg(feature = "native-runtime")]
     fn screen_cap_name(&self) -> Result<String, String> {
-        let name = self.form_name.trim().to_string();
+        let name = self.drafts.name.trim().to_string();
         if name.is_empty() {
             return Err(format!("{}: enter a name.", EditorTab::ScreenCap.label()));
         }
@@ -463,11 +463,11 @@ impl DataEditor {
     ) -> Result<std::sync::Arc<image::RgbaImage>, String> {
         let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
             catalog,
-            self.form_monitor,
-            &self.form_rect.left,
-            &self.form_rect.top,
-            &self.form_rect.right,
-            &self.form_rect.bottom,
+            self.drafts.monitor,
+            &self.drafts.rect.left,
+            &self.drafts.rect.top,
+            &self.drafts.rect.right,
+            &self.drafts.rect.bottom,
         ) else {
             return Err(format!(
                 "{}: invalid capture dimensions.",
@@ -617,9 +617,9 @@ impl DataEditor {
                 }
             };
             if let Err(e) = validate_item_grid_fields(
-                &self.form_cols,
-                &self.form_rows,
-                &self.form_item.stack_max,
+                &self.drafts.cols,
+                &self.drafts.rows,
+                &self.drafts.item.stack_max,
             ) {
                 self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return;
@@ -633,11 +633,11 @@ impl DataEditor {
             };
             let item = ProgramItem {
                 name: requested,
-                mask: self.form_item.mask.clone(),
-                stack_max: parse_i32(&self.form_item.stack_max).unwrap_or(0),
-                grid_cols: parse_i32(&self.form_cols).unwrap_or(1),
-                grid_rows: parse_i32(&self.form_rows).unwrap_or(1),
-                tags: self.form_tags.clone(),
+                mask: self.drafts.item.mask.clone(),
+                stack_max: parse_i32(&self.drafts.item.stack_max).unwrap_or(0),
+                grid_cols: parse_i32(&self.drafts.cols).unwrap_or(1),
+                grid_rows: parse_i32(&self.drafts.rows).unwrap_or(1),
+                tags: self.drafts.tags.clone(),
             };
             match create_item_with_original(catalog, &prog, item, img.as_ref()) {
                 Ok(name) => {
@@ -666,7 +666,7 @@ impl DataEditor {
                             "{}: created item “{name}” with Original from capture.",
                             EditorTab::ScreenCap.label()
                         ));
-                        self.form_name = name;
+                        self.drafts.name = name;
                     }
                 }
                 Err(e) => self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label())),
@@ -814,6 +814,7 @@ fn create_item_with_original(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_editor::form_fields::FormDrafts;
     use crate::data_editor::{DataEditor, EditorTab};
     use sqyre_domain::PROGRAM_DELIMITER;
     use sqyre_domain::{CoordinateRef, ScalarValue};
@@ -862,18 +863,21 @@ mod tests {
             tab: EditorTab::MatchCheck,
             selected_program: Some("Game".into()),
             selected_entity: Some("Potion".into()),
-            form_name: "Potion".into(),
+            drafts: FormDrafts {
+                name: "Potion".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
         assert!(ed.apply_search_area_bounds(CatalogView::from(&cat), &coord));
         assert_eq!(ed.selected_entity.as_deref(), Some("Potion"));
-        assert_eq!(ed.form_name, "Potion");
-        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
-        assert_eq!(ed.form_rect.left, "10");
-        assert_eq!(ed.form_rect.top, "20");
-        assert_eq!(ed.form_rect.right, "110");
-        assert_eq!(ed.form_rect.bottom, "120");
+        assert_eq!(ed.drafts.name, "Potion");
+        assert_eq!(ed.drafts.search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert_eq!(ed.drafts.rect.left, "10");
+        assert_eq!(ed.drafts.rect.top, "20");
+        assert_eq!(ed.drafts.rect.right, "110");
+        assert_eq!(ed.drafts.rect.bottom, "120");
     }
 
     #[test]
@@ -883,14 +887,17 @@ mod tests {
             tab: EditorTab::ScreenCap,
             selected_program: Some("Game".into()),
             selected_entity: Some("Potion".into()),
-            form_name: "Potion".into(),
+            drafts: FormDrafts {
+                name: "Potion".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
         assert!(ed.apply_screen_cap_reference(CatalogView::from(&cat), coord));
         assert_eq!(ed.selected_entity.as_deref(), Some("Bag"));
-        assert_eq!(ed.form_name, "Bag");
-        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert_eq!(ed.drafts.name, "Bag");
+        assert_eq!(ed.drafts.search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
     }
 
     fn sample_item(name: &str) -> ProgramItem {

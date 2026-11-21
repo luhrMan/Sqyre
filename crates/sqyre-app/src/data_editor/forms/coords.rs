@@ -19,25 +19,25 @@ impl DataEditor {
     ) -> [(&mut String, CardinalEdge, &'static str, &'static str); 4] {
         [
             (
-                &mut self.form_rect.top,
+                &mut self.drafts.rect.top,
                 CardinalEdge::Top,
                 "TopY",
                 help::DE_AREA_TOP,
             ),
             (
-                &mut self.form_rect.bottom,
+                &mut self.drafts.rect.bottom,
                 CardinalEdge::Bottom,
                 "BottomY",
                 help::DE_AREA_BOTTOM,
             ),
             (
-                &mut self.form_rect.left,
+                &mut self.drafts.rect.left,
                 CardinalEdge::Left,
                 "LeftX",
                 help::DE_AREA_LEFT,
             ),
             (
-                &mut self.form_rect.right,
+                &mut self.drafts.rect.right,
                 CardinalEdge::Right,
                 "RightX",
                 help::DE_AREA_RIGHT,
@@ -60,13 +60,13 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        paint_name_field(ui, &mut self.form_name);
+        paint_name_field(ui, &mut self.drafts.name);
         self.paint_monitor_slot(ui);
         let (x, y) = form_absolute_xy(
             catalog,
-            self.form_monitor,
-            form_coord_literal(&self.form_point.x),
-            form_coord_literal(&self.form_point.y),
+            self.drafts.monitor,
+            form_coord_literal(&self.drafts.point.x),
+            form_coord_literal(&self.drafts.point.y),
         );
         self.sync_coord_preview_view();
         let force = self.previews.take_force();
@@ -91,13 +91,13 @@ impl DataEditor {
         } = ctx;
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
-            self.form_monitor,
-            &self.form_rect.left,
-            &self.form_rect.top,
-            &self.form_rect.right,
-            &self.form_rect.bottom,
+            self.drafts.monitor,
+            &self.drafts.rect.left,
+            &self.drafts.rect.top,
+            &self.drafts.rect.right,
+            &self.drafts.rect.bottom,
         );
-        paint_name_field(ui, &mut self.form_name);
+        paint_name_field(ui, &mut self.drafts.name);
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
         let refresh = if self.previews.take_force() {
@@ -218,10 +218,10 @@ impl DataEditor {
                 );
             },
             |ui| {
-                name_field_body(ui, &mut self.form_name);
+                name_field_body(ui, &mut self.drafts.name);
             },
         );
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_fs_name_hint(ui, &self.drafts.name);
         if upload_clicked {
             self.request_mask_image_pick();
         }
@@ -232,18 +232,22 @@ impl DataEditor {
         if !has_image {
             crate::widgets::pair_labeled(ui, egui_phosphor::regular::SHAPES, "Shape", |ui| {
                 help::tip(
-                    ui.selectable_value(&mut self.form_mask.shape, "rectangle".into(), "Rectangle"),
+                    ui.selectable_value(
+                        &mut self.drafts.mask.shape,
+                        "rectangle".into(),
+                        "Rectangle",
+                    ),
                     help::DE_MASK_SHAPE,
                 );
                 help::tip(
-                    ui.selectable_value(&mut self.form_mask.shape, "circle".into(), "Circle"),
+                    ui.selectable_value(&mut self.drafts.mask.shape, "circle".into(), "Circle"),
                     help::DE_MASK_SHAPE,
                 );
             });
             ui.horizontal(|ui| {
                 help::tip(
                     ui.checkbox(
-                        &mut self.form_mask.inverse,
+                        &mut self.drafts.mask.inverse,
                         "Inverse (shape included, rest excluded)",
                     ),
                     help::DE_MASK_INVERSE,
@@ -274,22 +278,22 @@ impl DataEditor {
                     ui,
                     egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "Center X %",
-                    &mut self.form_mask.center_x,
+                    &mut self.drafts.mask.center_x,
                     "Horizontal center of the shape (0–100%).",
                 );
                 numeric(
                     ui,
                     egui_phosphor::regular::ARROWS_VERTICAL,
                     "Center Y %",
-                    &mut self.form_mask.center_y,
+                    &mut self.drafts.mask.center_y,
                     "Vertical center of the shape (0–100%).",
                 );
-                if self.form_mask.shape == "circle" {
+                if self.drafts.mask.shape == "circle" {
                     numeric(
                         ui,
                         egui_phosphor::regular::CIRCLE,
                         "Radius",
-                        &mut self.form_mask.radius,
+                        &mut self.drafts.mask.radius,
                         "Circle radius as a percent of the search area.",
                     );
                 } else {
@@ -297,14 +301,14 @@ impl DataEditor {
                         ui,
                         egui_phosphor::regular::ARROWS_LEFT_RIGHT,
                         "Base",
-                        &mut self.form_mask.base,
+                        &mut self.drafts.mask.base,
                         "Rectangle width as a percent of the search area.",
                     );
                     numeric(
                         ui,
                         egui_phosphor::regular::ARROWS_DOWN_UP,
                         "Height",
-                        &mut self.form_mask.height,
+                        &mut self.drafts.mask.height,
                         "Rectangle height as a percent of the search area.",
                     );
                 }
@@ -358,13 +362,13 @@ impl DataEditor {
         }
 
         let shape = MaskShapeParams {
-            circle: self.form_mask.shape == "circle",
-            inverse: self.form_mask.inverse,
-            center_x: mask_percent(&self.form_mask.center_x, 50.0),
-            center_y: mask_percent(&self.form_mask.center_y, 50.0),
-            base: mask_percent(&self.form_mask.base, 50.0),
-            height: mask_percent(&self.form_mask.height, 50.0),
-            radius: mask_percent(&self.form_mask.radius, 50.0),
+            circle: self.drafts.mask.shape == "circle",
+            inverse: self.drafts.mask.inverse,
+            center_x: mask_percent(&self.drafts.mask.center_x, 50.0),
+            center_y: mask_percent(&self.drafts.mask.center_y, 50.0),
+            base: mask_percent(&self.drafts.mask.base, 50.0),
+            height: mask_percent(&self.drafts.mask.height, 50.0),
+            radius: mask_percent(&self.drafts.mask.radius, 50.0),
         };
         let png = mask_path
             .as_ref()
@@ -414,7 +418,7 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        paint_name_field(ui, &mut self.form_name);
+        paint_name_field(ui, &mut self.drafts.name);
         self.paint_item_param_fields(ui, catalog, icons);
         help::tip(
             crate::widgets::wrap_unit(ui, |ui| {
@@ -425,11 +429,11 @@ impl DataEditor {
         );
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
-            self.form_monitor,
-            &self.form_rect.left,
-            &self.form_rect.top,
-            &self.form_rect.right,
-            &self.form_rect.bottom,
+            self.drafts.monitor,
+            &self.drafts.rect.left,
+            &self.drafts.rect.top,
+            &self.drafts.rect.right,
+            &self.drafts.rect.bottom,
         );
         self.sync_coord_preview_view();
         let refresh = if self.previews.take_force() {

@@ -369,7 +369,7 @@ impl DataEditor {
                         }
                         let rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
                             let in_collection =
-                                sqyre_domain::CoordinateRef(self.form_search_area.clone())
+                                sqyre_domain::CoordinateRef(self.drafts.search_area.clone())
                                     .is_collection();
                             for ent in &search_areas {
                                 if !q.is_empty()
@@ -409,7 +409,7 @@ impl DataEditor {
                                 }
                                 visible += 1;
                                 let current =
-                                    sqyre_domain::CoordinateRef(self.form_search_area.clone());
+                                    sqyre_domain::CoordinateRef(self.drafts.search_area.clone());
                                 let selected = current.is_collection()
                                     && current.program() == Some(prog.as_str())
                                     && current.name() == col.name;
@@ -527,7 +527,7 @@ impl DataEditor {
                     btn.enabled = *enabled;
                 }
                 if self.selected_entity.as_deref() == Some(id.as_str()) {
-                    self.form_overlay.enabled = *enabled;
+                    self.drafts.overlay.enabled = *enabled;
                 }
             }
             self.persist_overlay_settings(settings);
@@ -692,7 +692,7 @@ impl DataEditor {
         col: &ProgramCollection,
         was_selected: bool,
     ) {
-        let current = sqyre_domain::CoordinateRef(self.form_search_area.clone());
+        let current = sqyre_domain::CoordinateRef(self.drafts.search_area.clone());
         let initial = if was_selected {
             current.cell_range()
         } else {
@@ -703,7 +703,7 @@ impl DataEditor {
         self.prompts.window_picker = pickers::ActivePicker::Coord {
             kind: pickers::CoordKind::SearchArea,
             search: String::new(),
-            value: self.form_search_area.clone(),
+            value: self.drafts.search_area.clone(),
             cell_pick: Some(
                 pickers::CollectionCellPick::new(prog, &col.name, col.rows, col.cols)
                     .with_initial_sel(initial),
