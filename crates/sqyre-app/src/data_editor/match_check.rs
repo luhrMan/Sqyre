@@ -10,9 +10,11 @@
     reason = "pixel-check helpers share LTRB, match settings, and cache payloads"
 )]
 mod inner {
+    use crate::data_editor::EditorTab;
     use crate::data_editor_preview::variant_display_label;
     use crate::icon_variants::variant_path;
     use crate::image_view::{self, ImageViewTransform};
+    use crate::preview_tooltip::PreviewTooltipCache;
     use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
@@ -22,7 +24,7 @@ mod inner {
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
-    use sqyre_persist::CatalogView;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
     use std::sync::{mpsc, Arc};
@@ -1304,6 +1306,95 @@ mod inner {
             self.match_check.last_inputs = inputs;
             self.match_check.last_request = Some(now);
             self.match_check_pending = Some(job_rx);
+        }
+
+        pub(crate) fn poll_match_check(
+            &mut self,
+            ctx: &egui::Context,
+            catalog: &ProgramCatalog,
+            previews: &mut PreviewTooltipCache,
+        ) {
+            if !matches!(self.tab, EditorTab::MatchCheck) {
+                if self.match_check_pending.is_some() {
+                    self.stop_match_check_compute();
+                }
+                return;
+            }
+            use crate::data_editor::helpers::form_desktop_area;
+            let (lx, ty, rx, by) = form_desktop_area(
+                CatalogView::from(catalog),
+                self.form_monitor,
+                &self.form_rect.left,
+                &self.form_rect.top,
+                &self.form_rect.right,
+                &self.form_rect.bottom,
+            );
+            let coords_ok = match (
+                self.selected_program.as_deref(),
+                self.selected_entity.as_deref(),
+            ) {
+                (Some(prog), Some(item)) => can_compute_match_check(
+                    CatalogView::from(catalog),
+                    prog,
+                    item,
+                    &self.match_check.variant,
+                    lx,
+                    ty,
+                    rx,
+                    by,
+                ),
+                _ => false,
+            };
+            if !coords_ok && self.match_check_pending.is_some() {
+                self.stop_match_check_compute();
+            }
+            // Applying a rematch mid-drag swaps the heatmap/legend and can end the
+            // user's gesture early across the whole window.
+            let hold_result = self.coord_preview.transform.pan_drag.is_some()
+                || ctx.input(|i| i.pointer.any_down());
+            if let Some(rx) = self.match_check_pending.as_ref() {
+                if hold_result {
+                    ctx.request_repaint();
+                } else {
+                    match rx.try_recv() {
+                        Ok(Ok(result)) => {
+                            self.match_check_pending = None;
+                            if result.data.fingerprint == self.match_check.last_inputs {
+                                if result.data.tolerance_matches.len() > MANY_MATCH_BOX_THRESHOLD {
+                                    self.match_check.show_many_match_boxes = false;
+                                }
+                                self.match_check_cache = Some(finish_cache(ctx, result));
+                                self.match_check.last_live_at = Some(web_time::Instant::now());
+                                if !self.match_check.paused {
+                                    ctx.request_repaint_after(LIVE_INTERVAL);
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            self.match_check_pending = None;
+                            self.match_check.paused = true;
+                            self.set_err(format!(
+                                "{}: {}",
+                                EditorTab::MatchCheck.label(),
+                                crate::status_banner::user_error_detail(&e)
+                            ));
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            ctx.request_repaint();
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            self.match_check_pending = None;
+                            self.match_check.paused = true;
+                            self.set_err(format!(
+                                "{}: match failed",
+                                EditorTab::MatchCheck.label()
+                            ));
+                        }
+                    }
+                }
+            }
+            let _ = previews;
+            let _ = catalog;
         }
     }
 }
