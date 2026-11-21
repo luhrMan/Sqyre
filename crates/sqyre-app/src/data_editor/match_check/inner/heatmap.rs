@@ -1,11 +1,8 @@
 //! Heatmap score pooling and RGBA conversion for MatchCheck.
 
 use super::{
-    compute_match_summary, match_score_at, score_norm_for_display, score_passes, MatchCheckHover,
-    MatchSummary,
+    compute_match_summary, score_norm_for_display, score_passes, MatchCheckHover, MatchSummary,
 };
-use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
-use eframe::egui::Color32;
 use sqyre_domain::MatchMethod;
 use sqyre_match::MatchMap;
 

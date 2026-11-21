@@ -2,17 +2,15 @@
 
 mod heatmap;
 mod paint;
-use heatmap::*;
-pub(crate) use heatmap::{
-    closeness_percent, heatmap_hover_allowed, hover_at_image, scores_to_heatmap_rgba,
-};
-use paint::*;
-pub(crate) use paint::{paint_heatmap_overlay, paint_tolerance_match_boxes};
+use heatmap::similarity_rgb;
+pub(crate) use heatmap::{closeness_percent, scores_to_heatmap_rgba};
+#[cfg(test)]
+pub(crate) use heatmap::{heatmap_hover_allowed, hover_at_image};
+pub(crate) use paint::paint_heatmap_overlay;
 
 use crate::data_editor::EditorTab;
 use crate::data_editor_preview::variant_display_label;
 use crate::icon_variants::variant_path;
-use crate::image_view::{self, ImageViewTransform};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
@@ -466,8 +464,6 @@ fn compute_match_summary(map: &MatchMap, method: MatchMethod, tolerance: f32) ->
     }
     summary
 }
-
-/// Soft disk radius (image pixels) around each match origin in the heatmap.
 
 pub(crate) fn spawn_compute(
     fingerprint: String,
