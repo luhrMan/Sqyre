@@ -30,24 +30,18 @@ static DISK_OVERRIDE: Mutex<Option<bool>> = Mutex::new(None);
 
 /// Point diagnostics at the Sqyre data dir (e.g. `~/.sqyre`). Call once at startup.
 pub fn set_log_dir(path: Option<PathBuf>) {
-    if let Ok(mut g) = LOG_DIR.lock() {
-        *g = path;
-    }
+    *LOG_DIR.lock().unwrap_or_else(|e| e.into_inner()) = path;
 }
 
 /// Override disk logging (`None` restores `SQYRE_DIAG` / default-off).
 pub fn set_disk_logging(enabled: Option<bool>) {
-    if let Ok(mut g) = DISK_OVERRIDE.lock() {
-        *g = enabled;
-    }
+    *DISK_OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()) = enabled;
 }
 
 /// Whether diag files are written (`SQYRE_DIAG=1`/`true`/`yes`, unless overridden).
 pub fn disk_logging_enabled() -> bool {
-    if let Ok(g) = DISK_OVERRIDE.lock() {
-        if let Some(v) = *g {
-            return v;
-        }
+    if let Some(v) = *DISK_OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()) {
+        return v;
     }
     matches!(
         std::env::var("SQYRE_DIAG").as_deref(),
@@ -57,10 +51,8 @@ pub fn disk_logging_enabled() -> bool {
 
 /// Resolved log directory (override, else `~/.sqyre`, else temp).
 pub fn log_dir() -> PathBuf {
-    if let Ok(g) = LOG_DIR.lock() {
-        if let Some(p) = g.clone() {
-            return p;
-        }
+    if let Some(p) = LOG_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return p;
     }
     // `std::env::temp_dir()` panics on wasm32-unknown-unknown.
     #[cfg(target_arch = "wasm32")]
@@ -105,9 +97,7 @@ pub const SITE_HIST_FILE: &str = "site_hist.txt";
 /// Record the current code site (memory + [`LAST_SITE_FILE`] always).
 pub fn mark_site(site: &str) {
     let line = format!("{}\t{site}", stamp());
-    if let Ok(mut g) = LAST_SITE.lock() {
-        *g = Some(line.clone());
-    }
+    *LAST_SITE.lock().unwrap_or_else(|e| e.into_inner()) = Some(line.clone());
     let path = log_dir().join(LAST_SITE_FILE);
     ensure_parent(&path);
     let file_line = format!("{line}\n");
@@ -168,10 +158,8 @@ fn append_diag_line(line: &str) {
 
 /// Read the last marked site (memory first, then [`LAST_SITE_FILE`] if present).
 pub fn read_last_site() -> Option<String> {
-    if let Ok(g) = LAST_SITE.lock() {
-        if let Some(ref s) = *g {
-            return Some(s.clone());
-        }
+    if let Some(ref s) = *LAST_SITE.lock().unwrap_or_else(|e| e.into_inner()) {
+        return Some(s.clone());
     }
     let path = log_dir().join(LAST_SITE_FILE);
     let text = fs::read_to_string(path).ok()?;
