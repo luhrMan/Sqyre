@@ -14,6 +14,7 @@ mod expr;
 mod expr_error;
 mod item_sort;
 mod keys;
+mod known_vars;
 mod macro_model;
 mod match_method;
 mod ocr_match;
@@ -49,6 +50,7 @@ pub use keys::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
     validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,
 };
+pub use known_vars::*;
 pub use macro_model::*;
 pub use match_method::MatchMethod;
 pub use ocr_match::OcrMatchMode;
