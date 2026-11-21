@@ -76,7 +76,6 @@ mod pickers;
 #[cfg(feature = "native-runtime")]
 mod pixel_color;
 #[cfg(feature = "native-runtime")]
-#[path = "preview_tooltip.rs"]
 mod preview_tooltip;
 #[cfg(not(feature = "native-runtime"))]
 #[path = "preview_tooltip_stub.rs"]
