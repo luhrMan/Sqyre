@@ -89,7 +89,7 @@ pub(super) fn upsert_resolution_entity<T>(
     let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
     ensure_resolution(p, &res, scale);
-    maps(p).get_mut(&res).unwrap().insert(key, value);
+    maps(p).entry(res).or_default().insert(key, value);
     Ok(())
 }
 
@@ -128,7 +128,7 @@ pub(super) fn rename_resolution_entity<T>(
     let scale = catalog.runtime_scale();
     let p = catalog.program_mut(program)?;
     ensure_resolution(p, &res, scale);
-    let map = maps(p).get_mut(&res).unwrap();
+    let map = maps(p).entry(res).or_default();
     rename_keyed_map(map, old, new, kind, set_name)
 }
 
