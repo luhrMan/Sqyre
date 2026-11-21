@@ -7,6 +7,10 @@ use super::visibility::{
 };
 use super::*;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "host thread owns the queues, the worker stop flag, and press-to-stop"
+)]
 pub(super) fn host_loop(
     cmd_rx: Receiver<HostCmd>,
     pending: Arc<Mutex<Vec<String>>>,

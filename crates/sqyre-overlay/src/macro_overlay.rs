@@ -23,7 +23,6 @@ use parking_lot::Mutex;
 use sqyre_capture::{
     get_active_window, window_is_our_process, window_is_transient_shell_focus, WindowInfo,
 };
-use sqyre_domain::GENERAL_PROGRAM;
 use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_DISMISS, QUICK_ACCESS_HUB_ID,
 };
@@ -1092,6 +1091,7 @@ mod tests {
         program_owns_focus, suppress_over_sqyre, FocusSlot, NONE_HIDE_AFTER, OUR_HIDE_AFTER,
     };
     use sqyre_capture::OVERLAY_WM_TITLE;
+    use sqyre_domain::GENERAL_PROGRAM;
     use sqyre_persist::ProgramCatalog;
 
     fn wine_win(title: &str) -> WindowInfo {

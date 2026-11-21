@@ -490,10 +490,6 @@ struct ArgbVisual {
     blue_mask: u64,
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "host thread owns the queues, the worker stop flag, and press-to-stop"
-)]
 fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     let mut keep = std::collections::HashSet::new();
     for mut spec in specs {
