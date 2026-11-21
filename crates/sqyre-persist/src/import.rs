@@ -1,6 +1,7 @@
 //! Merge two [`Database`] values preferring the imported side on conflicts.
 
-use crate::{Database, PersistError, Result};
+use crate::database::Database;
+use crate::error::{PersistError, Result};
 use serde_yaml::{Mapping, Value};
 
 /// How a backup import applies an archive to the live data.

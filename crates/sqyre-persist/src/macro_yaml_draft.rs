@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{PersistError, Result};
+use crate::error::{PersistError, Result};
 
 const FILE_NAME: &str = "macro_yaml_builder.yaml";
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 
 /// Absolute path to the YAML Macro Builder draft store.
 pub fn macro_yaml_builder_path() -> PathBuf {
-    crate::sqyre_dir().join(FILE_NAME)
+    crate::paths::sqyre_dir().join(FILE_NAME)
 }
 
 /// One unapplied draft keyed by macro name.
@@ -84,7 +84,7 @@ impl MacroYamlBuilderDrafts {
             }
             return Ok(());
         }
-        crate::atomic_write(path, serde_yaml::to_string(self)?)?;
+        crate::fs_util::atomic_write(path, serde_yaml::to_string(self)?)?;
         Ok(())
     }
 
@@ -116,30 +116,5 @@ impl MacroYamlBuilderDrafts {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::with_sqyre_dir_override;
-    use tempfile::tempdir;
-
-    #[test]
-    fn roundtrip_and_clear_removes_file() {
-        let dir = tempdir().unwrap();
-        with_sqyre_dir_override(dir.path().to_path_buf(), || {
-            let mut store = MacroYamlBuilderDrafts::default();
-            store.set(
-                "demo",
-                MacroYamlDraftEntry {
-                    base_yaml: "name: demo\n".into(),
-                    yaml: "name: demo\nroot:\n  type: loop\n".into(),
-                },
-            );
-            store.save_default().unwrap();
-            let loaded = MacroYamlBuilderDrafts::load_default().unwrap();
-            assert_eq!(loaded, store);
-
-            store.remove("demo");
-            store.save_default().unwrap();
-            assert!(!macro_yaml_builder_path().exists());
-        });
-    }
-}
+#[path = "macro_yaml_draft_tests.rs"]
+mod tests;

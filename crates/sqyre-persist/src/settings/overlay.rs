@@ -3,8 +3,6 @@
 use serde::{Deserialize, Serialize};
 use sqyre_domain::{clamp_match_blur, clamp_match_tolerance, MatchMethod};
 
-use super::UserSettings;
-
 pub const DEFAULT_OVERLAY_PRESS_STOPS_RUN: bool = true;
 /// Image Search, Find Pixel, and OCR captures include overlay buttons.
 pub const DEFAULT_OVERLAY_BUTTONS_IN_DETECTION: bool = true;
@@ -261,9 +259,8 @@ pub fn default_quick_access_hub_button() -> OverlayButtonConfig {
 /// Insert the hub button when missing; repair locked identity/chrome fields when present.
 ///
 /// Returns `true` when the settings list changed.
-pub fn ensure_quick_access_hub_button(settings: &mut UserSettings) -> bool {
-    if let Some(btn) = settings
-        .overlay
+pub fn ensure_quick_access_hub_button(overlay: &mut OverlaySettings) -> bool {
+    if let Some(btn) = overlay
         .overlay_buttons
         .iter_mut()
         .find(|b| is_quick_access_hub_id(&b.id))
@@ -299,8 +296,7 @@ pub fn ensure_quick_access_hub_button(settings: &mut UserSettings) -> bool {
         }
         return dirty;
     }
-    settings
-        .overlay
+    overlay
         .overlay_buttons
         .insert(0, default_quick_access_hub_button());
     true

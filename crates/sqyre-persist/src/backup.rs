@@ -17,8 +17,10 @@ use zip::read::ZipReadOptions;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::database::Database;
 use crate::import::{merge_databases_prefer_imported, ImportMode};
-use crate::{db_path, sqyre_dir, Database, UserSettings, DB_FILE, SETTINGS_FILE};
+use crate::paths::{backup_dir_override, db_path, sqyre_dir, DB_FILE, SETTINGS_FILE};
+use crate::settings::UserSettings;
 
 const BACKUPS_SUBDIR: &str = "backups";
 const BACKUP_PREFIX: &str = "sqyre-backup-";
@@ -54,7 +56,7 @@ pub type Result<T> = std::result::Result<T, BackupError>;
 
 /// `{sqyre_dir}/backups`, or the user's custom backups folder.
 pub fn backups_dir() -> PathBuf {
-    if let Some(p) = crate::backup_dir_override() {
+    if let Some(p) = backup_dir_override() {
         return p;
     }
     sqyre_dir().join(BACKUPS_SUBDIR)
@@ -595,6 +597,7 @@ fn rollback_prev(prev: &Path, dest: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::with_sqyre_dir_override;
 
     #[test]
     fn format_timestamp_epoch() {
@@ -613,7 +616,7 @@ mod tests {
         fs::write(data.join("images/icons/a.png"), b"png")?;
         fs::write(data.join("crash.log"), "ignore")?;
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let path = create_backup()?;
             assert!(path.exists());
             assert!(is_backup_filename(
@@ -666,7 +669,7 @@ mod tests {
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("missing db.yaml"), "got {err}");
             assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
@@ -706,7 +709,7 @@ mod tests {
         let big_zip = tmp.path().join("big.zip");
         fs::write(&big_zip, vec![0u8; MAX_ARCHIVE_FILE_BYTES + 1])?;
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&big_zip).unwrap_err();
             assert!(err.to_string().contains("too large"), "got {err}");
             assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
@@ -733,7 +736,7 @@ mod tests {
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("invalid"), "got {err}");
             assert_eq!(fs::read_to_string(data.join(DB_FILE)).unwrap(), original);
@@ -766,7 +769,7 @@ mod tests {
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             restore_backup(&zip_path)?;
             let restored = UserSettings::load_from_path(data.join(SETTINGS_FILE))
                 .map_err(|e| BackupError::Message(e.to_string()))?;
@@ -797,7 +800,7 @@ mod tests {
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let err = restore_backup(&zip_path).unwrap_err();
             assert!(
                 err.to_string().contains("settings.yaml is invalid"),
@@ -897,7 +900,7 @@ programs: {}
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             import_backup(&zip_path, ImportMode::Merge)?;
 
             let db = Database::load_default().map_err(|e| BackupError::Message(e.to_string()))?;
@@ -948,7 +951,7 @@ programs: {}
             zip.finish()?;
         }
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             import_backup(&zip_path, ImportMode::Overwrite)?;
             assert!(!data.join("images/icons/live-only.png").exists());
             assert_eq!(
@@ -976,7 +979,7 @@ programs: {}
         fs::write(data.join("images/real.png"), b"png")?;
         symlink(data.join("images/real.png"), data.join("images/link.png"))?;
 
-        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+        with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let path = create_backup()?;
             let archive = ZipArchive::new(File::open(&path)?)?;
             let names: Vec<_> = archive

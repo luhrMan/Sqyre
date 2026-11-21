@@ -2,13 +2,30 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
+mod database;
+mod error;
 mod fs_name;
+mod fs_util;
 mod icon_fs_cache;
 mod import;
 mod macro_yaml_draft;
 mod migrate;
+#[cfg(test)]
+#[path = "migrate_tests.rs"]
+mod migrate_tests;
+mod paths;
 mod programs;
 mod settings;
+
+pub use database::{ensure_db_file, Database};
+pub use error::{PersistError, Result};
+pub use paths::{
+    backup_dir_override, db_path, images_path, initialize_directories, screen_cap_path,
+    screen_cap_trash_path, set_backup_dir_override, set_sqyre_dir_override, sqyre_dir,
+    variables_path, with_sqyre_dir_override, DB_FILE, MAX_DB_YAML_BYTES, MAX_MACROS, SETTINGS_FILE,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use paths::{set_home_dir, sqyre_config_dir};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use backup::{
@@ -19,7 +36,24 @@ pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name
 pub use icon_fs_cache::{clear_icon_fs_cache, invalidate_icon_fs_cache_under};
 pub use import::{merge_databases_prefer_imported, ImportMode};
 pub use macro_yaml_draft::{macro_yaml_builder_path, MacroYamlBuilderDrafts, MacroYamlDraftEntry};
-pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
+pub use migrate::{migrate_db_yaml_value, LegacyCatalog};
+
+/// Parse, migrate, and validate against the current [`Database`] loader.
+pub fn migrate_db_yaml(text: &str) -> Result<String> {
+    if text.len() > MAX_DB_YAML_BYTES {
+        return Err(PersistError::Message(format!(
+            "db.yaml too large ({} bytes; max {MAX_DB_YAML_BYTES})",
+            text.len(),
+        )));
+    }
+    check_yaml_safety(text)?;
+    let mut root: serde_yaml::Value = serde_yaml::from_str(text)?;
+    migrate::migrate_db_yaml_value(&mut root);
+    let out = serde_yaml::to_string(&root)?;
+    Database::from_yaml(&out)?;
+    Ok(out)
+}
+
 pub use programs::{
     absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
     merge_fs_warning, monitor_slot_for_point, CatalogView, FsWarn, MonitorRect, ProgramAtlas,
@@ -65,395 +99,12 @@ pub use settings::{
 pub use sqyre_domain::resolve_scalar_int;
 pub use sqyre_serialize::{check_yaml_nesting_depth, check_yaml_safety, MAX_YAML_NESTING_DEPTH};
 
-use parking_lot::{Mutex, RwLock};
-use serde_yaml::{Mapping, Value};
-use sqyre_domain::Macro;
-use sqyre_serialize::{decode_macro_from_map, encode_macro_to_map};
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use thiserror::Error;
-
-const SQYRE_DIR: &str = sqyre_ports::APP_DIR_NAME;
-/// `db.yaml` database file name within [`sqyre_dir`].
-pub const DB_FILE: &str = "db.yaml";
-/// `settings.yaml` file name within [`sqyre_dir`].
-pub const SETTINGS_FILE: &str = "settings.yaml";
-/// Reject absurdly large `db.yaml` bodies before parsing.
-pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
-/// Soft cap on macro count in one database.
-pub const MAX_MACROS: usize = 2_000;
-
-static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
-static BACKUP_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
-
-#[cfg(not(target_arch = "wasm32"))]
-static HOME_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-
-/// Serializes tests that mutate [`set_sqyre_dir_override`].
-static DIR_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-#[derive(Debug, Error)]
-pub enum PersistError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Yaml(#[from] serde_yaml::Error),
-    #[error(transparent)]
-    Serialize(#[from] sqyre_serialize::SerializeError),
-    #[error("{0}")]
-    Message(String),
-}
-
-pub type Result<T> = std::result::Result<T, PersistError>;
-
-/// Write `bytes` to `path` via a sibling temp file + rename (atomic on same filesystem).
-pub(crate) fn atomic_write(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
-    use std::io::Write;
-
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-
-    let write_tmp = || -> std::io::Result<()> {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(bytes.as_ref())?;
-        f.sync_all()?;
-        Ok(())
-    };
-    if let Err(e) = write_tmp() {
-        let _ = fs::remove_file(&tmp);
-        return Err(e);
-    }
-    if let Err(e) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(e);
-    }
-    Ok(())
-}
-
-/// Override the Sqyre data directory (empty clears → `~/.sqyre`).
-pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
-    *DIR_OVERRIDE.write() = path;
-}
-
-/// Override the backups directory (`None` → `{sqyre_dir}/backups`).
-pub fn set_backup_dir_override(path: Option<PathBuf>) {
-    *BACKUP_DIR_OVERRIDE.write() = path;
-}
-
-/// Active backups-directory override, if any.
-pub fn backup_dir_override() -> Option<PathBuf> {
-    BACKUP_DIR_OVERRIDE.read().clone()
-}
-
-/// Replace the user home for Sqyre paths (Android app-private storage has no `$HOME`).
-///
-/// Call once at startup, before any path lookup.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn set_home_dir(path: PathBuf) {
-    // A recreated Android activity re-enters startup in the same process with the same path.
-    let _ = HOME_DIR.set(path);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn home_dir() -> PathBuf {
-    HOME_DIR
-        .get()
-        .cloned()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(std::env::temp_dir)
-}
-
-/// Per-user config directory for Sqyre (`~/.config/sqyre` on Linux).
-///
-/// Holds the data-dir pointer and the single-instance lock — paths that must
-/// not move when the relocatable data directory changes.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn sqyre_config_dir() -> PathBuf {
-    let base = match HOME_DIR.get() {
-        Some(home) => home.join(".config"),
-        None => dirs::config_dir().unwrap_or_else(|| home_dir().join(".config")),
-    };
-    base.join(sqyre_ports::APP_ID)
-}
-
-/// Run `f` with a temporary Sqyre dir override, serialized against other override users.
-pub fn with_sqyre_dir_override<R>(path: PathBuf, f: impl FnOnce() -> R) -> R {
-    let _guard = DIR_OVERRIDE_TEST_LOCK.lock();
-    set_sqyre_dir_override(Some(path));
-    let result = f();
-    set_sqyre_dir_override(None);
-    result
-}
-
-pub fn sqyre_dir() -> PathBuf {
-    if let Some(p) = DIR_OVERRIDE.read().clone() {
-        return p;
-    }
-    // `std::env::temp_dir()` panics on wasm32-unknown-unknown ("no filesystem").
-    #[cfg(target_arch = "wasm32")]
-    {
-        PathBuf::from("/").join(SQYRE_DIR)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        home_dir().join(SQYRE_DIR)
-    }
-}
-
-pub fn db_path() -> PathBuf {
-    sqyre_dir().join(DB_FILE)
-}
-
-pub fn variables_path() -> PathBuf {
-    sqyre_dir().join("variables")
-}
-
-pub fn images_path() -> PathBuf {
-    sqyre_dir().join("images")
-}
-
-pub fn screen_cap_path() -> PathBuf {
-    images_path().join("ScreenCap")
-}
-
-pub fn screen_cap_trash_path() -> PathBuf {
-    screen_cap_path().join("trash")
-}
-
-pub fn initialize_directories() -> Result<()> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        Ok(())
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        for p in [
-            sqyre_dir().join("images/icons"),
-            sqyre_dir().join("images/process"),
-            sqyre_dir().join("images/ScreenCap"),
-            screen_cap_trash_path(),
-            sqyre_dir().join("images/Collections"),
-            sqyre_dir().join("images/masks"),
-            variables_path(),
-        ] {
-            fs::create_dir_all(&p)?;
-        }
-        Ok(())
-    }
-}
-
-/// In-memory view of `db.yaml`.
-#[derive(Debug, Clone, Default)]
-pub struct Database {
-    pub macros: BTreeMap<String, Macro>,
-    /// Programs remain as raw YAML; use [`Self::program_catalog`] for lookups.
-    pub programs: Value,
-    /// Parsed catalog cache; invalidated when `programs` is replaced via known mutators.
-    catalog_cache: RefCell<Option<Arc<ProgramCatalog>>>,
-}
-
-impl Database {
-    /// Parse (or reuse the cached parse of) `programs` into a [`ProgramCatalog`].
-    ///
-    /// Returns a shared `Arc` so cache hits are a refcount bump rather than a deep clone;
-    /// callers that need an owned, mutable catalog should use `Arc::unwrap_or_clone`.
-    pub fn program_catalog(&self) -> Result<Arc<ProgramCatalog>> {
-        if let Some(cached) = self.catalog_cache.borrow().as_ref() {
-            return Ok(Arc::clone(cached));
-        }
-        let catalog = Arc::new(ProgramCatalog::from_yaml_value(&self.programs)?);
-        *self.catalog_cache.borrow_mut() = Some(Arc::clone(&catalog));
-        Ok(catalog)
-    }
-
-    fn invalidate_catalog_cache(&mut self) {
-        *self.catalog_cache.get_mut() = None;
-    }
-
-    /// Replace `programs` from a typed catalog, preserving masks/collections/atlases via merge.
-    pub fn set_programs_from_catalog(&mut self, catalog: &ProgramCatalog) {
-        self.programs = catalog.to_yaml_value(&self.programs);
-        self.invalidate_catalog_cache();
-    }
-
-    /// Replace the macros map from an ordered list (keyed by macro name).
-    pub fn replace_macros(&mut self, macros: impl IntoIterator<Item = Macro>) {
-        self.macros = macros.into_iter().map(|m| (m.name.clone(), m)).collect();
-    }
-
-    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let text = fs::read_to_string(path)?;
-        Ok(Self::from_yaml_with_warnings(&text)?.0)
-    }
-
-    /// Load default `db.yaml`, returning any per-macro decode/validation warnings.
-    pub fn load_default_with_warnings() -> Result<(Self, Vec<String>)> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Ok((Self::default(), Vec::new()))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let path = db_path();
-            if !path.exists() {
-                return Ok((Self::default(), Vec::new()));
-            }
-            let text = fs::read_to_string(path)?;
-            Self::from_yaml_with_warnings(&text)
-        }
-    }
-
-    pub fn load_default() -> Result<Self> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Ok(Self::default())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        Self::load_from_path(db_path())
-    }
-
-    /// Parse `db.yaml` bytes (UTF-8). Used by WASM import and tests.
-    pub fn from_yaml_bytes(bytes: &[u8]) -> Result<Self> {
-        let text = std::str::from_utf8(bytes)
-            .map_err(|e| PersistError::Message(format!("db.yaml is not UTF-8: {e}")))?;
-        Ok(Self::from_yaml_with_warnings(text)?.0)
-    }
-
-    /// Serialize to YAML bytes (UTF-8). Used by WASM export.
-    pub fn to_yaml_bytes(&self) -> Result<Vec<u8>> {
-        Ok(self.to_yaml()?.into_bytes())
-    }
-
-    pub fn from_yaml(text: &str) -> Result<Self> {
-        Ok(Self::from_yaml_with_warnings(text)?.0)
-    }
-
-    /// Load `db.yaml`, skipping individual macros that fail to decode so one
-    /// corrupt entry cannot lock the user out of the rest of the library.
-    ///
-    /// Returns `(database, warnings)` where warnings describe skipped macros.
-    pub fn from_yaml_with_warnings(text: &str) -> Result<(Self, Vec<String>)> {
-        if text.len() > MAX_DB_YAML_BYTES {
-            return Err(PersistError::Message(format!(
-                "db.yaml too large ({} bytes; max {MAX_DB_YAML_BYTES})",
-                text.len()
-            )));
-        }
-        check_yaml_safety(text)?;
-        let root: Value = serde_yaml::from_str(text)?;
-        check_yaml_nesting_depth(&root)?;
-        let mapping = root
-            .as_mapping()
-            .ok_or_else(|| PersistError::Message("db.yaml root must be a mapping".into()))?;
-
-        let mut macros = BTreeMap::new();
-        let mut warnings = Vec::new();
-        if let Some(Value::Mapping(mm)) = mapping.get(Value::String("macros".into())) {
-            if mm.len() > MAX_MACROS {
-                return Err(PersistError::Message(format!(
-                    "too many macros ({}; max {MAX_MACROS})",
-                    mm.len()
-                )));
-            }
-            for (k, v) in mm {
-                let key = match k.as_str() {
-                    Some(s) => s.to_string(),
-                    None => {
-                        warnings.push("skipped macro with non-string key".into());
-                        continue;
-                    }
-                };
-                match decode_macro_from_map(v) {
-                    Ok(mut macro_) => {
-                        if macro_.name.is_empty() {
-                            macro_.name = key.clone();
-                        }
-                        // Structural validation is surfaced in the UI on the macro /
-                        // action rows — do not turn it into an app-wide load banner.
-                        macros.insert(key, macro_);
-                    }
-                    Err(e) => {
-                        warnings.push(format!("skipped macro \"{key}\": {e}"));
-                    }
-                }
-            }
-        }
-
-        let programs = mapping
-            .get(Value::String("programs".into()))
-            .cloned()
-            .unwrap_or(Value::Mapping(Mapping::new()));
-
-        Ok((
-            Self {
-                macros,
-                programs,
-                catalog_cache: RefCell::new(None),
-            },
-            warnings,
-        ))
-    }
-
-    pub fn to_yaml(&self) -> Result<String> {
-        let mut root = Mapping::new();
-        let mut mm = Mapping::new();
-        for (key, macro_) in &self.macros {
-            let encoded = encode_macro_to_map(macro_)?;
-            mm.insert(Value::String(key.clone()), Value::Mapping(encoded));
-        }
-        root.insert(Value::String("macros".into()), Value::Mapping(mm));
-        root.insert(Value::String("programs".into()), self.programs.clone());
-        Ok(serde_yaml::to_string(&Value::Mapping(root))?)
-    }
-
-    pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
-        let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        atomic_write(path, self.to_yaml()?)?;
-        Ok(())
-    }
-
-    pub fn save_default(&self) -> Result<()> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // In-memory only in the browser; use YAML export to download.
-            let _ = self.to_yaml()?;
-            Ok(())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        self.save_to_path(db_path())
-    }
-
-    pub fn macro_names(&self) -> Vec<String> {
-        self.macros.keys().cloned().collect()
-    }
-}
-
-/// Ensure `db.yaml` exists with empty macros/programs.
-pub fn ensure_db_file() -> Result<PathBuf> {
-    initialize_directories()?;
-    let path = db_path();
-    if !path.exists() {
-        let db = Database::default();
-        db.save_to_path(&path)?;
-    }
-    Ok(path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, Action, ActionKind, ScalarValue};
+    use crate::fs_util::atomic_write;
+    use serde_yaml::{Mapping, Value};
+    use sqyre_domain::{root_loop, Action, ActionKind, Macro, ScalarValue};
 
     #[test]
     fn roundtrip_temp_db() {

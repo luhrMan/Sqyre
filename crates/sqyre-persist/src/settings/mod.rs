@@ -134,7 +134,7 @@ impl UserSettings {
         }
         let mut clamped = self.clone();
         clamped.clamp();
-        crate::atomic_write(path, serde_yaml::to_string(&clamped)?)?;
+        crate::fs_util::atomic_write(path, serde_yaml::to_string(&clamped)?)?;
         Ok(())
     }
 
@@ -280,7 +280,7 @@ impl UserSettings {
         self.overlay.clamp();
         self.sound.clamp();
         self.data.clamp();
-        let _ = ensure_quick_access_hub_button(self);
+        let _ = ensure_quick_access_hub_button(&mut self.overlay);
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn roundtrip_settings() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join(crate::SETTINGS_FILE);
+        let path = dir.path().join(crate::paths::SETTINGS_FILE);
         let mut s = UserSettings {
             runtime: RuntimePrefs {
                 save_meta_images: true,
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn ensure_quick_access_hub_button_seeds_and_repairs() {
         let mut s = UserSettings::default();
-        assert!(ensure_quick_access_hub_button(&mut s));
+        assert!(ensure_quick_access_hub_button(&mut s.overlay));
         assert_eq!(s.overlay.overlay_buttons.len(), 1);
         let hub = &s.overlay.overlay_buttons[0];
         assert_eq!(hub.id, QUICK_ACCESS_HUB_ID);
@@ -428,7 +428,7 @@ mod tests {
         assert_eq!(hub.border_width, 0.0);
         assert_eq!(hub.bg_alpha, 0);
         assert_eq!(hub.icon_alpha, DEFAULT_QUICK_ACCESS_OPACITY);
-        assert!(!ensure_quick_access_hub_button(&mut s));
+        assert!(!ensure_quick_access_hub_button(&mut s.overlay));
 
         s.overlay.overlay_buttons[0].program = "Other".into();
         s.overlay.overlay_buttons[0].macro_name = "wrong".into();
@@ -437,7 +437,7 @@ mod tests {
         s.overlay.overlay_buttons[0].border_width = 2.0;
         s.overlay.overlay_buttons[0].border_alpha = 200;
         s.overlay.overlay_buttons[0].bg_alpha = 128;
-        assert!(ensure_quick_access_hub_button(&mut s));
+        assert!(ensure_quick_access_hub_button(&mut s.overlay));
         let hub = &s.overlay.overlay_buttons[0];
         assert_eq!(hub.program, sqyre_domain::GENERAL_PROGRAM);
         assert_eq!(hub.macro_name, QUICK_ACCESS_HUB_ID);
@@ -981,7 +981,7 @@ mod tests {
             .any(|b| is_quick_access_hub_id(&b.id)));
 
         let dir = tempdir().unwrap();
-        let path = dir.path().join(crate::SETTINGS_FILE);
+        let path = dir.path().join(crate::paths::SETTINGS_FILE);
         s.save_to_path(&path).unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
         assert!(loaded
@@ -1029,7 +1029,7 @@ mod tests {
     #[test]
     fn hotkey_tag_filters_omitted_defaults_empty() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join(crate::SETTINGS_FILE);
+        let path = dir.path().join(crate::paths::SETTINGS_FILE);
         std::fs::write(&path, "runtime:\n  save_meta_images: true\n").unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
         assert!(loaded.runtime.hotkey_tag_filters.is_empty());
@@ -1040,7 +1040,7 @@ mod tests {
     #[test]
     fn overlay_style_defaults_when_omitted() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join(crate::SETTINGS_FILE);
+        let path = dir.path().join(crate::paths::SETTINGS_FILE);
         std::fs::write(
             &path,
             r#"
@@ -1083,8 +1083,11 @@ overlay:
     #[test]
     fn settings_path_is_under_sqyre_dir() {
         let dir = tempdir().unwrap();
-        crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
-            assert_eq!(settings_path(), dir.path().join(crate::SETTINGS_FILE));
+        crate::paths::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            assert_eq!(
+                settings_path(),
+                dir.path().join(crate::paths::SETTINGS_FILE)
+            );
         });
     }
 
@@ -1101,10 +1104,10 @@ overlay:
         let src = root.path().join("old");
         let dst = root.path().join("new");
         fs::create_dir_all(src.join("images")).unwrap();
-        fs::write(src.join(crate::DB_FILE), "macros: {}\n").unwrap();
+        fs::write(src.join(crate::paths::DB_FILE), "macros: {}\n").unwrap();
         move_dir(&src, &dst).unwrap();
         assert!(!src.exists());
-        assert!(dst.join(crate::DB_FILE).exists());
+        assert!(dst.join(crate::paths::DB_FILE).exists());
         assert!(dst.join("images").is_dir());
     }
 }
