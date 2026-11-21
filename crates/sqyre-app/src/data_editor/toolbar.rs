@@ -1,7 +1,7 @@
 //! Data Editor header: search/program toggles, search controls, section bar.
 
 use super::tabs::{EditorSection, EditorTab, SearchScope};
-use super::{helpers, DataEditor, DataEditorCtx};
+use super::{helpers, DataEditor};
 use crate::icon_cache::IconCache;
 use eframe::egui;
 use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
@@ -11,19 +11,25 @@ impl DataEditor {
     /// toggle icons stay adjacent on the left so expanding a pair never moves
     /// the other icon — its controls open to the right of both toggles. The
     /// section/subtab icons follow in an overflow scroll.
-    pub(super) fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
+    pub(super) fn ui_tab_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        settings: &mut UserSettings,
+    ) {
         ui.horizontal(|ui| {
             let just_opened = self.ui_search_toggle(ui);
-            self.program_toggle(ui, CatalogView::new(env.catalog), env.icons, env.settings);
+            self.program_toggle(ui, CatalogView::new(catalog), icons, settings);
             if self.nav.search_open {
-                self.ui_search_controls(ui, env.catalog, env.icons, env.settings, just_opened);
+                self.ui_search_controls(ui, catalog, icons, settings, just_opened);
             }
             if self.nav.program_open {
-                self.ui_program_combo(ui, CatalogView::new(env.catalog), env.icons, env.settings);
+                self.ui_program_combo(ui, CatalogView::new(catalog), icons, settings);
             }
             crate::widgets::section_separator(ui);
             crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
-                ui.horizontal(|ui| self.paint_section_bar(ui, env));
+                ui.horizontal(|ui| self.paint_section_bar(ui, CatalogView::new(catalog), settings));
             });
         });
     }
@@ -212,7 +218,12 @@ impl DataEditor {
     /// Every section's subtab buttons in one row — the subsection buttons are
     /// self-explanatory, so there are no section-level icons — with separators
     /// between the sections.
-    fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
+    fn paint_section_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: CatalogView<'_>,
+        settings: &UserSettings,
+    ) {
         let mut items = Vec::new();
         let mut targets = Vec::new();
         for sec in [
@@ -242,7 +253,7 @@ impl DataEditor {
         if let Some(i) = crate::widgets::always_bar(ui, &items) {
             let next = targets[i];
             if next != self.nav.tab {
-                self.switch_tab(next, env.catalog, env.settings);
+                self.switch_tab(next, catalog, settings);
             }
         }
     }

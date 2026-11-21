@@ -33,7 +33,7 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    screen_cap_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+    screen_cap_path, CatalogView, OverlayButtonConfig, ProgramCollection, UserSettings,
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
     MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS, MIN_OVERLAY_BORDER_WIDTH,
     MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_GATE_INTERVAL_MS,
@@ -298,7 +298,7 @@ impl DataEditor {
         );
     }
 
-    pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
+    pub(crate) fn load_form(&mut self, catalog: CatalogView<'_>, settings: &UserSettings) {
         self.clear_status();
         form_state::load_tab(self.nav.tab, self, catalog, settings);
     }
@@ -820,7 +820,7 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn is_dirty(&self, catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
+    pub(crate) fn is_dirty(&self, catalog: CatalogView<'_>, settings: &UserSettings) -> bool {
         form_state::dirty_tab(self.nav.tab, self, catalog, settings)
     }
 

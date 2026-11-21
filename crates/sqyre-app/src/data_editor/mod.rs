@@ -46,7 +46,8 @@ use sqyre_persist::{
 };
 pub(crate) use tabs::EditorTab;
 
-/// Shared session borrows for Data Editor (egui ctx, persist, catalog, capture).
+/// Mutable session host for Data Editor persist/jobs.
+/// Paint and list code take [`CatalogView`] / [`CatalogPaint`] instead.
 pub struct DataEditorCtx<'a> {
     pub ctx: &'a egui::Context,
     pub db: &'a mut Database,
@@ -208,7 +209,7 @@ impl DataEditor {
         self.prompts.clear_entity_prompts();
     }
 
-    fn switch_tab(&mut self, tab: EditorTab, catalog: &ProgramCatalog, settings: &UserSettings) {
+    fn switch_tab(&mut self, tab: EditorTab, catalog: CatalogView<'_>, settings: &UserSettings) {
         #[cfg(target_arch = "wasm32")]
         let tab = if tab.is_desktop_only() {
             EditorTab::Programs
@@ -235,7 +236,7 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.request_open(ctx);
-        self.switch_tab(tab, catalog, settings);
+        self.switch_tab(tab, CatalogView::from(catalog), settings);
         if !matches!(tab, EditorTab::Programs) && self.nav.selected_program.is_none() {
             if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
                 self.select_program(&name, CatalogView::from(catalog), settings);
@@ -250,7 +251,7 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.nav.open = true;
-        self.switch_tab(tab, catalog, settings);
+        self.switch_tab(tab, CatalogView::from(catalog), settings);
         if !matches!(tab, EditorTab::Programs) && self.nav.selected_program.is_none() {
             if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
                 self.select_program(&name, CatalogView::from(catalog), settings);
@@ -266,7 +267,7 @@ impl DataEditor {
     /// Select [`Self::focused_program_hint`] when creating under an entity tab.
     pub(crate) fn prefer_focused_program_for_new(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
         if matches!(self.nav.tab, EditorTab::Programs) {
@@ -281,13 +282,13 @@ impl DataEditor {
         if self.nav.selected_program.as_deref() == Some(name.as_str()) {
             return;
         }
-        self.select_program(&name, CatalogView::from(catalog), settings);
+        self.select_program(&name, catalog, settings);
     }
 
     /// Open on `tab`, ensure a program is selected, then create a new entity.
     pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
         self.open_tab(env.ctx, tab, env.catalog, env.settings);
-        self.prefer_focused_program_for_new(env.catalog, env.settings);
+        self.prefer_focused_program_for_new(CatalogView::new(env.catalog), env.settings);
         self.drafts.name.clear();
         self.on_new(env);
     }
@@ -300,7 +301,7 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.request_open(ctx);
-        self.switch_tab(EditorTab::Programs, catalog, settings);
+        self.switch_tab(EditorTab::Programs, CatalogView::from(catalog), settings);
         self.select_program(name, CatalogView::from(catalog), settings);
     }
 
@@ -314,7 +315,7 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.request_open(ctx);
-        self.switch_tab(tab, catalog, settings);
+        self.switch_tab(tab, CatalogView::from(catalog), settings);
         self.select_entity(program, entity, CatalogView::from(catalog), settings);
     }
 
@@ -356,7 +357,7 @@ impl DataEditor {
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
-                self.ui_tab_bar(ui, env);
+                self.ui_tab_bar(ui, env.catalog, env.icons, env.settings);
                 self.ui_body(ui, env, selected_macro, previews);
             });
             // Delete matches the footer remove button: confirm, then delete.
@@ -755,7 +756,7 @@ impl DataEditor {
                 body_rect.max,
             );
             crate::widgets::float_bottom_right(ui, right_pane, |ui| {
-                let dirty = self.is_dirty(env.catalog, env.settings);
+                let dirty = self.is_dirty(CatalogView::new(env.catalog), env.settings);
                 let valid = self.form_valid(env.macros.get(selected_macro));
                 let save_enabled = dirty && valid;
                 let save_clicked =

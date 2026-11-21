@@ -5,7 +5,7 @@ use super::helpers::parse_i32;
 use super::match_check;
 use super::{DataEditor, EditorTab};
 use sqyre_domain::{Macro, ScalarValue};
-use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
+use sqyre_persist::{CatalogView, UserSettings};
 use sqyre_validate::{
     validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
     validate_search_area_literal_bounds,
@@ -13,15 +13,15 @@ use sqyre_validate::{
 
 /// Tab form lifecycle used by [`DataEditor`] dispatch.
 pub(crate) trait FormState {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, settings: &UserSettings);
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, settings: &UserSettings) -> bool;
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, settings: &UserSettings);
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, settings: &UserSettings) -> bool;
     fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool;
 }
 
 pub(crate) fn load_tab(
     tab: EditorTab,
     ed: &mut DataEditor,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     settings: &UserSettings,
 ) {
     match tab {
@@ -41,7 +41,7 @@ pub(crate) fn load_tab(
 pub(crate) fn dirty_tab(
     tab: EditorTab,
     ed: &DataEditor,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     settings: &UserSettings,
 ) -> bool {
     match tab {
@@ -88,7 +88,7 @@ pub(crate) struct MatchCheckForm;
 pub(crate) struct OverlayForm;
 
 impl FormState for ProgramsForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         ed.drafts.name = ed.nav.selected_program.clone().unwrap_or_default();
         if let Some(p) = ed
             .nav
@@ -109,7 +109,7 @@ impl FormState for ProgramsForm {
         ed.drafts.tag_draft.clear();
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let Some(sel) = ed.nav.selected_program.as_deref() else {
             return !ed.drafts.name.trim().is_empty()
                 || !ed.drafts.program.process_path.is_empty()
@@ -132,7 +132,7 @@ impl FormState for ProgramsForm {
 }
 
 impl FormState for ItemsForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -155,7 +155,7 @@ impl FormState for ItemsForm {
         ed.drafts.tags = item.tags.clone();
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -185,7 +185,7 @@ impl FormState for ItemsForm {
 }
 
 impl FormState for PointsForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -207,7 +207,7 @@ impl FormState for PointsForm {
         ed.drafts.point.y = pt.y.as_display();
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -238,7 +238,7 @@ impl FormState for PointsForm {
 }
 
 impl FormState for SearchAreasForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -268,7 +268,7 @@ impl FormState for SearchAreasForm {
         );
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -316,7 +316,7 @@ impl FormState for SearchAreasForm {
 }
 
 impl FormState for MasksForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -341,7 +341,7 @@ impl FormState for MasksForm {
         ed.drafts.mask.inverse = mask.inverse;
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -385,7 +385,7 @@ impl FormState for MasksForm {
 }
 
 impl FormState for CollectionsForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -406,7 +406,7 @@ impl FormState for CollectionsForm {
         ed.previews.collection.key = Some((prog.to_string(), name.to_string()));
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -432,7 +432,7 @@ impl FormState for CollectionsForm {
 }
 
 impl FormState for AtlasesForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -453,7 +453,7 @@ impl FormState for AtlasesForm {
         ed.previews.atlas.key = Some((prog.to_string(), name.to_string()));
     }
 
-    fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         let (Some(prog), Some(ent)) = (
             ed.nav.selected_program.as_deref(),
             ed.nav.selected_entity.as_deref(),
@@ -472,7 +472,7 @@ impl FormState for AtlasesForm {
 }
 
 impl FormState for ScreenCapForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.clone(),
             ed.nav.selected_entity.clone(),
@@ -495,7 +495,7 @@ impl FormState for ScreenCapForm {
         }
         let coord =
             sqyre_domain::CoordinateRef(format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER));
-        if ed.apply_screen_cap_reference(CatalogView::from(catalog), coord) {
+        if ed.apply_screen_cap_reference(catalog, coord) {
             return;
         }
         let res = catalog.resolution_key();
@@ -521,7 +521,7 @@ impl FormState for ScreenCapForm {
         );
     }
 
-    fn is_dirty(_ed: &DataEditor, _catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(_ed: &DataEditor, _catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         false
     }
 
@@ -531,7 +531,7 @@ impl FormState for ScreenCapForm {
 }
 
 impl FormState for MatchCheckForm {
-    fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
             ed.nav.selected_program.clone(),
             ed.nav.selected_entity.clone(),
@@ -555,12 +555,12 @@ impl FormState for MatchCheckForm {
             ed.match_check.settings.capture_once = false;
             ed.match_check.settings.awaiting_panel = false;
             ed.match_check.settings.rematch_once = false;
-            let variant = match_check::default_variant(CatalogView::from(catalog), &prog, &name);
+            let variant = match_check::default_variant(catalog, &prog, &name);
             ed.match_check.settings.variant = variant;
         }
     }
 
-    fn is_dirty(_ed: &DataEditor, _catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
+    fn is_dirty(_ed: &DataEditor, _catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
         false
     }
 
@@ -592,11 +592,11 @@ impl FormState for MatchCheckForm {
 }
 
 impl FormState for OverlayForm {
-    fn load(ed: &mut DataEditor, _catalog: &ProgramCatalog, settings: &UserSettings) {
+    fn load(ed: &mut DataEditor, _catalog: CatalogView<'_>, settings: &UserSettings) {
         ed.load_overlay_form(settings);
     }
 
-    fn is_dirty(ed: &DataEditor, _catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
+    fn is_dirty(ed: &DataEditor, _catalog: CatalogView<'_>, settings: &UserSettings) -> bool {
         let Some(id) = ed.nav.selected_entity.as_deref() else {
             return false;
         };
@@ -620,7 +620,9 @@ impl FormState for OverlayForm {
 mod tests {
     use super::*;
     use crate::data_editor::nav::EditorNav;
-    use sqyre_persist::{ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea};
+    use sqyre_persist::{
+        ProgramCatalog, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+    };
 
     fn catalog() -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();
@@ -660,30 +662,54 @@ mod tests {
 
         let mut ed = editor_on(EditorTab::Programs);
         ed.nav.selected_program = Some("Game".into());
-        ProgramsForm::load(&mut ed, &cat, &settings);
+        ProgramsForm::load(&mut ed, CatalogView::from(&cat), &settings);
         assert_eq!(ed.drafts.name, "Game");
         assert_eq!(ed.drafts.program.process_path, "/bin/game");
         assert_eq!(ed.drafts.program.window_title, "Game Window");
         assert_eq!(ed.drafts.tags, vec!["farm".to_string()]);
-        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
 
         // Renaming or editing identity fields marks dirty.
         ed.drafts.program.process_path = "/bin/other".into();
-        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         ed.drafts.program.process_path = "/bin/game".into();
         ed.drafts.name = "Renamed".into();
-        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
 
         // Unselected + any entered content → dirty (new entity in progress).
         ed.nav.selected_program = None;
-        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         ed.drafts.name.clear();
         ed.drafts.program.process_path.clear();
         ed.drafts.program.window_title.clear();
         ed.drafts.tags.clear();
-        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         ed.drafts.name = "New".into();
-        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ProgramsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
     }
 
     #[test]
@@ -706,28 +732,36 @@ mod tests {
         let mut ed = editor_on(EditorTab::Items);
         ed.nav.selected_program = Some("Game".into());
         ed.nav.selected_entity = Some("Potion".into());
-        ItemsForm::load(&mut ed, &cat, &settings);
+        ItemsForm::load(&mut ed, CatalogView::from(&cat), &settings);
         assert_eq!(ed.drafts.name, "Potion");
         assert_eq!(ed.drafts.cols, "2");
         assert_eq!(ed.drafts.rows, "3");
         assert_eq!(ed.drafts.item.stack_max, "5");
         assert_eq!(ed.drafts.item.mask, "circle");
         assert_eq!(ed.drafts.tags, vec!["heal".to_string()]);
-        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ItemsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         assert!(ItemsForm::is_valid(&ed, None));
 
         ed.drafts.cols = "0".into();
-        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ItemsForm::is_dirty(&ed, CatalogView::from(&cat), &settings));
         assert!(!ItemsForm::is_valid(&ed, None));
 
         // Missing entity → dirty forces the form to look edited.
         ed.nav.selected_entity = Some("ghost".into());
-        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ItemsForm::is_dirty(&ed, CatalogView::from(&cat), &settings));
         // Unselected + blank name → clean.
         ed.nav.selected_program = None;
         ed.nav.selected_entity = None;
         ed.drafts.name.clear();
-        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ItemsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
     }
 
     #[test]
@@ -745,21 +779,37 @@ mod tests {
         let mut ed = editor_on(EditorTab::Overlay);
         ed.nav.selected_program = Some("Game".into());
         ed.nav.selected_entity = Some("b1".into());
-        OverlayForm::load(&mut ed, &cat, &settings);
-        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+        OverlayForm::load(&mut ed, CatalogView::from(&cat), &settings);
+        assert!(!OverlayForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
 
         // A real diff below the absolute f32::EPSILON (≈1.19e-7): at 0.25 the
         // representable spacing is finer, so an absolute threshold reported
         // clean while the scaled compare still catches the change.
         ed.drafts.overlay.border_width += f32::EPSILON / 2.0;
-        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
+        assert!(OverlayForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         ed.drafts.overlay.border_width -= f32::EPSILON / 2.0;
-        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+        assert!(!OverlayForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
 
         // Same for the f64 gate tolerance (a 0–1 ratio field): a two-ULP diff
         // at ~0.9 is smaller than an absolute f64::EPSILON would flag at 1.0.
         ed.drafts.overlay.gate.tolerance += f64::EPSILON;
-        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
+        assert!(OverlayForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
     }
 
     #[test]
@@ -780,11 +830,15 @@ mod tests {
         let mut ed = editor_on(EditorTab::Points);
         ed.nav.selected_program = Some("Game".into());
         ed.nav.selected_entity = Some("Spawn".into());
-        PointsForm::load(&mut ed, &cat, &settings);
+        PointsForm::load(&mut ed, CatalogView::from(&cat), &settings);
         assert_eq!(ed.drafts.name, "Spawn");
         assert_eq!(ed.drafts.point.x, "10");
         assert_eq!(ed.drafts.point.y, "20");
-        assert!(!PointsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!PointsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         assert!(PointsForm::is_valid(&ed, None));
 
         // Blank coords are invalid.
@@ -798,9 +852,19 @@ mod tests {
         let settings = UserSettings::default();
         let mut ed = editor_on(EditorTab::Programs);
         ed.nav.selected_program = Some("Game".into());
-        load_tab(EditorTab::Programs, &mut ed, &cat, &settings);
+        load_tab(
+            EditorTab::Programs,
+            &mut ed,
+            CatalogView::from(&cat),
+            &settings,
+        );
         assert_eq!(ed.drafts.name, "Game");
-        assert!(!dirty_tab(EditorTab::Programs, &ed, &cat, &settings));
+        assert!(!dirty_tab(
+            EditorTab::Programs,
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         assert!(valid_tab(EditorTab::Programs, &ed, None));
     }
 
@@ -824,16 +888,20 @@ mod tests {
         let mut ed = editor_on(EditorTab::Masks);
         ed.nav.selected_program = Some("Game".into());
         ed.nav.selected_entity = Some("Hole".into());
-        MasksForm::load(&mut ed, &cat, &settings);
+        MasksForm::load(&mut ed, CatalogView::from(&cat), &settings);
         assert_eq!(ed.drafts.name, "Hole");
         assert_eq!(ed.drafts.mask.shape, "circle");
         assert_eq!(ed.drafts.mask.center_x, "10");
         assert_eq!(ed.drafts.mask.radius, "5");
-        assert!(!MasksForm::is_dirty(&ed, &cat, &settings));
+        assert!(!MasksForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         assert!(MasksForm::is_valid(&ed, None));
 
         ed.drafts.mask.radius = "9".into();
-        assert!(MasksForm::is_dirty(&ed, &cat, &settings));
+        assert!(MasksForm::is_dirty(&ed, CatalogView::from(&cat), &settings));
     }
 
     #[test]
@@ -856,14 +924,22 @@ mod tests {
         let mut ed = editor_on(EditorTab::SearchAreas);
         ed.nav.selected_program = Some("Game".into());
         ed.nav.selected_entity = Some("Zone".into());
-        SearchAreasForm::load(&mut ed, &cat, &settings);
+        SearchAreasForm::load(&mut ed, CatalogView::from(&cat), &settings);
         assert_eq!(ed.drafts.name, "Zone");
         assert_eq!(ed.drafts.rect.left, "0");
         assert_eq!(ed.drafts.rect.right, "50");
-        assert!(!SearchAreasForm::is_dirty(&ed, &cat, &settings));
+        assert!(!SearchAreasForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
         assert!(SearchAreasForm::is_valid(&ed, None));
 
         ed.drafts.rect.right = "80".into();
-        assert!(SearchAreasForm::is_dirty(&ed, &cat, &settings));
+        assert!(SearchAreasForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
     }
 }

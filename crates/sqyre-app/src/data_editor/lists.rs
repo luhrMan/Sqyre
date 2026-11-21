@@ -653,7 +653,7 @@ impl DataEditor {
         }
         self.nav.selected_program = Some(name.to_string());
         self.nav.selected_entity = None;
-        self.load_form(catalog.inner(), settings);
+        self.load_form(catalog, settings);
     }
 
     /// Open Coordinates → Points with a filled entity (docs screenshots).
@@ -665,7 +665,7 @@ impl DataEditor {
     ) {
         let settings = UserSettings::default();
         self.nav.open = true;
-        self.switch_tab(EditorTab::Points, catalog.inner(), &settings);
+        self.switch_tab(EditorTab::Points, catalog, &settings);
         self.select_entity(program, point, catalog, &settings);
     }
 
@@ -673,7 +673,7 @@ impl DataEditor {
     pub(crate) fn open_programs_for_docs(&mut self, catalog: CatalogView<'_>) {
         let settings = UserSettings::default();
         self.nav.open = true;
-        self.switch_tab(EditorTab::Programs, catalog.inner(), &settings);
+        self.switch_tab(EditorTab::Programs, catalog, &settings);
     }
 
     pub(crate) fn select_entity(
@@ -688,7 +688,7 @@ impl DataEditor {
         }
         self.nav.selected_program = Some(program.to_string());
         self.nav.selected_entity = Some(entity.to_string());
-        self.load_form(catalog.inner(), settings);
+        self.load_form(catalog, settings);
     }
 
     /// Screen Cap collection row: select it and open the cell picker.

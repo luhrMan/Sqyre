@@ -181,7 +181,7 @@ impl DataEditor {
         } = env;
         self.clear_status();
         self.jobs.save_after_record = false;
-        self.prefer_focused_program_for_new(catalog, settings);
+        self.prefer_focused_program_for_new(CatalogView::new(catalog), settings);
         let created = match self.nav.tab {
             EditorTab::Programs => {
                 let requested = self.drafts.name.trim();
@@ -223,7 +223,7 @@ impl DataEditor {
                 match catalog.upsert_item(&prog, item) {
                     Ok(()) => {
                         self.nav.selected_entity = Some(name.clone());
-                        self.load_form(catalog, settings);
+                        self.load_form(CatalogView::new(catalog), settings);
                         Ok("Created item.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -250,7 +250,7 @@ impl DataEditor {
                 match catalog.upsert_point(&prog, pt) {
                     Ok(()) => {
                         self.nav.selected_entity = Some(name);
-                        self.load_form(catalog, settings);
+                        self.load_form(CatalogView::new(catalog), settings);
                         Ok("Created point.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -279,7 +279,7 @@ impl DataEditor {
                 match catalog.upsert_search_area(&prog, sa) {
                     Ok(()) => {
                         self.nav.selected_entity = Some(name);
-                        self.load_form(catalog, settings);
+                        self.load_form(CatalogView::new(catalog), settings);
                         Ok("Created search area.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -299,7 +299,7 @@ impl DataEditor {
                 match catalog.upsert_mask(&prog, mask) {
                     Ok(()) => {
                         self.nav.selected_entity = Some(name);
-                        self.load_form(catalog, settings);
+                        self.load_form(CatalogView::new(catalog), settings);
                         Ok("Created mask.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -344,7 +344,7 @@ impl DataEditor {
                     ) {
                         Ok(()) => {
                             self.nav.selected_entity = Some(name);
-                            self.load_form(catalog, settings);
+                            self.load_form(CatalogView::new(catalog), settings);
                             Ok("Created collection; capturing image…")
                         }
                         Err(e) => {
@@ -373,7 +373,7 @@ impl DataEditor {
                 match catalog.upsert_atlas(&prog, atlas) {
                     Ok(()) => {
                         self.nav.selected_entity = Some(name);
-                        self.load_form(catalog, settings);
+                        self.load_form(CatalogView::new(catalog), settings);
                         Ok("Created atlas.")
                     }
                     Err(e) => Err(e.to_string()),
@@ -428,7 +428,7 @@ impl DataEditor {
                 let id = btn.id.clone();
                 settings.overlay.overlay_buttons.push(btn);
                 self.nav.selected_entity = Some(id);
-                self.load_form(catalog, settings);
+                self.load_form(CatalogView::new(catalog), settings);
                 if self.persist_overlay_settings(settings) {
                     self.set_ok("Created overlay button.");
                     play_ui_add_sound(settings);
@@ -693,7 +693,7 @@ impl DataEditor {
                 } else {
                     let overlay_ok =
                         !overlay_settings_dirty || self.persist_overlay_settings(settings);
-                    self.load_form(catalog, settings);
+                    self.load_form(CatalogView::new(catalog), settings);
                     if overlay_ok {
                         let (msg, is_err) = status_with_fs_warn("Saved.", fs_warn);
                         if is_err {
