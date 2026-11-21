@@ -28,7 +28,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+mod frame_slot;
 mod spa_params;
+use frame_slot::{CacheCrop, FrameCache, FrameSlot};
 
 /// Overall budget to obtain a PipeWire frame newer than the cache at call start.
 /// Idle / emit-on-damage streams may need a kick + one frame interval after input.
@@ -43,7 +45,7 @@ const QUIET_CAPTURE_WAIT: Duration = Duration::from_millis(150);
 /// The layer-shell pulse roundtrips Wayland concurrently, so keep it short.
 const QUIET_KICK_WAIT: Duration = Duration::from_millis(200);
 /// Region copy older than this → treat as stale and kick without spontaneous wait.
-const STALE_REGION_AGE: Duration = Duration::from_millis(40);
+pub(super) const STALE_REGION_AGE: Duration = Duration::from_millis(40);
 /// Post-kick wait slices (short first; kick runs concurrently so we poll soon).
 const POST_KICK_SLICES: &[Duration] = &[
     Duration::from_millis(20),
@@ -58,15 +60,15 @@ const EARLY_BAIL_MIN_PULSES: u32 = 1;
 /// Damage pulse max edge — emit-on-damage portals send a whole-output frame for
 /// any damage on the output, so a small rect suffices; a monitor-sized layer
 /// surface allocates a huge shm per pulse and can stall mapping it.
-const KICK_RECT_MAX: i32 = 64;
+pub(super) const KICK_RECT_MAX: i32 = 64;
 /// Consecutive armed waits (damage pulsed, still no copy) on one stream dest
 /// before the capturer counts as dead — PipeWire can keep reporting Streaming
 /// while the producer silently stopped emitting.
-const STARVED_KICKS_DEAD: u32 = 3;
+pub(super) const STARVED_KICKS_DEAD: u32 = 3;
 
 /// One "no frame" log per drought — reset whenever a frame copies into cache so
 /// a stuck emit-on-damage stream does not spam stderr on every crop retry.
-static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
+pub(super) static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
 
 /// `node.suspend-on-idle` for portal streams. On by default: an idle node
 /// suspends, and the next capture waits out the driver restart.
@@ -193,65 +195,6 @@ pub struct PortalCapturer {
     thread: Mutex<Option<JoinHandle<()>>>,
     /// `None` = not tried yet; `Some(None)` = unavailable; `Some(Some(_))` = ready.
     kick: Mutex<Option<Option<super::compositor_kick::DamageKick>>>,
-}
-
-struct FrameSlot {
-    cache: FrameCache,
-    /// Incremented on every PipeWire frame copied into `cache`.
-    generation: u64,
-    /// Last global generation at which each stream dest was copied. Search waits
-    /// on the dests that overlap the crop so the other monitor cannot starve it.
-    region_gen: Vec<(DesktopRect, u64)>,
-    /// Last copy time per stream dest (stale region → kick immediately).
-    region_copy_at: Vec<(DesktopRect, Instant)>,
-    /// Consecutive armed waits that produced no copy, per stream dest.
-    /// [`STARVED_KICKS_DEAD`] on any dest → capturer dead → session reopens.
-    starved_kicks: Vec<(DesktopRect, u32)>,
-    /// When false, PipeWire callbacks dequeue but skip copying into `cache.pixels`.
-    /// Cleared after a macro so the full-desktop RGBA buffer can be released;
-    /// re-enabled when a capture waits for a frame.
-    buffering: bool,
-    /// Last capture that needed the CPU mirror (buffering enable or cache crop).
-    last_demand: Instant,
-}
-
-struct FrameCache {
-    virtual_bounds: DesktopRect,
-    monitor_rects: Vec<DesktopRect>,
-    width: u32,
-    height: u32,
-    stride: usize,
-    pixels: Vec<u8>,
-    ready: bool,
-}
-
-fn shrink_cpu_frame_cache(cache: &mut FrameCache) {
-    cache.pixels.clear();
-    cache.pixels.shrink_to_fit();
-    cache.width = 0;
-    cache.height = 0;
-    cache.stride = 0;
-    cache.ready = false;
-}
-
-fn release_slot_cache(slot: &mut FrameSlot) {
-    slot.buffering = false;
-    let before = slot.cache.pixels.len();
-    let gen = slot.generation;
-    shrink_cpu_frame_cache(&mut slot.cache);
-    if before > 0 {
-        cap_log(
-            "PORTAL",
-            "cache",
-            &format!("release_kib={} gen={gen}", before / 1024),
-        );
-    }
-}
-
-/// Time left before an idle buffering mirror should be released (zero = now).
-fn idle_release_remaining(slot: &FrameSlot, idle: Duration, now: Instant) -> Option<Duration> {
-    slot.buffering
-        .then(|| idle.saturating_sub(now.saturating_duration_since(slot.last_demand)))
 }
 
 enum PwThreadMsg {
@@ -439,14 +382,14 @@ impl PortalCapturer {
         let (min_gen, start_global, region_stale) = {
             let slot = self.frame.0.lock();
             (
-                region_generation(&slot, rect),
+                frame_slot::region_generation(&slot, rect),
                 slot.generation,
-                region_copy_is_stale(&slot, rect),
+                frame_slot::region_copy_is_stale(&slot, rect),
             )
         };
         let kick_rect = {
             let slot = self.frame.0.lock();
-            kick_damage_rect(&slot, rect)
+            frame_slot::kick_damage_rect(&slot, rect)
         };
         let started = Instant::now();
         let deadline = started + FRESH_CAPTURE_BUDGET;
@@ -455,7 +398,7 @@ impl PortalCapturer {
         let expect_kick = region_stale || stage_mutation_recent(Duration::from_millis(400));
 
         if !expect_kick {
-            let spontaneous = wait_until_region_after(
+            let spontaneous = frame_slot::wait_until_region_after(
                 &self.frame.0,
                 &self.frame.1,
                 rect,
@@ -472,7 +415,7 @@ impl PortalCapturer {
             if stage_mutation_recent(Duration::from_millis(500)) {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if !remaining.is_zero() {
-                    let region_after = wait_until_region_after(
+                    let region_after = frame_slot::wait_until_region_after(
                         &self.frame.0,
                         &self.frame.1,
                         rect,
@@ -509,14 +452,19 @@ impl PortalCapturer {
             }
             let slice = remaining.min(POST_KICK_SLICES[slice_i.min(POST_KICK_SLICES.len() - 1)]);
             slice_i = slice_i.saturating_add(1);
-            let region_after =
-                wait_until_region_after(&self.frame.0, &self.frame.1, rect, min_gen, slice);
+            let region_after = frame_slot::wait_until_region_after(
+                &self.frame.0,
+                &self.frame.1,
+                rect,
+                min_gen,
+                slice,
+            );
             if region_after > min_gen {
                 log_fresh_ok(started, pulses, min_gen, region_after, "kick");
                 return;
             }
             let now_global = self.frame.0.lock().generation;
-            if fresh_region_stuck_while_others_advance(
+            if frame_slot::fresh_region_stuck_while_others_advance(
                 pulses,
                 EARLY_BAIL_MIN_PULSES,
                 start_global,
@@ -526,8 +474,8 @@ impl PortalCapturer {
             ) {
                 {
                     let mut slot = self.frame.0.lock();
-                    let dest = overlapping_stream_dest(&slot, rect);
-                    note_starved_kick(&mut slot, dest);
+                    let dest = frame_slot::overlapping_stream_dest(&slot, rect);
+                    frame_slot::note_starved_kick(&mut slot, dest);
                 }
                 cap_log(
                     "PORTAL",
@@ -543,9 +491,9 @@ impl PortalCapturer {
 
         let (now, region) = {
             let mut slot = self.frame.0.lock();
-            let dest = overlapping_stream_dest(&slot, rect);
-            note_starved_kick(&mut slot, dest);
-            (slot.generation, region_generation(&slot, rect))
+            let dest = frame_slot::overlapping_stream_dest(&slot, rect);
+            frame_slot::note_starved_kick(&mut slot, dest);
+            (slot.generation, frame_slot::region_generation(&slot, rect))
         };
         cap_log(
             "PORTAL",
@@ -563,9 +511,9 @@ impl PortalCapturer {
         self.enable_cpu_frame_buffering();
         let min_gen = {
             let slot = self.frame.0.lock();
-            region_generation(&slot, rect)
+            frame_slot::region_generation(&slot, rect)
         };
-        let after = wait_until_region_after(
+        let after = frame_slot::wait_until_region_after(
             &self.frame.0,
             &self.frame.1,
             rect,
@@ -693,12 +641,12 @@ impl PortalCapturer {
                 return Ok(());
             }
             // Capture gen before enabling so the first post-release copy wakes us.
-            let min = region_generation(&slot, rect);
+            let min = frame_slot::region_generation(&slot, rect);
             slot.buffering = true;
             min
         };
         let _wake = arm_wake_if_asleep();
-        let _ = wait_until_region_after(
+        let _ = frame_slot::wait_until_region_after(
             &self.frame.0,
             &self.frame.1,
             rect,
@@ -712,10 +660,10 @@ impl PortalCapturer {
         if self.focus_safe_kick() {
             let kick_rect = {
                 let slot = self.frame.0.lock();
-                kick_damage_rect(&slot, rect)
+                frame_slot::kick_damage_rect(&slot, rect)
             };
             self.pulse_compositor_kick(kick_rect);
-            let after = wait_until_region_after(
+            let after = frame_slot::wait_until_region_after(
                 &self.frame.0,
                 &self.frame.1,
                 rect,
@@ -733,8 +681,8 @@ impl PortalCapturer {
             }
             // Damage was pulsed on a focus-safe surface and nothing copied —
             // the producer may be wedged while PipeWire still reports Streaming.
-            let dest = overlapping_stream_dest(&slot, rect);
-            note_starved_kick(&mut slot, dest);
+            let dest = frame_slot::overlapping_stream_dest(&slot, rect);
+            frame_slot::note_starved_kick(&mut slot, dest);
         }
         if self.frame.0.lock().cache.ready {
             return Ok(());
@@ -766,14 +714,14 @@ impl PortalCapturer {
 
     fn crop_cached_rgba_ready(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         let slot = self.frame.0.lock();
-        let crop = cache_crop_geom(&slot.cache, rect)?;
-        copy_cache_rgba(&slot.cache, crop)
+        let crop = frame_slot::cache_crop_geom(&slot.cache, rect)?;
+        frame_slot::copy_cache_rgba(&slot.cache, crop)
     }
 
     fn crop_cached_rgb_ready(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let slot = self.frame.0.lock();
-        let crop = cache_crop_geom(&slot.cache, rect)?;
-        copy_cache_rgb(&slot.cache, crop)
+        let crop = frame_slot::cache_crop_geom(&slot.cache, rect)?;
+        frame_slot::copy_cache_rgb(&slot.cache, crop)
     }
 
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
@@ -817,7 +765,7 @@ impl PortalCapturer {
     /// only the Rust mirror is released. Image Search (`*_fresh`) and OCR / Find
     /// Pixel cache crops both recover automatically.
     pub fn release_cpu_frame_cache(&self) {
-        release_slot_cache(&mut self.frame.0.lock());
+        frame_slot::release_slot_cache(&mut self.frame.0.lock());
     }
 
     /// [`Self::release_cpu_frame_cache`] once no capture has needed the mirror for
@@ -825,9 +773,9 @@ impl PortalCapturer {
     /// mirror is not buffering.
     pub fn release_cpu_frame_cache_if_idle(&self, idle: Duration) -> Option<Duration> {
         let mut slot = self.frame.0.lock();
-        let remaining = idle_release_remaining(&slot, idle, Instant::now())?;
+        let remaining = frame_slot::idle_release_remaining(&slot, idle, Instant::now())?;
         if remaining.is_zero() {
-            release_slot_cache(&mut slot);
+            frame_slot::release_slot_cache(&mut slot);
             return None;
         }
         Some(remaining)
@@ -895,7 +843,7 @@ fn portal_pw_thread(
         let mut slot = frame.0.lock();
         slot.cache.virtual_bounds = setup.virtual_bounds;
         slot.cache.monitor_rects = setup.monitor_rects.clone();
-        ensure_cache_contains(&mut slot.cache, setup.virtual_bounds);
+        frame_slot::ensure_cache_contains(&mut slot.cache, setup.virtual_bounds);
     }
 
     let stream_count = setup.streams.len();
@@ -1190,7 +1138,7 @@ fn portal_pw_thread(
                             // full-desktop CPU mirror while idle after a macro.
                             return Ok(());
                         }
-                        ensure_cache_contains(&mut slot.cache, dest);
+                        frame_slot::ensure_cache_contains(&mut slot.cache, dest);
                         let cache = &mut slot.cache;
                         let vb = cache.virtual_bounds;
                         let dst_x = (dest.x - vb.x).max(0) as usize;
@@ -1214,7 +1162,7 @@ fn portal_pw_thread(
                             if !first_ready_stream.swap(true, Ordering::SeqCst) {
                                 let _ = ready_stream.send(Ok(()));
                             }
-                            note_region_copy(&mut slot, dest);
+                            frame_slot::note_region_copy(&mut slot, dest);
                             cvar.notify_all();
                         }
                         copied
@@ -1503,263 +1451,6 @@ fn is_sqyre_managed_window(w: &crate::WindowInfo) -> bool {
     // Kick toplevel uses empty title / app_id sqyre-kick; process name may be sqyre.
     let name = w.process_name.to_ascii_lowercase();
     name.contains(APP_ID)
-}
-
-fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
-    LOGGED_FRAME_DROUGHT.store(false, Ordering::Relaxed);
-    slot.generation = slot.generation.saturating_add(1);
-    let gen = slot.generation;
-    let now = Instant::now();
-    if let Some((_, g)) = slot.region_gen.iter_mut().find(|(r, _)| *r == dest) {
-        *g = gen;
-    } else {
-        slot.region_gen.push((dest, gen));
-    }
-    if let Some((_, t)) = slot.region_copy_at.iter_mut().find(|(r, _)| *r == dest) {
-        *t = now;
-    } else {
-        slot.region_copy_at.push((dest, now));
-    }
-    if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
-        *n = 0;
-    }
-}
-
-/// A damage pulse on `dest`'s monitor produced no copy — bump its starved
-/// count. At [`STARVED_KICKS_DEAD`] the capturer reports dead so the shared
-/// portal session reopens instead of failing crops on a wedged stream forever.
-fn note_starved_kick(slot: &mut FrameSlot, dest: DesktopRect) {
-    let n = if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
-        *n = n.saturating_add(1);
-        *n
-    } else {
-        // `overlapping_stream_dest` falls back to the crop rect when no monitor
-        // overlaps, so tracked dests can be unbounded — cap the set.
-        if slot.starved_kicks.len() >= 16 {
-            slot.starved_kicks.remove(0);
-        }
-        slot.starved_kicks.push((dest, 1));
-        1
-    };
-    cap_log(
-        "PORTAL",
-        "wait",
-        &format!(
-            "result=starved-kick n={n} dest={}x{}+{}+{}",
-            dest.w, dest.h, dest.x, dest.y
-        ),
-    );
-}
-
-fn region_copy_is_stale(slot: &FrameSlot, rect: DesktopRect) -> bool {
-    let age = slot
-        .region_copy_at
-        .iter()
-        .filter(|(r, _)| rects_overlap(*r, rect))
-        .map(|(_, t)| t.elapsed())
-        .min();
-    match age {
-        None => true,
-        Some(a) => a >= STALE_REGION_AGE,
-    }
-}
-
-fn region_generation(slot: &FrameSlot, rect: DesktopRect) -> u64 {
-    slot.region_gen
-        .iter()
-        .filter(|(r, _)| rects_overlap(*r, rect))
-        .map(|(_, g)| *g)
-        .max()
-        .unwrap_or(0)
-}
-
-fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
-    slot.cache
-        .monitor_rects
-        .iter()
-        .copied()
-        .find(|d| rects_overlap(*d, rect))
-        .unwrap_or(rect)
-}
-
-/// Damage region for a compositor kick: the search crop, clamped into the
-/// overlapping monitor and capped small. Emit-on-damage portals emit a
-/// whole-output frame for any damage on the output, so a big overlay only
-/// makes the pulse expensive (large layer-shell shm, slow map) without
-/// improving the chance a frame arrives.
-fn kick_damage_rect(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
-    let dest = overlapping_stream_dest(slot, rect);
-    let left = rect.x.max(dest.x);
-    let top = rect.y.max(dest.y);
-    let right = (rect.x + rect.w).min(dest.x + dest.w);
-    let bottom = (rect.y + rect.h).min(dest.y + dest.h);
-    let (x, y, w, h) = if right - left < 2 || bottom - top < 2 {
-        (dest.x, dest.y, dest.w, dest.h)
-    } else {
-        (left, top, right - left, bottom - top)
-    };
-    DesktopRect {
-        x,
-        y,
-        w: w.min(KICK_RECT_MAX),
-        h: h.min(KICK_RECT_MAX),
-    }
-}
-
-#[derive(Clone, Copy)]
-struct CacheCrop {
-    src_x: u32,
-    src_y: u32,
-    out_w: u32,
-    out_h: u32,
-}
-
-fn cache_crop_geom(cache: &FrameCache, rect: DesktopRect) -> Result<CacheCrop, CaptureError> {
-    if rect.is_empty() {
-        return Err(CaptureError::EmptyRect);
-    }
-    if !cache.ready {
-        return Err(sqyre_ports::NotReady::NoFrameYet.into());
-    }
-
-    let vb = cache.virtual_bounds;
-    let left = rect.x.max(vb.x);
-    let top = rect.y.max(vb.y);
-    let right = (rect.x + rect.w).min(vb.x + vb.w);
-    let bottom = (rect.y + rect.h).min(vb.y + vb.h);
-    if right <= left || bottom <= top {
-        return Err(CaptureError::OutsideVirtualDesktop);
-    }
-
-    Ok(CacheCrop {
-        src_x: (left - vb.x) as u32,
-        src_y: (top - vb.y) as u32,
-        out_w: (right - left) as u32,
-        out_h: (bottom - top) as u32,
-    })
-}
-
-fn copy_cache_rgba(cache: &FrameCache, crop: CacheCrop) -> Result<RgbaImage, CaptureError> {
-    let out_w = crop.out_w as usize;
-    let out_h = crop.out_h as usize;
-    let mut out = vec![0u8; out_w * out_h * 4];
-    let src_stride = cache.stride;
-    let pixels = cache.pixels.as_slice();
-    for row in 0..out_h {
-        let dst_off = row * out_w * 4;
-        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
-        let end = src_off + out_w * 4;
-        if end > pixels.len() {
-            return Err(CaptureError::Message(
-                "portal capture: frame buffer shorter than expected".into(),
-            ));
-        }
-        out[dst_off..dst_off + out_w * 4].copy_from_slice(&pixels[src_off..end]);
-    }
-    RgbaImage::from_raw(crop.out_w, crop.out_h, out)
-        .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))
-}
-
-fn copy_cache_rgb(cache: &FrameCache, crop: CacheCrop) -> Result<RgbCapture, CaptureError> {
-    use crate::pixel_convert::{strip_rgba_row_to_rgb, PARALLEL_ROW_GATE};
-    use rayon::prelude::*;
-
-    let out_w = crop.out_w as usize;
-    let out_h = crop.out_h as usize;
-    let mut out = vec![0u8; out_w * out_h * 3];
-    let src_stride = cache.stride;
-    let pixels = cache.pixels.as_slice();
-
-    // Validate all rows before parallel strip (and fail fast on short buffers).
-    for row in 0..out_h {
-        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
-        if src_off + out_w * 4 > pixels.len() {
-            return Err(CaptureError::Message(
-                "portal capture: frame buffer shorter than expected".into(),
-            ));
-        }
-    }
-
-    let out_addr = out.as_mut_ptr() as usize;
-    let strip_row = |row: usize| {
-        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
-        let src = &pixels[src_off..src_off + out_w * 4];
-        let dst_off = row * out_w * 3;
-        // SAFETY: each crop row writes a disjoint `out` span.
-        let dst = unsafe {
-            std::slice::from_raw_parts_mut((out_addr as *mut u8).add(dst_off), out_w * 3)
-        };
-        strip_rgba_row_to_rgb(src, out_w, dst);
-    };
-
-    if out_h >= PARALLEL_ROW_GATE {
-        (0..out_h).into_par_iter().for_each(strip_row);
-    } else {
-        for row in 0..out_h {
-            strip_row(row);
-        }
-    }
-    Ok(RgbCapture {
-        width: crop.out_w,
-        height: crop.out_h,
-        data: out,
-    })
-}
-
-/// True when the search-region stream stayed idle while another stream advanced.
-///
-/// Single-monitor (or fully idle) sessions keep `now_global == start_global` until
-/// the overlapping dest copies, so this stays false and pulse retries continue —
-/// required for nested image search after a click when the kick needs a few tries.
-fn fresh_region_stuck_while_others_advance(
-    pulses: u32,
-    min_pulses: u32,
-    start_global: u64,
-    now_global: u64,
-    region_after: u64,
-    min_gen: u64,
-) -> bool {
-    pulses >= min_pulses && region_after <= min_gen && now_global > start_global
-}
-
-/// Wait until a stream dest overlapping `rect` has generation `> min_gen`.
-fn wait_until_region_after(
-    lock: &Mutex<FrameSlot>,
-    cvar: &Condvar,
-    rect: DesktopRect,
-    min_gen: u64,
-    timeout: Duration,
-) -> u64 {
-    let deadline = Instant::now() + timeout;
-    let mut slot = lock.lock();
-    while region_generation(&slot, rect) <= min_gen {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        cvar.wait_for(&mut slot, remaining);
-    }
-    region_generation(&slot, rect)
-}
-
-fn ensure_cache_contains(cache: &mut FrameCache, rect: DesktopRect) {
-    if rect.w <= 0 || rect.h <= 0 {
-        return;
-    }
-    let vb = if cache.virtual_bounds.w <= 0 || cache.virtual_bounds.h <= 0 {
-        rect
-    } else {
-        union_rect(cache.virtual_bounds, rect)
-    };
-    if vb == cache.virtual_bounds && !cache.pixels.is_empty() {
-        return;
-    }
-    cache.virtual_bounds = vb;
-    cache.width = vb.w.max(0) as u32;
-    cache.height = vb.h.max(0) as u32;
-    cache.stride = cache.width as usize * 4;
-    let len = cache.stride.saturating_mul(cache.height as usize);
-    cache.pixels.resize(len, 0);
 }
 
 #[cfg(test)]
