@@ -68,7 +68,7 @@ pub fn collect_known_variable_names_with_monitors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{root_loop, ScalarValue, VariableDecl};
+    use crate::{is_known_variable, root_loop, ScalarValue, VariableDecl};
 
     #[test]
     fn collect_includes_decls_bindings_and_builtins() {

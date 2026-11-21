@@ -1,6 +1,6 @@
 //! Action tree navigation, insertion, and drag-and-drop helpers.
 
-use super::{Action, ActionId};
+use super::model::{Action, ActionId};
 use thiserror::Error;
 
 /// Failure inserting or moving a node in an action tree.

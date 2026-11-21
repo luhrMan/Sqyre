@@ -3,7 +3,7 @@
 //! Powers JSON Schema generation, YAML autocomplete, and drift tests so
 //! autocomplete and validation cannot disagree about allowed keys/enums.
 
-use super::{
+use super::model::{
     ConditionOperator, ItemSortBy, ItemSortThen, LoopJumpMode, MatchGrouping, MatchMethod,
     MatchMode, MouseButton, NavPressMode, NavSelectDevice, PressState, RepeatMode,
 };
