@@ -74,9 +74,21 @@ pub fn sqyre_config_dir() -> PathBuf {
 
 /// Run `f` with a temporary Sqyre dir override, serialized against other override users.
 pub fn with_sqyre_dir_override<R>(path: PathBuf, f: impl FnOnce() -> R) -> R {
+    with_sqyre_dirs_override(path, None, f)
+}
+
+/// Run `f` with temporary data + optional backup dir overrides under
+/// [`DIR_OVERRIDE_TEST_LOCK`]. Clears both overrides when `f` returns.
+pub fn with_sqyre_dirs_override<R>(
+    data: PathBuf,
+    backup: Option<PathBuf>,
+    f: impl FnOnce() -> R,
+) -> R {
     let _guard = DIR_OVERRIDE_TEST_LOCK.lock();
-    set_sqyre_dir_override(Some(path));
+    set_sqyre_dir_override(Some(data));
+    set_backup_dir_override(backup);
     let result = f();
+    set_backup_dir_override(None);
     set_sqyre_dir_override(None);
     result
 }
@@ -135,5 +147,27 @@ pub fn initialize_directories() -> Result<()> {
             fs::create_dir_all(&p)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn dirs_override_sets_data_and_backup_then_clears() {
+        let data = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        with_sqyre_dirs_override(
+            data.path().to_path_buf(),
+            Some(backup.path().to_path_buf()),
+            || {
+                assert_eq!(sqyre_dir(), data.path());
+                assert_eq!(backup_dir_override().as_deref(), Some(backup.path()));
+            },
+        );
+        assert!(backup_dir_override().is_none());
+        assert_ne!(sqyre_dir(), data.path());
     }
 }
