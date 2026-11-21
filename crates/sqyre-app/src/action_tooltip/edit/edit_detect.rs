@@ -4,8 +4,10 @@
 //! path). Image Search match method and OCR preprocess flags stay under a
 //! collapsed Advanced section.
 
-use super::var_ref_field;
-use super::{coords_editor, detection_branch_editor, search_area_section, targets_editor};
+use super::edit_fields::{
+    coords_editor, detection_branch_editor, search_area_section, var_ref_field,
+};
+use super::targets_editor;
 use crate::action_tooltip::help as h;
 use crate::action_tooltip::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use crate::paint_ctx::{CatalogPaint, VarTheme};

@@ -1,6 +1,7 @@
 //! Control-flow action editors (loop, while, if, for-each-row, break/continue).
 
-use super::{condition_editor, help as h, list_columns_editor, scalar_field};
+use super::edit_fields::{condition_editor, list_columns_editor, scalar_field};
+use super::help as h;
 use crate::action_tooltip::sections::{tip_section, tip_wrapped_section};
 use crate::paint_ctx::VarTheme;
 use crate::pickers::options;
