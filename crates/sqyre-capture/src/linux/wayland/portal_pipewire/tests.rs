@@ -1,6 +1,11 @@
 //! Unit tests for portal PipeWire helpers.
 
+use super::spa_params::{
+    cpu_buffer_type_mask, cursor_meta_size, pw_buffers_param_bytes, pw_cursor_meta_bytes,
+    pw_header_meta_bytes,
+};
 use super::*;
+use pw::spa::buffer::DataType;
 use pw::spa::pod::Pod;
 use std::sync::Arc;
 use std::thread;
