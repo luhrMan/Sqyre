@@ -41,6 +41,8 @@ mod chooser_hit;
 #[cfg(feature = "runtime")]
 mod context_menu;
 #[cfg(feature = "runtime")]
+mod focus_gate;
+#[cfg(feature = "runtime")]
 mod host_common;
 #[cfg(feature = "runtime")]
 mod host_press;
@@ -48,7 +50,6 @@ mod host_press;
 mod hub_dismiss;
 #[cfg(feature = "runtime")]
 mod hub_fan;
-#[cfg(feature = "runtime")]
 mod macro_overlay;
 #[cfg(all(
     feature = "runtime",
