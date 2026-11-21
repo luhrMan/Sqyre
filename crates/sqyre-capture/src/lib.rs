@@ -287,7 +287,8 @@ fn physical_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
     use std::time::{Duration, Instant};
 
     static CACHE: Mutex<Option<(Instant, Vec<DesktopRect>)>> = Mutex::new(None);
-    if let Ok(g) = CACHE.lock() {
+    {
+        let g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((at, rects)) = g.as_ref() {
             if at.elapsed() < Duration::from_millis(500) {
                 return rects.clone();
@@ -295,9 +296,7 @@ fn physical_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
         }
     }
     let rects = crate::x11_capture::query_x11_monitor_rects();
-    if let Ok(mut g) = CACHE.lock() {
-        *g = Some((Instant::now(), rects.clone()));
-    }
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), rects.clone()));
     rects
 }
 
