@@ -10,6 +10,7 @@ mod click_fx;
 mod detection_span;
 mod diag;
 mod domain_ports;
+mod ffi_guard;
 mod highlight;
 mod image_limits;
 mod port_error;
@@ -42,6 +43,7 @@ pub use diag::{
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };
+pub use ffi_guard::catch_ffi;
 pub use highlight::{
     clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
     HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
