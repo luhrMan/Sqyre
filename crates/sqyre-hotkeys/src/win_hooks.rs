@@ -12,10 +12,11 @@
 //! elevation; extra poll/hotkey/raw-input sinks cannot bypass that.
 
 use crate::continue_wait::{vk_key_name, ContinueWaitBridge};
+use crate::error::HotkeyError;
 use crate::macro_hotkeys::MacroHotkeyBridge;
 use crate::macro_record::{MacroRecordBridge, RecordMouseButton};
 use crate::screen_click::ScreenClickBridge;
-use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
+use crate::service::{HotkeyCallbacks, HotkeyService};
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};

@@ -4,10 +4,11 @@
 //! exclusive grab — `rdev::grab` freezes the pointer and makes portal dialogs ignore clicks.
 
 use crate::continue_wait::{rdev_key_name, ContinueWaitBridge};
+use crate::error::HotkeyError;
 use crate::macro_hotkeys::MacroHotkeyBridge;
 use crate::macro_record::{MacroRecordBridge, RecordMouseButton};
 use crate::screen_click::ScreenClickBridge;
-use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
+use crate::service::{HotkeyCallbacks, HotkeyService};
 use parking_lot::Mutex;
 use rdev::{listen, Button, Event, EventType, Key};
 use std::cell::RefCell;
