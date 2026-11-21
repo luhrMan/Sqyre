@@ -133,16 +133,8 @@ pub struct DataEditor {
     collection_capture_pending: Option<CollectionCapturePending>,
     /// Cached program/entity name lists keyed by catalog generation.
     list_cache: ListCache,
-    /// MatchCheck match settings (session-local).
     #[cfg(feature = "native-runtime")]
-    match_check: match_check::MatchCheckSettings,
-    /// Background MatchCheck match job.
-    #[cfg(feature = "native-runtime")]
-    match_check_pending:
-        Option<std::sync::mpsc::Receiver<Result<match_check::MatchCheckResult, String>>>,
-    /// Cached heatmap + MatchMap for the current inputs.
-    #[cfg(feature = "native-runtime")]
-    match_check_cache: Option<match_check::MatchCheckCache>,
+    match_check: match_check::MatchCheckTool,
     /// Background open-window fetch for Programs "Add running".
     #[cfg(feature = "native-runtime")]
     running_programs_pending: Option<running_programs::RunningProgramsRx>,
@@ -195,11 +187,7 @@ impl Default for DataEditor {
             collection_capture_pending: None,
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
-            match_check: match_check::MatchCheckSettings::default(),
-            #[cfg(feature = "native-runtime")]
-            match_check_pending: None,
-            #[cfg(feature = "native-runtime")]
-            match_check_cache: None,
+            match_check: match_check::MatchCheckTool::default(),
             #[cfg(feature = "native-runtime")]
             running_programs_pending: None,
         }
@@ -606,7 +594,7 @@ impl DataEditor {
                     // Keep the selected item; only retarget the preview bounds.
                     if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
                         #[cfg(feature = "native-runtime")]
-                        self.invalidate_match_check();
+                        self.match_check.invalidate();
                     }
                 } else {
                     self.apply_screen_cap_reference(CatalogView::new(env.catalog), coord);
@@ -994,23 +982,5 @@ impl DataEditor {
 
     pub(crate) fn clear_status(&mut self) {
         self.status_banner.clear();
-    }
-
-    #[cfg(feature = "native-runtime")]
-    fn invalidate_match_check(&mut self) {
-        self.match_check_cache = None;
-        self.match_check_pending = None;
-        self.match_check.show_many_match_boxes = false;
-    }
-
-    #[cfg(feature = "native-runtime")]
-    pub(crate) fn stop_match_check_compute(&mut self) {
-        self.match_check_pending = None;
-        self.match_check_cache = None;
-        self.match_check.last_inputs.clear();
-        self.match_check.paused = true;
-        self.match_check.capture_once = false;
-        self.match_check.awaiting_panel = false;
-        self.match_check.rematch_once = false;
     }
 }

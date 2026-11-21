@@ -533,14 +533,14 @@ impl FormState for MatchCheckForm {
         ed.form_name = item.name.clone();
         #[cfg(feature = "native-runtime")]
         {
-            ed.invalidate_match_check();
-            ed.match_check.paused = false;
-            ed.match_check.last_live_at = None;
-            ed.match_check.capture_once = false;
-            ed.match_check.awaiting_panel = false;
-            ed.match_check.rematch_once = false;
+            ed.match_check.invalidate();
+            ed.match_check.settings.paused = false;
+            ed.match_check.settings.last_live_at = None;
+            ed.match_check.settings.capture_once = false;
+            ed.match_check.settings.awaiting_panel = false;
+            ed.match_check.settings.rematch_once = false;
             let variant = match_check::default_variant(CatalogView::from(catalog), &prog, &name);
-            ed.match_check.variant = variant;
+            ed.match_check.settings.variant = variant;
         }
     }
 

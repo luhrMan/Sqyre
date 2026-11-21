@@ -136,6 +136,34 @@ mod inner {
         }
     }
 
+    /// MatchCheck tool state: settings, background match job, uploaded heatmap.
+    #[derive(Default)]
+    pub(crate) struct MatchCheckTool {
+        pub settings: MatchCheckSettings,
+        pub pending: Option<mpsc::Receiver<Result<MatchCheckResult, String>>>,
+        pub cache: Option<MatchCheckCache>,
+    }
+
+    impl MatchCheckTool {
+        /// Drop the current result so the next frame rematches.
+        pub(crate) fn invalidate(&mut self) {
+            self.cache = None;
+            self.pending = None;
+            self.settings.show_many_match_boxes = false;
+        }
+
+        /// Stop live matching and pause until the user resumes.
+        pub(crate) fn stop_compute(&mut self) {
+            self.pending = None;
+            self.cache = None;
+            self.settings.last_inputs.clear();
+            self.settings.paused = true;
+            self.settings.capture_once = false;
+            self.settings.awaiting_panel = false;
+            self.settings.rematch_once = false;
+        }
+    }
+
     /// Whether a live recapture+rematch should start now.
     pub(crate) fn live_refresh_due(
         settings: &MatchCheckSettings,
@@ -1198,61 +1226,62 @@ mod inner {
             if force {
                 // Unpause and prepare a new fingerprint, but keep the prior heatmap
                 // until spawn succeeds so live refresh does not flicker.
-                self.match_check.paused = false;
+                self.match_check.settings.paused = false;
             }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             };
             if !can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.match_check.variant,
+                &self.match_check.settings.variant,
                 left,
                 top,
                 right,
                 bottom,
             ) {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
             let refresh_gen = if force {
-                self.match_check.refresh_gen.wrapping_add(1)
+                self.match_check.settings.refresh_gen.wrapping_add(1)
             } else {
-                self.match_check.refresh_gen
+                self.match_check.settings.refresh_gen
             };
             let inputs = inputs_key(
                 prog,
                 item,
-                &self.match_check.variant,
+                &self.match_check.settings.variant,
                 left,
                 top,
                 right,
                 bottom,
-                self.match_check.blur,
-                self.match_check.match_method,
-                self.match_check.plane_flip,
-                self.match_check.tolerance,
+                self.match_check.settings.blur,
+                self.match_check.settings.match_method,
+                self.match_check.settings.plane_flip,
+                self.match_check.settings.tolerance,
                 refresh_gen,
                 close_matches_distance,
             );
             if inputs.is_empty() {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
-            if inputs != self.match_check.last_inputs {
-                self.match_check.paused = false;
+            if inputs != self.match_check.settings.last_inputs {
+                self.match_check.settings.paused = false;
             }
-            if self.match_check.paused {
+            if self.match_check.settings.paused {
                 return;
             }
             if !force
                 && self
-                    .match_check_cache
+                    .match_check
+                    .cache
                     .as_ref()
                     .is_some_and(|c| c.data.fingerprint == inputs)
             {
@@ -1261,22 +1290,22 @@ mod inner {
             let now = Instant::now();
             if !force
                 && !should_request(
-                    &self.match_check,
+                    &self.match_check.settings,
                     &inputs,
-                    self.match_check_pending.is_some(),
+                    self.match_check.pending.is_some(),
                     now,
                 )
             {
                 return;
             }
             let Ok(template_path) =
-                resolve_template(catalog, prog, item, &self.match_check.variant)
+                resolve_template(catalog, prog, item, &self.match_check.settings.variant)
             else {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             };
             if !template_path.is_file() {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
             let Some((display, src_w, src_h)) = display else {
@@ -1285,11 +1314,11 @@ mod inner {
             };
             // Commit the forced fingerprint only once capture is ready to spawn.
             if force {
-                self.match_check.refresh_gen = refresh_gen;
+                self.match_check.settings.refresh_gen = refresh_gen;
             }
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
-            let tolerance = self.match_check.tolerance as f32;
+            let tolerance = self.match_check.settings.tolerance as f32;
             let job_rx = spawn_compute(
                 inputs.clone(),
                 display,
@@ -1297,15 +1326,15 @@ mod inner {
                 src_h,
                 template_path,
                 mask_path,
-                self.match_check.blur,
-                self.match_check.match_method,
-                self.match_check.plane_flip,
+                self.match_check.settings.blur,
+                self.match_check.settings.match_method,
+                self.match_check.settings.plane_flip,
                 tolerance,
                 close_matches_distance,
             );
-            self.match_check.last_inputs = inputs;
-            self.match_check.last_request = Some(now);
-            self.match_check_pending = Some(job_rx);
+            self.match_check.settings.last_inputs = inputs;
+            self.match_check.settings.last_request = Some(now);
+            self.match_check.pending = Some(job_rx);
         }
 
         pub(crate) fn poll_match_check(
@@ -1315,8 +1344,8 @@ mod inner {
             previews: &mut PreviewTooltipCache,
         ) {
             if !matches!(self.tab, EditorTab::MatchCheck) {
-                if self.match_check_pending.is_some() {
-                    self.stop_match_check_compute();
+                if self.match_check.pending.is_some() {
+                    self.match_check.stop_compute();
                 }
                 return;
             }
@@ -1337,7 +1366,7 @@ mod inner {
                     CatalogView::from(catalog),
                     prog,
                     item,
-                    &self.match_check.variant,
+                    &self.match_check.settings.variant,
                     lx,
                     ty,
                     rx,
@@ -1345,33 +1374,34 @@ mod inner {
                 ),
                 _ => false,
             };
-            if !coords_ok && self.match_check_pending.is_some() {
-                self.stop_match_check_compute();
+            if !coords_ok && self.match_check.pending.is_some() {
+                self.match_check.stop_compute();
             }
             // Applying a rematch mid-drag swaps the heatmap/legend and can end the
             // user's gesture early across the whole window.
             let hold_result = self.previews.coord_panning() || ctx.input(|i| i.pointer.any_down());
-            if let Some(rx) = self.match_check_pending.as_ref() {
+            if let Some(rx) = self.match_check.pending.as_ref() {
                 if hold_result {
                     ctx.request_repaint();
                 } else {
                     match rx.try_recv() {
                         Ok(Ok(result)) => {
-                            self.match_check_pending = None;
-                            if result.data.fingerprint == self.match_check.last_inputs {
+                            self.match_check.pending = None;
+                            if result.data.fingerprint == self.match_check.settings.last_inputs {
                                 if result.data.tolerance_matches.len() > MANY_MATCH_BOX_THRESHOLD {
-                                    self.match_check.show_many_match_boxes = false;
+                                    self.match_check.settings.show_many_match_boxes = false;
                                 }
-                                self.match_check_cache = Some(finish_cache(ctx, result));
-                                self.match_check.last_live_at = Some(web_time::Instant::now());
-                                if !self.match_check.paused {
+                                self.match_check.cache = Some(finish_cache(ctx, result));
+                                self.match_check.settings.last_live_at =
+                                    Some(web_time::Instant::now());
+                                if !self.match_check.settings.paused {
                                     ctx.request_repaint_after(LIVE_INTERVAL);
                                 }
                             }
                         }
                         Ok(Err(e)) => {
-                            self.match_check_pending = None;
-                            self.match_check.paused = true;
+                            self.match_check.pending = None;
+                            self.match_check.settings.paused = true;
                             self.set_err(format!(
                                 "{}: {}",
                                 EditorTab::MatchCheck.label(),
@@ -1382,8 +1412,8 @@ mod inner {
                             ctx.request_repaint();
                         }
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            self.match_check_pending = None;
-                            self.match_check.paused = true;
+                            self.match_check.pending = None;
+                            self.match_check.settings.paused = true;
                             self.set_err(format!(
                                 "{}: match failed",
                                 EditorTab::MatchCheck.label()
@@ -1407,8 +1437,9 @@ mod tests {
         arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
         fingerprint, heatmap_hover_allowed, hover_at_image, live_refresh_due, no_match_box_caption,
         scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings,
-        MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
+        MatchCheckTool, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
+    use std::sync::mpsc;
     use sqyre_domain::{MatchMethod, PlaneFlip};
     use sqyre_match::{ImageBuf, MatchMap};
     use web_time::{Duration, Instant};
@@ -1671,5 +1702,40 @@ mod tests {
         );
         assert_ne!(none, horiz);
         assert!(horiz.contains("Horizontal"));
+    }
+
+    #[test]
+    fn invalidate_clears_job_and_many_boxes_flag() {
+        let (_tx, rx) = mpsc::channel();
+        let mut tool = MatchCheckTool {
+            pending: Some(rx),
+            ..Default::default()
+        };
+        tool.settings.show_many_match_boxes = true;
+        tool.invalidate();
+        assert!(tool.pending.is_none());
+        assert!(tool.cache.is_none());
+        assert!(!tool.settings.show_many_match_boxes);
+    }
+
+    #[test]
+    fn stop_compute_pauses_and_clears_live_flags() {
+        let (_tx, rx) = mpsc::channel();
+        let mut tool = MatchCheckTool {
+            pending: Some(rx),
+            ..Default::default()
+        };
+        tool.settings.last_inputs = "inputs".into();
+        tool.settings.capture_once = true;
+        tool.settings.awaiting_panel = true;
+        tool.settings.rematch_once = true;
+        tool.stop_compute();
+        assert!(tool.pending.is_none());
+        assert!(tool.cache.is_none());
+        assert!(tool.settings.last_inputs.is_empty());
+        assert!(tool.settings.paused);
+        assert!(!tool.settings.capture_once);
+        assert!(!tool.settings.awaiting_panel);
+        assert!(!tool.settings.rematch_once);
     }
 }
