@@ -2,8 +2,8 @@
 
 use super::portal_dma::{copy_pw_frame_into_rect, with_spa_chunk_bytes};
 use super::portal_session::{
-    note_portal_cursor, open_portal_session, rects_overlap, stage_mutation_recent, stop_eis_thread,
-    union_rect, LOGGED_CURSOR_META, REMOTE_DESKTOP_GRANTED,
+    note_portal_cursor, open_portal_session, stage_mutation_recent, stop_eis_thread,
+    LOGGED_CURSOR_META, REMOTE_DESKTOP_GRANTED,
 };
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};

@@ -1,6 +1,6 @@
 //! Frame cache / slot helpers for portal PipeWire capture.
 
-use super::{KICK_RECT_MAX, LOGGED_FRAME_DROUGHT, STALE_REGION_AGE, STARVED_KICKS_DEAD};
+use super::{KICK_RECT_MAX, LOGGED_FRAME_DROUGHT, STALE_REGION_AGE};
 use crate::error::CaptureError;
 use crate::linux::wayland::portal_session::{rects_overlap, union_rect};
 use image::RgbaImage;
@@ -19,7 +19,7 @@ pub(super) struct FrameSlot {
     /// Last copy time per stream dest (stale region → kick immediately).
     pub(super) region_copy_at: Vec<(DesktopRect, Instant)>,
     /// Consecutive armed waits that produced no copy, per stream dest.
-    /// [`STARVED_KICKS_DEAD`] on any dest → capturer dead → session reopens.
+    /// `STARVED_KICKS_DEAD` on any dest → capturer dead → session reopens.
     pub(super) starved_kicks: Vec<(DesktopRect, u32)>,
     /// When false, PipeWire callbacks dequeue but skip copying into `cache.pixels`.
     /// Cleared after a macro so the full-desktop RGBA buffer can be released;
@@ -93,7 +93,7 @@ pub(super) fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
 }
 
 /// A damage pulse on `dest`'s monitor produced no copy — bump its starved
-/// count. At [`STARVED_KICKS_DEAD`] the capturer reports dead so the shared
+/// count. At `STARVED_KICKS_DEAD` the capturer reports dead so the shared
 /// portal session reopens instead of failing crops on a wedged stream forever.
 pub(super) fn note_starved_kick(slot: &mut FrameSlot, dest: DesktopRect) {
     let n = if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
