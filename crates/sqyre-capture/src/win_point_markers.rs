@@ -198,13 +198,18 @@ unsafe extern "system" fn marker_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: the system calls this with a valid HWND of our class.
-    unsafe {
-        if msg == WM_NCHITTEST {
-            return LRESULT(HTTRANSPARENT as isize);
-        }
-        DefWindowProcW(hwnd, msg, wparam, lparam)
-    }
+    sqyre_ports::catch_ffi("win_point_markers.marker_wnd_proc", None, || {
+        Some(if msg == WM_NCHITTEST {
+            LRESULT(HTTRANSPARENT as isize)
+        } else {
+            // SAFETY: the system calls this with a valid HWND of our class.
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        })
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: panic path — forward to the default procedure outside the catch.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
 }
 
 #[cfg(test)]

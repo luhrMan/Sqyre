@@ -237,15 +237,19 @@ unsafe extern "system" fn outline_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: invoked by the system with a valid `hwnd` of our class and its message params,
-    // which are forwarded unchanged to DefWindowProcW.
-    unsafe {
-        if msg == WM_NCHITTEST {
+    sqyre_ports::catch_ffi("win_outline.outline_wnd_proc", None, || {
+        Some(if msg == WM_NCHITTEST {
             // Click-through so screen-click recording still receives the second corner.
-            return LRESULT(HTTRANSPARENT as isize);
-        }
-        DefWindowProcW(hwnd, msg, wparam, lparam)
-    }
+            LRESULT(HTTRANSPARENT as isize)
+        } else {
+            // SAFETY: invoked by the system with a valid `hwnd` of our class.
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        })
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: panic path — forward to the default procedure outside the catch.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
 }
 
 #[cfg(test)]

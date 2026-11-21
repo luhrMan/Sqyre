@@ -266,34 +266,40 @@ unsafe extern "system" fn grab_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: invoked by the system with a valid `hwnd` of our class and its message params,
-    // which are forwarded unchanged to DefWindowProcW; other calls take no pointers.
-    unsafe {
-        match msg {
-            WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
-                seed_pos_from_cursor();
-                MOVED.store(true, Ordering::Relaxed);
-                if msg == WM_LBUTTONDOWN {
-                    LEFT_CLICKS.fetch_add(1, Ordering::Relaxed);
-                } else if msg == WM_LBUTTONUP {
-                    LEFT_RELEASES.fetch_add(1, Ordering::Relaxed);
+    sqyre_ports::catch_ffi("win_grab.grab_wnd_proc", None, || {
+        // SAFETY: invoked by the system with a valid `hwnd` of our class and its message params,
+        // which are forwarded unchanged to DefWindowProcW; other calls take no pointers.
+        Some(unsafe {
+            match msg {
+                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
+                    seed_pos_from_cursor();
+                    MOVED.store(true, Ordering::Relaxed);
+                    if msg == WM_LBUTTONDOWN {
+                        LEFT_CLICKS.fetch_add(1, Ordering::Relaxed);
+                    } else if msg == WM_LBUTTONUP {
+                        LEFT_RELEASES.fetch_add(1, Ordering::Relaxed);
+                    }
+                    LRESULT(0)
                 }
-                LRESULT(0)
-            }
-            WM_KEYDOWN => {
-                if wparam.0 as u16 == VK_ESCAPE.0 {
-                    ESCAPE.store(true, Ordering::Relaxed);
+                WM_KEYDOWN => {
+                    if wparam.0 as u16 == VK_ESCAPE.0 {
+                        ESCAPE.store(true, Ordering::Relaxed);
+                    }
+                    LRESULT(0)
                 }
-                LRESULT(0)
+                WM_SETCURSOR => {
+                    let _ = SetCursor(LoadCursorW(None, IDC_CROSS).ok());
+                    LRESULT(1)
+                }
+                WM_DESTROY => LRESULT(0),
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
-            WM_SETCURSOR => {
-                let _ = SetCursor(LoadCursorW(None, IDC_CROSS).ok());
-                LRESULT(1)
-            }
-            WM_DESTROY => LRESULT(0),
-            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-        }
-    }
+        })
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: panic path — forward to the default procedure outside the catch.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    })
 }
 
 #[cfg(test)]
