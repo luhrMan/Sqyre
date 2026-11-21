@@ -866,7 +866,7 @@ fn host_loop(
         }
 
         // Hub fan travel must not wait on egui — ROOT starves when unfocused.
-        let fan_animating = tick_hub_fan(&mut state);
+        let fan_animating = crate::host_common::tick_hub_fan(&mut state);
 
         wait_x_or_timeout(
             state.xfd,
@@ -1219,10 +1219,6 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 }
 
 /// Advance hub fan travel on the host clock (independent of egui focus).
-fn tick_hub_fan(state: &mut HostState) -> bool {
-    crate::host_common::tick_hub_fan(state)
-}
-
 fn set_relocate_mode(state: &mut HostState, enabled: bool) {
     if state.relocate_mode == enabled {
         return;

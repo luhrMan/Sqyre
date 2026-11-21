@@ -346,7 +346,7 @@ fn host_loop(
         // SAFETY: messages belong to this thread; HOST is set so the wndproc can see `state`.
         unsafe { drain_messages() };
         tick_busy(&mut state);
-        tick_hub_fan(&mut state);
+        let _ = crate::host_common::tick_hub_fan(&mut state);
         apply_visibility(&mut state);
         poll_context_menu_escape(&mut state);
         if state.context.as_ref().is_some_and(|m| m.mapped) {
@@ -520,10 +520,6 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
             live.spec.input_enabled = enabled;
         }
     }
-}
-
-fn tick_hub_fan(state: &mut HostState) {
-    let _ = crate::host_common::tick_hub_fan(state);
 }
 
 fn update_button(state: &mut HostState, spec: WinButtonSpec) {
