@@ -68,6 +68,34 @@ impl Default for EditorNav {
     }
 }
 
+impl EditorNav {
+    /// Derive the left-pane pixel width from a settings fraction and viewport.
+    pub(crate) fn left_width_from_frac(
+        avail_w: f32,
+        frac: f32,
+        min_frac: f32,
+        max_frac: f32,
+    ) -> f32 {
+        let frac = frac.clamp(min_frac, max_frac);
+        let min_left = avail_w * min_frac;
+        let max_left = avail_w * max_frac;
+        (avail_w * frac).clamp(min_left, max_left)
+    }
+
+    /// Settings fraction implied by the current left width.
+    pub(crate) fn frac_from_left_width(
+        avail_w: f32,
+        left_width: f32,
+        min_frac: f32,
+        max_frac: f32,
+    ) -> f32 {
+        if avail_w <= 1.0 {
+            return min_frac;
+        }
+        (left_width / avail_w).clamp(min_frac, max_frac)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +108,22 @@ mod tests {
         assert!(nav.selected_program.is_none());
         assert!(nav.selected_entity.is_none());
         assert!(nav.list_cache.program_names.is_empty());
+    }
+
+    #[test]
+    fn left_split_frac_round_trips_across_viewport_sizes() {
+        // Idle frames under a different window size must not drift the saved frac
+        // when width is re-derived from settings (persisted-ui-state / egui skill).
+        const MIN: f32 = 0.15;
+        const MAX: f32 = 0.55;
+        let saved = 0.32_f32;
+        for avail_w in [640.0_f32, 880.0, 1280.0, 1920.0] {
+            let width = EditorNav::left_width_from_frac(avail_w, saved, MIN, MAX);
+            let back = EditorNav::frac_from_left_width(avail_w, width, MIN, MAX);
+            assert!(
+                (back - saved).abs() < 1e-5,
+                "avail_w={avail_w}: frac drifted {saved} -> width {width} -> {back}"
+            );
+        }
     }
 }

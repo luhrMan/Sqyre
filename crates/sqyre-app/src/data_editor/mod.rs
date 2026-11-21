@@ -594,12 +594,12 @@ impl DataEditor {
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
-        let frac = env
-            .settings
-            .ui
-            .data_editor_left_split
-            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
-        self.nav.left_width = (avail_w * frac).clamp(min_left, max_left);
+        self.nav.left_width = EditorNav::left_width_from_frac(
+            avail_w,
+            env.settings.ui.data_editor_left_split,
+            MIN_DATA_EDITOR_LEFT_FRAC,
+            MAX_DATA_EDITOR_LEFT_FRAC,
+        );
         let crate::widgets::SplitView {
             left: mut left_ui,
             right: mut right_ui,
@@ -655,8 +655,12 @@ impl DataEditor {
             if let Some(pos) = split_resp.interact_pointer_pos() {
                 self.nav.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
                 if avail_w > 1.0 {
-                    env.settings.ui.data_editor_left_split = (self.nav.left_width / avail_w)
-                        .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+                    env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
+                        avail_w,
+                        self.nav.left_width,
+                        MIN_DATA_EDITOR_LEFT_FRAC,
+                        MAX_DATA_EDITOR_LEFT_FRAC,
+                    );
                 }
             }
         }
@@ -684,8 +688,12 @@ impl DataEditor {
                 if next != self.nav.left_width {
                     self.nav.left_width = next;
                     if avail_w > 1.0 {
-                        env.settings.ui.data_editor_left_split = (self.nav.left_width / avail_w)
-                            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+                        env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
+                            avail_w,
+                            self.nav.left_width,
+                            MIN_DATA_EDITOR_LEFT_FRAC,
+                            MAX_DATA_EDITOR_LEFT_FRAC,
+                        );
                     }
                     self.nav.split_key_moved = true;
                 }
