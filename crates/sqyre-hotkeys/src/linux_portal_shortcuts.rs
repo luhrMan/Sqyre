@@ -72,13 +72,18 @@ async fn register_host_app() -> Result<(), String> {
 }
 
 /// Start the portal backend (replaces any previous run).
-pub(crate) fn spawn(bridge: MacroHotkeyBridge, on_fire: Arc<dyn Fn(String) + Send + Sync>) {
+pub(crate) fn spawn(
+    bridge: MacroHotkeyBridge,
+    on_fire: Arc<dyn Fn(String) + Send + Sync>,
+    on_warn: Arc<dyn Fn(String) + Send + Sync>,
+) {
     let run = Run(RUN.fetch_add(1, Ordering::SeqCst) + 1);
+    let on_warn_spawn = Arc::clone(&on_warn);
     let spawned = std::thread::Builder::new()
         .name("sqyre-shortcuts".into())
-        .spawn(move || pollster::block_on(run.main(&bridge, &*on_fire)));
+        .spawn(move || pollster::block_on(run.main(&bridge, &*on_fire, &*on_warn_spawn)));
     if let Err(e) = spawned {
-        eprintln!("sqyre-hotkeys: portal shortcuts thread: {e}");
+        (on_warn)(format!("sqyre-hotkeys: portal shortcuts thread: {e}"));
     }
 }
 
@@ -130,19 +135,28 @@ impl Run {
         }
     }
 
-    async fn main(self, bridge: &MacroHotkeyBridge, on_fire: &dyn Fn(String)) {
+    async fn main(
+        self,
+        bridge: &MacroHotkeyBridge,
+        on_fire: &dyn Fn(String),
+        on_warn: &dyn Fn(String),
+    ) {
         // Register must be the first method on the shared portal connection.
         // A failed register does not cache an id; the next method (here,
         // GlobalShortcuts) would cache an empty one and the macro permission
         // dialog stays "unknown application".
         if let Err(e) = register_host_app().await {
-            eprintln!("sqyre-hotkeys: portal app id not registered ({e}); using evdev");
+            on_warn(format!(
+                "sqyre-hotkeys: portal app id not registered ({e}); using evdev"
+            ));
             return;
         }
         let proxy = match GlobalShortcuts::new().await {
             Ok(proxy) => proxy,
             Err(e) => {
-                eprintln!("sqyre-hotkeys: GlobalShortcuts portal unavailable ({e}); using evdev");
+                on_warn(format!(
+                    "sqyre-hotkeys: GlobalShortcuts portal unavailable ({e}); using evdev"
+                ));
                 return;
             }
         };
@@ -165,7 +179,7 @@ impl Run {
                 continue;
             }
             match self
-                .bind_and_listen(&proxy, bridge, on_fire, &bindings)
+                .bind_and_listen(&proxy, bridge, on_fire, on_warn, &bindings)
                 .await
             {
                 Ok(Outcome::Rebind) => declined = None,
@@ -175,7 +189,9 @@ impl Run {
                     declined = Some(key);
                 }
                 Err(e) => {
-                    eprintln!("sqyre-hotkeys: GlobalShortcuts failed ({e}); using evdev");
+                    on_warn(format!(
+                        "sqyre-hotkeys: GlobalShortcuts failed ({e}); using evdev"
+                    ));
                     self.set_owned(bridge, HashSet::new());
                     self.set_status(SystemShortcutsStatus::Failed(e.to_string()));
                     return;
@@ -189,6 +205,7 @@ impl Run {
         proxy: &GlobalShortcuts,
         bridge: &MacroHotkeyBridge,
         on_fire: &dyn Fn(String),
+        on_warn: &dyn Fn(String),
         bindings: &[MacroHotkeyBinding],
     ) -> Result<Outcome, ashpd::Error> {
         let activated = proxy.receive_activated().await?;
@@ -224,11 +241,11 @@ impl Run {
             .iter()
             .map(|s| s.id().to_string())
             .collect();
-        eprintln!(
+        on_warn(format!(
             "sqyre-hotkeys: GlobalShortcuts bound {}/{} macro hotkeys",
             owned.len(),
             bindings.len()
-        );
+        ));
         self.set_status(SystemShortcutsStatus::Active { bound: owned.len() });
         self.set_owned(bridge, owned);
 
@@ -259,7 +276,7 @@ impl Run {
                             break Outcome::Rebind;
                         }
                         if let Err(e) = configure(proxy, &session).await {
-                            eprintln!("sqyre-hotkeys: ConfigureShortcuts failed ({e})");
+                            on_warn(format!("sqyre-hotkeys: ConfigureShortcuts failed ({e})"));
                         }
                     }
                     if bind_key(&bridge.bindings()) == bound_key {

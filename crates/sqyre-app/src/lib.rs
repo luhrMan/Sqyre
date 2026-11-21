@@ -656,6 +656,7 @@ impl SqyreApp {
             on_macro_hotkey: Arc::new(move |name| {
                 crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
+            on_warn: Arc::new(|msg| crate::log::warn(msg)),
             panic_key: Arc::clone(&panic_key_slot),
         };
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
