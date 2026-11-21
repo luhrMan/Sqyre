@@ -104,10 +104,14 @@ pub fn detection_omit_guard() -> DetectionOmitGuard {
 
 /// Portal and Android grabs must wait for a frame taken after the buttons were removed.
 /// Windows display affinity does not change the pixels already on screen, and GDI reads live.
+#[cfg(target_os = "windows")]
 pub fn detection_omit_needs_fresh_frame() -> bool {
-    if cfg!(target_os = "windows") {
-        return false;
-    }
+    false
+}
+
+/// Portal and Android grabs must wait for a frame taken after the buttons were removed.
+#[cfg(not(target_os = "windows"))]
+pub fn detection_omit_needs_fresh_frame() -> bool {
     let state = STATE.lock();
     state.omitted && !state.include
 }
