@@ -15,6 +15,7 @@ type SuspendFn = Arc<dyn Fn(bool) + Send + Sync>;
 type OverlayDetectFn = Arc<dyn Fn(bool) + Send + Sync>;
 type IdleCacheFn = Arc<dyn Fn(Duration) -> Option<Duration> + Send + Sync>;
 type MonitorRectsFn = Arc<dyn Fn() -> Vec<crate::DesktopRect> + Send + Sync>;
+type U64Fn = Arc<dyn Fn() -> u64 + Send + Sync>;
 
 /// Hooks the capture adapter registers once at process start.
 #[derive(Default, Clone)]
@@ -37,6 +38,8 @@ pub struct CaptureStatusHooks {
     pub release_idle_frame_cache: Option<IdleCacheFn>,
     pub set_pipewire_suspend: Option<SuspendFn>,
     pub set_overlay_in_detection: Option<OverlayDetectFn>,
+    /// Cumulative ScreenCast stream-0 frames (FPS diag).
+    pub portal_stream_frames: Option<U64Fn>,
 }
 
 static HOOKS: Mutex<CaptureStatusHooks> = Mutex::new(CaptureStatusHooks {
@@ -58,6 +61,7 @@ static HOOKS: Mutex<CaptureStatusHooks> = Mutex::new(CaptureStatusHooks {
     release_idle_frame_cache: None,
     set_pipewire_suspend: None,
     set_overlay_in_detection: None,
+    portal_stream_frames: None,
 });
 
 /// Replace capture-status backends (capture crate calls this at startup).
@@ -171,6 +175,13 @@ pub fn set_overlay_buttons_in_detection(include: bool) {
     }
 }
 
+/// Cumulative portal ScreenCast stream-0 frames (0 if unset / no portal).
+///
+/// Used by overlay FPS diag as `portal_fps` over a sample window.
+pub fn portal_stream_frame_count() -> u64 {
+    hooks().portal_stream_frames.map(|f| f()).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +201,7 @@ mod tests {
         assert!(desktop_cursor_position().is_none());
         assert!(preferred_monitor_rects().is_empty());
         assert!(release_idle_capture_frame_cache(Duration::from_secs(1)).is_none());
+        assert_eq!(portal_stream_frame_count(), 0);
     }
 
     #[test]

@@ -301,6 +301,7 @@ fn host_loop(
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
+    crate::fps_diag::note_enabled_once();
     while !stop.load(Ordering::Relaxed) {
         loop {
             match cmd_rx.try_recv() {
@@ -354,6 +355,13 @@ fn host_loop(
         } else if state.hub_fan_dismiss {
             poll_hub_fan_outside_dismiss(&mut state);
         }
+        let mapped = state.buttons.values().filter(|b| b.mapped).count() as u32;
+        crate::fps_diag::host_tick(crate::fps_diag::OverlayFpsSnapshot {
+            mapped_faces: mapped,
+            mapped_hits: mapped,
+            click_through: false,
+            poll_ms: POLL_MS,
+        });
         thread::sleep(Duration::from_millis(POLL_MS));
     }
     destroy_all(&mut state);

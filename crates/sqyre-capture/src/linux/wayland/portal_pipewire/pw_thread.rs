@@ -306,6 +306,11 @@ pub(super) fn portal_pw_thread(
                         skip_once(8, "size-0");
                         return;
                     }
+                    // FPS diag: stream 0 only (one monitor) so dual-head does not
+                    // double the reported portal_fps. Count even when !buffering.
+                    if index == 0 {
+                        super::note_stream0_frame();
+                    }
                     let ty = data.type_();
                     if !logged_type_stream.swap(true, Ordering::SeqCst) {
                         cap_log(

@@ -70,6 +70,20 @@ static WAKE_REQUESTS: AtomicU32 = AtomicU32::new(0);
 /// Monotonic ms until which a finished wake still counts, so the gap before
 /// the next retry does not blink the loader off. `0` means none.
 static WAKE_HOLD_UNTIL: AtomicU64 = AtomicU64::new(0);
+/// Successful PipeWire dequeues on stream 0 (ScreenCast delivery Hz for FPS diag).
+/// Counts even when the CPU mirror is not buffering.
+static STREAM0_FRAMES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one delivered frame on ScreenCast stream 0 (FPS diag).
+pub(crate) fn note_stream0_frame() {
+    STREAM0_FRAMES.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Cumulative stream-0 frames since process start (ports FPS diag).
+pub(crate) fn stream0_frame_count() -> u64 {
+    STREAM0_FRAMES.load(Ordering::Relaxed)
+}
+
 
 /// Bridge between capture retries (100ms poll, then backoff) while the node
 /// is still restarting, so the loader does not drop and start again.

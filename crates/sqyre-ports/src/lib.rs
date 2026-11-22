@@ -27,8 +27,8 @@ pub use capture_error::{CaptureError, NotReady};
 pub use capture_status::{
     desktop_cursor_position, install_capture_status, linux_session_capture_warning,
     nudge_portal_capture_after_ui_hide, pipewire_stream_waking, portal_cursor_position,
-    portal_input_ready, portal_screencast_granted, preferred_monitor_rects,
-    release_capture_frame_cache, release_idle_capture_frame_cache,
+    portal_input_ready, portal_screencast_granted, portal_stream_frame_count,
+    preferred_monitor_rects, release_capture_frame_cache, release_idle_capture_frame_cache,
     request_portal_screencast_picker, revoke_portal_grants, set_overlay_buttons_in_detection,
     set_pipewire_suspend_on_idle, shared_capturer_dead, shared_capturer_is_opening,
     shared_capturer_open_may_block, shared_capturer_ready, CaptureStatusHooks,
