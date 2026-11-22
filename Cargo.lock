@@ -5366,6 +5366,8 @@ dependencies = [
  "sqyre-ports",
  "sqyre-ui-theme",
  "thiserror 2.0.21",
+ "wayland-client",
+ "wayland-protocols-wlr",
  "web-time",
  "windows",
  "x11",

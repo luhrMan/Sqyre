@@ -9,8 +9,8 @@ use sqyre_ports::DesktopRect;
 
 /// Hollow selection rectangle over the desktop (X11 OR windows or layer-shell edges).
 pub enum SelectionOutline {
-    X11(X11SelectionOutline),
-    Layer(LayerSelectionOutline),
+    X11(Box<X11SelectionOutline>),
+    Layer(Box<LayerSelectionOutline>),
 }
 
 impl SelectionOutline {
@@ -18,7 +18,7 @@ impl SelectionOutline {
         let session = LinuxSessionInfo::detect();
         if session.has_wayland && layer_shell_surface_works().is_ok() {
             match LayerSelectionOutline::open() {
-                Ok(layer) => return Ok(Self::Layer(layer)),
+                Ok(layer) => return Ok(Self::Layer(Box::new(layer))),
                 Err(e) => {
                     sqyre_ports::cap_log(
                         "OUTLINE",
@@ -28,7 +28,7 @@ impl SelectionOutline {
                 }
             }
         }
-        X11SelectionOutline::open().map(Self::X11)
+        X11SelectionOutline::open().map(|o| Self::X11(Box::new(o)))
     }
 
     pub fn set_rect(&mut self, left: i32, top: i32, right: i32, bottom: i32) {

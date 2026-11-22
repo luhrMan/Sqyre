@@ -183,7 +183,7 @@ where
     let scale = scale.max(1);
     let file = argb_shm_file(buf_w, buf_h, pixels)?;
     let stride = buf_w.saturating_mul(4);
-    let bytes = stride.saturating_mul(buf_h) as i32;
+    let bytes = stride.saturating_mul(buf_h);
     let pool = shm.create_pool(file.as_fd(), bytes, qh, ());
     let buffer = pool.create_buffer(0, buf_w, buf_h, stride, wl_shm::Format::Argb8888, qh, ());
     surface.set_buffer_scale(scale);

@@ -4,7 +4,7 @@ mod app_resolve;
 mod atspi_windows;
 mod foreign_toplevel;
 mod layer_shell;
-mod layer_surface;
+pub mod layer_surface;
 mod wayland_clients;
 pub(crate) mod wayland_grab;
 pub(crate) mod wayland_outline;

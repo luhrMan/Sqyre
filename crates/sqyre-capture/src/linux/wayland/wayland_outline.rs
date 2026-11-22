@@ -303,7 +303,7 @@ fn paint_edge(
 
 fn solid_argb(w: usize, h: usize) -> Vec<u8> {
     let mut out = vec![0u8; w.saturating_mul(h).saturating_mul(4)];
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         // wl_shm Argb8888 LE: B, G, R, A
         px[0] = STROKE_B;
         px[1] = STROKE_G;

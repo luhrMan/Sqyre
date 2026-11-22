@@ -9,8 +9,8 @@ use crate::CaptureError;
 
 /// Fullscreen pointer-owning grab for screen-click recording.
 pub enum SelectionGrab {
-    X11(X11SelectionGrab),
-    Layer(LayerSelectionGrab),
+    X11(Box<X11SelectionGrab>),
+    Layer(Box<LayerSelectionGrab>),
 }
 
 impl SelectionGrab {
@@ -18,7 +18,7 @@ impl SelectionGrab {
         let session = LinuxSessionInfo::detect();
         if session.has_wayland && layer_shell_surface_works().is_ok() {
             match LayerSelectionGrab::open() {
-                Ok(layer) => return Ok(Self::Layer(layer)),
+                Ok(layer) => return Ok(Self::Layer(Box::new(layer))),
                 Err(e) => {
                     sqyre_ports::cap_log(
                         "GRAB",
@@ -28,7 +28,7 @@ impl SelectionGrab {
                 }
             }
         }
-        X11SelectionGrab::open().map(Self::X11)
+        X11SelectionGrab::open().map(|g| Self::X11(Box::new(g)))
     }
 
     pub fn arm(&mut self) -> Result<(), CaptureError> {

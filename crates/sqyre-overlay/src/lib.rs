@@ -85,6 +85,8 @@ mod linux_host;
     any(target_os = "linux", target_os = "android", target_os = "windows")
 ))]
 mod raster;
+#[cfg(all(feature = "runtime", target_os = "linux"))]
+mod wayland_buttons;
 #[cfg(all(feature = "runtime", target_os = "windows"))]
 mod win_buttons;
 #[cfg(all(feature = "runtime", target_os = "linux"))]

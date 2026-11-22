@@ -36,17 +36,20 @@ fontdue = "0.9"
 epaint_default_fonts = "0.36"
 image = { workspace = true }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
-sqyre-hotkeys = { path = "../sqyre-hotkeys", optional = true }
 eframe = { workspace = true, optional = true, features = ["glow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }
 libc = { workspace = true }
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+sqyre-hotkeys = { path = "../sqyre-hotkeys", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sqyre-android = { path = "../sqyre-android" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+sqyre-hotkeys = { path = "../sqyre-hotkeys", optional = true }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

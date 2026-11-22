@@ -748,11 +748,9 @@ impl MacroOverlay {
             Arc::clone(&self.press_stops),
         ) {
             Ok(host) => {
-                let backend = match &host {
-                    LinuxButtonHost::X11(_) => "X11",
-                };
                 note(&format!(
-                    "overlay: using native {backend} button host (direct enqueue)"
+                    "overlay: using native {} button host (direct enqueue)",
+                    host.backend_name()
                 ));
                 self.linux_host = Some(host);
                 self.wake_sent = false;

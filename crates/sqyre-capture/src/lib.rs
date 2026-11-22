@@ -92,7 +92,15 @@ pub use android_capture::{
 pub use linux::wayland::PortalEisInput;
 
 #[cfg(target_os = "linux")]
-pub use linux::wayland::OsWindowFocuser;
+pub use linux::wayland::layer_surface::{
+    attach_argb_pixels, layer_shell_logical, layer_shell_surface_works, output_desktop_rect,
+    rects_overlap, AttachedShm, GrabAccum, LayerShellConn, OutputGeom,
+};
+#[cfg(target_os = "linux")]
+pub use linux::wayland::{
+    layer_overlay_available, layer_shell_available, prefers_layer_shell_overlay_session,
+    OsWindowFocuser,
+};
 
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
