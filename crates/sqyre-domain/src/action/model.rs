@@ -1220,13 +1220,13 @@ pub struct NavInputs {
 }
 
 impl NavInputs {
-    /// Blank-action seeds: `${NavSel…}` refs matching [`NavOutputs::blank_defaults`] for passthrough.
+    /// Blank-action seeds: bare names matching [`NavOutputs::blank_defaults`] for passthrough.
     pub fn blank_defaults() -> Self {
         Self {
-            atlas: format!("${{{NAV_VAR_ATLAS}}}"),
-            row: format!("${{{NAV_VAR_ROW}}}"),
-            col: format!("${{{NAV_VAR_COL}}}"),
-            collection: format!("${{{NAV_VAR_COLLECTION}}}"),
+            atlas: NAV_VAR_ATLAS.into(),
+            row: NAV_VAR_ROW.into(),
+            col: NAV_VAR_COL.into(),
+            collection: NAV_VAR_COLLECTION.into(),
         }
     }
 }

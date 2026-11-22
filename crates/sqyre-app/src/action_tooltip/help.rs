@@ -212,15 +212,17 @@ pub const NAV_SELECT_BUTTON: &str = "Mouse button used when Select device is mou
 pub const NAV_SELECT_KEY: &str = "Key used when Select device is keyboard.";
 pub const NAV_SELECT_PRESS: &str =
     "click = down+up; down or hold keeps the button/key down; up releases.";
-pub const NAV_IN_ATLAS: &str = "Optional starting Atlas override (variable or name).";
-pub const NAV_IN_ROW: &str = "Optional starting row override.";
-pub const NAV_IN_COL: &str = "Optional starting column override.";
-pub const NAV_IN_COLLECTION: &str = "Optional starting Collection within the Atlas.";
-pub const NAV_OUT_REF: &str = "Variable for the selected cell reference.";
-pub const NAV_OUT_ATLAS: &str = "Variable for the current Atlas name.";
-pub const NAV_OUT_ROW: &str = "Variable for the current row.";
-pub const NAV_OUT_COL: &str = "Variable for the current column.";
-pub const NAV_OUT_COLLECTION: &str = "Variable for the current collection.";
+pub const NAV_IN_ATLAS: &str =
+    "Variable that supplies a starting Atlas name (empty = use the Atlas picker).";
+pub const NAV_IN_ROW: &str = "Variable or number for the starting row (empty = 1).";
+pub const NAV_IN_COL: &str = "Variable or number for the starting column (empty = 1).";
+pub const NAV_IN_COLLECTION: &str =
+    "Variable that supplies a starting Collection (empty = first in the Atlas).";
+pub const NAV_OUT_REF: &str = "Variable that receives the selected cell reference.";
+pub const NAV_OUT_ATLAS: &str = "Variable that receives the current Atlas name.";
+pub const NAV_OUT_ROW: &str = "Variable that receives the current row.";
+pub const NAV_OUT_COL: &str = "Variable that receives the current column.";
+pub const NAV_OUT_COLLECTION: &str = "Variable that receives the current collection.";
 pub const NAV_KEY_CHILDREN: &str =
     "Nest Nav Key actions under this node for custom chord branches.";
 

@@ -6,14 +6,13 @@ use crate::action_tooltip::{help, help as h};
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::paint_ctx::{CatalogPaint, VarTheme};
 use crate::recorded_action::{ChordRecordTarget, NavChordSlot};
+use crate::var_pills;
 use crate::widgets::{
-    combo_enum, labeled_searchable_combo, num_or_var_field, text_field, NumOrVarOpts,
-    SearchableComboOpts, W_TEXT,
+    combo_enum, labeled_searchable_combo, text_field, SearchableComboOpts, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{MouseButton, NavPressMode, NavSelectDevice};
 use sqyre_hotkeys::MacroHotkeyBridge;
-use sqyre_validate::EntryValidation;
 
 pub(super) fn paint_navigate_select(
     ui: &mut egui::Ui,
@@ -239,84 +238,82 @@ pub(super) fn paint_navigate_select(
             );
         });
         tip_wrapped_section(ui, |ui| {
-            text_field(
-                ui,
-                crate::model_icons::ATLAS,
-                "In atlas",
-                h::NAV_IN_ATLAS,
-                &mut data.inputs.atlas,
-            );
-            let no_block = EntryValidation::default();
-            num_or_var_field(
-                ui,
-                egui_phosphor::regular::ROWS,
-                "In row",
-                &mut data.inputs.row,
-                NumOrVarOpts {
-                    width: W_TEXT,
-                    range: Some(1.0..=i32::MAX as f64),
-                    theme,
-                    validation: &no_block,
-                    help: h::NAV_IN_ROW,
-                },
-            );
-            num_or_var_field(
-                ui,
-                egui_phosphor::regular::COLUMNS,
-                "In col",
-                &mut data.inputs.col,
-                NumOrVarOpts {
-                    width: W_TEXT,
-                    range: Some(1.0..=i32::MAX as f64),
-                    theme,
-                    validation: &no_block,
-                    help: h::NAV_IN_COL,
-                },
-            );
-            text_field(
-                ui,
-                crate::model_icons::COLLECTION,
-                "In collection",
-                h::NAV_IN_COLLECTION,
-                &mut data.inputs.collection,
-            );
+            let VarTheme {
+                known_vars,
+                is_dark,
+            } = theme;
+            for (icon, label, value, tip) in [
+                (
+                    crate::model_icons::ATLAS,
+                    "In atlas",
+                    &mut data.inputs.atlas,
+                    h::NAV_IN_ATLAS,
+                ),
+                (
+                    egui_phosphor::regular::ROWS,
+                    "In row",
+                    &mut data.inputs.row,
+                    h::NAV_IN_ROW,
+                ),
+                (
+                    egui_phosphor::regular::COLUMNS,
+                    "In col",
+                    &mut data.inputs.col,
+                    h::NAV_IN_COL,
+                ),
+                (
+                    crate::model_icons::COLLECTION,
+                    "In collection",
+                    &mut data.inputs.collection,
+                    h::NAV_IN_COLLECTION,
+                ),
+            ] {
+                var_pills::var_name_text_edit(
+                    ui, icon, label, value, known_vars, is_dark, W_VAR, tip,
+                );
+            }
         });
         tip_wrapped_section(ui, |ui| {
-            text_field(
-                ui,
-                egui_phosphor::regular::BRACKETS_CURLY,
-                "Output ref",
-                h::NAV_OUT_REF,
-                &mut data.outputs.output_ref,
-            );
-            text_field(
-                ui,
-                crate::model_icons::ATLAS,
-                "Output atlas",
-                h::NAV_OUT_ATLAS,
-                &mut data.outputs.output_atlas,
-            );
-            text_field(
-                ui,
-                egui_phosphor::regular::ROWS,
-                "Output row",
-                h::NAV_OUT_ROW,
-                &mut data.outputs.output_row,
-            );
-            text_field(
-                ui,
-                egui_phosphor::regular::COLUMNS,
-                "Output col",
-                h::NAV_OUT_COL,
-                &mut data.outputs.output_col,
-            );
-            text_field(
-                ui,
-                crate::model_icons::COLLECTION,
-                "Output collection",
-                h::NAV_OUT_COLLECTION,
-                &mut data.outputs.output_collection,
-            );
+            let VarTheme {
+                known_vars,
+                is_dark,
+            } = theme;
+            for (icon, label, value, tip) in [
+                (
+                    egui_phosphor::regular::BRACKETS_CURLY,
+                    "Output ref",
+                    &mut data.outputs.output_ref,
+                    h::NAV_OUT_REF,
+                ),
+                (
+                    crate::model_icons::ATLAS,
+                    "Output atlas",
+                    &mut data.outputs.output_atlas,
+                    h::NAV_OUT_ATLAS,
+                ),
+                (
+                    egui_phosphor::regular::ROWS,
+                    "Output row",
+                    &mut data.outputs.output_row,
+                    h::NAV_OUT_ROW,
+                ),
+                (
+                    egui_phosphor::regular::COLUMNS,
+                    "Output col",
+                    &mut data.outputs.output_col,
+                    h::NAV_OUT_COL,
+                ),
+                (
+                    crate::model_icons::COLLECTION,
+                    "Output collection",
+                    &mut data.outputs.output_collection,
+                    h::NAV_OUT_COLLECTION,
+                ),
+            ] {
+                var_pills::var_name_text_edit(
+                    ui, icon, label, value, known_vars, is_dark, W_VAR, tip,
+                );
+            }
         });
     });
 }
