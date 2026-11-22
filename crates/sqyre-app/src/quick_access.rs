@@ -541,6 +541,15 @@ impl SqyreApp {
     fn quick_access_toggle_window(&mut self, ctx: &egui::Context) {
         #[cfg(not(target_arch = "wasm32"))]
         {
+            // Visible but not front → raise/focus. Hide only when Sqyre is in view.
+            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+            let focused = self.overlay.macro_overlay.sqyre_focused();
+            #[cfg(not(all(feature = "native-runtime", feature = "overlay-buttons")))]
+            let focused = ctx.input(|i| i.focused);
+            if hub_toggle_focuses(self.tray.application_hidden(), focused) {
+                self.tray.show(ctx);
+                return;
+            }
             self.tray.toggle_visible(ctx);
         }
         #[cfg(target_arch = "wasm32")]
@@ -548,6 +557,12 @@ impl SqyreApp {
             let _ = ctx;
         }
     }
+}
+
+/// Hub eye: focus when mapped but Sqyre is not front; otherwise show/hide toggle.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn hub_toggle_focuses(application_hidden: bool, sqyre_focused: bool) -> bool {
+    !application_hidden && !sqyre_focused
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -775,5 +790,13 @@ mod tests {
             "__sqyre_hub_dismiss"
         );
         assert!(QuickAccessAction::from_token(sqyre_persist::QUICK_ACCESS_HUB_DISMISS).is_none());
+    }
+
+    #[test]
+    fn hub_eye_focuses_when_visible_but_unfocused() {
+        assert!(hub_toggle_focuses(false, false));
+        assert!(!hub_toggle_focuses(false, true), "hide when Sqyre is front");
+        assert!(!hub_toggle_focuses(true, false), "show when hidden");
+        assert!(!hub_toggle_focuses(true, true), "show when hidden");
     }
 }

@@ -853,6 +853,14 @@ impl MacroOverlay {
         self.focus_slot.lock().last_foreign.clone()
     }
 
+    /// True when Sqyre’s main window is the sustained front window.
+    ///
+    /// Overlay chrome clicks are transient shell focus and do not clear this,
+    /// so hub show/hide can tell “in view” from “mapped but another app is front”.
+    pub fn sqyre_focused(&self) -> bool {
+        self.focus_slot.lock().sqyre_focused
+    }
+
     fn resolve_focus_views(&mut self) -> (Option<WindowInfo>, Option<WindowInfo>, bool) {
         let mut g = self.focus_slot.lock();
         if let Some(err) = g.last_err.take() {
