@@ -53,6 +53,7 @@ pub fn wrap_unit<R>(
     let at_row_start = ui.cursor().min.x <= ui.max_rect().left() + 0.5;
     let mut size = ui.ctx().data(|d| d.get_temp::<[f32; 2]>(size_id));
     if !at_row_start {
+        let from_cache = size.is_some();
         let measured = size.unwrap_or_else(|| {
             let mut probe = ui.new_child(egui::UiBuilder::new().invisible());
             let rect = probe.horizontal(&mut add_contents).response.rect;
@@ -63,6 +64,16 @@ pub fn wrap_unit<R>(
         size = Some(measured);
         if measured[0] > ui.available_size_before_wrap().x + 0.5 {
             ui.end_row();
+            // A same-frame probe ran in the previous row's leftover strip, so
+            // its width is under-measured. Remeasure on the new row (full
+            // width). A cached size from a prior paint on the new row stays.
+            if !from_cache {
+                let mut probe = ui.new_child(egui::UiBuilder::new().invisible());
+                let rect = probe.horizontal(&mut add_contents).response.rect;
+                let remasured = [rect.width(), rect.height()];
+                ui.ctx().data_mut(|d| d.insert_temp(size_id, remasured));
+                size = Some(remasured);
+            }
         }
     }
     let place = egui::Layout::left_to_right(egui::Align::Center);
@@ -298,5 +309,44 @@ mod tests {
             assert!((r.top() - before.y).abs() < 0.5);
         })
         .drop_without_applying_deltas();
+    }
+
+    /// A unit that wraps after a near-full first row must remasure on the new
+    /// row — probing in the leftover strip under-measures and used to lock the
+    /// next unit to a collapsed width.
+    #[test]
+    fn wrapped_unit_remasures_after_near_full_row() {
+        let ctx = egui::Context::default();
+        let pane_w = 320.0;
+        let mut second = egui::Rect::NOTHING;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(pane_w, 200.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                wrapped_row(&mut pane_ui, |ui| {
+                    let _ = wrap_unit(ui, |ui| {
+                        ui.allocate_exact_size(
+                            egui::vec2(pane_w - 24.0, 20.0),
+                            egui::Sense::hover(),
+                        )
+                    });
+                    second = wrap_unit(ui, |ui| {
+                        ui.allocate_exact_size(egui::vec2(180.0, 20.0), egui::Sense::hover())
+                            .1
+                    })
+                    .response
+                    .rect;
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        assert!(
+            second.width() > 160.0,
+            "second unit collapsed after wrap: {second:?}"
+        );
+        assert!(
+            second.top() > 8.0,
+            "second unit stayed on the first row: {second:?}"
+        );
     }
 }
