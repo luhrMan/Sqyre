@@ -185,10 +185,8 @@ pub fn is_immutable_linux() -> bool {
 #[cfg(target_os = "linux")]
 pub fn atomic_group_setup_steps(group: &str) -> Vec<String> {
     let mut steps = vec![
-        format!(
-            "On Bazzite and other Fedora Atomic systems, copy the group into /etc/group first \
-             (plain usermod alone may not survive reboot):"
-        ),
+        "On Bazzite and other Fedora Atomic systems, copy the group into /etc/group first \
+             (plain usermod alone may not survive reboot):".into(),
         format!("grep '^{group}:' /usr/lib/group | sudo tee -a /etc/group"),
         format!("sudo usermod -aG {group} $USER"),
         format!(

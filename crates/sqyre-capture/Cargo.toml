@@ -3,6 +3,8 @@ name = "sqyre-capture"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11/portal; Windows GDI; Android MediaProjection; macOS stub); selection outline/grab on Linux/Windows; window focus on Linux/Windows/Android"
 
 [lints]
@@ -11,7 +13,7 @@ workspace = true
 [features]
 default = []
 # Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers at build time).
-portal-capture = ["dep:ashpd", "dep:pipewire", "dep:pollster", "dep:enumflags2", "dep:reis", "dep:libc"]
+portal-capture = ["dep:ashpd", "dep:pipewire", "dep:pollster", "dep:reis", "dep:libc"]
 
 [dependencies]
 sqyre-ports = { path = "../sqyre-ports" }
@@ -26,11 +28,11 @@ x11 = { workspace = true }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# Keep zbus 5 for `zbus::blocking` (AT-SPI / systemd); ashpd 0.14 brings zbus 6 separately.
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 ashpd = { workspace = true, features = ["async-io", "screencast", "remote_desktop"], optional = true }
 pipewire = { version = "0.10", optional = true }
 pollster = { workspace = true, optional = true }
-enumflags2 = { version = "0.7", optional = true }
 reis = { version = "0.7.1", optional = true }
 libc = { workspace = true, optional = true }
 

@@ -403,7 +403,7 @@ impl WithSimd for MapRgbToGray<'_> {
         // Tight scalar under WithSimd: Rec.601 interleaved RGB does not map cleanly
         // to contiguous f32 lanes without a gather that loses to auto-vec on small
         // OCR crops. Preserve exact coeffs + `.round() as u8`.
-        for (dst, chunk) in self.gray.iter_mut().zip(self.rgb.chunks_exact(3)) {
+        for (dst, chunk) in self.gray.iter_mut().zip(self.rgb.as_chunks::<3>().0) {
             let r = chunk[0] as f32;
             let g = chunk[1] as f32;
             let b = chunk[2] as f32;
@@ -638,7 +638,7 @@ mod tests {
             rgb.push((i * 7) as u8);
         }
         let mut expect = vec![0u8; 64];
-        for (dst, chunk) in expect.iter_mut().zip(rgb.chunks_exact(3)) {
+        for (dst, chunk) in expect.iter_mut().zip(rgb.as_chunks::<3>().0) {
             let r = chunk[0] as f32;
             let g = chunk[1] as f32;
             let b = chunk[2] as f32;

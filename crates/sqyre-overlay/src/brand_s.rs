@@ -254,7 +254,7 @@ pub(crate) fn rasterize_weighted(
                 xs.push(ax + (y - ay) * (bx - ax) / (by - ay));
             }
             xs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            for span in xs.chunks_exact(2) {
+            for span in xs.as_chunks::<2>().0 {
                 let (l, r) = (span[0], span[1]);
                 let x0 = (l.floor() as i32).max(0);
                 let x1 = (r.ceil() as i32).min(bw as i32);

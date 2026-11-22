@@ -130,7 +130,7 @@ fn account_stream_state(old: &pw::stream::StreamState, new: &pw::stream::StreamS
             STREAMING_SINCE.store(mono_ms().max(1), Ordering::SeqCst);
         }
     } else if was && !now {
-        let prev = STREAMING.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        let prev = STREAMING.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
         if prev == Ok(1) {
             STREAMING_SINCE.store(0, Ordering::SeqCst);
         }

@@ -936,7 +936,7 @@ pub fn busy_shape_alpha(paint: &ButtonPaint) -> Vec<u8> {
     SPIN_COV.with(|cov| {
         let mut cov = cov.borrow_mut();
         s_coverage(&mut cov, w, h, |_, _| 1.0);
-        for (o, &c) in rgba.chunks_exact_mut(4).zip(cov.iter()) {
+        for (o, &c) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(cov.iter()) {
             o[3] = o[3].max((c.min(1.0) * 255.0).round() as u8);
         }
     });
@@ -1071,7 +1071,9 @@ mod tip_tests {
             ..paint.clone()
         });
         let ink = |rgba: &[u8]| {
-            rgba.chunks_exact(4)
+            rgba.as_chunks::<4>()
+                .0
+                .iter()
                 .filter(|p| p[3] >= SHAPE_ALPHA_MIN)
                 .count()
         };
@@ -1106,7 +1108,9 @@ mod tip_tests {
         });
         // Cream icon pixels must be gone while busy (gold spinner ink instead).
         let cream = |rgba: &[u8]| {
-            rgba.chunks_exact(4)
+            rgba.as_chunks::<4>()
+                .0
+                .iter()
                 .filter(|p| p[0] > 0xd0 && p[1] > 0xb0 && p[2] > 0x80 && p[3] >= SHAPE_ALPHA_MIN)
                 .count()
         };
@@ -1121,7 +1125,12 @@ mod tip_tests {
                 busy_phase: k as f32 / 16.0,
                 ..paint.clone()
             });
-            for (u, f) in union.chunks_exact(4).zip(frame.chunks_exact(4)) {
+            for (u, f) in union
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(frame.as_chunks::<4>().0)
+            {
                 if f[3] >= SHAPE_ALPHA_MIN {
                     assert!(
                         u[3] >= SHAPE_ALPHA_MIN,
@@ -1172,7 +1181,9 @@ mod tip_tests {
         assert_eq!(rgba[3], 0);
         // The AA fringe produces partial alpha between 0 and the fill alpha.
         let fringe = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[3] > 0 && p[3] < 128)
             .count();
         assert!(fringe > 0, "rounded edge should anti-alias");
@@ -1209,7 +1220,7 @@ mod tip_tests {
             ..argb_paint([0, 0, 0, 0], [0, 0, 0, 0], 0.0, 20.0)
         };
         let rgba = rasterize_argb(&paint);
-        let ink = rgba.chunks_exact(4).filter(|p| p[3] > 8).count();
+        let ink = rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 8).count();
         assert!(ink > 40, "logo should leave opaque ink on a clear face");
         // Corners of the square face stay clear (logo is inset, shield is not a square).
         assert_eq!(rgba[3], 0);
@@ -1239,7 +1250,9 @@ mod tip_tests {
         let rects = shape_rects_from_alpha(&rgba, 32, 32);
         assert!(!rects.is_empty(), "border ring must produce a shape");
         let ink = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[3] >= SHAPE_ALPHA_MIN)
             .count();
         assert!(ink > 20 && ink < 32 * 32 / 2, "ink={ink}");

@@ -334,7 +334,7 @@ fn install_inner(
 
     let (rgba, w, h) = load_tray_rgba(32)?;
     let mut argb = rgba;
-    for pixel in argb.chunks_exact_mut(4) {
+    for pixel in argb.as_chunks_mut::<4>().0 {
         pixel.rotate_right(1); // RGBA → ARGB
     }
     let icon = ksni::Icon {

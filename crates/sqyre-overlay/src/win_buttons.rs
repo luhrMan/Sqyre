@@ -1348,7 +1348,7 @@ fn set_round_region(hwnd: HWND, w: u32, h: u32, radius: f32) {
 
 fn rgba_to_bgra(rgba: &[u8]) -> Vec<u8> {
     let mut out = rgba.to_vec();
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     out

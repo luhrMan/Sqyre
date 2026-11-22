@@ -7,11 +7,13 @@
 
 use crate::macro_hotkeys::{MacroHotkeyBinding, MacroHotkeyBridge, ShortcutEdge};
 use crate::system_shortcuts::SystemShortcutsStatus;
-use ashpd::desktop::global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, NewShortcut};
+use ashpd::desktop::global_shortcuts::{
+    BindShortcutsOptions, ConfigureShortcutsOptions, GlobalShortcuts, NewShortcut,
+};
 use ashpd::desktop::{ResponseError, Session};
 use futures_util::{stream, StreamExt};
 use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -297,12 +299,10 @@ impl Run {
 async fn configure(
     proxy: &GlobalShortcuts,
     session: &Session<GlobalShortcuts>,
-) -> ashpd::zbus::Result<()> {
-    let options: HashMap<&str, ashpd::zvariant::Value<'_>> = HashMap::new();
+) -> Result<(), ashpd::Error> {
     proxy
-        .call_method("ConfigureShortcuts", &(session, "", options))
+        .configure_shortcuts(session, None, ConfigureShortcutsOptions::default())
         .await
-        .map(drop)
 }
 
 /// Sqyre chord → XDG "shortcuts" trigger (`CTRL+SHIFT+a`). `None` when the

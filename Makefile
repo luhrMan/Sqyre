@@ -400,7 +400,7 @@ install-desktop: release $(BIN)
 wasm: release-gate
 	@command -v trunk >/dev/null 2>&1 || { \
 		echo "trunk not found. Install with:"; \
-		echo "  cargo install --locked trunk@0.22.1"; \
+		echo "  cargo install --locked trunk@0.22.2"; \
 		echo "Also: rustup target add wasm32-unknown-unknown"; \
 		exit 1; \
 	}

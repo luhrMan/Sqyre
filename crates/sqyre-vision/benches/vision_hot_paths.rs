@@ -13,7 +13,7 @@ use std::time::Duration;
 /// scan-then-cluster path allocate one `Point` per matching pixel.
 fn flat_rgb(w: usize, h: usize, color: [u8; 3]) -> ImageBuf {
     let mut img = ImageBuf::new(w, h, 3, 0);
-    for px in img.data.chunks_exact_mut(3) {
+    for px in img.data.as_chunks_mut::<3>().0 {
         px.copy_from_slice(&color);
     }
     img

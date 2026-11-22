@@ -149,7 +149,7 @@ impl IconCache {
             assets::app_icon_rgba(FALLBACK_PX).expect("embedded Sqyre SVG must rasterize");
         assert_eq!(w, h, "sqyre_shell coverage assumes a square app icon");
         let cov = sqyre_overlay::icons::s_shield_coverage(w);
-        for (px, &c) in rgba.chunks_exact_mut(4).zip(cov.iter()) {
+        for (px, &c) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(cov.iter()) {
             px[3] = px[3].saturating_sub(c);
         }
         let color = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);

@@ -179,12 +179,12 @@ fn capture_checksum(bytes: &[u8]) -> u64 {
     const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
     const FNV_PRIME: u64 = 0x0100_0000_01b3;
     let mut hash = FNV_OFFSET;
-    let mut chunks = bytes.chunks_exact(8);
-    for chunk in chunks.by_ref() {
-        hash ^= u64::from_le_bytes(chunk.try_into().expect("chunks_exact(8)"));
+    let (chunks, rem) = bytes.as_chunks::<8>();
+    for chunk in chunks {
+        hash ^= u64::from_le_bytes(*chunk);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
-    for &b in chunks.remainder() {
+    for &b in rem {
         hash ^= u64::from(b);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
