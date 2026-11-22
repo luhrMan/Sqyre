@@ -111,6 +111,7 @@ impl DataEditor {
             ty,
             rx,
             by,
+            None,
             refresh,
             &mut self.previews.coord.transform,
         );
@@ -462,6 +463,7 @@ impl DataEditor {
                     ty,
                     rx,
                     by,
+                    None,
                     refresh,
                     &mut self.previews.coord.transform,
                 );

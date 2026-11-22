@@ -59,7 +59,13 @@ pub(crate) fn dirty_tab(
 }
 
 pub(crate) fn valid_tab(tab: EditorTab, ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
-    if !matches!(tab, EditorTab::Overlay) && validate_entity_name(ed.drafts.name.trim()).is_err() {
+    // Collections are named by the tied search area; Overlay has no name field.
+    let name_ok = match tab {
+        EditorTab::Overlay => true,
+        EditorTab::Collections => validate_entity_name(ed.drafts.search_area.trim()).is_ok(),
+        _ => validate_entity_name(ed.drafts.name.trim()).is_ok(),
+    };
+    if !name_ok {
         return false;
     }
     match tab {
@@ -384,6 +390,23 @@ impl FormState for MasksForm {
     }
 }
 
+/// Resolution-bucket search area for `program` / `name`, if present.
+fn catalog_search_area<'a>(
+    catalog: CatalogView<'a>,
+    program: &str,
+    name: &str,
+) -> Option<&'a sqyre_persist::ProgramSearchArea> {
+    let res = catalog.resolution_key();
+    catalog
+        .get(program)
+        .and_then(|p| {
+            p.search_areas
+                .get(res)
+                .or_else(|| p.search_areas.values().next())
+        })
+        .and_then(|m| m.get(name))
+}
+
 impl FormState for CollectionsForm {
     fn load(ed: &mut DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) {
         let (prog, name) = match (
@@ -400,10 +423,14 @@ impl FormState for CollectionsForm {
             ed.reset_collection_form();
             return;
         };
-        ed.drafts.search_area = col.name.clone();
-        ed.drafts.rows = col.rows.to_string();
-        ed.drafts.cols = col.cols.to_string();
-        ed.previews.collection.key = Some((prog.to_string(), name.to_string()));
+        let prog = prog.to_string();
+        let col_name = col.name.clone();
+        let rows = col.rows;
+        let cols = col.cols;
+        ed.drafts.search_area = col_name.clone();
+        ed.drafts.rows = rows.to_string();
+        ed.drafts.cols = cols.to_string();
+        ed.load_draft_search_area_bounds(catalog, &prog, &col_name);
     }
 
     fn is_dirty(ed: &DataEditor, catalog: CatalogView<'_>, _settings: &UserSettings) -> bool {
@@ -413,21 +440,49 @@ impl FormState for CollectionsForm {
         ) else {
             return !ed.drafts.search_area.trim().is_empty()
                 || ed.drafts.rows != "1"
-                || ed.drafts.cols != "1";
+                || ed.drafts.cols != "1"
+                || ed.drafts.monitor != 1
+                || !ed.drafts.rect.left.trim().is_empty()
+                || !ed.drafts.rect.top.trim().is_empty()
+                || !ed.drafts.rect.right.trim().is_empty()
+                || !ed.drafts.rect.bottom.trim().is_empty();
         };
         let Some(col) = catalog.get(prog).and_then(|p| p.collections.get(ent)) else {
+            return true;
+        };
+        let Some(sa) = catalog_search_area(catalog, prog, ed.drafts.search_area.trim()) else {
             return true;
         };
         ed.drafts.search_area.trim() != col.name
             || parse_i32(&ed.drafts.rows) != Some(col.rows)
             || parse_i32(&ed.drafts.cols) != Some(col.cols)
+            || ed.drafts.monitor.max(1) != sa.monitor.max(1)
+            || ScalarValue::parse_edit(&ed.drafts.rect.left) != sa.left_x
+            || ScalarValue::parse_edit(&ed.drafts.rect.top) != sa.top_y
+            || ScalarValue::parse_edit(&ed.drafts.rect.right) != sa.right_x
+            || ScalarValue::parse_edit(&ed.drafts.rect.bottom) != sa.bottom_y
     }
 
-    fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
+    fn is_valid(ed: &DataEditor, active_macro: Option<&Macro>) -> bool {
         ed.nav.selected_program.is_some()
             && !ed.drafts.search_area.trim().is_empty()
             && parse_i32(&ed.drafts.rows).map(|n| n >= 1).unwrap_or(false)
             && parse_i32(&ed.drafts.cols).map(|n| n >= 1).unwrap_or(false)
+            && !ed.drafts.rect.left.trim().is_empty()
+            && !ed.drafts.rect.top.trim().is_empty()
+            && !ed.drafts.rect.right.trim().is_empty()
+            && !ed.drafts.rect.bottom.trim().is_empty()
+            && validate_search_area_literal_bounds(
+                &ed.drafts.rect.left,
+                &ed.drafts.rect.top,
+                &ed.drafts.rect.right,
+                &ed.drafts.rect.bottom,
+            )
+            .is_ok()
+            && !validate_numeric_expression(&ed.drafts.rect.left, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.drafts.rect.top, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.drafts.rect.right, active_macro).blocks_submit()
+            && !validate_numeric_expression(&ed.drafts.rect.bottom, active_macro).blocks_submit()
     }
 }
 
@@ -621,7 +676,8 @@ mod tests {
     use super::*;
     use crate::data_editor::nav::EditorNav;
     use sqyre_persist::{
-        ProgramCatalog, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+        ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+        ProgramSearchArea,
     };
 
     fn catalog() -> ProgramCatalog {
@@ -941,5 +997,69 @@ mod tests {
             CatalogView::from(&cat),
             &settings
         ));
+    }
+
+    #[test]
+    fn collections_form_load_dirty_valid_includes_search_area_bounds() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Bag".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(10),
+                top_y: ScalarValue::Int(20),
+                right_x: ScalarValue::Int(110),
+                bottom_y: ScalarValue::Int(220),
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Game",
+            ProgramCollection {
+                name: "Bag".into(),
+                rows: 2,
+                cols: 3,
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Collections);
+        ed.nav.selected_program = Some("Game".into());
+        ed.nav.selected_entity = Some("Bag".into());
+        CollectionsForm::load(&mut ed, CatalogView::from(&cat), &settings);
+        assert_eq!(ed.drafts.search_area, "Bag");
+        assert_eq!(ed.drafts.rows, "2");
+        assert_eq!(ed.drafts.cols, "3");
+        assert_eq!(ed.drafts.monitor, 1);
+        assert_eq!(ed.drafts.rect.left, "10");
+        assert_eq!(ed.drafts.rect.top, "20");
+        assert_eq!(ed.drafts.rect.right, "110");
+        assert_eq!(ed.drafts.rect.bottom, "220");
+        assert!(!CollectionsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
+        assert!(CollectionsForm::is_valid(&ed, None));
+        assert!(valid_tab(EditorTab::Collections, &ed, None));
+
+        ed.drafts.rect.right = "200".into();
+        assert!(CollectionsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
+        ed.drafts.rect.right = "110".into();
+        ed.drafts.rows = "4".into();
+        assert!(CollectionsForm::is_dirty(
+            &ed,
+            CatalogView::from(&cat),
+            &settings
+        ));
+
+        ed.drafts.rect.right.clear();
+        assert!(!CollectionsForm::is_valid(&ed, None));
     }
 }
