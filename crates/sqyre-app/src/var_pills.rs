@@ -671,12 +671,42 @@ fn click_to_edit_hit(
 }
 
 /// Options for [`chip_or_edit`].
+#[derive(Clone, Copy)]
 struct ChipEdit<'a> {
-    /// Grow the click zone to the resolved field width (`None` keeps the chip rect).
+    /// Reserve this width for the chip slot (`None` keeps the chip's natural size).
     target_width: Option<f32>,
     /// Whether the unfocused field shows its chip instead of the editor.
     show_overlay: fn(&str, bool) -> bool,
     help: &'a str,
+}
+
+/// Paint a chip and, when `target_width` is set, reserve the same width as the
+/// editor so the click target is this field's layout slot — never a rect that
+/// spills into a neighbor (symmetric [`Rect::expand2`] stole clicks leftward;
+/// a rightward-only expand overlapped the next AccessKit node).
+fn paint_chip_slot(
+    ui: &mut egui::Ui,
+    target_width: Option<f32>,
+    value: &str,
+    chip: impl FnOnce(&mut egui::Ui, &str) -> egui::Response,
+) -> egui::Rect {
+    let chip_resp = chip(ui, value);
+    match target_width {
+        Some(w) => {
+            // `allocate_exact_size` after the chip inserts `item_spacing`; subtract
+            // it so chip + gap + pad == `w` instead of `w + spacing`.
+            let gap = ui.spacing().item_spacing.x;
+            let pad_w = (w - chip_resp.rect.width() - gap).max(0.0);
+            if pad_w > 0.0 {
+                let (pad, _) = ui
+                    .allocate_exact_size(Vec2::new(pad_w, chip_resp.rect.height()), Sense::hover());
+                chip_resp.rect.union(pad)
+            } else {
+                chip_resp.rect
+            }
+        }
+        None => chip_resp.rect,
+    }
 }
 
 /// Paint a var chip that swaps to the real editor on click, or the editor itself.
@@ -697,13 +727,7 @@ fn chip_or_edit(
     let id = ui.id().with((key, label));
     let focused = ui.memory(|m| m.has_focus(id));
     if show_overlay(value, focused) {
-        let resp = chip(ui, value);
-        let rect = match target_width {
-            Some(w) => resp
-                .rect
-                .expand2(Vec2::new((w - resp.rect.width()).max(0.0), 2.0)),
-            None => resp.rect,
-        };
+        let rect = paint_chip_slot(ui, target_width, value, chip);
         let hit = crate::action_tooltip::help::tip(
             click_to_edit_hit(ui, rect, id.with("overlay_hit"), label, value),
             help,
@@ -943,6 +967,192 @@ mod tests {
         assert!(!should_show_var_name_overlay("count", true));
         assert!(!should_show_var_name_overlay("  ", false));
         assert!(!should_show_var_name_overlay("", false));
+    }
+
+    #[test]
+    fn chip_slot_reserves_editor_width_without_overlapping_neighbor() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["Left", "Right"]);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 120.0));
+        let mut left_slot = egui::Rect::NOTHING;
+        let mut right_slot = egui::Rect::NOTHING;
+
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    left_slot = paint_chip_slot(ui, Some(160.0), "Left", |ui, v| {
+                        paint_nested_var_chip(ui, v, &known, true)
+                    });
+                    right_slot = paint_chip_slot(ui, Some(160.0), "Right", |ui, v| {
+                        paint_nested_var_chip(ui, v, &known, true)
+                    });
+                });
+            },
+        )
+        .drop_without_applying_deltas();
+
+        assert!(
+            (left_slot.width() - 160.0).abs() < 1.0,
+            "left slot should match editor width, got {}",
+            left_slot.width()
+        );
+        assert!(
+            left_slot.max.x <= right_slot.min.x + f32::EPSILON,
+            "left slot must not spill into the right field: {left_slot:?} vs {right_slot:?}"
+        );
+        assert!(
+            !right_slot.contains(left_slot.center()),
+            "right slot must not cover the left chip center"
+        );
+    }
+
+    #[test]
+    fn click_on_left_chip_focuses_left_editor_not_neighbor() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["Left", "Right"]);
+        let mut left = "Left".to_string();
+        let mut right = "Right".to_string();
+        let mut left_center = egui::Pos2::ZERO;
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 120.0));
+        let opts = ChipEdit {
+            target_width: Some(160.0),
+            show_overlay: should_show_var_name_overlay,
+            help: "",
+        };
+
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    let hit = chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "left",
+                        &mut left,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                    // Click near the left edge of the slot (on the chip, not the pad).
+                    left_center = egui::pos2(hit.rect.min.x + 10.0, hit.rect.center().y);
+                    chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "right",
+                        &mut right,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                });
+            },
+        )
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                events: vec![
+                    egui::Event::PointerMoved(left_center),
+                    egui::Event::PointerButton {
+                        pos: left_center,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: left_center,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "left",
+                        &mut left,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                    chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "right",
+                        &mut right,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                });
+            },
+        )
+        .drop_without_applying_deltas();
+
+        let mut left_has = false;
+        let mut right_has = false;
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                ui.horizontal(|ui| {
+                    let left_id = ui.id().with(("var_name_edit", "left"));
+                    let right_id = ui.id().with(("var_name_edit", "right"));
+                    left_has = ui.memory(|m| m.has_focus(left_id));
+                    right_has = ui.memory(|m| m.has_focus(right_id));
+                    chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "left",
+                        &mut left,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                    chip_or_edit(
+                        ui,
+                        "var_name_edit",
+                        "right",
+                        &mut right,
+                        opts,
+                        |ui, v| paint_nested_var_chip(ui, v, &known, true),
+                        |ui, id, v| {
+                            ui.add(egui::TextEdit::singleline(v).id(id).desired_width(160.0))
+                        },
+                    );
+                });
+            },
+        )
+        .drop_without_applying_deltas();
+
+        assert!(
+            left_has && !right_has,
+            "left chip click must focus left editor (left={left_has} right={right_has})"
+        );
     }
 
     #[test]
