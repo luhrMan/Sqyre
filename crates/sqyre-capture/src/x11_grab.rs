@@ -26,7 +26,7 @@ const XC_CROSSHAIR: c_uint = 34;
 const XK_ESCAPE: u64 = 0xFF1B;
 
 /// Fullscreen invisible layer that owns the pointer while screen-click recording is armed.
-pub struct SelectionGrab {
+pub struct X11SelectionGrab {
     display: *mut _XDisplay,
     window: Window,
     cursor: u64,
@@ -36,9 +36,9 @@ pub struct SelectionGrab {
 
 // SAFETY: the raw display pointer is owned exclusively by this struct — only
 // `&mut self` methods and `Drop` touch it.
-unsafe impl Send for SelectionGrab {}
+unsafe impl Send for X11SelectionGrab {}
 
-impl SelectionGrab {
+impl X11SelectionGrab {
     pub fn open() -> Result<Self, CaptureError> {
         // SAFETY: `XOpenDisplay(null)` connects to the default display; null-checked
         // before any further Xlib use. Early failures close the connection.
@@ -197,7 +197,7 @@ impl SelectionGrab {
     }
 }
 
-impl Drop for SelectionGrab {
+impl Drop for X11SelectionGrab {
     fn drop(&mut self) {
         self.disarm();
         // SAFETY: destroy the window we created, free the cursor, close the display.
@@ -262,10 +262,10 @@ unsafe fn apply_x_event(
 
 #[cfg(test)]
 mod tests {
-    use super::SelectionGrab;
+    use super::X11SelectionGrab;
 
     #[test]
     fn open_or_skip() {
-        let _ = SelectionGrab::open();
+        let _ = X11SelectionGrab::open();
     }
 }

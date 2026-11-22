@@ -21,6 +21,8 @@ mod selection_grab;
 #[macro_use]
 mod shared_run;
 #[cfg(target_os = "linux")]
+mod linux_grab;
+#[cfg(target_os = "linux")]
 mod linux_outline;
 mod stub;
 #[cfg(target_os = "windows")]
@@ -111,7 +113,7 @@ pub use win_outline::SelectionOutline;
 pub use win_point_markers::PointMarkerOverlay;
 
 #[cfg(target_os = "linux")]
-pub use x11_grab::SelectionGrab;
+pub use linux_grab::SelectionGrab;
 
 #[cfg(target_os = "linux")]
 pub use x11_snapshot_overlay::{FrozenFrame, FrozenSelectionOverlay};

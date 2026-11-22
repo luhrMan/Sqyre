@@ -7,8 +7,8 @@ use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::time::Duration;
 use wayland_client::protocol::{
-    wl_buffer, wl_compositor, wl_output, wl_region, wl_registry, wl_seat, wl_shm, wl_shm_pool,
-    wl_surface,
+    wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_region, wl_registry, wl_seat,
+    wl_shm, wl_shm_pool, wl_surface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
@@ -226,6 +226,17 @@ pub struct LayerShellConn {
     pub state: LayerShellState,
 }
 
+/// Accumulated pointer/keyboard samples for a layer-shell grab (drained by poll).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GrabAccum {
+    pub x: i32,
+    pub y: i32,
+    pub moved: bool,
+    pub left_clicks: u32,
+    pub left_releases: u32,
+    pub escape: bool,
+}
+
 #[derive(Default)]
 pub struct LayerShellState {
     pub compositor: Option<wl_compositor::WlCompositor>,
@@ -235,6 +246,10 @@ pub struct LayerShellState {
     pub outputs: HashMap<u32, OutputSlot>,
     pub configure_serial: Option<u32>,
     pub layer_closed: bool,
+    /// Desktop origin + scale of the active grab surface (for local→desktop coords).
+    pub grab_origin: (i32, i32),
+    pub grab_scale: i32,
+    pub grab: GrabAccum,
 }
 
 pub struct OutputSlot {
@@ -387,7 +402,6 @@ impl LayerShellConn {
     }
 
     /// Full-surface input region.
-    #[expect(dead_code, reason = "used by grab / interactive overlays")]
     pub fn set_input_full(&self, surface: &wl_surface::WlSurface) -> Result<(), CaptureError> {
         surface.set_input_region(None);
         Ok(())
@@ -721,6 +735,87 @@ impl Dispatch<wl_seat::WlSeat, ()> for LayerShellState {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        // Capabilities are optional; grab calls get_pointer/get_keyboard directly.
+    }
+}
+
+impl Dispatch<wl_pointer::WlPointer, ()> for LayerShellState {
+    fn event(
+        state: &mut Self,
+        _: &wl_pointer::WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let scale = state.grab_scale.max(1);
+        let (ox, oy) = state.grab_origin;
+        match event {
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                let x = ox + (surface_x as i32).saturating_mul(scale);
+                let y = oy + (surface_y as i32).saturating_mul(scale);
+                state.grab.x = x;
+                state.grab.y = y;
+                state.grab.moved = true;
+            }
+            wl_pointer::Event::Button {
+                button,
+                state: btn_state,
+                ..
+            } => {
+                // Linux BTN_LEFT = 0x110
+                if button == 0x110 {
+                    match btn_state {
+                        WEnum::Value(wl_pointer::ButtonState::Pressed) => {
+                            state.grab.left_clicks = state.grab.left_clicks.saturating_add(1);
+                        }
+                        WEnum::Value(wl_pointer::ButtonState::Released) => {
+                            state.grab.left_releases = state.grab.left_releases.saturating_add(1);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            wl_pointer::Event::Enter {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                let x = ox + (surface_x as i32).saturating_mul(scale);
+                let y = oy + (surface_y as i32).saturating_mul(scale);
+                state.grab.x = x;
+                state.grab.y = y;
+                state.grab.moved = true;
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for LayerShellState {
+    fn event(
+        state: &mut Self,
+        _: &wl_keyboard::WlKeyboard,
+        event: wl_keyboard::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Key {
+            key,
+            state: key_state,
+            ..
+        } = event
+        {
+            // Evdev KEY_ESC = 1
+            if key == 1 && matches!(key_state, WEnum::Value(wl_keyboard::KeyState::Pressed)) {
+                state.grab.escape = true;
+            }
+        }
     }
 }
 
