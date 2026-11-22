@@ -347,7 +347,7 @@ fn host_loop(
         // SAFETY: messages belong to this thread; HOST is set so the wndproc can see `state`.
         unsafe { drain_messages() };
         tick_busy(&mut state);
-        let _ = crate::host_common::tick_hub_fan(&mut state);
+        let fan_animating = crate::host_common::tick_hub_fan(&mut state);
         apply_visibility(&mut state);
         poll_context_menu_escape(&mut state);
         if state.context.as_ref().is_some_and(|m| m.mapped) {
@@ -355,14 +355,19 @@ fn host_loop(
         } else if state.hub_fan_dismiss {
             poll_hub_fan_outside_dismiss(&mut state);
         }
+        let poll_ms = if fan_animating {
+            crate::hub_fan::HUB_FAN_TICK_MS
+        } else {
+            POLL_MS
+        };
         let mapped = state.buttons.values().filter(|b| b.mapped).count() as u32;
         crate::fps_diag::host_tick(crate::fps_diag::OverlayFpsSnapshot {
             mapped_faces: mapped,
             mapped_hits: mapped,
             click_through: false,
-            poll_ms: POLL_MS,
+            poll_ms,
         });
-        thread::sleep(Duration::from_millis(POLL_MS));
+        thread::sleep(Duration::from_millis(poll_ms));
     }
     destroy_all(&mut state);
     HOST.with(|slot| slot.set(std::ptr::null_mut()));

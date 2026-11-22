@@ -27,6 +27,11 @@ const IDLE_TICK: Duration = Duration::from_millis(100);
 const BUSY_TICK: Duration = Duration::from_millis(50);
 const OMIT_ACK_WAIT: Duration = Duration::from_millis(500);
 
+/// Image-gate found map shared with the capture worker.
+type VisibilityMap = Arc<Mutex<HashMap<String, bool>>>;
+/// Host-swappable handle so `set_visibility_map` can replace the inner map.
+type SwappableVisibility = Arc<Mutex<VisibilityMap>>;
+
 struct OmitGate {
     want: bool,
     seq: u64,
@@ -58,7 +63,7 @@ pub struct AndroidButtonHost {
     relocate: Arc<AtomicBool>,
     /// When false, hide buttons while Sqyre is the foreground app.
     show_over_sqyre: Arc<AtomicBool>,
-    visibility: Arc<Mutex<Arc<Mutex<HashMap<String, bool>>>>>,
+    visibility: SwappableVisibility,
     stop: Arc<AtomicBool>,
     join: Mutex<Option<JoinHandle<()>>>,
 }
@@ -74,13 +79,13 @@ impl AndroidButtonHost {
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
         pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
         running_macro: Arc<Mutex<Option<String>>>,
-        visibility: Arc<Mutex<HashMap<String, bool>>>,
+        visibility: VisibilityMap,
         press_stops: Arc<AtomicBool>,
     ) -> Option<Self> {
         let specs = Arc::new(Mutex::new(Vec::new()));
         let relocate = Arc::new(AtomicBool::new(false));
         let show_over_sqyre = Arc::new(AtomicBool::new(false));
-        let visibility = Arc::new(Mutex::new(visibility));
+        let visibility: SwappableVisibility = Arc::new(Mutex::new(visibility));
         let stop = Arc::new(AtomicBool::new(false));
         install_input_handlers(
             Arc::clone(&specs),
@@ -115,7 +120,7 @@ impl AndroidButtonHost {
                 return None;
             }
         };
-        sqyre_capture::set_overlay_omit_hook(Some(Arc::new(|omit| request_capture_omit(omit))));
+        sqyre_capture::set_overlay_omit_hook(Some(Arc::new(request_capture_omit)));
         Some(Self {
             specs,
             relocate,
@@ -130,7 +135,7 @@ impl AndroidButtonHost {
         *self.specs.lock() = buttons;
     }
 
-    pub fn set_visibility_map(&self, map: Arc<Mutex<HashMap<String, bool>>>) {
+    pub fn set_visibility_map(&self, map: VisibilityMap) {
         *self.visibility.lock() = map;
     }
 
@@ -234,7 +239,9 @@ fn install_input_handlers(
         pending_context.lock().push(ctx_action);
         // Bring the shell forward so App::logic can drain (activity pauses when
         // another app is in front).
-        bridge::show_shell();
+        if let Err(e) = bridge::show_shell() {
+            note(&format!("overlay-android: show_shell failed: {e}"));
+        }
     }));
 }
 
@@ -243,7 +250,7 @@ fn host_loop(
     relocate: Arc<AtomicBool>,
     show_over_sqyre: Arc<AtomicBool>,
     running_macro: Arc<Mutex<Option<String>>>,
-    visibility: Arc<Mutex<Arc<Mutex<HashMap<String, bool>>>>>,
+    visibility: SwappableVisibility,
     press_stops: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) {
@@ -345,13 +352,17 @@ fn park(stop: &AtomicBool, timeout: Duration) {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "reconcile owns the gate inputs, paint caches, and busy-sweep clock together"
+)]
 fn reconcile(
     specs: &Mutex<Vec<AndroidButtonSpec>>,
     relocate: bool,
     show_over_sqyre: bool,
     press_stops: bool,
     running_macro: &Mutex<Option<String>>,
-    visibility: &Mutex<Arc<Mutex<HashMap<String, bool>>>>,
+    visibility: &Mutex<VisibilityMap>,
     applied: &mut HashMap<String, Applied>,
     phases: &mut HashMap<String, f32>,
     logged_off: &mut bool,
