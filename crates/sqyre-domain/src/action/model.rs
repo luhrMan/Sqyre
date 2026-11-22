@@ -1125,7 +1125,7 @@ impl NavChords {
             left: vec!["left".into()],
             right: vec!["right".into()],
             select: vec!["enter".into()],
-            back: vec!["esc".into()],
+            back: vec!["backspace".into()],
         }
     }
 }
@@ -1191,15 +1191,15 @@ pub struct NavSelectAction {
 }
 
 /// Default Navigate Select input/output variable for the atlas name ([`BindingRole::Atlas`]).
-pub const NAV_VAR_ATLAS: &str = "Atlas";
+pub const NAV_VAR_ATLAS: &str = "NavSelAtlas";
 /// Default Navigate Select input/output variable for the cell row ([`BindingRole::Row`]).
-pub const NAV_VAR_ROW: &str = "Row";
+pub const NAV_VAR_ROW: &str = "NavSelRow";
 /// Default Navigate Select input/output variable for the cell column ([`BindingRole::Col`]).
-pub const NAV_VAR_COL: &str = "Col";
+pub const NAV_VAR_COL: &str = "NavSelCol";
 /// Default Navigate Select input/output variable for the collection ([`BindingRole::Collection`]).
-pub const NAV_VAR_COLLECTION: &str = "Collection";
+pub const NAV_VAR_COLLECTION: &str = "NavSelCollection";
 /// Default Navigate Select output variable for the selected cell ref ([`BindingRole::Ref`]).
-pub const NAV_VAR_REF: &str = "Ref";
+pub const NAV_VAR_REF: &str = "NavSelRef";
 
 /// Optional start / override sources for Navigate Select.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -1220,13 +1220,13 @@ pub struct NavInputs {
 }
 
 impl NavInputs {
-    /// Blank-action seeds: same role names as [`NavOutputs::blank_defaults`] for passthrough.
+    /// Blank-action seeds: `${NavSel…}` refs matching [`NavOutputs::blank_defaults`] for passthrough.
     pub fn blank_defaults() -> Self {
         Self {
-            atlas: NAV_VAR_ATLAS.into(),
-            row: NAV_VAR_ROW.into(),
-            col: NAV_VAR_COL.into(),
-            collection: NAV_VAR_COLLECTION.into(),
+            atlas: format!("${{{NAV_VAR_ATLAS}}}"),
+            row: format!("${{{NAV_VAR_ROW}}}"),
+            col: format!("${{{NAV_VAR_COL}}}"),
+            collection: format!("${{{NAV_VAR_COLLECTION}}}"),
         }
     }
 }
