@@ -42,13 +42,22 @@ mod chooser_hit;
 mod context_menu;
 #[cfg(feature = "runtime")]
 mod focus_gate;
-#[cfg(feature = "runtime")]
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "windows", test)
+))]
 mod fps_diag;
 #[cfg(feature = "runtime")]
 mod host_common;
-#[cfg(feature = "runtime")]
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "windows", test)
+))]
 mod host_press;
-#[cfg(feature = "runtime")]
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "windows", test)
+))]
 mod hub_dismiss;
 #[cfg(feature = "runtime")]
 mod hub_fan;
@@ -69,6 +78,8 @@ pub use hub_fan::{hub_fan_ease, HUB_FAN_ANIM_SECS};
 mod android_buttons;
 #[cfg(all(feature = "runtime", any(target_os = "android", test)))]
 mod button_visibility;
+#[cfg(all(feature = "runtime", target_os = "linux"))]
+mod linux_host;
 #[cfg(all(
     feature = "runtime",
     any(target_os = "linux", target_os = "android", target_os = "windows")
@@ -90,6 +101,8 @@ pub use host_common::{
     spec_contains_rounded, spec_delta, tick_hub_fan, tip_refresh_decision, HubFanHost,
     OverlayButtonMove, OverlayButtonSpec, SpecDelta, TipButtonView, TipRefreshInput,
 };
+#[cfg(all(feature = "runtime", target_os = "linux"))]
+pub use linux_host::{HotkeyChooserResult, HotkeyChooserSpec, LinuxButtonHost};
 #[cfg(feature = "runtime")]
 pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult};
 #[cfg(all(

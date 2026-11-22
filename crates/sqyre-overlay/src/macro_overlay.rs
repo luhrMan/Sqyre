@@ -1,8 +1,9 @@
 //! Floating overlay buttons that enqueue macros by name.
 //!
-//! **Linux:** native X11 override-redirect windows on a dedicated event thread
-//! ([`crate::x11_buttons`]). Clicks are handled there — they do not wait for the
-//! egui ROOT frame (which starved under fullscreen XWayland GameThread on GNOME).
+//! **Linux:** native button host on a dedicated event thread
+//! ([`crate::linux_host`] — X11 override-redirect, or layer-shell when available).
+//! Clicks are handled there — they do not wait for the egui ROOT frame (which
+//! starved under fullscreen XWayland GameThread on GNOME).
 //!
 //! **Android:** one accessibility-overlay window per button. The host thread
 //! applies focus and image gates after the activity stops drawing.
@@ -23,9 +24,9 @@ use parking_lot::Mutex;
 use sqyre_capture::{
     get_active_window, window_is_our_process, window_is_transient_shell_focus, WindowInfo,
 };
-use sqyre_persist::{
-    OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_DISMISS, QUICK_ACCESS_HUB_ID,
-};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use sqyre_persist::QUICK_ACCESS_HUB_DISMISS;
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, QUICK_ACCESS_HUB_ID};
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
 use sqyre_persist::{
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
@@ -42,13 +43,15 @@ use crate::focus_gate::{
     keep_focus_gated_button, suppress_over_sqyre, FocusSlot,
 };
 
+#[cfg(target_os = "linux")]
+use crate::host_common::OverlayButtonSpec as NativeButtonSpec;
+#[cfg(target_os = "linux")]
+use crate::linux_host::{HotkeyChooserResult, HotkeyChooserSpec, LinuxButtonHost};
 #[cfg(target_os = "windows")]
 use crate::win_buttons::{WinButtonHost, WinButtonSpec};
-#[cfg(target_os = "linux")]
-use crate::x11_buttons::{HotkeyChooserSpec, NativeButtonSpec, X11ButtonHost};
 
 #[cfg(target_os = "linux")]
-pub use crate::x11_buttons::HotkeyChooserResult as NativeHotkeyChooserResult;
+pub use crate::linux_host::HotkeyChooserResult as NativeHotkeyChooserResult;
 
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,16 +65,16 @@ pub use crate::host_common::OverlayButtonMove;
 const FOCUS_POLL: Duration = Duration::from_millis(500);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);
 
-/// Draws enabled overlay buttons; Linux uses a native X11 host thread.
+/// Draws enabled overlay buttons; Linux uses a native host thread.
 pub struct MacroOverlay {
     focus_slot: Arc<Mutex<FocusSlot>>,
     focus_poller: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
     last_focus_err_log: Option<Instant>,
     last_sync_sig: Option<(usize, bool, bool, usize, usize, bool, bool)>,
-    /// Shared with the X11 host + run worker so busy does not wait on egui frames.
+    /// Shared with the Linux host + run worker so busy does not wait on egui frames.
     running_macro: Arc<Mutex<Option<String>>>,
     #[cfg(target_os = "linux")]
-    x11_host: Option<X11ButtonHost>,
+    linux_host: Option<LinuxButtonHost>,
     #[cfg(target_os = "linux")]
     wake_sent: bool,
     #[cfg(target_os = "linux")]
@@ -79,10 +82,10 @@ pub struct MacroOverlay {
     #[cfg(target_os = "linux")]
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     #[cfg(target_os = "linux")]
-    pending_chooser: Arc<Mutex<Option<crate::x11_buttons::HotkeyChooserResult>>>,
+    pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
     #[cfg(target_os = "linux")]
     last_relocate: Option<bool>,
-    /// Last [`X11ButtonHost::set_relocate_keep_above`] value sent (dedupe).
+    /// Last [`LinuxButtonHost::set_relocate_keep_above`] value sent (dedupe).
     #[cfg(target_os = "linux")]
     last_keep_above: Option<bool>,
     /// Hub satellites accept presses (fan fully open).
@@ -140,7 +143,7 @@ impl Drop for MacroOverlay {
     fn drop(&mut self) {
         self.stop_focus_poller();
         #[cfg(target_os = "linux")]
-        if let Some(host) = self.x11_host.take() {
+        if let Some(host) = self.linux_host.take() {
             host.shutdown();
         }
         #[cfg(target_os = "android")]
@@ -165,7 +168,7 @@ impl MacroOverlay {
             last_sync_sig: None,
             running_macro: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "linux")]
-            x11_host: None,
+            linux_host: None,
             #[cfg(target_os = "linux")]
             wake_sent: false,
             #[cfg(target_os = "linux")]
@@ -249,8 +252,8 @@ impl MacroOverlay {
     ) -> bool {
         #[cfg(target_os = "linux")]
         {
-            self.ensure_x11_host(pending_macros);
-            let Some(host) = &self.x11_host else {
+            self.ensure_linux_host(pending_macros);
+            let Some(host) = &self.linux_host else {
                 return false;
             };
             if !self.wake_sent {
@@ -274,7 +277,7 @@ impl MacroOverlay {
 
     pub fn hide_hotkey_chooser(&self) {
         #[cfg(target_os = "linux")]
-        if let Some(host) = &self.x11_host {
+        if let Some(host) = &self.linux_host {
             host.hide_chooser();
         }
     }
@@ -327,7 +330,7 @@ impl MacroOverlay {
         }
         self.visibility = Arc::clone(&map);
         #[cfg(target_os = "linux")]
-        if let Some(host) = &self.x11_host {
+        if let Some(host) = &self.linux_host {
             host.set_visibility_map(map);
         }
         #[cfg(target_os = "android")]
@@ -348,8 +351,8 @@ impl MacroOverlay {
                 return;
             }
             // Only record the mode once the host accepted it — otherwise a pre-host
-            // call could skip the real SetRelocateMode after ensure_x11_host.
-            if let Some(host) = &self.x11_host {
+            // call could skip the real SetRelocateMode after ensure_linux_host.
+            if let Some(host) = &self.linux_host {
                 host.set_relocate_mode(enabled);
                 self.last_relocate = Some(enabled);
                 if !enabled {
@@ -383,7 +386,7 @@ impl MacroOverlay {
         if self.last_keep_above == Some(enabled) {
             return;
         }
-        if let Some(host) = &self.x11_host {
+        if let Some(host) = &self.linux_host {
             host.set_relocate_keep_above(enabled);
             self.last_keep_above = Some(enabled);
         }
@@ -415,7 +418,7 @@ impl MacroOverlay {
         }
         self.hub_fan_dismiss = enabled;
         #[cfg(target_os = "linux")]
-        if let Some(host) = &self.x11_host {
+        if let Some(host) = &self.linux_host {
             host.set_hub_fan_dismiss(enabled);
             self.last_hub_fan_dismiss = Some(enabled);
         }
@@ -439,7 +442,7 @@ impl MacroOverlay {
             return;
         }
         #[cfg(target_os = "linux")]
-        if let Some(host) = &self.x11_host {
+        if let Some(host) = &self.linux_host {
             host.set_hub_fan(expanded, snap);
             self.last_hub_fan_expanded = Some(expanded);
         }
@@ -485,7 +488,7 @@ impl MacroOverlay {
             self.stop_focus_poller();
             #[cfg(target_os = "linux")]
             {
-                if let Some(host) = &self.x11_host {
+                if let Some(host) = &self.linux_host {
                     host.set_buttons(Vec::new());
                 }
                 self.last_native_specs = Some(Vec::new());
@@ -609,7 +612,7 @@ impl MacroOverlay {
 
         #[cfg(target_os = "linux")]
         {
-            self.ensure_x11_host(pending_macros);
+            self.ensure_linux_host(pending_macros);
             // keep_above before relocate_mode so the first map uses MapRaised.
             if relocate {
                 self.set_relocate_keep_above(keep_above);
@@ -618,7 +621,7 @@ impl MacroOverlay {
                 self.set_relocate_mode(false);
                 self.set_relocate_keep_above(false);
             }
-            if let Some(host) = &self.x11_host {
+            if let Some(host) = &self.linux_host {
                 if !self.wake_sent {
                     host.set_wake(ctx.clone());
                     self.wake_sent = true;
@@ -730,11 +733,11 @@ impl MacroOverlay {
     }
 
     #[cfg(target_os = "linux")]
-    fn ensure_x11_host(&mut self, pending: &Arc<Mutex<Vec<String>>>) {
-        if self.x11_host.is_some() {
+    fn ensure_linux_host(&mut self, pending: &Arc<Mutex<Vec<String>>>) {
+        if self.linux_host.is_some() {
             return;
         }
-        match X11ButtonHost::start(
+        match LinuxButtonHost::start(
             Arc::clone(pending),
             Arc::clone(&self.pending_moves),
             Arc::clone(&self.running_macro),
@@ -745,15 +748,20 @@ impl MacroOverlay {
             Arc::clone(&self.press_stops),
         ) {
             Ok(host) => {
-                note("overlay: using native X11 button host (direct enqueue)");
-                self.x11_host = Some(host);
+                let backend = match &host {
+                    LinuxButtonHost::X11(_) => "X11",
+                };
+                note(&format!(
+                    "overlay: using native {backend} button host (direct enqueue)"
+                ));
+                self.linux_host = Some(host);
                 self.wake_sent = false;
                 self.last_native_specs = None;
                 self.last_relocate = None;
                 self.last_keep_above = None;
             }
             Err(e) => {
-                note(&format!("overlay: X11 host failed: {e}"));
+                note(&format!("overlay: Linux button host failed: {e}"));
             }
         }
     }
@@ -979,6 +987,7 @@ fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn overlay_button_tip(btn: &OverlayButtonConfig) -> String {
     let id = btn.id.as_str();
     if id == QUICK_ACCESS_HUB_ID || btn.macro_name.trim() == QUICK_ACCESS_HUB_ID {
