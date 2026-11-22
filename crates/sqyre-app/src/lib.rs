@@ -596,7 +596,10 @@ impl SqyreApp {
         sqyre_capture::wire_ports_capture_status();
         let settings = UserSettings::load_default().unwrap_or_else(|e| {
             crate::log::warn(format!("failed to load settings: {e}"));
-            UserSettings::default()
+            let mut s = UserSettings::default();
+            // Same as load_from_path: clamp seeds the Quick Access hub on first run.
+            s.clamp();
+            s
         });
         settings.apply_sqyre_dir_override();
         settings.apply_backup_dir_override();
