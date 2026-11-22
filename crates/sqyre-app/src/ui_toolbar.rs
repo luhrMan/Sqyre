@@ -360,21 +360,31 @@ fn paint_run_glow(
 }
 
 /// Run button that becomes a red-glowing Stop button while a macro runs, followed by a separator.
+///
+/// Macro run status (formerly a floating INFO icon) lives in this button's hover tip.
 #[cfg(not(target_arch = "wasm32"))]
 fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
+    let status = app.run_session.state.status.lock().clone();
     let glow = (running || app.settings_ui.settings().ui.run_button_glow)
         .then(|| ui.painter().add(egui::Shape::Noop));
     let (icon, tip, color) = if running {
-        (
-            "⏹",
-            format!(
-                "Stop (Esc). {} exits Sqyre (failsafe).",
-                sqyre_hotkeys::FAILSAFE_LABEL
-            ),
-            theme::MACRO_STOP,
-        )
+        let action = format!(
+            "Stop (Esc). {} exits Sqyre (failsafe).",
+            sqyre_hotkeys::FAILSAFE_LABEL
+        );
+        let tip = if status.is_empty() {
+            action
+        } else {
+            format!("{status}\n\n{action}")
+        };
+        ("⏹", tip, theme::MACRO_STOP)
     } else {
-        ("▶", "Run".to_owned(), theme::MACRO_START)
+        let tip = if status.is_empty() {
+            "Run".to_owned()
+        } else {
+            format!("{status}\n\nRun")
+        };
+        ("▶", tip, theme::MACRO_START)
     };
     let button = toolbar_icon_colored(ui, icon, &tip, true, Some(color));
     #[cfg(feature = "native-runtime")]
@@ -585,15 +595,19 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         app.workspace
             .macro_meta
             .paint_delay_button(ui, &app.workspace.macros[idx], !running);
-        // Leftmost: running status as a hoverable icon (was the header label).
-        let status = app.run_session.state.status.lock().clone();
-        if !status.is_empty() {
-            crate::widgets::controls::status_icon(
-                ui,
-                egui_phosphor::regular::INFO,
-                sqyre_ui_theme::accent(),
-                &status,
-            );
+        // Native: run status lives on the play/stop tip. Wasm has no run button,
+        // so keep the hoverable INFO glyph here for import/export messages.
+        #[cfg(target_arch = "wasm32")]
+        {
+            let status = app.run_session.state.status.lock().clone();
+            if !status.is_empty() {
+                crate::widgets::controls::status_icon(
+                    ui,
+                    egui_phosphor::regular::INFO,
+                    sqyre_ui_theme::accent(),
+                    &status,
+                );
+            }
         }
     });
 }
@@ -827,6 +841,109 @@ mod tests {
         assert!(
             open.width() < closed.width() + 120.0 && open.width() < 400.0,
             "hotkey controls stretched the chip: closed {closed:?} open {open:?}"
+        );
+    }
+
+    /// Run status used to live on a floating INFO icon; hover the play button instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn run_button_tooltip_shows_status() {
+        let mut app = crate::SqyreApp::for_docs();
+        *app.run_session.state.status.lock() = "Running Demo…".into();
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 600.0),
+        );
+        let mut play_center = None;
+        let out = ctx.run_ui(
+            eframe::egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                let _ = super::action_toolbar(&mut app, ui, None);
+            },
+        );
+        for clipped in &out.shapes {
+            if let eframe::egui::Shape::Text(text) = &clipped.shape {
+                if text.galley.text() == "▶" {
+                    play_center = Some(
+                        eframe::egui::Rect::from_min_size(text.pos, text.galley.size()).center(),
+                    );
+                }
+            }
+        }
+        out.drop_without_applying_deltas();
+        let play = play_center.expect("play glyph in the action toolbar");
+        let mut saw_status = false;
+        for frame in 0..10 {
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.25),
+                    predicted_dt: 0.25,
+                    events: if frame == 0 {
+                        vec![eframe::egui::Event::PointerMoved(play)]
+                    } else {
+                        Vec::new()
+                    },
+                    ..Default::default()
+                },
+                |ui| {
+                    let _ = super::action_toolbar(&mut app, ui, None);
+                },
+            );
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Text(text) = &clipped.shape {
+                    if text.galley.text().contains("Running Demo") {
+                        saw_status = true;
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            saw_status,
+            "play/stop hover tip should include the run status"
+        );
+    }
+
+    /// Native: status must not reappear as an INFO glyph in the footer float.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn footer_floats_omit_status_info_icon() {
+        let mut app = crate::SqyreApp::for_docs();
+        *app.run_session.state.status.lock() = "Running Demo…".into();
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 600.0),
+        );
+        let out = ctx.run_ui(
+            eframe::egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| super::footer_floats(&mut app, ui),
+        );
+        let info = egui_phosphor::regular::INFO;
+        let saw_info = out.shapes.iter().any(|clipped| {
+            matches!(
+                &clipped.shape,
+                eframe::egui::Shape::Text(text) if text.galley.text() == info
+            )
+        });
+        out.drop_without_applying_deltas();
+        assert!(
+            !saw_info,
+            "footer must not paint the status INFO icon on native"
         );
     }
 }
