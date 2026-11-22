@@ -56,7 +56,16 @@ pub(super) fn same_capture_region(a: PreviewCoords, b: PreviewCoords) -> bool {
 }
 
 pub(super) fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {
-    let w = ui.available_width().max(PANEL_MIN_W);
+    // Same slack on both axes: egui shows a bar when
+    // `limit_rect.*.ceil() < content_size`, and filling `available_*` exactly
+    // (plus content_max_rect pixel rounding inside ScrollArea) lands a
+    // sub-pixel past the viewport — a useless H-bar on Data Editor image tabs.
+    let avail_w = ui.available_width();
+    let w = if avail_w < PANEL_MIN_W {
+        PANEL_MIN_W
+    } else {
+        (avail_w - PANEL_FILL_SLACK).max(PANEL_MIN_W)
+    };
     let avail_h = ui.available_height();
     // Fill remaining height; only exceed it (scrollbar) when below the minimum.
     let h = if avail_h < PANEL_MIN_H {
@@ -272,5 +281,90 @@ mod tests {
         assert!(same_capture_region(a, b));
         assert!(!same_capture_region(a, c));
         assert!(!same_capture_region(PreviewCoords::Point { x: 1, y: 2 }, a));
+    }
+
+    #[test]
+    fn panel_viewport_width_leaves_fill_slack() {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(1.25);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+        let mut avail = 0.0_f32;
+        let mut got = 0.0_f32;
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(347.25, 240.5));
+                let child = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                avail = child.available_width();
+                got = panel_viewport_size(&child).x;
+            },
+        )
+        .drop_without_applying_deltas();
+        assert!(
+            got + 0.01 <= avail,
+            "panel viewport must leave fill slack: got={got:.2} avail={avail:.2}"
+        );
+        assert!(
+            (avail - got - PANEL_FILL_SLACK).abs() < 0.01,
+            "expected {PANEL_FILL_SLACK}px slack, got avail-got={:.2}",
+            avail - got
+        );
+    }
+
+    /// At 150% UI scale, fill-width form content inside `dialog_scroll` can land
+    /// past `limit.ceil()` and paint a purposeless H-bar. The live form caps
+    /// width by 1px before fill widgets; this mirrors that.
+    #[test]
+    fn form_scroll_with_width_cap_does_not_need_h_bar() {
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(1.5);
+        ctx.all_styles_mut(|style| {
+            style.spacing.scroll = crate::theme::scroll_style();
+        });
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(881.0, 560.0));
+        let mut content_w = 0.0_f32;
+        let mut inner_w = 0.0_f32;
+        for frame in 0..4 {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                let body = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(841.0, 480.0));
+                let crate::widgets::SplitView {
+                    left: _,
+                    mut right,
+                    splitter: _,
+                } = crate::widgets::split_view(ui, body, 280.0);
+                let w = right.max_rect().width();
+                let h = right.available_height().max(40.0);
+                let out = crate::widgets::show_dialog_scroll(&mut right, w, h, |ui| {
+                    // Same 1px cap as data_editor `paint_form`.
+                    let form_w = (ui.available_width() - 1.0).max(1.0);
+                    ui.set_max_width(form_w);
+                    ui.label("Name");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut String::from("Point"))
+                            .desired_width(f32::INFINITY),
+                    );
+                    crate::widgets::section_separator(ui);
+                    let size = panel_viewport_size(ui);
+                    ui.allocate_exact_size(size, egui::Sense::hover());
+                });
+                content_w = out.content_size.x;
+                inner_w = out.inner_rect.width();
+            })
+            .drop_without_applying_deltas();
+        }
+        // egui: H-bar when `limit_rect.width().ceil() < content_size.x`.
+        assert!(
+            content_w <= inner_w.ceil(),
+            "form scroll tripped an H-bar: content={content_w:.2} inner={inner_w:.2}"
+        );
     }
 }

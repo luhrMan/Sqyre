@@ -701,9 +701,12 @@ impl DataEditor {
             // Freeze underlay swaps for the whole paint so an in-flight soft
             // capture cannot resize the texture under an active drag.
             previews.set_hold_pending_swaps(preview_interacting);
-            let preview_h = ui.available_height().max(120.0);
+            // Slack like `panel_viewport_size` — exact fill of available_* trips a
+            // purposeless H-bar inside dialog_scroll (egui ceil compare).
+            const FILL_SLACK: f32 = 1.0;
+            let preview_h = (ui.available_height() - FILL_SLACK).max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
-            let preview_w = crate::widgets::visible_width(ui);
+            let preview_w = (crate::widgets::visible_width(ui) - FILL_SLACK).max(1.0);
             ui.allocate_ui_with_layout(
                 egui::vec2(preview_w, preview_h),
                 egui::Layout::top_down(egui::Align::Min),

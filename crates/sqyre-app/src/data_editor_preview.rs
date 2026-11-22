@@ -748,16 +748,24 @@ pub(crate) fn paint_zoomable_atlas_preview(
         })
         .collect();
 
-    let avail_w = ui.available_width();
+    // Match `panel_viewport_size`: slack both axes so a fill-width plane inside
+    // dialog_scroll does not trip a purposeless H-bar (egui ceil compare).
+    const MIN_W: f32 = 160.0;
     const MIN_H: f32 = 160.0;
     const FILL_SLACK: f32 = 1.0;
+    let avail_w = ui.available_width();
+    let desired_w = if avail_w < MIN_W {
+        MIN_W
+    } else {
+        (avail_w - FILL_SLACK).max(MIN_W)
+    };
     let avail_h = ui.available_height();
     let desired_h = if avail_h < MIN_H {
         MIN_H
     } else {
         (avail_h - FILL_SLACK).max(MIN_H)
     };
-    let desired = egui::vec2(avail_w.max(160.0), desired_h);
+    let desired = egui::vec2(desired_w, desired_h);
     let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
