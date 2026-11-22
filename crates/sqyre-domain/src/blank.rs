@@ -181,4 +181,28 @@ mod tests {
         }
         assert!(key.matching_release().is_none());
     }
+
+    #[test]
+    fn blank_navigateselect_seeds_passthrough_vars() {
+        use crate::{
+            NavOutputs, NAV_VAR_ATLAS, NAV_VAR_COL, NAV_VAR_COLLECTION, NAV_VAR_REF, NAV_VAR_ROW,
+        };
+        let a = blank_action("navigateselect").unwrap();
+        match a.kind {
+            ActionKind::NavigateSelect(data) => {
+                assert_eq!(data.inputs.atlas, NAV_VAR_ATLAS);
+                assert_eq!(data.inputs.row, NAV_VAR_ROW);
+                assert_eq!(data.inputs.col, NAV_VAR_COL);
+                assert_eq!(data.inputs.collection, NAV_VAR_COLLECTION);
+                assert_eq!(data.outputs.output_ref, NAV_VAR_REF);
+                assert_eq!(data.outputs.output_atlas, NAV_VAR_ATLAS);
+                assert_eq!(data.outputs.output_row, NAV_VAR_ROW);
+                assert_eq!(data.outputs.output_col, NAV_VAR_COL);
+                assert_eq!(data.outputs.output_collection, NAV_VAR_COLLECTION);
+                // Empty Default still binds nothing (blank helpers are opt-in).
+                assert!(NavOutputs::default().variable_bindings().is_empty());
+            }
+            other => panic!("expected NavigateSelect, got {other:?}"),
+        }
+    }
 }
