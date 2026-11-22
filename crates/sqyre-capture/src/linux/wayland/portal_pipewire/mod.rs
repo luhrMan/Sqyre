@@ -84,7 +84,6 @@ pub(crate) fn stream0_frame_count() -> u64 {
     STREAM0_FRAMES.load(Ordering::Relaxed)
 }
 
-
 /// Bridge between capture retries (100ms poll, then backoff) while the node
 /// is still restarting, so the loader does not drop and start again.
 const WAKE_HOLDOVER: Duration = Duration::from_millis(500);

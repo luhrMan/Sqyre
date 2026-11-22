@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -64,10 +63,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    // libsqyre_app.so comes from cargo-ndk (scripts/android/build-apk.sh).
-    sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
+    // Built-in Kotlin (AGP 9) defaults jvmTarget to compileOptions.targetCompatibility.
+    // cargo-ndk writes libsqyre_app.so into the default jniLibs path
+    // (app/src/main/jniLibs/<abi>/) via scripts/android/build-apk.sh.
 }
