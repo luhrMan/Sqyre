@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::host_common::{
-    apply_hub_fan_cmd, place_hub_satellite_face, spec_contains_rounded, HubFanHost,
+    apply_hosted_visibility, apply_hub_fan_cmd, button_should_show, prepare_hub_satellite_spec,
+    spec_contains_rounded, GateVisibilityCtx, HubButtonView, HubFanHost,
 };
 use crate::host_press::{
     is_hub_face_token, overlay_press_kind, should_coalesce_hub_click, OverlayPressKind,
@@ -108,7 +109,6 @@ pub(super) fn host_loop(
 
         if state.hub_fan.animating() {
             let _ = crate::host_common::tick_hub_fan(&mut state);
-            apply_hub_visibility(&mut state);
         }
 
         // Busy spinner refresh.
@@ -146,7 +146,6 @@ fn handle_cmd(state: &mut HostState, cmd: HostCmd) {
         }
         HostCmd::SetHubFan { expanded, snap } => {
             apply_hub_fan_cmd(state, expanded, snap);
-            apply_hub_visibility(state);
         }
         HostCmd::ShowChooser(spec) => show_chooser(state, spec, None),
         HostCmd::HideChooser => hide_chooser(state, Some(HotkeyChooserResult::Dismissed)),
@@ -159,56 +158,148 @@ fn handle_cmd(state: &mut HostState, cmd: HostCmd) {
     }
 }
 
+fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
+    state
+        .buttons
+        .get(sqyre_persist::QUICK_ACCESS_HUB_ID)
+        .or_else(|| {
+            state
+                .buttons
+                .values()
+                .find(|b| is_hub_face_token(&b.spec.macro_name))
+        })
+        .map(|b| (b.spec.face.x, b.spec.face.y, b.spec.face.w, b.spec.face.h))
+        .unwrap_or((0, 0, 48, 48))
+}
+
+/// Null-buffer commit — Wayland unmap (XUnmapWindow / SW_HIDE equivalent).
+fn unmap_surface(surface: &wl_surface::WlSurface) {
+    surface.attach(None, 0, 0);
+    surface.commit();
+}
+
+fn sync_button_input(state: &mut HostState, id: &str) {
+    let Some(btn) = state.buttons.get(id) else {
+        return;
+    };
+    if btn.spec.input_enabled {
+        let _ = state.conn.set_input_full(&btn.surface);
+    } else {
+        let _ = state.conn.set_input_empty(&btn.surface);
+    }
+    btn.surface.commit();
+    state.conn.flush();
+}
+
 impl HubFanHost for HostState {
     fn hub_fan(&mut self) -> &mut HubFanState {
         &mut self.hub_fan
     }
-    fn place_all_satellites(&mut self) {
-        let hub = self
-            .buttons
-            .values()
-            .find(|b| is_hub_face_token(&b.spec.macro_name))
-            .map(|b| (b.spec.face.x, b.spec.face.y, b.spec.face.w, b.spec.face.h));
-        let Some(hub_geom) = hub else {
-            return;
-        };
-        let ids: Vec<String> = self
-            .buttons
-            .keys()
-            .filter(|id| is_hub_satellite_id(id))
-            .cloned()
-            .collect();
-        for id in ids {
-            if let Some(btn) = self.buttons.get_mut(&id) {
-                place_hub_satellite_face(&self.hub_fan, hub_geom, &mut btn.spec);
-            }
-            reposition_button(self, &id);
+
+    fn hub_face_geom(&self) -> (i32, i32, u32, u32) {
+        hub_face_geom(self)
+    }
+
+    fn hosted_button_ids(&self) -> Vec<String> {
+        self.buttons.keys().cloned().collect()
+    }
+
+    fn button_view(&self, id: &str) -> Option<HubButtonView> {
+        self.buttons.get(id).map(|b| HubButtonView {
+            face_x: b.spec.face.x,
+            face_y: b.spec.face.y,
+            face_w: b.spec.face.w,
+            face_h: b.spec.face.h,
+            mapped: b.mapped,
+            visibility_gated: b.spec.visibility_gated,
+            input_enabled: b.spec.input_enabled,
+        })
+    }
+
+    fn set_satellite_xy(&mut self, id: &str, x: i32, y: i32) {
+        if let Some(btn) = self.buttons.get_mut(id) {
+            btn.spec.face.x = x;
+            btn.spec.face.y = y;
         }
     }
-    fn rearm_satellite_input(&mut self) {
-        // Input region follows `input_enabled` on next paint/visibility.
+
+    fn set_satellite_input_enabled(&mut self, id: &str, enabled: bool) {
+        if let Some(btn) = self.buttons.get_mut(id) {
+            btn.spec.input_enabled = enabled;
+        }
     }
-    fn apply_fan_visibility(&mut self) {
-        apply_hub_visibility(self);
+
+    fn move_mapped_button(&mut self, id: &str) {
+        reposition_button(self, id);
     }
+
+    fn sync_mapped_input(&mut self, id: &str) {
+        sync_button_input(self, id);
+    }
+
+    fn set_button_mapped(&mut self, id: &str, show: bool) {
+        if show {
+            if let Some(b) = self.buttons.get_mut(id) {
+                b.mapped = true;
+            }
+            reposition_button(self, id);
+            return;
+        }
+        if self.tip.as_ref().is_some_and(|t| t.for_id == id) {
+            hide_tip(self);
+        }
+        if self.drag_id.as_deref() == Some(id) {
+            self.drag_id = None;
+        }
+        if self.armed_id.as_deref() == Some(id) {
+            self.armed_id = None;
+        }
+        if let Some(b) = self.buttons.get_mut(id) {
+            b.mapped = false;
+            b.hovered = false;
+            let _ = self.conn.set_input_empty(&b.surface);
+            unmap_surface(&b.surface);
+        }
+        self.conn.flush();
+    }
+
+    fn visibility_context(&self) -> GateVisibilityCtx {
+        GateVisibilityCtx {
+            capture_omit: self.capture_omit,
+            relocate: self.relocate_mode,
+            fan_open_or_traveling: self.hub_fan.open_or_traveling(),
+            found: self.visibility.lock().clone(),
+        }
+    }
+
     fn sync_dismiss_arm(&mut self) {}
+
     fn flush_after_fan(&mut self) {
         self.conn.flush();
     }
 }
 
 fn apply_specs(state: &mut HostState, specs: Vec<OverlayButtonSpec>) {
-    let mut keep = HashMap::new();
+    let mut keep = std::collections::HashSet::new();
+    let mut pending: Vec<OverlayButtonSpec> = Vec::with_capacity(specs.len());
     for spec in specs {
-        keep.insert(spec.id.clone(), ());
+        keep.insert(spec.id.clone());
+        pending.push(spec);
+    }
+    // Hub face first so satellite place sees live hub geom.
+    pending.sort_by_key(|s| i32::from(is_hub_satellite_id(&s.id)));
+    for mut spec in pending {
+        let hub_geom = hub_face_geom(state);
+        prepare_hub_satellite_spec(&mut state.hub_fan, hub_geom, &mut spec);
         if let Some(btn) = state.buttons.get_mut(&spec.id) {
             let pos_changed = btn.spec.face.x != spec.face.x || btn.spec.face.y != spec.face.y;
             let size_changed = btn.spec.face.w != spec.face.w || btn.spec.face.h != spec.face.h;
+            let mapped = btn.mapped;
             btn.spec = spec;
             let id = btn.id.clone();
-            if pos_changed || size_changed {
+            if mapped && (pos_changed || size_changed) {
                 reposition_button(state, &id);
-            } else {
+            } else if mapped {
                 repaint_button(state, &id);
             }
         } else if let Err(e) = create_button(state, spec) {
@@ -218,16 +309,27 @@ fn apply_specs(state: &mut HostState, specs: Vec<OverlayButtonSpec>) {
     let remove: Vec<String> = state
         .buttons
         .keys()
-        .filter(|id| !keep.contains_key(*id))
+        .filter(|id| !keep.contains(*id))
         .cloned()
         .collect();
     for id in remove {
         destroy_button(state, &id);
     }
+    state.hub_fan.forget_missing(&keep);
     apply_gate_visibility(state);
 }
 
 fn create_button(state: &mut HostState, spec: OverlayButtonSpec) -> Result<(), String> {
+    let show = button_should_show(
+        &spec.id,
+        spec.visibility_gated,
+        &GateVisibilityCtx {
+            capture_omit: state.capture_omit,
+            relocate: state.relocate_mode,
+            fan_open_or_traveling: state.hub_fan.open_or_traveling(),
+            found: state.visibility.lock().clone(),
+        },
+    );
     let geom = pick_output(state, spec.face.x, spec.face.y)?;
     let (surface, layer) = state
         .conn
@@ -237,7 +339,7 @@ fn create_button(state: &mut HostState, spec: OverlayButtonSpec) -> Result<(), S
             zwlr_layer_surface_v1::KeyboardInteractivity::None,
         )
         .map_err(|e| e.to_string())?;
-    if spec.input_enabled {
+    if show && spec.input_enabled {
         let _ = state.conn.set_input_full(&surface);
     } else {
         let _ = state.conn.set_input_empty(&surface);
@@ -263,9 +365,12 @@ fn create_button(state: &mut HostState, spec: OverlayButtonSpec) -> Result<(), S
         .take()
         .ok_or("no serial")?;
     layer.ack_configure(serial);
-    let (pw, ph, pixels) = paint_button_pixels(&spec, false, false);
-    let _ = (pw, ph);
-    attach_face(&mut state.conn, &surface, &geom, lw, lh, &pixels)?;
+    // Closed hub satellites stay created-but-unmapped (warm for the next open).
+    // Attaching pixels then hiding via input-only left ghosts on KWin.
+    if show {
+        let (_, _, pixels) = paint_button_pixels(&spec, false, false);
+        attach_face(&mut state.conn, &surface, &geom, lw, lh, &pixels)?;
+    }
     let sid = surface.id().protocol_id();
     state.surface_to_button.insert(sid, spec.id.clone());
     state.buttons.insert(
@@ -275,7 +380,7 @@ fn create_button(state: &mut HostState, spec: OverlayButtonSpec) -> Result<(), S
             spec,
             surface,
             layer,
-            mapped: true,
+            mapped: show,
             hovered: false,
         },
     );
@@ -287,6 +392,9 @@ fn reposition_button(state: &mut HostState, id: &str) {
     let Some(btn) = state.buttons.get(id) else {
         return;
     };
+    if !btn.mapped {
+        return;
+    }
     let (x, y, w, h) = (
         btn.spec.face.x,
         btn.spec.face.y,
@@ -301,6 +409,11 @@ fn reposition_button(state: &mut HostState, id: &str) {
     let Some(btn) = state.buttons.get_mut(id) else {
         return;
     };
+    if spec.input_enabled {
+        let _ = state.conn.set_input_full(&btn.surface);
+    } else {
+        let _ = state.conn.set_input_empty(&btn.surface);
+    }
     let rect = sqyre_ports::DesktopRect { x, y, w, h };
     let (lw, lh) = LayerShellConn::position_layer(&btn.layer, rect, &geom);
     state.conn.state.configure_serial = None;
@@ -366,52 +479,7 @@ fn pick_output(state: &HostState, x: i32, y: i32) -> Result<OutputGeom, String> 
 }
 
 fn apply_gate_visibility(state: &mut HostState) {
-    let found = state.visibility.lock().clone();
-    let ids: Vec<String> = state.buttons.keys().cloned().collect();
-    for id in ids {
-        let Some(btn) = state.buttons.get(&id) else {
-            continue;
-        };
-        let fan_show = !is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
-        let show = !state.capture_omit
-            && fan_show
-            && (state.relocate_mode
-                || !btn.spec.visibility_gated
-                || found.get(&id).copied().unwrap_or(false));
-        if show == btn.mapped {
-            continue;
-        }
-        if show {
-            // Remap by reposition (layer surfaces stay committed).
-            let id2 = id.clone();
-            if let Some(b) = state.buttons.get_mut(&id) {
-                b.mapped = true;
-            }
-            reposition_button(state, &id2);
-        } else {
-            if let Some(b) = state.buttons.get_mut(&id) {
-                b.mapped = false;
-                // Park offscreen / empty attach
-                let _ = state.conn.set_input_empty(&b.surface);
-            }
-            if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
-                hide_tip(state);
-            }
-        }
-    }
-}
-
-fn apply_hub_visibility(state: &mut HostState) {
-    apply_gate_visibility(state);
-    let ids: Vec<String> = state
-        .buttons
-        .keys()
-        .filter(|id| is_hub_satellite_id(id))
-        .cloned()
-        .collect();
-    for id in ids {
-        reposition_button(state, &id);
-    }
+    apply_hosted_visibility(state);
 }
 
 fn refresh_busy(state: &mut HostState) {

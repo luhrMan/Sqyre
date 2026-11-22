@@ -7,8 +7,7 @@
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::host_common::{
-    place_hub_satellite_face, point_in_rounded_rect, tip_refresh_decision, HubFanHost,
-    TipButtonView, TipRefreshInput,
+    point_in_rounded_rect, tip_refresh_decision, HubFanHost, TipButtonView, TipRefreshInput,
 };
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use parking_lot::Mutex;
@@ -377,12 +376,8 @@ fn host_loop(
 fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
     let mut keep = std::collections::HashSet::new();
     for mut spec in specs {
-        if crate::hub_fan::is_hub_satellite_id(&spec.id) {
-            state
-                .hub_fan
-                .remember_rest(&spec.id, spec.face.x, spec.face.y);
-            place_hub_satellite_spec(state, &mut spec);
-        }
+        let hub_geom = hub_face_geom(state);
+        crate::host_common::prepare_hub_satellite_spec(&mut state.hub_fan, hub_geom, &mut spec);
         let id = spec.id.clone();
         keep.insert(id.clone());
         if state.buttons.contains_key(&id) {
@@ -453,25 +448,93 @@ fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
         .unwrap_or((0, 0, 48, 48))
 }
 
-fn place_hub_satellite_spec(state: &HostState, spec: &mut WinButtonSpec) {
-    place_hub_satellite_face(&state.hub_fan, hub_face_geom(state), spec);
-}
-
 impl HubFanHost for HostState {
     fn hub_fan(&mut self) -> &mut crate::hub_fan::HubFanState {
         &mut self.hub_fan
     }
 
-    fn place_all_satellites(&mut self) {
-        place_all_hub_satellites(self);
+    fn hub_face_geom(&self) -> (i32, i32, u32, u32) {
+        hub_face_geom(self)
     }
 
-    fn rearm_satellite_input(&mut self) {
-        rearm_hub_satellite_input(self);
+    fn hosted_button_ids(&self) -> Vec<String> {
+        self.buttons.keys().cloned().collect()
     }
 
-    fn apply_fan_visibility(&mut self) {
-        apply_visibility(self);
+    fn button_view(&self, id: &str) -> Option<crate::host_common::HubButtonView> {
+        self.buttons
+            .get(id)
+            .map(|b| crate::host_common::HubButtonView {
+                face_x: b.spec.face.x,
+                face_y: b.spec.face.y,
+                face_w: b.spec.face.w,
+                face_h: b.spec.face.h,
+                mapped: b.mapped,
+                visibility_gated: b.spec.visibility_gated,
+                input_enabled: b.spec.input_enabled,
+            })
+    }
+
+    fn set_satellite_xy(&mut self, id: &str, x: i32, y: i32) {
+        if let Some(live) = self.buttons.get_mut(id) {
+            live.spec.face.x = x;
+            live.spec.face.y = y;
+        }
+    }
+
+    fn set_satellite_input_enabled(&mut self, id: &str, enabled: bool) {
+        if let Some(live) = self.buttons.get_mut(id) {
+            live.spec.input_enabled = enabled;
+        }
+    }
+
+    fn move_mapped_button(&mut self, id: &str) {
+        let Some(live) = self.buttons.get_mut(id) else {
+            return;
+        };
+        let (x, y, w, h) = (
+            live.spec.face.x,
+            live.spec.face.y,
+            live.spec.face.w.max(1),
+            live.spec.face.h.max(1),
+        );
+        let hwnd = live.hwnd;
+        if live.bgra.is_empty() {
+            paint_live(live);
+        } else {
+            blit_layered(hwnd, x, y, w, h, &live.bgra);
+        }
+    }
+
+    fn sync_mapped_input(&mut self, id: &str) {
+        // Win hit-testing reads `input_enabled` from the live spec.
+        let _ = id;
+    }
+
+    fn set_button_mapped(&mut self, id: &str, show: bool) {
+        let Some(btn) = self.buttons.get(id) else {
+            return;
+        };
+        let hwnd = btn.hwnd;
+        // SAFETY: `hwnd` was created on this thread and not yet destroyed.
+        unsafe {
+            let _ = ShowWindow(hwnd, if show { SW_SHOWNOACTIVATE } else { SW_HIDE });
+        }
+        if let Some(btn) = self.buttons.get_mut(id) {
+            btn.mapped = show;
+        }
+        if !show && self.tip.as_ref().is_some_and(|t| t.for_id == id) {
+            hide_tip(self);
+        }
+    }
+
+    fn visibility_context(&self) -> crate::host_common::GateVisibilityCtx {
+        crate::host_common::GateVisibilityCtx {
+            capture_omit: sqyre_capture::overlay_capture_omitted(),
+            relocate: self.relocate,
+            fan_open_or_traveling: self.hub_fan.open_or_traveling(),
+            found: self.visibility.lock().clone(),
+        }
     }
 
     fn sync_dismiss_arm(&mut self) {
@@ -496,42 +559,6 @@ fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
         want,
     ) {
         note(&format!("overlay-win: hub_fan_dismiss={want} (fan)"));
-    }
-}
-
-fn place_all_hub_satellites(state: &mut HostState) {
-    let (hx, hy, hw, hh) = hub_face_geom(state);
-    let ids = state.hub_fan.satellite_ids();
-    for id in ids {
-        let Some(rest) = state.hub_fan.rest_of(&id) else {
-            continue;
-        };
-        let Some(live) = state.buttons.get_mut(&id) else {
-            continue;
-        };
-        let (w, h) = (live.spec.face.w.max(1), live.spec.face.h.max(1));
-        let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
-        if live.spec.face.x == x && live.spec.face.y == y {
-            continue;
-        }
-        live.spec.face.x = x;
-        live.spec.face.y = y;
-        let hwnd = live.hwnd;
-        if live.bgra.is_empty() {
-            paint_live(live);
-        } else {
-            blit_layered(hwnd, x, y, w, h, &live.bgra);
-        }
-    }
-}
-
-fn rearm_hub_satellite_input(state: &mut HostState) {
-    let enabled = state.hub_fan.fully_open();
-    for id in state.hub_fan.satellite_ids() {
-        if let Some(live) = state.buttons.get_mut(&id) {
-            live.spec.input_enabled = enabled;
-        }
     }
 }
 
@@ -655,33 +682,7 @@ fn tick_busy(state: &mut HostState) {
 }
 
 fn apply_visibility(state: &mut HostState) {
-    let found = state.visibility.lock().clone();
-    let relocate = state.relocate;
-    let ids: Vec<String> = state.buttons.keys().cloned().collect();
-    for id in ids {
-        let Some(btn) = state.buttons.get(&id) else {
-            continue;
-        };
-        let fan_show =
-            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
-        let show = !sqyre_capture::overlay_capture_omitted()
-            && fan_show
-            && (relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false));
-        if show == btn.mapped {
-            continue;
-        }
-        let hwnd = btn.hwnd;
-        // SAFETY: `hwnd` was created on this thread and not yet destroyed.
-        unsafe {
-            let _ = ShowWindow(hwnd, if show { SW_SHOWNOACTIVATE } else { SW_HIDE });
-        }
-        if let Some(btn) = state.buttons.get_mut(&id) {
-            btn.mapped = show;
-        }
-        if !show && state.tip.as_ref().is_some_and(|t| t.for_id == id) {
-            hide_tip(state);
-        }
-    }
+    crate::host_common::apply_hosted_visibility(state);
 }
 
 fn repaint_button(state: &mut HostState, id: &str) {

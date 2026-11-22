@@ -1,6 +1,7 @@
-//! Hub-fan placement geometry for the X11 overlay host.
+//! Hub-fan placement hooks for the X11 overlay host.
 
 use super::*;
+use crate::host_common::{GateVisibilityCtx, HubButtonView, HubFanHost};
 
 pub(super) fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
     state
@@ -17,26 +18,122 @@ pub(super) fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
         .unwrap_or((0, 0, 48, 48))
 }
 
-pub(super) fn place_hub_satellite_spec(state: &HostState, spec: &mut NativeButtonSpec) {
-    place_hub_satellite_face(&state.hub_fan, hub_face_geom(state), spec);
-}
-
 impl HubFanHost for HostState {
     fn hub_fan(&mut self) -> &mut crate::hub_fan::HubFanState {
         &mut self.hub_fan
     }
 
-    fn place_all_satellites(&mut self) {
-        place_all_hub_satellites(self);
+    fn hub_face_geom(&self) -> (i32, i32, u32, u32) {
+        hub_face_geom(self)
     }
 
-    fn rearm_satellite_input(&mut self) {
-        rearm_hub_satellite_input(self);
+    fn hosted_button_ids(&self) -> Vec<String> {
+        self.buttons.keys().cloned().collect()
     }
 
-    fn apply_fan_visibility(&mut self) {
-        // Map while traveling/open; unmap when fully closed (no off-desktop park).
-        visibility::apply_gate_visibility(self);
+    fn button_view(&self, id: &str) -> Option<HubButtonView> {
+        self.buttons.get(id).map(|b| HubButtonView {
+            face_x: b.spec.face.x,
+            face_y: b.spec.face.y,
+            face_w: b.spec.face.w,
+            face_h: b.spec.face.h,
+            mapped: b.mapped,
+            visibility_gated: b.spec.visibility_gated,
+            input_enabled: b.spec.input_enabled,
+        })
+    }
+
+    fn set_satellite_xy(&mut self, id: &str, x: i32, y: i32) {
+        if let Some(live) = self.buttons.get_mut(id) {
+            live.spec.face.x = x;
+            live.spec.face.y = y;
+        }
+    }
+
+    fn set_satellite_input_enabled(&mut self, id: &str, enabled: bool) {
+        if let Some(live) = self.buttons.get_mut(id) {
+            live.spec.input_enabled = enabled;
+        }
+    }
+
+    fn move_mapped_button(&mut self, id: &str) {
+        let Some(live) = self.buttons.get(id) else {
+            return;
+        };
+        let (x, y, w, h, win, hit) = (
+            live.spec.face.x,
+            live.spec.face.y,
+            live.spec.face.w,
+            live.spec.face.h,
+            live.win,
+            live.hit,
+        );
+        // SAFETY: HostState display invariant; face+hit created on this display.
+        unsafe {
+            x_move_resize(self.display, hit, x, y, w, h);
+            x_move_resize(self.display, win, x, y, w, h);
+        }
+    }
+
+    fn sync_mapped_input(&mut self, id: &str) {
+        let Some(live) = self.buttons.get(id) else {
+            return;
+        };
+        let (hit, w, h, radius, enabled) = (
+            live.hit,
+            live.spec.face.w,
+            live.spec.face.h,
+            live.spec.face.corner_radius,
+            live.spec.input_enabled,
+        );
+        sync_hit_input(self, hit, w, h, radius, enabled);
+    }
+
+    fn set_button_mapped(&mut self, id: &str, show: bool) {
+        let Some(btn) = self.buttons.get(id) else {
+            return;
+        };
+        let (hit, face) = (btn.hit, btn.win);
+        if show {
+            // SAFETY: HostState display invariant; face+hit created on this display.
+            unsafe {
+                if self.relocate_mode && self.relocate_keep_above {
+                    XMapRaised(self.display, face);
+                    XMapRaised(self.display, hit);
+                } else {
+                    XMapWindow(self.display, face);
+                    XMapWindow(self.display, hit);
+                }
+            }
+        } else {
+            if self.drag.as_ref().is_some_and(|d| d.id == id) {
+                cancel_drag(self);
+            }
+            if self.tip.as_ref().is_some_and(|t| t.for_id == id) {
+                hide_tip(self);
+            }
+            // SAFETY: HostState display invariant; face+hit created on this display.
+            unsafe {
+                x_unmap(self.display, hit);
+                x_unmap(self.display, face);
+            }
+        }
+        if let Some(btn) = self.buttons.get_mut(id) {
+            btn.mapped = show;
+            if !show {
+                btn.armed = false;
+                btn.hovered = false;
+            }
+        }
+    }
+
+    fn visibility_context(&self) -> GateVisibilityCtx {
+        GateVisibilityCtx {
+            capture_omit: self.capture_omit,
+            relocate: self.relocate_mode,
+            fan_open_or_traveling: self.hub_fan.open_or_traveling(),
+            found: self.visibility.lock().clone(),
+        }
     }
 
     fn sync_dismiss_arm(&mut self) {
@@ -63,59 +160,5 @@ pub(super) fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
         want,
     ) {
         note(&format!("overlay-x11: hub_fan_dismiss={want} (fan)"));
-    }
-}
-
-pub(super) fn place_all_hub_satellites(state: &mut HostState) {
-    let (hx, hy, hw, hh) = hub_face_geom(state);
-    let ids = state.hub_fan.satellite_ids();
-    for id in ids {
-        let Some(rest) = state.hub_fan.rest_of(&id) else {
-            continue;
-        };
-        let Some(live) = state.buttons.get(&id) else {
-            continue;
-        };
-        let (w, h) = (live.spec.face.w, live.spec.face.h);
-        let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
-        if live.spec.face.x == x && live.spec.face.y == y {
-            continue;
-        }
-        let win = live.win;
-        let hit = live.hit;
-        // SAFETY: HostState display invariant; face+hit created on this display.
-        unsafe {
-            x_move_resize(state.display, hit, x, y, w, h);
-            x_move_resize(state.display, win, x, y, w, h);
-        }
-        if let Some(live) = state.buttons.get_mut(&id) {
-            live.spec.face.x = x;
-            live.spec.face.y = y;
-        }
-    }
-}
-
-pub(super) fn rearm_hub_satellite_input(state: &mut HostState) {
-    let enabled = state.hub_fan.fully_open();
-    let ids = state.hub_fan.satellite_ids();
-    let mut rearm: Vec<(Window, u32, u32, f32)> = Vec::new();
-    for id in ids {
-        let Some(live) = state.buttons.get_mut(&id) else {
-            continue;
-        };
-        if live.spec.input_enabled == enabled {
-            continue;
-        }
-        live.spec.input_enabled = enabled;
-        rearm.push((
-            live.hit,
-            live.spec.face.w,
-            live.spec.face.h,
-            live.spec.face.corner_radius,
-        ));
-    }
-    for (hit, w, h, radius) in rearm {
-        sync_hit_input(state, hit, w, h, radius, enabled);
     }
 }

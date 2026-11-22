@@ -31,8 +31,8 @@
 //! the same invariant at the call boundary (see `x11_focus` for the same style).
 
 use crate::host_common::{
-    place_hub_satellite_face, spec_contains, spec_contains_rounded, spec_delta,
-    tip_refresh_decision, HubFanHost, TipButtonView, TipRefreshInput,
+    spec_contains, spec_contains_rounded, spec_delta, tip_refresh_decision, TipButtonView,
+    TipRefreshInput,
 };
 use crate::linux_host::{HotkeyChooserResult, HotkeyChooserSpec};
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
@@ -480,12 +480,8 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     for mut spec in specs {
         // App always sends rested satellite slots; host owns travel placement so
         // egui frames (throttled when unfocused) are not on the critical path.
-        if crate::hub_fan::is_hub_satellite_id(&spec.id) {
-            state
-                .hub_fan
-                .remember_rest(&spec.id, spec.face.x, spec.face.y);
-            geometry::place_hub_satellite_spec(state, &mut spec);
-        }
+        let hub_geom = geometry::hub_face_geom(state);
+        crate::host_common::prepare_hub_satellite_spec(&mut state.hub_fan, hub_geom, &mut spec);
         let id = spec.id.clone();
         keep.insert(id.clone());
         let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
@@ -1589,18 +1585,16 @@ fn create_button(
     // Mapping during capture-omit, then unmapping in apply_gate_visibility,
     // flashes the button while a macro is hiding it.
     // Closed hub satellites stay created-but-unmapped (warm for the next open).
-    let fan_show =
-        !crate::hub_fan::is_hub_satellite_id(&spec.id) || state.hub_fan.open_or_traveling();
-    let map_now = !state.capture_omit
-        && fan_show
-        && (state.relocate_mode
-            || !spec.visibility_gated
-            || state
-                .visibility
-                .lock()
-                .get(&spec.id)
-                .copied()
-                .unwrap_or(false));
+    let map_now = crate::host_common::button_should_show(
+        &spec.id,
+        spec.visibility_gated,
+        &crate::host_common::GateVisibilityCtx {
+            capture_omit: state.capture_omit,
+            relocate: state.relocate_mode,
+            fan_open_or_traveling: state.hub_fan.open_or_traveling(),
+            found: state.visibility.lock().clone(),
+        },
+    );
     if map_now {
         // MapRaised when relocate keep-above: buttons must sit above the Sqyre
         // editor (same XWayland stack). Plain Map otherwise — raising over a

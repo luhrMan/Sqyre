@@ -38,80 +38,34 @@ pub(super) fn raise_all_hits(state: &HostState) {
 }
 
 /// Map/unmap gated buttons from the image-search found map (no egui frame needed).
+///
+/// Closed hub satellites stay unmapped (warm windows, no paint/hit). Policy is
+/// shared across hosts; X11 only supplies map/unmap via [`HubFanHost`].
 pub(super) fn apply_gate_visibility(state: &mut HostState) {
-    let found = state.visibility.lock().clone();
-    let ids: Vec<String> = state.buttons.keys().cloned().collect();
-    let mut changed = false;
+    let before: Vec<(String, bool)> = state
+        .buttons
+        .iter()
+        .map(|(id, b)| (id.clone(), b.mapped))
+        .collect();
+    crate::host_common::apply_hosted_visibility(state);
     let mut shown = 0usize;
     let mut hidden = 0usize;
-    for id in ids {
-        let Some(btn) = state.buttons.get(&id) else {
+    for (id, was) in before {
+        let now = state.buttons.get(&id).map(|b| b.mapped).unwrap_or(was);
+        if now == was {
             continue;
-        };
-        // Relocate (Overlay editor open): keep hosted buttons mapped so the user
-        // can drag them; do not let the found-map hide them mid-edit. Callers only
-        // host the selected program's buttons in this mode.
-        // Closed hub satellites stay unmapped (warm windows, no paint/hit).
-        let fan_show =
-            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
-        let show = !state.capture_omit
-            && fan_show
-            && (state.relocate_mode
-                || !btn.spec.visibility_gated
-                || found.get(&id).copied().unwrap_or(false));
-        let (hit, face) = (btn.hit, btn.win);
-        if show {
-            if btn.mapped {
-                continue;
-            }
-            // MapRaised when relocate keep-above so new gated buttons are not stuck
-            // under the Sqyre editor; plain Map otherwise (see create_button).
-            // SAFETY: HostState display invariant; face+hit created on this display.
-            unsafe {
-                if state.relocate_mode && state.relocate_keep_above {
-                    XMapRaised(state.display, face);
-                    XMapRaised(state.display, hit);
-                } else {
-                    XMapWindow(state.display, face);
-                    XMapWindow(state.display, hit);
-                }
-            }
-            shown += 1;
-            changed = true;
-        } else {
-            // Always Unmap when hidden — XUnmapWindow is idempotent. Skipping when
-            // `mapped` was already false left ghosts after MapRaised without a
-            // matching flag update (see relocate_mode comment above).
-            let was_mapped = btn.mapped;
-            if was_mapped {
-                if state.drag.as_ref().is_some_and(|d| d.id == id) {
-                    cancel_drag(state);
-                }
-                if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
-                    hide_tip(state);
-                }
-                hidden += 1;
-                changed = true;
-            }
-            // SAFETY: HostState display invariant; face+hit created on this display.
-            unsafe {
-                x_unmap(state.display, hit);
-                x_unmap(state.display, face);
-            }
         }
-        if let Some(btn) = state.buttons.get_mut(&id) {
-            btn.mapped = show;
-            if !show {
-                btn.armed = false;
-                btn.hovered = false;
-            }
+        if now {
+            shown += 1;
+        } else {
+            hidden += 1;
         }
     }
-    if changed {
+    if shown > 0 || hidden > 0 {
         note(&format!(
             "overlay-x11: gate-map show={shown} hide={hidden} relocate={} found={}",
             state.relocate_mode,
-            found.len()
+            state.visibility.lock().len()
         ));
         // SAFETY: HostState display invariant.
         unsafe {
