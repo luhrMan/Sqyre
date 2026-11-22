@@ -339,7 +339,8 @@ fn xkb_keysym(key: &str) -> Option<&str> {
         "space" => "space",
         "enter" => "Return",
         "tab" => "Tab",
-        "delete" => "BackSpace",
+        "backspace" => "BackSpace",
+        "delete" | "del" => "Delete",
         "up" => "Up",
         "down" => "Down",
         "left" => "Left",
@@ -437,6 +438,14 @@ mod tests {
             xdg_trigger(&chord(&["capslock"])).as_deref(),
             Some("Caps_Lock")
         );
+        assert_eq!(
+            xdg_trigger(&chord(&["backspace"])).as_deref(),
+            Some("BackSpace")
+        );
+        assert_eq!(xdg_trigger(&chord(&["delete"])).as_deref(), Some("Delete"));
+        assert_eq!(xdg_trigger(&chord(&["1"])).as_deref(), Some("1"));
+        assert_eq!(xdg_trigger(&chord(&["num1"])).as_deref(), Some("KP_1"));
+        assert_ne!(xdg_trigger(&chord(&["1"])), xdg_trigger(&chord(&["num1"])));
     }
 
     #[test]

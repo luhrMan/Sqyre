@@ -26,7 +26,19 @@ pub fn normalize_key_name(key: &str) -> String {
         "return" => "enter".into(),
         "super" | "meta" | "win" | "windows" | "meta_left" | "metaleft" => "cmd".into(),
         "meta_right" | "metaright" => "rcmd".into(),
-        "backspace" | "back_space" => "delete".into(),
+        "back_space" => "backspace".into(),
+        "del" => "delete".into(),
+        // Numpad aliases → canonical `num0`…`num9` (distinct from top-row `"0"`…`"9"`).
+        "num_0" | "numpad0" => "num0".into(),
+        "num_1" | "numpad1" => "num1".into(),
+        "num_2" | "numpad2" => "num2".into(),
+        "num_3" | "numpad3" => "num3".into(),
+        "num_4" | "numpad4" => "num4".into(),
+        "num_5" | "numpad5" => "num5".into(),
+        "num_6" | "numpad6" => "num6".into(),
+        "num_7" | "numpad7" => "num7".into(),
+        "num_8" | "numpad8" => "num8".into(),
+        "num_9" | "numpad9" => "num9".into(),
         "shiftleft" | "shift_left" => "shift".into(),
         "shiftright" | "shift_right" => "rshift".into(),
         "altleft" | "alt_left" => "alt".into(),
@@ -141,6 +153,19 @@ mod tests {
         assert_eq!(normalize_key_name("{"), "leftbracket");
         assert_eq!(normalize_key_name("~"), "grave");
         assert_eq!(normalize_key_name("Caps"), "capslock");
+        assert_eq!(normalize_key_name("backspace"), "backspace");
+        assert_eq!(normalize_key_name("Back_Space"), "backspace");
+        assert_eq!(normalize_key_name("Delete"), "delete");
+        assert_eq!(normalize_key_name("del"), "delete");
+        assert_eq!(normalize_key_name("1"), "1");
+        assert_eq!(normalize_key_name("num1"), "num1");
+        assert_eq!(normalize_key_name("num_1"), "num1");
+        assert_eq!(normalize_key_name("numpad1"), "num1");
+        assert_ne!(normalize_key_name("1"), normalize_key_name("num1"));
+        assert_ne!(
+            normalize_key_name("backspace"),
+            normalize_key_name("delete")
+        );
     }
 
     #[test]

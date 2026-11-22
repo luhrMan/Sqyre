@@ -628,6 +628,7 @@ fn evdev_for_name(key: &str) -> Option<u32> {
         "rightbracket" | "]" | "}" => 27,
         "return" | "enter" => 28,
         "ctrl" | "control" | "ctrlleft" | "lctrl" => 29,
+        "rctrl" | "controlright" | "ctrlright" => 97,
         "a" => 30,
         "s" => 31,
         "d" => 32,
@@ -641,6 +642,7 @@ fn evdev_for_name(key: &str) -> Option<u32> {
         "quote" | "'" | "\"" => 40,
         "grave" | "`" | "~" | "backtick" => 41,
         "shift" | "shiftleft" | "lshift" => 42,
+        "rshift" | "shiftright" => 54,
         "backslash" | "\\" | "|" => 43,
         "z" => 44,
         "x" => 45,
@@ -653,6 +655,7 @@ fn evdev_for_name(key: &str) -> Option<u32> {
         "period" | "." => 52,
         "slash" | "/" | "?" => 53,
         "alt" | "altleft" | "lalt" => 56,
+        "ralt" | "altright" | "altgr" => 100,
         "space" | "spacebar" => 57,
         "capslock" | "caps" => 58,
         "f1" => 59,
@@ -699,6 +702,7 @@ fn evdev_for_name(key: &str) -> Option<u32> {
         "num_slash" => 98,
         "num_asterisk" => 55,
         "super" | "win" | "cmd" | "command" | "meta" => 125,
+        "rcmd" | "metaright" | "meta_right" => 126,
         other if other.len() == 1 => {
             let c = other.chars().next()?;
             if c.is_ascii_alphabetic() {
@@ -1128,6 +1132,132 @@ mod tests {
         assert_eq!(OsAutomation::map_key("cmd"), "command");
         assert_eq!(OsAutomation::map_key("super"), "command");
         assert_eq!(OsAutomation::map_key("a"), "a");
+    }
+
+    /// Names the hook/VK recorders emit — every one must resolve for Linux playback.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn playback_resolves_recorded_key_vocabulary() {
+        let names = [
+            "esc",
+            "ctrl",
+            "shift",
+            "rshift",
+            "alt",
+            "ralt",
+            "cmd",
+            "rcmd",
+            "space",
+            "enter",
+            "tab",
+            "backspace",
+            "delete",
+            "up",
+            "down",
+            "left",
+            "right",
+            "home",
+            "end",
+            "pageup",
+            "pagedown",
+            "insert",
+            "capslock",
+            "numlock",
+            "scrolllock",
+            "printscreen",
+            "pause",
+            "f1",
+            "f2",
+            "f3",
+            "f4",
+            "f5",
+            "f6",
+            "f7",
+            "f8",
+            "f9",
+            "f10",
+            "f11",
+            "f12",
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+            "h",
+            "i",
+            "j",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "q",
+            "r",
+            "s",
+            "t",
+            "u",
+            "v",
+            "w",
+            "x",
+            "y",
+            "z",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "minus",
+            "equal",
+            "leftbracket",
+            "rightbracket",
+            "semicolon",
+            "quote",
+            "grave",
+            "backslash",
+            "intlbackslash",
+            "comma",
+            "period",
+            "slash",
+            "num0",
+            "num1",
+            "num2",
+            "num3",
+            "num4",
+            "num5",
+            "num6",
+            "num7",
+            "num8",
+            "num9",
+            "num_enter",
+            "num_plus",
+            "num_minus",
+            "num_asterisk",
+            "num_slash",
+            "num_period",
+        ];
+        for name in names {
+            assert!(
+                evdev_for_name(name).is_some(),
+                "playback missing for recorded key {name:?}"
+            );
+        }
+        assert_ne!(evdev_for_name("1"), evdev_for_name("num1"));
+        assert_ne!(evdev_for_name("0"), evdev_for_name("num0"));
+        assert_ne!(evdev_for_name("backspace"), evdev_for_name("delete"));
+        assert_ne!(evdev_for_name("enter"), evdev_for_name("num_enter"));
+        assert_ne!(evdev_for_name("minus"), evdev_for_name("num_minus"));
+        assert_ne!(evdev_for_name("period"), evdev_for_name("num_period"));
+        assert_ne!(evdev_for_name("shift"), evdev_for_name("rshift"));
+        assert_ne!(evdev_for_name("alt"), evdev_for_name("ralt"));
+        assert_ne!(evdev_for_name("cmd"), evdev_for_name("rcmd"));
     }
 
     #[test]

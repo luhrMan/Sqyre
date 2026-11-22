@@ -159,8 +159,6 @@ where
         "cmd" => pressed.contains("rcmd") || pressed.contains("super"),
         "rcmd" => pressed.contains("cmd") || pressed.contains("super"),
         "super" => pressed.contains("cmd") || pressed.contains("rcmd"),
-        "backspace" => pressed.contains("delete"),
-        "delete" => pressed.contains("backspace"),
         _ => false,
     }
 }
@@ -540,5 +538,17 @@ mod tests {
         pressed.insert("rshift");
         pressed.insert("a");
         assert!(chord_all_pressed(&pressed, &["shift".into(), "a".into()]));
+    }
+
+    #[test]
+    fn backspace_and_delete_are_distinct() {
+        let mut pressed = HashSet::new();
+        pressed.insert("backspace");
+        assert!(chord_all_pressed(&pressed, &["backspace".into()]));
+        assert!(!chord_all_pressed(&pressed, &["delete".into()]));
+        pressed.clear();
+        pressed.insert("delete");
+        assert!(chord_all_pressed(&pressed, &["delete".into()]));
+        assert!(!chord_all_pressed(&pressed, &["backspace".into()]));
     }
 }

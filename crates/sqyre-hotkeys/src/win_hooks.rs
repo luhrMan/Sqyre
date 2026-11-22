@@ -412,5 +412,7 @@ mod tests {
         assert_eq!(vk_key_name(0x41, false), Some("a"));
         assert_eq!(vk_key_name(0x0D, false), Some("enter"));
         assert_eq!(vk_key_name(0x0D, true), Some("num_enter"));
+        assert_eq!(vk_key_name(0x08, false), Some("backspace"));
+        assert_eq!(vk_key_name(0x2E, false), Some("delete"));
     }
 }
