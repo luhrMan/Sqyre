@@ -20,6 +20,8 @@ mod pixel_convert;
 mod selection_grab;
 #[macro_use]
 mod shared_run;
+#[cfg(target_os = "linux")]
+mod linux_outline;
 mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
@@ -97,7 +99,9 @@ pub use win_focus::OsWindowFocuser;
 pub use click_fx_host::ClickFxHost;
 
 #[cfg(target_os = "linux")]
-pub use x11_outline::{x11_root_pointer, SelectionOutline};
+pub use linux_outline::SelectionOutline;
+#[cfg(target_os = "linux")]
+pub use x11_outline::x11_root_pointer;
 #[cfg(target_os = "linux")]
 pub use x11_point_markers::PointMarkerOverlay;
 

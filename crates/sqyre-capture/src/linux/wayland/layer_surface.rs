@@ -97,7 +97,6 @@ pub fn transparent_shm_file(bytes: usize) -> Option<File> {
 }
 
 /// Write ARGB8888 little-endian pixels into a new memfd (`pixels` length = w*h*4).
-#[expect(dead_code, reason = "used by outline/grab/overlay button attach paths")]
 pub fn argb_shm_file(width: i32, height: i32, pixels: &[u8]) -> Option<File> {
     let width = width.max(1);
     let height = height.max(1);
@@ -167,7 +166,6 @@ where
 }
 
 /// Attach caller-provided ARGB8888 pixels (length must be `w*h*4` in buffer pixels).
-#[expect(dead_code, reason = "used by outline/grab/overlay button attach paths")]
 pub fn attach_argb_pixels<D>(
     surface: &wl_surface::WlSurface,
     shm: &wl_shm::WlShm,
@@ -212,7 +210,6 @@ impl AttachedShm {
 /// Snapshot of one `wl_output` in compositor space.
 #[derive(Clone, Debug)]
 pub struct OutputGeom {
-    #[expect(dead_code, reason = "registry name for multi-output hosts")]
     pub name: u32,
     pub output: wl_output::WlOutput,
     pub x: i32,
@@ -316,7 +313,6 @@ impl LayerShellConn {
     }
 
     /// First output whose desktop rect overlaps `rect`.
-    #[expect(dead_code, reason = "used by outline/button placement")]
     pub fn overlapping_output(&self, rect: DesktopRect) -> Option<OutputGeom> {
         let cosmic = sqyre_ports::cosmic_desktop_session();
         self.outputs().into_iter().find(|o| {
