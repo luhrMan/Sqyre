@@ -811,6 +811,13 @@ fn probe_outline_grab(caps: &mut BTreeMap<String, CapabilityResult>, opts: &Prob
                 Err(e) => CapabilityResult::pending(e.to_string()),
             },
         );
+        caps.insert(
+            "overlay.wayland_impl".into(),
+            match sqyre_capture::linux::wayland::layer_overlay_available() {
+                Ok(()) => CapabilityResult::ok(),
+                Err(e) => CapabilityResult::pending(e.to_string()),
+            },
+        );
     }
 }
 
