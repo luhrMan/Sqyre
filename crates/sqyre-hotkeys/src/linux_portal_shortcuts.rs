@@ -40,6 +40,37 @@ pub fn open_system_shortcuts() {
     OPEN_REQUESTED.store(true, Ordering::SeqCst);
 }
 
+/// `Ok` when this connection is associated with [`PORTAL_APP_ID`].
+///
+/// "Already associated" means an earlier call (startup) won. Any other failure
+/// must not be followed by `GlobalShortcuts::new` — that call would cache an
+/// empty host id for every later portal request, including macro permissions.
+async fn register_host_app() -> Result<(), String> {
+    const ATTEMPTS: u32 = 8;
+    for attempt in 0..ATTEMPTS {
+        let app_id = PORTAL_APP_ID
+            .parse::<ashpd::AppID>()
+            .map_err(|e| e.to_string())?;
+        match ashpd::register_host_app(app_id).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let msg = e.to_string();
+                let lower = msg.to_ascii_lowercase();
+                if lower.contains("already associated") {
+                    return Ok(());
+                }
+                let missing = lower.contains("not found") || lower.contains("could not find");
+                if missing && attempt + 1 < ATTEMPTS {
+                    async_io::Timer::after(Duration::from_millis(50)).await;
+                    continue;
+                }
+                return Err(msg);
+            }
+        }
+    }
+    Err("portal register gave up".into())
+}
+
 /// Start the portal backend (replaces any previous run).
 pub(crate) fn spawn(bridge: MacroHotkeyBridge, on_fire: Arc<dyn Fn(String) + Send + Sync>) {
     let run = Run(RUN.fetch_add(1, Ordering::SeqCst) + 1);
@@ -100,9 +131,13 @@ impl Run {
     }
 
     async fn main(self, bridge: &MacroHotkeyBridge, on_fire: &dyn Fn(String)) {
-        if let Ok(app_id) = PORTAL_APP_ID.parse::<ashpd::AppID>() {
-            // Fails harmlessly when capture already registered this connection.
-            let _ = ashpd::register_host_app(app_id).await;
+        // Register must be the first method on the shared portal connection.
+        // A failed register does not cache an id; the next method (here,
+        // GlobalShortcuts) would cache an empty one and the macro permission
+        // dialog stays "unknown application".
+        if let Err(e) = register_host_app().await {
+            eprintln!("sqyre-hotkeys: portal app id not registered ({e}); using evdev");
+            return;
         }
         let proxy = match GlobalShortcuts::new().await {
             Ok(proxy) => proxy,

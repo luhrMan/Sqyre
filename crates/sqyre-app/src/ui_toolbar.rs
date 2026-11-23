@@ -414,11 +414,12 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
     if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
         app.hotkey_record.open(&app.run_session.macro_hotkeys);
     }
-    if toolbar_icon(
+    if toolbar_icon_colored(
         ui,
         egui_phosphor::regular::ERASER,
         crate::action_tooltip::help::META_HOTKEY_CLEAR,
         !running && !app.workspace.macros[idx].hotkey.is_empty(),
+        Some(theme::MACRO_STOP),
     )
     .clicked()
     {

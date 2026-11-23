@@ -202,12 +202,12 @@ pub struct SearchFieldOpts<'a> {
     /// Focus the field once when this surface opens
     /// ([`focus_search_once`] keyed off this window/picker id).
     pub focus_id: Option<egui::Id>,
-    /// Trailing ✕ that empties the field while it has text.
+    /// Trailing red eraser that empties the field while it has text.
     pub clearable: bool,
     /// Pinned field id — needed when a sibling drawn before the field (e.g.
-    /// the toggling ✕) would shift the auto id and drop keyboard focus.
+    /// the toggling clear eraser) would shift the auto id and drop keyboard focus.
     pub stable_id: Option<egui::Id>,
-    /// Icon button inside the pair, after the clear ✕.
+    /// Icon button inside the pair, after the clear eraser.
     pub trailing: Option<SearchTrailing<'a>>,
 }
 
@@ -223,16 +223,16 @@ pub struct SearchFieldResp {
     /// The field's response — the magnifier's when the field drops for width.
     /// `has_focus` / `request_focus` / `surrender_focus` apply to it.
     pub response: egui::Response,
-    /// Query text changed this frame (edit or ✕ clear — `value` is already updated).
+    /// Query text changed this frame (edit or eraser clear — `value` is already updated).
     pub changed: bool,
     /// The [`SearchFieldOpts::trailing`] icon was clicked this frame.
     pub trailing_clicked: bool,
 }
 
-/// Magnifier + fill-width filter field (+ optional trailing ✕) — the one
-/// search row for lists, pickers, dialogs, and panels.
+/// Magnifier + fill-width filter field (+ optional trailing clear eraser) — the
+/// one search row for lists, pickers, dialogs, and panels.
 ///
-/// The magnifier, the edit, the ✕, and any [`SearchTrailing`] share one
+/// The magnifier, the edit, the eraser, and any [`SearchTrailing`] share one
 /// [`super::pair_icon`] frame. Wrap the row in [`super::show_overflow`] or a
 /// [`fill_row`] slot when siblings share the row.
 pub fn search_field(
@@ -280,7 +280,7 @@ pub fn search_field(
         .inner
     } else {
         let mut clear_slot = |ui: &mut egui::Ui| {
-            cleared = crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
+            cleared = crate::widgets::clear_icon_button(ui, "Clear search").clicked();
         };
         let mut extra_slot = |ui: &mut egui::Ui| {
             if let Some((glyph, tip, color)) = trailing {
@@ -352,8 +352,8 @@ fn search_edit(
     // A finite width, never `INFINITY`. Inside an overflow scroller
     // `available_width()` is infinite, and an infinite edit makes the row
     // wider than the pane so the scroller turns on and off every frame.
-    // `stable_id` keeps focus when the trailing ✕ appears and disappears.
-    // Each trailing slot (✕, extra icon) keeps its own gap so it stays
+    // `stable_id` keeps focus when the trailing eraser appears and disappears.
+    // Each trailing slot (eraser, extra icon) keeps its own gap so it stays
     // inside the pair instead of past the pane edge.
     let room = finite_room(ui);
     let slot = crate::widgets::icon_btn_side(ui) + super::PAIR_SLOT_GAP;
@@ -902,8 +902,8 @@ mod tests {
         assert_eq!(h.state().as_str(), "8");
     }
 
-    /// The trailing ✕ clears the query and reports `changed`; without
-    /// `clearable` no ✕ exists.
+    /// The trailing eraser clears the query and reports `changed`; without
+    /// `clearable` no eraser exists.
     #[test]
     fn search_field_clear_button_empties_query() {
         use egui_kittest::kittest::Queryable;
@@ -938,15 +938,15 @@ mod tests {
         assert_eq!(h.state().as_str(), "");
     }
 
-    /// The extra icon is a slot inside the search pair, after the clear ✕,
-    /// not a sibling button past the frame. Empty query hides the ✕; the
+    /// The extra icon is a slot inside the search pair, after the clear eraser,
+    /// not a sibling button past the frame. Empty query hides the eraser; the
     /// trailing icon stays.
     #[test]
     fn search_trailing_icon_sits_inside_the_pair() {
         let ctx = egui::Context::default();
         let pane = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 64.0));
         let plus = egui_phosphor::regular::PLUS;
-        let clear_glyph = egui_phosphor::regular::X;
+        let clear_glyph = egui_phosphor::regular::ERASER;
         for (start, field_text) in [("query", "query"), ("", "Filter…")] {
             let mut value = start.to_owned();
             for pass in 0..2 {

@@ -21,7 +21,8 @@ pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
 pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
 /// Command palette floor.
 pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
-/// Space reserved below a picker scroll for the floating Save chip / action row.
+/// Space reserved below a scroll for a laid-out footer (status, tag filters).
+/// Floating Save chips use [`crate::widgets::float_bottom_right`] with no reserve.
 pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
 
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.

@@ -486,6 +486,12 @@ pub fn portal_input_ready() -> bool {
     }
 }
 
+/// Block until Wayland EIS is ready, the handshake fails, or the wait budget is spent.
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub fn portal_input_wait() -> Result<(), sqyre_ports::AutomationError> {
+    linux::wayland::portal_input_wait()
+}
+
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
 pub use linux::wayland::{
     portal_cursor_position, portal_input_click, portal_input_key, portal_input_last_pos,
@@ -773,7 +779,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
-pub use x11_focus::{OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
+pub use x11_focus::{set_wm_class, OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
 
 #[cfg(not(target_os = "linux"))]
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";

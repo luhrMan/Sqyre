@@ -866,6 +866,7 @@ fn targets_editor(
                 show_add_button: true,
                 label_name: None,
                 draft_hover: Some(h::IS_TAG_PRIORITY),
+                draft_hint: None,
                 reorderable: true,
                 signed_filters: false,
                 single_row: false,

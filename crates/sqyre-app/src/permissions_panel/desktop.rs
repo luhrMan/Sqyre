@@ -36,11 +36,24 @@ pub struct PermissionsPanel {
     probed_at: Option<Instant>,
     was_focused: bool,
     missing: bool,
+    /// Docs / kittest harnesses: skip background probes so `Harness::run` can settle.
+    docs_suppressed: bool,
 }
 
 impl PermissionsPanel {
+    /// Disable background probing (docs / screenshot / egui_kittest harnesses).
+    pub fn suppress_for_docs(&mut self) {
+        self.docs_suppressed = true;
+        self.started_once = true;
+        self.rx = None;
+        self.running = false;
+    }
+
     /// Background work that keeps [`Self::has_missing`] current while Settings is closed.
     pub fn tick(&mut self, ctx: &egui::Context) {
+        if self.docs_suppressed {
+            return;
+        }
         self.poll(ctx);
         self.ensure_loaded(ctx);
         self.maybe_refresh_after_capture(ctx);
@@ -170,11 +183,13 @@ impl PermissionsPanel {
     }
 
     pub fn paint(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        self.poll(ctx);
-        self.ensure_loaded(ctx);
-        self.maybe_refresh_after_capture(ctx);
+        if !self.docs_suppressed {
+            self.poll(ctx);
+            self.ensure_loaded(ctx);
+            self.maybe_refresh_after_capture(ctx);
+        }
         self.update_live_status();
-        if system_shortcuts_status() == SystemShortcutsStatus::Waiting {
+        if !self.docs_suppressed && system_shortcuts_status() == SystemShortcutsStatus::Waiting {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
 

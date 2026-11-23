@@ -239,6 +239,25 @@ fn native_options() -> eframe::NativeOptions {
     options
 }
 
+/// egui leaves the X11 WM_CLASS instance empty. Set both strings to the desktop id
+/// so XWayland's toplevel app id matches `com.sqyre.app.desktop`.
+#[cfg(all(feature = "native-runtime", target_os = "linux"))]
+fn publish_x11_wm_class(window: Option<&std::sync::Arc<winit::window::Window>>) {
+    let Some(window) = window else {
+        return;
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let xid = match handle.as_raw() {
+        RawWindowHandle::Xlib(h) => h.window,
+        RawWindowHandle::Xcb(h) => u64::from(h.window.get()),
+        _ => return,
+    };
+    sqyre_capture::set_wm_class(xid, assets::APP_ID);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
@@ -252,6 +271,14 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
     desktop_entry::install();
     #[cfg(all(feature = "native-runtime", target_os = "linux"))]
     sqyre_capture::linux::app_scope::enter_app_scope(assets::APP_ID);
+    // Before eframe starts GlobalShortcuts. The first portal method on the
+    // shared connection freezes the app id the COSMIC permission dialog shows.
+    #[cfg(all(
+        feature = "native-runtime",
+        feature = "portal-capture",
+        target_os = "linux"
+    ))]
+    sqyre_capture::linux::wayland::register_portal_app_now();
     #[cfg(all(
         not(target_arch = "wasm32"),
         feature = "native-runtime",
@@ -279,6 +306,8 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
             options,
             Box::new(move |cc| {
                 let mut app = SqyreApp::load();
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+                publish_x11_wm_class(cc.winit_window());
                 app.instance_lock = instance_lock.take();
                 SettingsUi::install_fonts(&cc.egui_ctx, app.settings_ui.settings());
                 SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());

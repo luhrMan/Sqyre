@@ -12,7 +12,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
-pub(super) static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
 static LAST_ABS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 /// When [`LAST_ABS`] was last sent. A click soon after trusts it over a
 /// ScreenCast cursor that has not caught up yet.
@@ -26,7 +25,16 @@ static LOGGED_PORTAL_CURSOR: AtomicBool = AtomicBool::new(false);
 pub(super) static LOGGED_CURSOR_META: AtomicBool = AtomicBool::new(false);
 static EIS_READY: AtomicBool = AtomicBool::new(false);
 static EIS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+/// Handshake thread is running and has not yet resumed a usable device or failed.
+static EIS_CONNECTING: AtomicBool = AtomicBool::new(false);
+/// `portal_input_wait` already spent its budget while still connecting.
+static EIS_WAIT_EXHAUSTED: AtomicBool = AtomicBool::new(false);
+static EIS_FAILURE: Mutex<Option<String>> = Mutex::new(None);
 pub(super) static REMOTE_DESKTOP_GRANTED: AtomicBool = AtomicBool::new(false);
+
+/// How long callers wait for COSMIC (and other compositors) to resume an EIS device
+/// after Remote Desktop is granted. The first PipeWire frame can arrive before that.
+const EIS_BECOME_READY_LIMIT: Duration = Duration::from_secs(6);
 
 enum EisCmd {
     Move {
@@ -115,6 +123,85 @@ pub fn portal_remote_desktop_granted() -> bool {
 /// Whether EIS is ready to inject pointer/keyboard.
 pub fn portal_input_ready() -> bool {
     EIS_READY.load(Ordering::SeqCst)
+}
+
+/// Block until the EIS thread resumes a device, fails, or the wait budget is spent.
+///
+/// Capture becomes ready on the first PipeWire frame. COSMIC often delivers that
+/// frame while the EIS handshake is still waiting for a device to resume; sampling
+/// [`portal_input_ready`] at that instant reports a grant with no backend.
+pub fn portal_input_wait() -> Result<(), AutomationError> {
+    let deadline = Instant::now() + EIS_BECOME_READY_LIMIT;
+    loop {
+        let mut snap = eis_snapshot();
+        if snap.connecting && !snap.ready && snap.failure.is_none() && Instant::now() >= deadline {
+            EIS_WAIT_EXHAUSTED.store(true, Ordering::SeqCst);
+            snap.exhausted = true;
+        }
+        match eis_wait_decision(&snap) {
+            EisWaitDecision::Ready => {
+                EIS_WAIT_EXHAUSTED.store(false, Ordering::SeqCst);
+                return Ok(());
+            }
+            EisWaitDecision::Failed(err) => return Err(AutomationError::Backend(err)),
+            EisWaitDecision::Poll => thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+fn eis_snapshot() -> EisWaitSnapshot {
+    EisWaitSnapshot {
+        ready: portal_input_ready(),
+        connecting: EIS_CONNECTING.load(Ordering::SeqCst),
+        exhausted: EIS_WAIT_EXHAUSTED.load(Ordering::SeqCst),
+        failure: EIS_FAILURE.lock().clone(),
+        granted: portal_remote_desktop_granted(),
+    }
+}
+
+struct EisWaitSnapshot {
+    ready: bool,
+    connecting: bool,
+    exhausted: bool,
+    failure: Option<String>,
+    granted: bool,
+}
+
+enum EisWaitDecision {
+    Ready,
+    Poll,
+    Failed(String),
+}
+
+fn eis_wait_decision(snap: &EisWaitSnapshot) -> EisWaitDecision {
+    if snap.ready {
+        return EisWaitDecision::Ready;
+    }
+    if let Some(err) = &snap.failure {
+        return EisWaitDecision::Failed(err.clone());
+    }
+    if snap.connecting && !snap.exhausted {
+        return EisWaitDecision::Poll;
+    }
+    if snap.granted {
+        EisWaitDecision::Failed("Remote Desktop granted but EIS is not ready".into())
+    } else {
+        EisWaitDecision::Failed(
+            "desktop control not granted (enable Allow Remote Interaction, then Share)".into(),
+        )
+    }
+}
+
+fn note_eis_failure(err: String) {
+    cap_log("INPUT", "fail", &err);
+    *EIS_FAILURE.lock() = Some(err);
+    EIS_CONNECTING.store(false, Ordering::SeqCst);
+}
+
+fn clear_eis_status() {
+    EIS_CONNECTING.store(false, Ordering::SeqCst);
+    EIS_WAIT_EXHAUSTED.store(false, Ordering::SeqCst);
+    *EIS_FAILURE.lock() = None;
 }
 
 /// Compositor cursor from ScreenCast `CursorMode::Metadata`, in desktop pixels.
@@ -305,6 +392,7 @@ pub(super) fn stop_eis_thread() {
     EIS_SHUTDOWN.store(true, Ordering::SeqCst);
     EIS_READY.store(false, Ordering::SeqCst);
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
+    clear_eis_status();
     *INPUT_TX.lock() = None;
     *LAST_ABS.lock() = None;
     *LAST_ABS_AT.lock() = None;
@@ -315,31 +403,63 @@ pub(super) fn stop_eis_thread() {
 
 pub(super) fn spawn_eis_thread(fd: OwnedFd) {
     EIS_SHUTDOWN.store(false, Ordering::SeqCst);
+    clear_eis_status();
+    EIS_CONNECTING.store(true, Ordering::SeqCst);
     cap_log("INPUT", "eis", "thread start");
-    let _ = thread::Builder::new()
+    let spawned = thread::Builder::new()
         .name("sqyre-eis".into())
         .spawn(move || {
+            let mut failure = None;
             match EisInput::connect(fd, &EIS_SHUTDOWN) {
                 Ok(mut eis) => {
-                    let (tx, rx) = mpsc::channel();
-                    *INPUT_TX.lock() = Some(tx);
-                    EIS_READY.store(true, Ordering::SeqCst);
-                    cap_log("INPUT", "ok", "backend=eis");
-                    while !EIS_SHUTDOWN.load(Ordering::SeqCst) {
-                        match rx.recv_timeout(Duration::from_millis(100)) {
-                            Ok(cmd) => dispatch_eis(&mut eis, cmd),
-                            // Drain pause/resume so the next click sees current device state.
-                            Err(mpsc::RecvTimeoutError::Timeout) => eis.drain(),
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    if !EIS_SHUTDOWN.load(Ordering::SeqCst) {
+                        let (tx, rx) = mpsc::channel();
+                        *INPUT_TX.lock() = Some(tx);
+                        // COSMIC resumes devices when it handles the seat bind, which can
+                        // land after this handshake returns. Stay connected until then.
+                        publish_eis_ready(&eis);
+                        while !EIS_SHUTDOWN.load(Ordering::SeqCst) {
+                            match rx.recv_timeout(Duration::from_millis(100)) {
+                                Ok(cmd) => dispatch_eis(&mut eis, cmd),
+                                Err(mpsc::RecvTimeoutError::Timeout) => eis.drain(),
+                                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            }
+                            publish_eis_ready(&eis);
                         }
                     }
                 }
-                Err(e) => cap_log("INPUT", "fail", &format!("eis handshake: {e}")),
+                Err(e) => {
+                    if !EIS_SHUTDOWN.load(Ordering::SeqCst) {
+                        failure = Some(format!("eis handshake: {e}"));
+                    }
+                }
+            }
+            if EIS_SHUTDOWN.load(Ordering::SeqCst) {
+                *INPUT_TX.lock() = None;
+                return;
             }
             EIS_READY.store(false, Ordering::SeqCst);
+            EIS_CONNECTING.store(false, Ordering::SeqCst);
             *INPUT_TX.lock() = None;
-            *PENDING_EIS_FD.lock() = None;
+            let err = failure.unwrap_or_else(|| "portal input thread exited".into());
+            note_eis_failure(err);
         });
+    if let Err(e) = spawned {
+        note_eis_failure(format!("failed to start EIS thread: {e}"));
+    }
+}
+
+fn publish_eis_ready(eis: &EisInput) {
+    if EIS_SHUTDOWN.load(Ordering::SeqCst) || !eis.has_usable_device() {
+        return;
+    }
+    if EIS_READY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    EIS_CONNECTING.store(false, Ordering::SeqCst);
+    EIS_WAIT_EXHAUSTED.store(false, Ordering::SeqCst);
+    *EIS_FAILURE.lock() = None;
+    cap_log("INPUT", "ok", "backend=eis");
 }
 
 /// Drop the current ScreenCast session and show the share picker again (ignores restore token).
@@ -480,13 +600,88 @@ fn stream_rect(stream: &ashpd::desktop::screencast::Stream) -> DesktopRect {
     let (x, y) = stream.position().unwrap_or((0, 0));
     DesktopRect { x, y, w, h }
 }
-async fn register_portal_app() {
+enum HostRegister {
+    /// This connection is associated with [`PORTAL_APP_ID`].
+    Ready,
+    /// Desktop file is not in GIO's cache yet (`App info not found`).
+    Retry,
+    /// No session bus, or another error. Do not open a portal method after this
+    /// on a fresh connection — the next call caches an empty host id.
+    Stop,
+}
+
+/// Classify a `Register` failure. The host portal keeps the first successful
+/// method's app id for the life of the D-Bus connection.
+fn host_register_outcome(err: &str) -> HostRegister {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("already associated") {
+        HostRegister::Ready
+    } else if lower.contains("not found") || lower.contains("could not find") {
+        HostRegister::Retry
+    } else {
+        HostRegister::Stop
+    }
+}
+
+async fn register_portal_app_once() -> HostRegister {
     let Ok(app_id) = PORTAL_APP_ID.parse::<ashpd::AppID>() else {
-        return;
+        return HostRegister::Stop;
     };
     match ashpd::register_host_app(app_id).await {
-        Ok(()) => cap_log("PORTAL", "appid", PORTAL_APP_ID),
-        Err(e) => cap_log("PORTAL", "appid", &format!("register skipped: {e}")),
+        Ok(()) => {
+            cap_log("PORTAL", "appid", PORTAL_APP_ID);
+            HostRegister::Ready
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            match host_register_outcome(&msg) {
+                HostRegister::Ready => {
+                    cap_log("PORTAL", "appid", "already associated");
+                    HostRegister::Ready
+                }
+                HostRegister::Retry => HostRegister::Retry,
+                HostRegister::Stop => {
+                    cap_log("PORTAL", "appid", &format!("register skipped: {msg}"));
+                    HostRegister::Stop
+                }
+            }
+        }
+    }
+}
+
+async fn register_portal_app() {
+    if matches!(register_portal_app_once().await, HostRegister::Retry) {
+        cap_log(
+            "PORTAL",
+            "appid",
+            &format!("register skipped: {PORTAL_APP_ID} not in desktop cache"),
+        );
+    }
+}
+
+/// Register `com.sqyre.app` before any other portal method on this process.
+///
+/// xdg-desktop-portal caches the app id from the first method on the
+/// connection. GlobalShortcuts (started with the UI) otherwise caches an empty
+/// id, and the macro ScreenCast / RemoteDesktop dialog stays "unknown application".
+/// GIO indexes a just-written desktop file asynchronously; retry that case only.
+pub fn register_portal_app_now() {
+    const ATTEMPTS: u32 = 8;
+    for attempt in 0..ATTEMPTS {
+        match pollster::block_on(register_portal_app_once()) {
+            HostRegister::Ready | HostRegister::Stop => return,
+            HostRegister::Retry => {
+                if attempt + 1 == ATTEMPTS {
+                    cap_log(
+                        "PORTAL",
+                        "appid",
+                        &format!("register skipped: {PORTAL_APP_ID} not in desktop cache"),
+                    );
+                    return;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
     }
 }
 
@@ -620,18 +815,21 @@ async fn open_combined_session_with_token(
             response.restore_token().is_some()
         ),
     );
-    let eis_fd = if has_input {
+    // Handshake before PipeWire setup. COSMIC can deliver a frame on the first
+    // iterate, and sampling EIS then used to report a granted session as not ready.
+    let spawned = if has_input {
         match remote
             .connect_to_eis(&session, ConnectToEISOptions::default())
             .await
         {
             Ok(fd) => {
                 cap_log("INPUT", "eis", "ConnectToEIS fd");
-                Some(fd)
+                spawn_eis_thread(fd);
+                true
             }
             Err(e) => {
-                cap_log("INPUT", "fail", &format!("ConnectToEIS: {e}"));
-                None
+                note_eis_failure(format!("ConnectToEIS: {e}"));
+                false
             }
         }
     } else {
@@ -640,16 +838,19 @@ async fn open_combined_session_with_token(
             "fail",
             "reason=no_remote_interaction enable Allow Remote Interaction in the share dialog",
         );
-        None
+        clear_eis_status();
+        false
     };
     let opened = finish_pipewire_setup(
         streams_meta,
         proxy,
         PortalSessionKind::Combined { remote, session },
     )
-    .await?;
-    *PENDING_EIS_FD.lock() = eis_fd;
-    Ok(opened)
+    .await;
+    if opened.is_err() && spawned {
+        stop_eis_thread();
+    }
+    opened
 }
 
 enum PortalSessionKind {
@@ -1002,6 +1203,81 @@ fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{eis_wait_decision, EisWaitDecision, EisWaitSnapshot};
+
+    #[test]
+    fn host_register_keeps_a_cached_id_and_retries_a_missing_desktop_file() {
+        assert!(matches!(
+            host_register_outcome(
+                "org.freedesktop.portal.Error.Failed: Connection already associated with an application ID"
+            ),
+            HostRegister::Ready
+        ));
+        assert!(matches!(
+            host_register_outcome("App info not found for 'com.sqyre.app'"),
+            HostRegister::Retry
+        ));
+        assert!(matches!(
+            host_register_outcome("org.freedesktop.DBus.Error.ServiceUnknown"),
+            HostRegister::Stop
+        ));
+    }
+
+    #[test]
+    fn eis_wait_keeps_polling_while_the_handshake_is_in_flight() {
+        let snap = EisWaitSnapshot {
+            ready: false,
+            connecting: true,
+            exhausted: false,
+            failure: None,
+            granted: true,
+        };
+        assert!(matches!(eis_wait_decision(&snap), EisWaitDecision::Poll));
+    }
+
+    #[test]
+    fn eis_wait_reports_grant_once_the_handshake_budget_is_spent() {
+        let snap = EisWaitSnapshot {
+            ready: false,
+            connecting: true,
+            exhausted: true,
+            failure: None,
+            granted: true,
+        };
+        match eis_wait_decision(&snap) {
+            EisWaitDecision::Failed(err) => {
+                assert!(err.contains("EIS is not ready"), "{err}");
+            }
+            EisWaitDecision::Ready | EisWaitDecision::Poll => panic!("expected failure"),
+        }
+    }
+
+    #[test]
+    fn eis_wait_surfaces_the_handshake_error() {
+        let snap = EisWaitSnapshot {
+            ready: false,
+            connecting: false,
+            exhausted: false,
+            failure: Some("ConnectToEIS: EIS sender not available".into()),
+            granted: true,
+        };
+        match eis_wait_decision(&snap) {
+            EisWaitDecision::Failed(err) => assert!(err.contains("EIS sender not available")),
+            EisWaitDecision::Ready | EisWaitDecision::Poll => panic!("expected failure"),
+        }
+    }
+
+    #[test]
+    fn eis_wait_ready_wins_over_a_stale_failure() {
+        let snap = EisWaitSnapshot {
+            ready: true,
+            connecting: false,
+            exhausted: true,
+            failure: Some("old".into()),
+            granted: true,
+        };
+        assert!(matches!(eis_wait_decision(&snap), EisWaitDecision::Ready));
+    }
 
     #[test]
     fn restore_token_roundtrip() {

@@ -71,7 +71,7 @@ impl DataEditor {
                 .add_enabled(
                     has_bound,
                     crate::widgets::IconButton::new(
-                        egui_phosphor::regular::X,
+                        egui_phosphor::regular::ERASER,
                         "Clear",
                         has_bound.then_some(crate::theme::MACRO_STOP),
                     ),

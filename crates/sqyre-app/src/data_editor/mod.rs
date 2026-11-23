@@ -253,10 +253,7 @@ pub struct DataEditor {
     program_open: bool,
     /// Left-list scope for entity tabs (flat selected program vs all programs).
     search_scope: SearchScope,
-    /// Sort for Items / Pixel Check left-list icon grids (UI-only).
-    items_list_sort: sqyre_domain::CatalogItemSort,
-    /// Tag priority when [`Self::items_list_sort`] is Tags.
-    items_tag_priority: Vec<String>,
+    /// Draft for the Items / Pixel Check tag-priority chip editor (ephemeral).
     items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     left_width: f32,
@@ -409,8 +406,6 @@ impl Default for DataEditor {
             search_open: false,
             program_open: false,
             search_scope: SearchScope::default(),
-            items_list_sort: sqyre_domain::CatalogItemSort::default(),
-            items_tag_priority: Vec::new(),
             items_tag_priority_draft: String::new(),
             left_width: 0.0,
             split_key_moved: false,
@@ -959,7 +954,7 @@ impl DataEditor {
             let just_opened = self.ui_search_toggle(ui);
             self.program_toggle(ui, env.catalog, env.icons, env.settings);
             if self.search_open {
-                self.ui_search_controls(ui, env.catalog, env.icons, just_opened);
+                self.ui_search_controls(ui, env.catalog, env.icons, env.settings, just_opened);
             }
             if self.program_open {
                 self.ui_program_combo(ui, env.catalog, env.icons, env.settings);
@@ -1002,6 +997,7 @@ impl DataEditor {
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
+        settings: &mut UserSettings,
         just_opened: bool,
     ) {
         let hint = format!("Search {}…", self.tab.label());
@@ -1060,7 +1056,8 @@ impl DataEditor {
             let sort_btn = ui.add(crate::widgets::IconButton::new(
                 egui_phosphor::regular::SORT_ASCENDING,
                 "Sort items",
-                (self.items_list_sort != Sort::NameAsc).then_some(crate::theme::accent()),
+                (settings.data_editor_items_sort != Sort::NameAsc)
+                    .then_some(crate::theme::accent()),
             ));
             // `Popup` (not `Menu`) kind + `parent_popup`: picking a radio,
             // editing the tag chips, clicking a tag suggestion, or using a
@@ -1077,6 +1074,7 @@ impl DataEditor {
             if sort_btn.clicked() {
                 open = !open;
             }
+            let mut sort_changed = false;
             crate::widgets::parent_popup(
                 egui::Popup::new(
                     sort_menu_id,
@@ -1090,16 +1088,21 @@ impl DataEditor {
                 &mut open,
                 |ui| {
                     for &s in Sort::ALL {
-                        ui.radio_value(&mut self.items_list_sort, s, s.label());
+                        if ui
+                            .radio_value(&mut settings.data_editor_items_sort, s, s.label())
+                            .changed()
+                        {
+                            sort_changed = true;
+                        }
                     }
-                    if self.items_list_sort == Sort::Tags {
+                    if settings.data_editor_items_sort == Sort::Tags {
                         ui.separator();
                         ui.label(egui::RichText::new("Tag priority").strong().small());
                         let suggestions = helpers::collect_all_item_tags(catalog);
                         let program_icons = icons.program_name_icons(ui.ctx(), catalog);
-                        let _ = crate::widgets::tag_chip_editor(
+                        let edit = crate::widgets::tag_chip_editor(
                             ui,
-                            &mut self.items_tag_priority,
+                            &mut settings.data_editor_items_tag_priority,
                             &mut self.items_tag_priority_draft,
                             &suggestions,
                             crate::widgets::TagChipOptions {
@@ -1109,6 +1112,7 @@ impl DataEditor {
                                 draft_hover: Some(
                                     "Drag chips to set priority. Unmatched items sort by name after.",
                                 ),
+                                draft_hint: Some("Priority tag…"),
                                 reorderable: true,
                                 signed_filters: false,
                                 single_row: false,
@@ -1119,11 +1123,22 @@ impl DataEditor {
                                 draft_id: None,
                             },
                         );
+                        if edit.changed {
+                            sort_changed = true;
+                        }
                     }
                 },
             );
             ui.ctx()
                 .data_mut(|d| d.insert_temp(sort_menu_id.with("open"), open));
+            if sort_changed {
+                if let Err(e) = settings.save_default() {
+                    self.set_err(format!(
+                        "Failed to save item sort: {}",
+                        crate::status_banner::user_error_detail(&e)
+                    ));
+                }
+            }
         }
     }
 
