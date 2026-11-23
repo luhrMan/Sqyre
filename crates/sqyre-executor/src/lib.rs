@@ -2,21 +2,24 @@
 
 mod actions;
 mod backends;
+mod ctx;
 mod error;
 mod log_draw;
 mod navigate;
 mod path_confine;
 #[cfg(test)]
 mod pipeline_tests;
+mod resolve;
 mod run;
 mod search;
 #[cfg(test)]
 pub(crate) mod test_support;
 
 pub use backends::*;
+pub use ctx::{ExecDeps, Executor, DEFAULT_RUN_MACRO_MAX_DEPTH, DEFAULT_WHILE_MAX_ITERATIONS};
 pub use error::{ExecError, FlowSignal, SearchError};
 pub use log_draw::{crop_match_preview, draw_rect_rgb};
-pub use run::{execute_action, execute_macro, execute_macro_with, ExecDeps, Executor};
+pub use run::{execute_action, execute_macro, execute_macro_with};
 pub use sqyre_ports::{
     clear_highlights, highlight_clear, highlight_cursor, highlight_fill, lines_for,
     ActionHighlighter, ActionLogEntry, ActionLogger, HighlightEvent, HighlightKind,

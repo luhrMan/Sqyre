@@ -24,7 +24,7 @@ impl DataEditor {
             .selected_entity
             .as_deref()
             .is_some_and(sqyre_persist::is_quick_access_hub_id);
-        let icon = overlay_icons::resolve(&self.form_overlay_icon);
+        let icon = overlay_icons::resolve(&self.form_overlay.icon);
         let field_name = if hub { "Brand" } else { icon.label };
         crate::widgets::pair_labeled(ui, egui_phosphor::regular::SMILEY, field_name, |ui| {
             let mut preview_cfg = OverlayButtonConfig::new(
@@ -35,7 +35,7 @@ impl DataEditor {
                 },
                 "",
             );
-            self.apply_overlay_style_to_config(&mut preview_cfg);
+            self.form_overlay.apply_style_to_config(&mut preview_cfg);
             if hub {
                 preview_cfg.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
                 preview_cfg.border_width = 0.0;
@@ -51,8 +51,7 @@ impl DataEditor {
                 });
             if !hub && preview.clicked() {
                 if let Some(id) = self.selected_entity.clone() {
-                    self.overlay_icon_search.clear();
-                    self.overlay_icon_picker_for = Some(id);
+                    self.prompts.open_overlay_icon_picker(id);
                 }
             }
         });
@@ -70,7 +69,7 @@ impl DataEditor {
                 "Macro",
                 help::DE_OVERLAY_MACRO,
                 "overlay_form_macro",
-                &mut self.form_overlay_macro,
+                &mut self.form_overlay.macro_name,
                 crate::widgets::SearchableComboOpts {
                     options: &macro_names,
                     empty_text: "(pick macro)",
@@ -87,7 +86,7 @@ impl DataEditor {
         if !hub {
             use crate::pickers::CoordKind;
             use sqyre_domain::CoordinateRef;
-            let point_val = self.form_overlay_point.clone();
+            let point_val = self.form_overlay.point.clone();
             let point = CoordinateRef(point_val.clone());
             let display = if point.is_empty() {
                 "(unset — use X/Y below)"
@@ -100,7 +99,7 @@ impl DataEditor {
                 ui,
                 catalog,
                 icons,
-                &mut self.window_picker,
+                &mut self.prompts.window_picker,
                 CoordKind::Point,
                 &point_val,
                 pickers::CoordRefFieldOpts {
@@ -127,10 +126,10 @@ impl DataEditor {
                     }
                 },
             ) {
-                self.form_overlay_point.clear();
+                self.form_overlay.point.clear();
             }
         }
-        let point_set = !hub && !self.form_overlay_point.trim().is_empty();
+        let point_set = !hub && !self.form_overlay.point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
@@ -142,7 +141,7 @@ impl DataEditor {
                     } else {
                         help::DE_OVERLAY_X
                     },
-                    &mut self.form_overlay_x,
+                    &mut self.form_overlay.x,
                     |d| d.speed(1.0).suffix(" px"),
                 );
                 crate::widgets::drag_field(
@@ -154,16 +153,16 @@ impl DataEditor {
                     } else {
                         help::DE_OVERLAY_Y
                     },
-                    &mut self.form_overlay_y,
+                    &mut self.form_overlay.y,
                     |d| d.speed(1.0).suffix(" px"),
                 );
             });
         });
         if point_set {
             let mut loc = OverlayButtonConfig::new("preview", "");
-            loc.point = self.form_overlay_point.clone();
-            loc.x = self.form_overlay_x;
-            loc.y = self.form_overlay_y;
+            loc.point = self.form_overlay.point.clone();
+            loc.x = self.form_overlay.x;
+            loc.y = self.form_overlay.y;
             let (rx, ry) = catalog.resolve_overlay_xy(&loc.point, (loc.x, loc.y));
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
         }
@@ -173,7 +172,7 @@ impl DataEditor {
                 egui_phosphor::regular::RULER,
                 "Size",
                 help::DE_OVERLAY_HUB_SIZE,
-                &mut self.form_overlay_size,
+                &mut self.form_overlay.size,
                 |d| {
                     d.speed(1)
                         .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
@@ -181,7 +180,7 @@ impl DataEditor {
             );
             // Full-color logo: only alpha is applied on the face.
             {
-                let mut opacity = i32::from(self.form_overlay_icon_color.a());
+                let mut opacity = i32::from(self.form_overlay.icon_color.a());
                 let before = opacity;
                 crate::widgets::drag_field(
                     ui,
@@ -192,8 +191,8 @@ impl DataEditor {
                     |d| d.range(0..=255).speed(1),
                 );
                 if opacity != before {
-                    let c = self.form_overlay_icon_color;
-                    self.form_overlay_icon_color = egui::Color32::from_rgba_unmultiplied(
+                    let c = self.form_overlay.icon_color;
+                    self.form_overlay.icon_color = egui::Color32::from_rgba_unmultiplied(
                         c.r(),
                         c.g(),
                         c.b(),
@@ -210,14 +209,14 @@ impl DataEditor {
             |ui| {
                 ui.horizontal(|ui| {
                     help::tip(
-                        ui.checkbox(&mut self.form_overlay_gate_enabled, "Enabled"),
+                        ui.checkbox(&mut self.form_overlay.gate.enabled, "Enabled"),
                         help::DE_OVERLAY_GATE,
                     );
                 });
-                ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
+                ui.add_enabled_ui(self.form_overlay.gate.enabled, |ui| {
                     {
                         use crate::pickers::CoordKind;
-                        let area_val = self.form_overlay_gate_search_area.clone();
+                        let area_val = self.form_overlay.gate.search_area.clone();
                         let area = CoordinateRef(area_val.clone());
                         let display = if area.is_empty() {
                             "(pick search area)"
@@ -229,7 +228,7 @@ impl DataEditor {
                             ui,
                             catalog,
                             icons,
-                            &mut self.window_picker,
+                            &mut self.prompts.window_picker,
                             CoordKind::SearchArea,
                             &area_val,
                             pickers::CoordRefFieldOpts {
@@ -256,7 +255,7 @@ impl DataEditor {
                                 }
                             },
                         ) {
-                            self.form_overlay_gate_search_area.clear();
+                            self.form_overlay.gate.search_area.clear();
                         }
                     }
                     crate::widgets::pair_leading(
@@ -269,9 +268,9 @@ impl DataEditor {
                             )
                             .clicked()
                             {
-                                self.window_picker = pickers::ActivePicker::Items {
+                                self.prompts.window_picker = pickers::ActivePicker::Items {
                                     search: String::new(),
-                                    staged: self.form_overlay_gate_targets.clone(),
+                                    staged: self.form_overlay.gate.targets.clone(),
                                     staged_tags: None,
                                 };
                             }
@@ -281,7 +280,7 @@ impl DataEditor {
                                 ui.label(
                                     egui::RichText::new(format!(
                                         "({})",
-                                        self.form_overlay_gate_targets.len()
+                                        self.form_overlay.gate.targets.len()
                                     ))
                                     .weak(),
                                 ),
@@ -289,11 +288,11 @@ impl DataEditor {
                             );
                         },
                     );
-                    if self.form_overlay_gate_targets.is_empty() {
+                    if self.form_overlay.gate.targets.is_empty() {
                         ui.label(sqyre_domain::EMPTY_NONE);
                     } else {
                         let mut remove: Option<usize> = None;
-                        let snapshot = self.form_overlay_gate_targets.clone();
+                        let snapshot = self.form_overlay.gate.targets.clone();
                         let mut on_remove = |i| {
                             remove = Some(i);
                         };
@@ -311,14 +310,14 @@ impl DataEditor {
                             None,
                         );
                         if let Some(i) = remove {
-                            self.form_overlay_gate_targets.remove(i);
+                            self.form_overlay.gate.targets.remove(i);
                         }
                     }
                     match_settings::paint_match_settings_advanced(
                         ui,
-                        &mut self.form_overlay_gate_tolerance,
-                        &mut self.form_overlay_gate_blur,
-                        &mut self.form_overlay_gate_match_method,
+                        &mut self.form_overlay.gate.tolerance,
+                        &mut self.form_overlay.gate.blur,
+                        &mut self.form_overlay.gate.match_method,
                         |ui, method| {
                             crate::widgets::advanced_section(ui, "de_overlay_gate_adv", |ui| {
                                 match_settings::paint_match_method(ui, method);
@@ -327,7 +326,7 @@ impl DataEditor {
                                     egui_phosphor::regular::TIMER,
                                     "Interval",
                                     help::DE_OVERLAY_GATE_INTERVAL,
-                                    &mut self.form_overlay_gate_interval_ms,
+                                    &mut self.form_overlay.gate.interval_ms,
                                     |d| {
                                         d.speed(50)
                                             .range(
@@ -349,7 +348,7 @@ impl DataEditor {
             egui_phosphor::regular::RULER,
             "Size",
             help::DE_OVERLAY_SIZE,
-            &mut self.form_overlay_size,
+            &mut self.form_overlay.size,
             |d| {
                 d.speed(1)
                     .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
@@ -362,7 +361,7 @@ impl DataEditor {
                     egui_phosphor::regular::CIRCLE,
                     "Corner radius",
                     help::DE_OVERLAY_RADIUS,
-                    &mut self.form_overlay_corner_radius,
+                    &mut self.form_overlay.corner_radius,
                     |d| {
                         d.speed(0.5)
                             .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
@@ -374,7 +373,7 @@ impl DataEditor {
                     egui_phosphor::regular::FRAME_CORNERS,
                     "Border width",
                     help::DE_OVERLAY_BORDER,
-                    &mut self.form_overlay_border_width,
+                    &mut self.form_overlay.border_width,
                     |d| {
                         d.speed(0.1)
                             .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
@@ -383,13 +382,13 @@ impl DataEditor {
                 );
             });
             ui.horizontal(|ui| {
-                color_alpha_drag(ui, "Border", &mut self.form_overlay_border);
+                color_alpha_drag(ui, "Border", &mut self.form_overlay.border);
             });
             ui.horizontal(|ui| {
-                color_alpha_drag(ui, "Background", &mut self.form_overlay_bg);
+                color_alpha_drag(ui, "Background", &mut self.form_overlay.bg);
             });
             ui.horizontal(|ui| {
-                color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
+                color_alpha_drag(ui, "Icon", &mut self.form_overlay.icon_color);
             });
             crate::widgets::pair_labeled(
                 ui,
@@ -397,13 +396,13 @@ impl DataEditor {
                 "Icon hover",
                 |ui| {
                     help::tip(
-                        ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover),
+                        ui.color_edit_button_srgba(&mut self.form_overlay.icon_hover),
                         help::DE_OVERLAY_ICON_HOVER,
                     );
                 },
             );
             if ui.small_button("Reset appearance to defaults").clicked() {
-                self.reset_overlay_style_form();
+                self.form_overlay.reset_style();
             }
         });
         // This tab never commits a tag; the early returns above say the same.

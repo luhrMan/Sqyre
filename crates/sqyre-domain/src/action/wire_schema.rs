@@ -3,7 +3,7 @@
 //! Powers JSON Schema generation, YAML autocomplete, and drift tests so
 //! autocomplete and validation cannot disagree about allowed keys/enums.
 
-use super::{
+use super::model::{
     ConditionOperator, ItemSortBy, ItemSortThen, LoopJumpMode, MatchGrouping, MatchMethod,
     MatchMode, MouseButton, NavPressMode, NavSelectDevice, PressState, RepeatMode,
 };
@@ -156,6 +156,7 @@ const MATCH_METHOD_VALUES: &[&str] = &[
     "ccoeff",
     "ccoeff_normed",
 ];
+const PLANE_FLIP_VALUES: &[&str] = &["none", "horizontal", "vertical", "both"];
 const ITEM_SORT_BY_VALUES: &[&str] = &["name", "footprint", "tags", "manual"];
 const ITEM_SORT_THEN_VALUES: &[&str] = &[
     "name_asc",
@@ -262,6 +263,7 @@ const IMAGE_SEARCH_FIELDS: &[WireField] = detection_fields![
     f!("tolerance", WireFieldKind::Number),
     f!("blur", WireFieldKind::Number),
     f!("matchmethod", WireFieldKind::Enum(MATCH_METHOD_VALUES)),
+    f!("planeflip", WireFieldKind::Enum(PLANE_FLIP_VALUES)),
     f!("sortby", WireFieldKind::Enum(ITEM_SORT_BY_VALUES)),
     f!("sortthen", WireFieldKind::Enum(ITEM_SORT_THEN_VALUES)),
     f!("tagpriority", WireFieldKind::StringList),
@@ -512,6 +514,7 @@ pub fn enum_values_for_field(field: &str) -> Option<&'static [&'static str]> {
         "state" => Some(PRESS_STATE_VALUES),
         "mode" => Some(LOOP_JUMP_VALUES),
         "matchmethod" => Some(MATCH_METHOD_VALUES),
+        "planeflip" => Some(PLANE_FLIP_VALUES),
         "sortby" => Some(ITEM_SORT_BY_VALUES),
         "sortthen" => Some(ITEM_SORT_THEN_VALUES),
         "grouping" => Some(MATCH_GROUPING_VALUES),
@@ -688,6 +691,15 @@ pub fn assert_enum_tables_match_domain() {
             MatchMethod::CcoeffNormed => "ccoeff_normed",
         };
         assert!(MATCH_METHOD_VALUES.contains(&wire));
+    }
+    for v in crate::PlaneFlip::ALL {
+        let wire = match v {
+            crate::PlaneFlip::None => "none",
+            crate::PlaneFlip::Horizontal => "horizontal",
+            crate::PlaneFlip::Vertical => "vertical",
+            crate::PlaneFlip::Both => "both",
+        };
+        assert!(PLANE_FLIP_VALUES.contains(&wire));
     }
     for v in ItemSortBy::ALL {
         assert!(ITEM_SORT_BY_VALUES.contains(&v.as_str()));

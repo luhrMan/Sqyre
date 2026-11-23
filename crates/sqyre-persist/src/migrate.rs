@@ -1,6 +1,5 @@
 //! One-way migration from legacy inline-coordinate `db.yaml` to the current schema.
 
-use crate::{Database, Result};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::{VariableDecl, VariableType};
 use std::collections::HashMap;
@@ -250,9 +249,9 @@ fn migrate_macro(map: &mut Mapping, catalog: &LegacyCatalog) {
 }
 
 /// Migrate legacy `db.yaml` content to the current schema.
-pub fn migrate_db_yaml_value(root: &mut Value) -> Result<()> {
+pub fn migrate_db_yaml_value(root: &mut Value) {
     let Some(mapping) = root.as_mapping_mut() else {
-        return Ok(());
+        return;
     };
 
     let programs = mapping
@@ -263,68 +262,12 @@ pub fn migrate_db_yaml_value(root: &mut Value) -> Result<()> {
 
     let macros_key = Value::String("macros".into());
     let Some(Value::Mapping(macros)) = mapping.get_mut(&macros_key) else {
-        return Ok(());
+        return;
     };
 
     for (_name, macro_val) in macros.iter_mut() {
         if let Some(m) = macro_val.as_mapping_mut() {
             migrate_macro(m, &catalog);
-        }
-    }
-
-    Ok(())
-}
-
-/// Parse, migrate, and validate against the current [`Database`] loader.
-pub fn migrate_db_yaml(text: &str) -> Result<String> {
-    if text.len() > crate::MAX_DB_YAML_BYTES {
-        return Err(crate::PersistError::Message(format!(
-            "db.yaml too large ({} bytes; max {})",
-            text.len(),
-            crate::MAX_DB_YAML_BYTES
-        )));
-    }
-    crate::check_yaml_safety(text)?;
-    let mut root: Value = serde_yaml::from_str(text)?;
-    migrate_db_yaml_value(&mut root)?;
-    let out = serde_yaml::to_string(&root)?;
-    Database::from_yaml(&out)?;
-    Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn migrates_legacy_snippets() {
-        let text = include_str!("../tests/fixtures/db/legacy_inline.yaml");
-        let out = migrate_db_yaml(text).expect("migrate");
-        let db = Database::from_yaml(&out).expect("load");
-        let m = &db.macros["Demo"];
-        assert_eq!(m.variable_decls.len(), 1);
-        assert_eq!(m.variable_decls[0].name, "delay");
-        match &m.root.children()[0].kind {
-            sqyre_domain::ActionKind::Click { button, .. } => {
-                assert_eq!(*button, sqyre_domain::MouseButton::Left);
-            }
-            other => panic!("expected click, got {other:?}"),
-        }
-        match &m.root.children()[1].kind {
-            sqyre_domain::ActionKind::Move { point, .. } => {
-                assert_eq!(point.as_str(), "windows 10~image search reference");
-            }
-            other => panic!("expected move, got {other:?}"),
-        }
-        match &m.root.children()[2].kind {
-            sqyre_domain::ActionKind::ImageSearch(d) => {
-                assert_eq!(d.search_area.as_str(), "Arena Breakout Infinite~Mail Area");
-                assert_eq!(
-                    d.detection.wait.repeat_mode,
-                    sqyre_domain::RepeatMode::WaitUntilFound
-                );
-            }
-            other => panic!("expected imagesearch, got {other:?}"),
         }
     }
 }

@@ -18,8 +18,8 @@ impl DataEditor {
         let CatalogPaint { icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
         paint_name_field(ui, &mut self.form_name);
-        let title = self.form_window_title.trim().to_string();
-        let path = self.form_process_path.trim().to_string();
+        let title = self.form_program.window_title.trim().to_string();
+        let path = self.form_program.process_path.trim().to_string();
         // Program name is the window title when bound; the path falls back to
         // being the name, with the folder glyph tooltip carrying the full path.
         let name = if path.is_empty() {
@@ -36,7 +36,11 @@ impl DataEditor {
             let icon_side = crate::icon_cache::PROCESS_ICON_SIDE * 1.25;
             let pick = if !path.is_empty() {
                 let tex = icons
-                    .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
+                    .for_process(
+                        ui.ctx(),
+                        &self.form_program.process_path,
+                        &self.form_program.window_title,
+                    )
                     .or_else(|| {
                         let prog = self.selected_program.as_deref()?;
                         let bound = catalog.get(prog)?;
@@ -65,8 +69,10 @@ impl DataEditor {
                 crate::widgets::icon_button(ui, crate::model_icons::WINDOW, ht::ED_PICK_WINDOW)
             };
             if pick.clicked() {
-                self.window_picker =
-                    pickers::open_window_picker(&self.form_process_path, &self.form_window_title);
+                self.prompts.window_picker = pickers::open_window_picker(
+                    &self.form_program.process_path,
+                    &self.form_program.window_title,
+                );
             }
             // Clear sits next to the picker it empties, not at the row's far end.
             if ui
@@ -80,8 +86,8 @@ impl DataEditor {
                 )
                 .clicked()
             {
-                self.form_process_path.clear();
-                self.form_window_title.clear();
+                self.form_program.process_path.clear();
+                self.form_program.window_title.clear();
             }
             help::tip(
                 ui.label(egui::RichText::new(name.as_str()).monospace()),
@@ -106,11 +112,15 @@ impl DataEditor {
         if !name_tag.is_empty() {
             // The name chip follows the draft name. A picked window wins; the
             // saved program icon covers a closed app and a rename in progress.
-            let draft_icon = if self.form_process_path.trim().is_empty() {
+            let draft_icon = if self.form_program.process_path.trim().is_empty() {
                 None
             } else {
                 icons
-                    .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
+                    .for_process(
+                        ui.ctx(),
+                        &self.form_program.process_path,
+                        &self.form_program.window_title,
+                    )
                     .or_else(|| {
                         self.selected_program
                             .as_deref()
@@ -212,7 +222,7 @@ impl DataEditor {
                     egui_phosphor::regular::STACK,
                     "Stack max",
                     help::DE_STACK_MAX,
-                    &mut self.form_stack_max,
+                    &mut self.form_item.stack_max,
                     0..=i32::MAX,
                 ),
             ] {
@@ -254,7 +264,7 @@ impl DataEditor {
             "Mask",
             help::DE_MASK,
             "item_mask",
-            &mut self.form_mask,
+            &mut self.form_item.mask,
             crate::widgets::SearchableComboOpts {
                 options: &masks,
                 empty_text: sqyre_domain::EMPTY_NONE,
@@ -267,7 +277,10 @@ impl DataEditor {
             },
             None,
         );
-        if let (Some(prog), mask) = (self.selected_program.as_deref(), self.form_mask.as_str()) {
+        if let (Some(prog), mask) = (
+            self.selected_program.as_deref(),
+            self.form_item.mask.as_str(),
+        ) {
             if !mask.is_empty() {
                 if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {
                     let detail = if catalog.mask_image_path(prog, mask).is_file() {

@@ -4,8 +4,10 @@
 //! path). Image Search match method and OCR preprocess flags stay under a
 //! collapsed Advanced section.
 
-use super::var_ref_field;
-use super::{coords_editor, detection_branch_editor, search_area_section, targets_editor};
+use super::edit_fields::{
+    coords_editor, detection_branch_editor, search_area_section, var_ref_field,
+};
+use super::targets_editor;
 use crate::action_tooltip::help as h;
 use crate::action_tooltip::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use crate::paint_ctx::{CatalogPaint, VarTheme};
@@ -69,6 +71,7 @@ pub(super) fn paint_image_search_fields(
         tolerance,
         blur,
         match_method,
+        plane_flip,
         sort_by,
         sort_then,
         tag_priority,
@@ -97,6 +100,7 @@ pub(super) fn paint_image_search_fields(
     tip_advanced(ui, |ui| {
         tip_wrapped_section(ui, |ui| {
             match_method_editor(ui, match_method);
+            match_settings::paint_plane_flip(ui, plane_flip);
         });
     });
 }

@@ -1,12 +1,6 @@
 //! Blank action factories for the Add Action picker.
 
-use crate::{
-    action_type_table, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch,
-    FindPixelData, ImageSearchData, ListColumn, LoopJumpMode, MatchMethod, MouseButton, OcrData,
-    PressState, ScalarValue, VariableAssignment, CELL_COORDINATES, DEFAULT_SMOOTH_DELAY_MS,
-    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, DEFAULT_WAIT_TIME_MS, GENERAL_PROGRAM,
-    IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
-};
+use crate::{action_type_table, Action, ActionKind};
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
 #[derive(Debug, Clone)]
@@ -63,141 +57,14 @@ macro_rules! test_action {
     };
 }
 
-/// `General~<name>` ref for a seeded well-known point ([`GENERAL_PROGRAM`]).
-fn general_point_ref(name: &str) -> CoordinateRef {
-    CoordinateRef(format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{name}"))
-}
-
-/// Starter child for actions that produce screen coordinates: follow each
-/// hit / cell with the cursor ([`Move`] to `point`).
-fn move_children(point: CoordinateRef) -> Vec<Action> {
-    vec![Action::new(ActionKind::Move {
-        point,
-        smooth: true,
-        smooth_low: DEFAULT_SMOOTH_LOW,
-        smooth_high: DEFAULT_SMOOTH_HIGH,
-        smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
-    })]
-}
-
-/// Detection branch whose child moves to each hit ([`IMAGE_SEARCH_REFERENCE`]).
-fn detection_with_move() -> DetectionBranch {
-    DetectionBranch {
-        subactions: move_children(general_point_ref(IMAGE_SEARCH_REFERENCE)),
-        ..DetectionBranch::default()
-    }
-}
-
-/// Default [`ActionKind`] for a wire type key (Add Action / taxonomy blanks).
-pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
-    Some(match action_type.trim().to_ascii_lowercase().as_str() {
-        "move" => ActionKind::Move {
-            point: CoordinateRef::default(),
-            smooth: true,
-            smooth_low: DEFAULT_SMOOTH_LOW,
-            smooth_high: DEFAULT_SMOOTH_HIGH,
-            smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
-        },
-        "click" => ActionKind::Click {
-            button: MouseButton::Left,
-            state: PressState::Tap,
-        },
-        "key" => ActionKind::Key {
-            key: "ctrl".into(),
-            state: PressState::Tap,
-        },
-        "type" => ActionKind::Type {
-            text: String::new(),
-            delay_ms: 0,
-        },
-        "wait" => ActionKind::Wait {
-            time: ScalarValue::Int(DEFAULT_WAIT_TIME_MS),
-        },
-        "pause" => ActionKind::Pause {
-            message: String::new(),
-            continue_key: Vec::new(),
-            pass_through: false,
-        },
-        "focuswindow" => ActionKind::FocusWindow {
-            process_path: String::new(),
-            window_title: String::new(),
-            previous: false,
-        },
-        "runmacro" => ActionKind::RunMacro {
-            macro_name: String::new(),
-        },
-        "conditional" => ActionKind::Conditional {
-            condition: ConditionBlock::default(),
-            subactions: Vec::new(),
-            else_actions: Vec::new(),
-        },
-        "loop" => ActionKind::Loop {
-            name: String::new(),
-            count: ScalarValue::Int(1),
-            subactions: Vec::new(),
-        },
-        "while" => ActionKind::While {
-            condition: ConditionBlock::default(),
-            max_iterations: 0,
-            subactions: Vec::new(),
-        },
-        "loopjump" => ActionKind::LoopJump {
-            mode: LoopJumpMode::Break,
-        },
-        "imagesearch" => ActionKind::ImageSearch(Box::new(ImageSearchData {
-            tolerance: 0.95,
-            blur: 5,
-            match_method: MatchMethod::CcoeffNormed,
-            detection: detection_with_move(),
-            ..Default::default()
-        })),
-        "ocr" => ActionKind::Ocr(Box::new(OcrData {
-            target: "template".into(),
-            resize: 1.0,
-            detection: detection_with_move(),
-            ..Default::default()
-        })),
-        "findpixel" => ActionKind::FindPixel(Box::new(FindPixelData {
-            target_color: "ffffff".into(),
-            detection: detection_with_move(),
-            ..Default::default()
-        })),
-        "setvariable" => ActionKind::SetVariable {
-            assignments: vec![VariableAssignment::default()],
-        },
-        "foreachrow" => ActionKind::ForEachRow {
-            name: String::new(),
-            sources: vec![ListColumn::default()],
-            start_row: ScalarValue::Int(1),
-            end_row: ScalarValue::Null,
-            subactions: Vec::new(),
-        },
-        "foreachcell" => ActionKind::ForEachCell {
-            name: String::new(),
-            cells: CoordinateRef::default(),
-            subactions: move_children(general_point_ref(CELL_COORDINATES)),
-        },
-        "savevariable" => ActionKind::SaveVariable {
-            variable_name: String::new(),
-            destination: String::new(),
-            append: false,
-            append_newline: false,
-        },
-        "navigateselect" => ActionKind::NavigateSelect(Box::default()),
-        "navigatekey" => ActionKind::NavigateKey {
-            name: String::new(),
-            chord: Vec::new(),
-            exit: false,
-            subactions: Vec::new(),
-        },
-        _ => return None,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action_type_label, ACTION_KIND_COUNT};
+    use crate::{
+        action_type_label, PressState, ScalarValue, ACTION_KIND_COUNT, CELL_COORDINATES,
+        DEFAULT_SMOOTH_LOW, DEFAULT_WAIT_TIME_MS, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+        PROGRAM_DELIMITER,
+    };
 
     #[test]
     fn templates_cover_all_kinds() {

@@ -6,8 +6,8 @@ use super::{
     ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
     ProgramSearchArea,
 };
+use crate::error::{PersistError, Result};
 use crate::fs_name::{is_safe_fs_entity_name, validate_fs_entity_name};
-use crate::{PersistError, Result};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_ports::PortError;

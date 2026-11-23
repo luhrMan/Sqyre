@@ -5,9 +5,9 @@ use super::common::{
     sort_hits, DetectionCtx, DetectionExtras, DetectionHit, FrameMemo,
 };
 use crate::backends::{CollectionArea, DesktopRect, ItemMeta};
+use crate::ctx::{Executor, RunChildrenFn};
 use crate::error::{ExecError, FlowSignal, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
-use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
     action_type_label, expand_image_search_targets, grid_item_placements, ordered_item_targets,
@@ -33,6 +33,7 @@ pub(crate) fn execute_image_search(
     exec: &mut Executor<'_>,
     action: &Action,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let ActionKind::ImageSearch(d) = &action.kind else {
         return Err(ExecError::Message("not image search".into()));
@@ -44,6 +45,7 @@ pub(crate) fn execute_image_search(
         tolerance,
         blur,
         match_method,
+        plane_flip,
         sort_by,
         sort_then,
         tag_priority,
@@ -70,7 +72,14 @@ pub(crate) fn execute_image_search(
     let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
     let sorted_targets =
         ordered_search_targets(exec, &expanded, *sort_by, *sort_then, tag_priority);
-    let ctx = DetectionCtx::new(action_id, label, search_area, &sorted_targets, detection);
+    let ctx = DetectionCtx::new(
+        action_id,
+        label,
+        search_area,
+        &sorted_targets,
+        detection,
+        run_children,
+    );
     let wait = &detection.wait;
     let macro_name = macro_.name.clone();
     let result = (|| {
@@ -79,6 +88,7 @@ pub(crate) fn execute_image_search(
             tolerance: *tolerance,
             blur: *blur,
             match_method: *match_method,
+            plane_flip: *plane_flip,
         };
         // Log wait intent once before the shared shell arms retries.
         let results0 = capture_and_match(exec, &ctx, &params, false, &mut memo, macro_)?;
@@ -180,6 +190,7 @@ struct MatchParams {
     tolerance: f64,
     blur: i32,
     match_method: MatchMethod,
+    plane_flip: sqyre_domain::PlaneFlip,
 }
 
 fn capture_and_match(
@@ -194,6 +205,7 @@ fn capture_and_match(
         tolerance,
         blur,
         match_method,
+        plane_flip,
     } = params;
     let action_id = ctx.action_id;
     let label = ctx.label;
@@ -348,9 +360,9 @@ fn capture_and_match(
     // `into_par_iter` deadlock when nested FFT work needs those same rayon workers
     // (stop then sticks at "Stop requested…"). Warm uses rayon only for independent
     // disk/blur/prepare work (no nested FFT).
-    warm_variant_caches(exec, &targets_search, kernel, method)?;
+    warm_variant_caches(exec, &targets_search, kernel, method, plane_flip)?;
     if let Some(ref prep) = search_prep {
-        warm_search_ffts(prep, &search_blurred, &targets_search, kernel);
+        warm_search_ffts(prep, &search_blurred, &targets_search, kernel, plane_flip);
     }
 
     // Search order comes from sort_by/sort_then (via DetectionCtx targets). Collection
@@ -359,6 +371,7 @@ fn capture_and_match(
     let match_ctx = MatchCtx {
         kernel,
         method,
+        plane_flip,
         threshold,
         close_dist,
         variant_exit_early: exec.deps.variant_exit_early,
@@ -814,6 +827,7 @@ fn warm_variant_caches(
     targets: &[TargetSearch],
     kernel: i32,
     method: MatchMethod,
+    plane_flip: sqyre_domain::PlaneFlip,
 ) -> Result<()> {
     let mut jobs: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
     let mut seen: HashSet<(PathBuf, Option<PathBuf>)> = HashSet::new();
@@ -831,15 +845,21 @@ fn warm_variant_caches(
         if stop.is_some_and(|f| f.load(Ordering::SeqCst)) {
             return;
         }
-        let Ok(template_blurred) = get_cached_blurred_template(&path, kernel) else {
+        let Ok(template_blurred) = get_cached_blurred_template(&path, kernel, plane_flip) else {
             return;
         };
         let mask_bytes = mask_path.as_ref().and_then(|p| {
-            get_cached_image_mask(p, template_blurred.height, template_blurred.width)
+            get_cached_image_mask(
+                p,
+                template_blurred.height,
+                template_blurred.width,
+                plane_flip,
+            )
         });
         let _ = get_cached_prepared_template(
             &path,
             kernel,
+            plane_flip,
             template_blurred.as_ref(),
             mask_path.as_deref(),
             mask_bytes.as_deref().map(|m| m.as_slice()),
@@ -853,7 +873,13 @@ fn warm_variant_caches(
 }
 
 /// Precompute search-frame FFTs for template sizes that will take the DFT path.
-fn warm_search_ffts(prep: &SearchPrep, search: &ImageBuf, targets: &[TargetSearch], kernel: i32) {
+fn warm_search_ffts(
+    prep: &SearchPrep,
+    search: &ImageBuf,
+    targets: &[TargetSearch],
+    kernel: i32,
+    plane_flip: sqyre_domain::PlaneFlip,
+) {
     let mut seen_sizes: HashSet<(usize, usize)> = HashSet::new();
     for target in targets {
         // Masked matches use the direct correlator — skip FFT warm.
@@ -861,7 +887,7 @@ fn warm_search_ffts(prep: &SearchPrep, search: &ImageBuf, targets: &[TargetSearc
             continue;
         }
         for variant in &target.variants {
-            let Ok(tmpl) = get_cached_blurred_template(&variant.path, kernel) else {
+            let Ok(tmpl) = get_cached_blurred_template(&variant.path, kernel, plane_flip) else {
                 continue;
             };
             let tw = tmpl.width;
@@ -877,6 +903,7 @@ fn warm_search_ffts(prep: &SearchPrep, search: &ImageBuf, targets: &[TargetSearc
 struct MatchCtx<'a> {
     kernel: i32,
     method: MatchMethod,
+    plane_flip: sqyre_domain::PlaneFlip,
     threshold: f32,
     close_dist: i32,
     variant_exit_early: bool,
@@ -921,30 +948,33 @@ fn match_one_variant(
     oy: i32,
     ctx: &MatchCtx<'_>,
 ) -> VariantMatchOutcome {
-    let template_blurred = match get_cached_blurred_template(&variant.path, ctx.kernel) {
-        Ok(t) => t,
-        Err(e) => {
-            return skipped_outcome(
-                target,
-                variant,
-                Err(SearchError::Template(format!(
-                    "load {:?}: {e}",
-                    variant.path
-                ))),
-            );
-        }
-    };
+    let template_blurred =
+        match get_cached_blurred_template(&variant.path, ctx.kernel, ctx.plane_flip) {
+            Ok(t) => t,
+            Err(e) => {
+                return skipped_outcome(
+                    target,
+                    variant,
+                    Err(SearchError::Template(format!(
+                        "load {:?}: {e}",
+                        variant.path
+                    ))),
+                );
+            }
+        };
     let tmpl_w = template_blurred.width;
     let tmpl_h = template_blurred.height;
 
     let mask_bytes = target
         .mask_path
         .as_ref()
-        .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
+        .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w, ctx.plane_flip));
     let mask_missing = target.mask_path.is_some() && mask_bytes.is_none();
 
     let template_raw = if ctx.want_pipeline {
-        load_rgb_image(&variant.path).ok()
+        load_rgb_image(&variant.path)
+            .ok()
+            .map(|raw| sqyre_vision::flip_image_buf(&raw, ctx.plane_flip))
     } else {
         None
     };
@@ -953,6 +983,7 @@ fn match_one_variant(
     let (matches, best_score) = match get_cached_prepared_template(
         &variant.path,
         ctx.kernel,
+        ctx.plane_flip,
         template_blurred.as_ref(),
         target.mask_path.as_deref(),
         mask_bytes.as_deref().map(|m| m.as_slice()),

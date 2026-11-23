@@ -3,7 +3,7 @@
 use super::helpers::copy_image_as_png;
 #[cfg(any(test, feature = "native-runtime"))]
 use super::helpers::{parse_i32, unique_name};
-use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm, VariantPrompt};
+use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
 };
@@ -164,7 +164,7 @@ impl DataEditor {
                     "Delete",
                     !deny,
                 ) {
-                    self.confirm = Some(PendingConfirm::DeleteVariant {
+                    self.prompts.confirm = Some(PendingConfirm::DeleteVariant {
                         variant: variant.clone(),
                     });
                 }
@@ -202,8 +202,7 @@ impl DataEditor {
         if existing.is_empty() {
             self.add_icon_variant(catalog, icons, settings, "Original", &path);
         } else {
-            self.variant_name_draft.clear();
-            self.variant_prompt = Some(VariantPrompt::Name { source: path });
+            self.prompts.ask_variant_name(path);
         }
     }
 
@@ -239,7 +238,7 @@ impl DataEditor {
                 let _ = settings;
             }
             Err(AddVariantError::Exists(e)) => {
-                self.confirm = Some(PendingConfirm::OverwriteVariant {
+                self.prompts.confirm = Some(PendingConfirm::OverwriteVariant {
                     variant: e.variant_name,
                     source: source.to_path_buf(),
                 });
@@ -381,18 +380,19 @@ impl DataEditor {
         }
     }
 
-    /// Seed ScreenCap form buffers from a search-area or collection-cell reference.
-    /// Returns `true` when the reference resolved to desktop bounds.
-    pub(crate) fn apply_screen_cap_reference(
+    /// Apply resolved search-area / collection-cell bounds into the form preview
+    /// fields. Does **not** change the selected program/entity (Match Check keeps
+    /// the chosen item when the search area changes).
+    pub(crate) fn apply_search_area_bounds(
         &mut self,
         catalog: CatalogView<'_>,
-        coord: CoordinateRef,
+        coord: &CoordinateRef,
     ) -> bool {
         let macro_ = Macro::new("", 0, vec![]);
-        let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
+        let (lx, ty, rx, by) = match catalog.resolve_search_area(coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
+                self.set_err(format!("{}: {e}", self.tab.label()));
                 return false;
             }
         };
@@ -406,11 +406,28 @@ impl DataEditor {
             by,
         );
         self.form_monitor = monitor;
-        self.form_left = lx.to_string();
-        self.form_top = ty.to_string();
-        self.form_right = rx.to_string();
-        self.form_bottom = by.to_string();
+        self.form_rect.load_displays(
+            lx.to_string(),
+            ty.to_string(),
+            rx.to_string(),
+            by.to_string(),
+        );
         self.form_search_area = coord.0.clone();
+        self.previews.coord.clear();
+        true
+    }
+
+    /// Seed ScreenCap form buffers from a search-area or collection-cell reference,
+    /// and select that reference as the current entity (Screen Cap list row).
+    /// Returns `true` when the reference resolved to desktop bounds.
+    pub(crate) fn apply_screen_cap_reference(
+        &mut self,
+        catalog: CatalogView<'_>,
+        coord: CoordinateRef,
+    ) -> bool {
+        if !self.apply_search_area_bounds(catalog, &coord) {
+            return false;
+        }
         self.form_name = match coord.cell_range() {
             Some((r1, c1, r2, c2)) if r1 == r2 && c1 == c2 => {
                 format!("{}_r{}c{}", coord.name(), r1, c1)
@@ -424,8 +441,6 @@ impl DataEditor {
             self.selected_program = Some(prog.to_string());
         }
         self.selected_entity = Some(coord.name().to_string());
-        self.coord_preview.reset();
-        self.coord_preview_key = None;
         true
     }
 
@@ -449,10 +464,10 @@ impl DataEditor {
         let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
             catalog,
             self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
+            &self.form_rect.left,
+            &self.form_rect.top,
+            &self.form_rect.right,
+            &self.form_rect.bottom,
         ) else {
             return Err(format!(
                 "{}: invalid capture dimensions.",
@@ -490,7 +505,7 @@ impl DataEditor {
         }
         #[cfg(feature = "native-runtime")]
         {
-            if self.screen_cap_pending.is_some() {
+            if self.jobs.screen_cap_pending.is_some() {
                 self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
                 return;
             }
@@ -559,7 +574,7 @@ impl DataEditor {
                 })();
                 let _ = tx.send(result);
             });
-            self.screen_cap_pending = Some(result_rx);
+            self.jobs.screen_cap_pending = Some(result_rx);
             self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
         }
     }
@@ -601,9 +616,11 @@ impl DataEditor {
                     return;
                 }
             };
-            if let Err(e) =
-                validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
-            {
+            if let Err(e) = validate_item_grid_fields(
+                &self.form_cols,
+                &self.form_rows,
+                &self.form_item.stack_max,
+            ) {
                 self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return;
             }
@@ -616,8 +633,8 @@ impl DataEditor {
             };
             let item = ProgramItem {
                 name: requested,
-                mask: self.form_mask.clone(),
-                stack_max: parse_i32(&self.form_stack_max).unwrap_or(0),
+                mask: self.form_item.mask.clone(),
+                stack_max: parse_i32(&self.form_item.stack_max).unwrap_or(0),
                 grid_cols: parse_i32(&self.form_cols).unwrap_or(1),
                 grid_rows: parse_i32(&self.form_rows).unwrap_or(1),
                 tags: self.form_tags.clone(),
@@ -658,23 +675,23 @@ impl DataEditor {
     }
 
     pub(crate) fn poll_screen_cap(&mut self, ctx: &egui::Context) {
-        let Some(rx) = self.screen_cap_pending.as_ref() else {
+        let Some(rx) = self.jobs.screen_cap_pending.as_ref() else {
             return;
         };
         match rx.try_recv() {
             Ok(Ok(msg)) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_ok(msg);
             }
             Ok(Err(e)) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_err(e);
             }
             Err(TryRecvError::Empty) => {
                 ctx.request_repaint();
             }
             Err(TryRecvError::Disconnected) => {
-                self.screen_cap_pending = None;
+                self.jobs.screen_cap_pending = None;
                 self.set_err(format!("{}: capture failed", EditorTab::ScreenCap.label()));
             }
         }
@@ -700,7 +717,7 @@ impl DataEditor {
             use std::sync::mpsc;
             use std::thread;
 
-            if self.collection_capture_pending.is_some() {
+            if self.jobs.collection_capture_pending.is_some() {
                 self.set_ok("Collection: capturing…");
                 return Ok(());
             }
@@ -723,7 +740,7 @@ impl DataEditor {
                 })();
                 let _ = tx.send(result);
             });
-            self.collection_capture_pending = Some(super::CollectionCapturePending {
+            self.jobs.collection_capture_pending = Some(super::jobs::CollectionCapturePending {
                 path,
                 rollback_collection,
                 rx,
@@ -741,13 +758,13 @@ impl DataEditor {
     ) {
         use std::sync::mpsc::TryRecvError;
 
-        let Some(pending) = self.collection_capture_pending.take() else {
+        let Some(pending) = self.jobs.collection_capture_pending.take() else {
             return;
         };
         match pending.rx.try_recv() {
             Ok(Ok(())) => {
                 icons.invalidate_path(&pending.path);
-                self.collection_preview.reset();
+                self.previews.collection.transform.reset();
                 self.set_ok("Collection image saved.");
             }
             Ok(Err(e)) => {
@@ -757,7 +774,7 @@ impl DataEditor {
                 self.set_err(e);
             }
             Err(TryRecvError::Empty) => {
-                self.collection_capture_pending = Some(pending);
+                self.jobs.collection_capture_pending = Some(pending);
                 ctx.request_repaint();
             }
             Err(TryRecvError::Disconnected) => {
@@ -797,7 +814,10 @@ fn create_item_with_original(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::{CatalogView, ProgramCatalog};
+    use crate::data_editor::{DataEditor, EditorTab};
+    use sqyre_domain::PROGRAM_DELIMITER;
+    use sqyre_domain::{CoordinateRef, ScalarValue};
+    use sqyre_persist::{CatalogView, ProgramCatalog, ProgramSearchArea};
     use tempfile::tempdir;
 
     fn catalog_with_icons(root: &std::path::Path) -> ProgramCatalog {
@@ -805,6 +825,72 @@ mod tests {
         c.set_images_root(Some(root.to_path_buf()));
         c.create_program("Game").unwrap();
         c
+    }
+
+    fn catalog_with_bag() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080)]);
+        cat.create_program("Game").unwrap();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Bag".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(10),
+                top_y: ScalarValue::Int(20),
+                right_x: ScalarValue::Int(110),
+                bottom_y: ScalarValue::Int(120),
+            },
+        )
+        .unwrap();
+        cat
+    }
+
+    #[test]
+    fn apply_search_area_bounds_keeps_selected_item() {
+        let cat = catalog_with_bag();
+        let mut ed = DataEditor {
+            tab: EditorTab::MatchCheck,
+            selected_program: Some("Game".into()),
+            selected_entity: Some("Potion".into()),
+            form_name: "Potion".into(),
+            ..Default::default()
+        };
+        let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert!(ed.apply_search_area_bounds(CatalogView::from(&cat), &coord));
+        assert_eq!(ed.selected_entity.as_deref(), Some("Potion"));
+        assert_eq!(ed.form_name, "Potion");
+        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert_eq!(ed.form_rect.left, "10");
+        assert_eq!(ed.form_rect.top, "20");
+        assert_eq!(ed.form_rect.right, "110");
+        assert_eq!(ed.form_rect.bottom, "120");
+    }
+
+    #[test]
+    fn apply_screen_cap_reference_selects_search_area_entity() {
+        let cat = catalog_with_bag();
+        let mut ed = DataEditor {
+            tab: EditorTab::ScreenCap,
+            selected_program: Some("Game".into()),
+            selected_entity: Some("Potion".into()),
+            form_name: "Potion".into(),
+            ..Default::default()
+        };
+        let coord = CoordinateRef(format!("Game{PROGRAM_DELIMITER}Bag"));
+        assert!(ed.apply_screen_cap_reference(CatalogView::from(&cat), coord));
+        assert_eq!(ed.selected_entity.as_deref(), Some("Bag"));
+        assert_eq!(ed.form_name, "Bag");
+        assert_eq!(ed.form_search_area, format!("Game{PROGRAM_DELIMITER}Bag"));
     }
 
     fn sample_item(name: &str) -> ProgramItem {

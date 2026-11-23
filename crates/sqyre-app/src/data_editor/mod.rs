@@ -5,41 +5,48 @@ const WINDOW_TITLE: &str = "Data Editor";
 /// Points per arrow-key press when the pane divider is keyboard-focused.
 const SPLIT_RESIZE_KEY_STEP: f32 = 24.0;
 
+mod dialogs;
+mod form_fields;
 mod form_state;
 mod forms;
 pub(crate) mod helpers;
+mod jobs;
 mod lists;
 pub(crate) mod mask_preview;
 #[cfg(feature = "native-runtime")]
 mod match_check;
 mod overlay;
 mod persist;
+mod preview_state;
 #[cfg(feature = "native-runtime")]
 mod running_programs;
+mod tabs;
+mod toolbar;
 mod variants;
 
-use crate::data_editor_preview::variant_display_label;
 use crate::help_text as ht;
 use crate::icon_cache::IconCache;
-use crate::image_view::ImageViewTransform;
-use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
-use crate::pickers::{self, ActivePicker, PickerResult};
+use crate::pickers::{self, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
+use dialogs::{ConfirmSubject, EditorPrompts, PendingConfirm};
 use eframe::egui;
-use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
+use form_fields::{
+    AtlasFields, ItemFields, MaskFields, OverlayFields, PointFields, ProgramFields, RectFields,
+};
+use helpers::{default_editor_program, is_editor_listed_program};
+use jobs::BackgroundJobs;
+use preview_state::PreviewState;
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, CatalogView, Database, OverlayButtonConfig, OverlayVisibilityGate,
-    OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
-    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
-    DEFAULT_OVERLAY_GATE_TOLERANCE, MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
+    CatalogView, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
+    MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
+pub(crate) use tabs::EditorTab;
+use tabs::SearchScope;
 
 /// Shared session borrows for Data Editor (egui ctx, persist, catalog, capture).
 pub struct DataEditorCtx<'a> {
@@ -53,182 +60,6 @@ pub struct DataEditorCtx<'a> {
     /// Live hotkey tag selection. A program rename rewrites name tags here too.
     pub hotkey_tag_filters: &'a mut Vec<String>,
     pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
-}
-
-/// Top-level Data Editor section (tab bar).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EditorSection {
-    Programs,
-    Items,
-    Coordinates,
-    Tools,
-}
-
-impl EditorSection {
-    fn default_tab(self) -> EditorTab {
-        match self {
-            Self::Programs => EditorTab::Programs,
-            Self::Items => EditorTab::Items,
-            Self::Coordinates => EditorTab::Points,
-            Self::Tools => EditorTab::ScreenCap,
-        }
-    }
-
-    /// Tabs under this section, in row order.
-    fn subtabs(self) -> &'static [EditorTab] {
-        match self {
-            Self::Programs => &[EditorTab::Programs, EditorTab::Overlay],
-            Self::Items => &[EditorTab::Items, EditorTab::Masks],
-            Self::Coordinates => &[
-                EditorTab::Points,
-                EditorTab::SearchAreas,
-                EditorTab::Collections,
-                EditorTab::Atlases,
-            ],
-            Self::Tools => &[EditorTab::ScreenCap, EditorTab::MatchCheck],
-        }
-    }
-
-    /// Tools (Screen Cap / Match Check) are desktop-only — omitted on WASM.
-    fn is_available(self) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            !matches!(self, Self::Tools)
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = self;
-            true
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum EditorTab {
-    #[default]
-    Programs,
-    Items,
-    Masks,
-    ScreenCap,
-    MatchCheck,
-    Points,
-    SearchAreas,
-    Collections,
-    Atlases,
-    Overlay,
-}
-
-impl EditorTab {
-    /// User-visible tab title (never camelCase enum / wire names).
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Programs => "Programs",
-            Self::Items => "Items",
-            Self::Masks => "Masks",
-            Self::ScreenCap => "Screen Cap",
-            Self::MatchCheck => "Match Check",
-            Self::Points => "Points",
-            Self::SearchAreas => "Search Areas",
-            Self::Collections => "Collections",
-            Self::Atlases => "Atlases",
-            Self::Overlay => "Overlay",
-        }
-    }
-
-    /// Semantic glyph for the icon tab face; [`Self::label`] stays the
-    /// tooltip / combo fallback text. Entity tabs use the canonical
-    /// [`crate::model_icons`] glyph so the same model looks the same app-wide.
-    fn icon(self) -> &'static str {
-        use egui_phosphor::regular::*;
-        match self {
-            Self::Programs => crate::model_icons::PROGRAM,
-            Self::Items => crate::model_icons::ITEM,
-            Self::Masks => crate::model_icons::MASK,
-            Self::ScreenCap => CAMERA,
-            Self::MatchCheck => MAGNIFYING_GLASS,
-            Self::Points => crate::model_icons::POINT,
-            Self::SearchAreas => crate::model_icons::SEARCH_AREA,
-            Self::Collections => crate::model_icons::COLLECTION,
-            Self::Atlases => crate::model_icons::ATLAS,
-            Self::Overlay => crate::model_icons::OVERLAY,
-        }
-    }
-
-    /// Capture / match tools unavailable in the WASM GUI editor.
-    /// Called from `switch_tab` under `cfg(target_arch = "wasm32")`.
-    #[cfg_attr(
-        not(any(test, target_arch = "wasm32")),
-        expect(dead_code, reason = "only the WASM editor hides desktop-only tabs")
-    )]
-    pub(crate) fn is_desktop_only(self) -> bool {
-        matches!(self, Self::ScreenCap | Self::MatchCheck)
-    }
-
-    /// Entity noun for this tab (`item “foo”` in the delete confirmation,
-    /// `New item` in the footer button's a11y name). `None` when the tab has
-    /// no creatable/deletable entity kind.
-    fn entity_noun(self) -> Option<&'static str> {
-        match self {
-            Self::Programs => Some("program"),
-            Self::Items => Some("item"),
-            Self::Points => Some("point"),
-            Self::SearchAreas => Some("search area"),
-            Self::Masks => Some("mask"),
-            Self::Collections => Some("collection"),
-            Self::Atlases => Some("atlas"),
-            Self::Overlay => Some("overlay button"),
-            Self::ScreenCap | Self::MatchCheck => None,
-        }
-    }
-}
-
-/// Which programs the left list / header search covers on entity tabs.
-///
-/// The Programs tab always lists programs, so it has no scope choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum SearchScope {
-    /// Flat list of the selected program's entities (default).
-    #[default]
-    SelectedProgram,
-    /// All listed programs grouped under collapsible headers.
-    AllPrograms,
-}
-
-impl SearchScope {
-    pub(crate) const ALL: &'static [SearchScope] = &[Self::SelectedProgram, Self::AllPrograms];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::SelectedProgram => "Selected program",
-            Self::AllPrograms => "All programs",
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum PendingConfirm {
-    Delete {
-        label: String,
-    },
-    Overwrite {
-        kind: &'static str,
-        name: String,
-    },
-    DeleteVariant {
-        variant: String,
-    },
-    OverwriteVariant {
-        variant: String,
-        source: PathBuf,
-    },
-    /// Remove the mask PNG for the selected mask entity (shape settings stay).
-    DeleteMaskImage,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum VariantPrompt {
-    /// Ask for a name before adding a non-first variant.
-    Name { source: PathBuf },
 }
 
 /// Cached left-list / program-selector data; invalidated via [`ProgramCatalog::generation`].
@@ -273,140 +104,34 @@ pub struct DataEditor {
     form_name: String,
     /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
     form_monitor: u32,
-    form_x: String,
-    form_y: String,
-    form_left: String,
-    form_top: String,
-    form_right: String,
-    form_bottom: String,
+    form_point: PointFields,
+    form_rect: RectFields,
     form_cols: String,
     form_rows: String,
-    form_stack_max: String,
-    form_mask: String,
+    form_item: ItemFields,
     form_tags: Vec<String>,
     tag_draft: String,
-    form_shape: String,
-    form_center_x: String,
-    form_center_y: String,
-    form_base: String,
-    form_height: String,
-    form_radius: String,
-    form_inverse: bool,
-    /// Masks-tab items grid filter (session-only).
-    mask_items_filter: mask_preview::MaskItemsFilter,
-    /// Cached scrim texture for the Masks items preview.
-    mask_scrim_cache: Option<mask_preview::MaskScrimCache>,
+    form_mask: MaskFields,
     form_search_area: String,
-    /// Atlas member Collection names (ordered).
-    form_atlas_members: Vec<String>,
-    /// Draft Collection name to add to the Atlas member list.
-    form_atlas_add: String,
-    /// Overlay button form: target macro name.
-    form_overlay_macro: String,
-    /// Overlay button form: whether the button is drawn on screen.
-    form_overlay_enabled: bool,
-    /// Overlay button form: built-in icon id.
-    form_overlay_icon: String,
-    /// Overlay button form: optional catalog point (`program~name`) for location.
-    form_overlay_point: String,
-    /// Overlay button form: desktop X position (fallback when no point).
-    form_overlay_x: f32,
-    /// Overlay button form: desktop Y position (fallback when no point).
-    form_overlay_y: f32,
-    /// Overlay button form: size in points.
-    form_overlay_size: f32,
-    /// Overlay button form: corner radius.
-    form_overlay_corner_radius: f32,
-    /// Overlay button form: border stroke width.
-    form_overlay_border_width: f32,
-    /// Overlay button form: border color (includes alpha).
-    form_overlay_border: egui::Color32,
-    /// Overlay button form: background fill (includes alpha; 0 = none).
-    form_overlay_bg: egui::Color32,
-    /// Overlay button form: idle icon color (includes alpha).
-    form_overlay_icon_color: egui::Color32,
-    /// Overlay button form: hover icon color (alpha follows icon color on save).
-    form_overlay_icon_hover: egui::Color32,
-    /// Overlay visibility gate: show button only when image search finds a match.
-    form_overlay_gate_enabled: bool,
-    form_overlay_gate_targets: Vec<String>,
-    form_overlay_gate_search_area: String,
-    form_overlay_gate_tolerance: f64,
-    form_overlay_gate_blur: i32,
-    form_overlay_gate_match_method: sqyre_domain::MatchMethod,
-    form_overlay_gate_interval_ms: u64,
-    /// Bound OS process path for the selected Program.
-    form_process_path: String,
-    /// Bound window title for the selected Program.
-    form_window_title: String,
-    variant_name_draft: String,
-    variant_prompt: Option<VariantPrompt>,
+    form_atlas: AtlasFields,
+    /// Overlay button form draft (placement, style, visibility gate).
+    form_overlay: OverlayFields,
+    form_program: ProgramFields,
+    /// Confirm / variant-name / icon-picker / window-picker modals.
+    prompts: EditorPrompts,
     status_banner: StatusBanner,
-    confirm: Option<PendingConfirm>,
-    /// After New Point/Search Area: auto-arm record and persist on capture.
-    save_after_record: bool,
-    /// Program rename changed macro or hotkey tags; refresh bindings after paint.
-    hotkey_refresh: bool,
-    /// Zoom/pan for the collections-tab image preview.
-    collection_preview: ImageViewTransform,
-    /// `(program, collection)` last shown; reset transform when this changes.
-    collection_preview_key: Option<(String, String)>,
-    /// `(program, atlas)` last shown for plane preview; reset transform when this changes.
-    atlas_preview_key: Option<(String, String)>,
-    /// Zoom/pan for the atlas plane preview.
-    atlas_preview: ImageViewTransform,
-    /// Zoom/pan for point / search-area / ScreenCap live capture panels.
-    coord_preview: ImageViewTransform,
-    /// `(tab, program, entity)` last shown; reset transform when this changes.
-    coord_preview_key: Option<(EditorTab, String, String)>,
-    /// One-frame `force` armed by the preview's floating refresh button.
-    preview_force: bool,
-    /// Overlay button id whose icon picker popup is open.
-    overlay_icon_picker_for: Option<String>,
-    /// Filter text for the overlay icon picker.
-    overlay_icon_search: String,
-    /// Running-window picker for Program process binding.
-    window_picker: ActivePicker,
-    /// Background ScreenCap capture+save; polled each frame.
-    screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
-    /// Create a catalog item from the current ScreenCap preview (processed after paint).
-    screen_cap_new_item: bool,
-    /// Background collection image capture+save; polled each frame.
-    collection_capture_pending: Option<CollectionCapturePending>,
+    /// Zoom/pan, refresh, and mask-grid state for the form previews.
+    previews: PreviewState,
+    /// ScreenCap / collection / running-program jobs and related one-shot flags.
+    jobs: BackgroundJobs,
     /// Cached program/entity name lists keyed by catalog generation.
     list_cache: ListCache,
-    /// MatchCheck match settings (session-local).
     #[cfg(feature = "native-runtime")]
-    match_check: match_check::MatchCheckSettings,
-    /// Background MatchCheck match job.
-    #[cfg(feature = "native-runtime")]
-    match_check_pending:
-        Option<std::sync::mpsc::Receiver<Result<match_check::MatchCheckResult, String>>>,
-    /// Cached heatmap + MatchMap for the current inputs.
-    #[cfg(feature = "native-runtime")]
-    match_check_cache: Option<match_check::MatchCheckCache>,
-    /// Background open-window fetch for Programs "Add running".
-    #[cfg(feature = "native-runtime")]
-    running_programs_pending: Option<running_programs::RunningProgramsRx>,
-}
-
-pub(super) struct CollectionCapturePending {
-    pub path: PathBuf,
-    /// When set, delete this collection if capture fails (new-collection flow).
-    pub rollback_collection: Option<(String, String)>,
-    pub rx: std::sync::mpsc::Receiver<Result<(), String>>,
+    match_check: match_check::MatchCheckTool,
 }
 
 impl Default for DataEditor {
     fn default() -> Self {
-        let (overlay_x, overlay_y) = default_overlay_position(
-            0.0,
-            0.0,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-            DEFAULT_OVERLAY_BUTTON_SIZE,
-            0,
-        );
         Self {
             open: false,
             tab: EditorTab::Programs,
@@ -423,80 +148,25 @@ impl Default for DataEditor {
             scroll_left_list_to_selection: false,
             form_name: String::new(),
             form_monitor: 1,
-            form_x: String::new(),
-            form_y: String::new(),
-            form_left: String::new(),
-            form_top: String::new(),
-            form_right: String::new(),
-            form_bottom: String::new(),
+            form_point: PointFields::default(),
+            form_rect: RectFields::default(),
             form_cols: "1".into(),
             form_rows: "1".into(),
-            form_stack_max: "0".into(),
-            form_mask: String::new(),
+            form_item: ItemFields::default(),
             form_tags: Vec::new(),
             tag_draft: String::new(),
-            form_shape: "rectangle".into(),
-            form_center_x: "50".into(),
-            form_center_y: "50".into(),
-            form_base: String::new(),
-            form_height: String::new(),
-            form_radius: String::new(),
-            form_inverse: false,
-            mask_items_filter: mask_preview::MaskItemsFilter::default(),
-            mask_scrim_cache: None,
+            form_mask: MaskFields::default(),
             form_search_area: String::new(),
-            form_atlas_members: Vec::new(),
-            form_atlas_add: String::new(),
-            form_overlay_macro: String::new(),
-            form_overlay_enabled: true,
-            form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
-            form_overlay_point: String::new(),
-            form_overlay_x: overlay_x,
-            form_overlay_y: overlay_y,
-            form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
-            form_overlay_corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
-            form_overlay_border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
-            form_overlay_border: rgba_color([0xdc, 0x9d, 0x2e, 255]),
-            form_overlay_bg: rgba_color([0, 0, 0, 0]),
-            form_overlay_icon_color: rgba_color([0xf5, 0xe6, 0xc0, 255]),
-            form_overlay_icon_hover: rgba_color([0xdc, 0x9d, 0x2e, 255]),
-            form_overlay_gate_enabled: false,
-            form_overlay_gate_targets: Vec::new(),
-            form_overlay_gate_search_area: String::new(),
-            form_overlay_gate_tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
-            form_overlay_gate_blur: DEFAULT_OVERLAY_GATE_BLUR,
-            form_overlay_gate_match_method: sqyre_domain::MatchMethod::CcoeffNormed,
-            form_overlay_gate_interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
-            form_process_path: String::new(),
-            form_window_title: String::new(),
-            variant_name_draft: String::new(),
-            variant_prompt: None,
+            form_atlas: AtlasFields::default(),
+            form_overlay: OverlayFields::default(),
+            form_program: ProgramFields::default(),
+            prompts: EditorPrompts::default(),
             status_banner: StatusBanner::default(),
-            confirm: None,
-            save_after_record: false,
-            hotkey_refresh: false,
-            collection_preview: ImageViewTransform::default(),
-            collection_preview_key: None,
-            atlas_preview: ImageViewTransform::default(),
-            atlas_preview_key: None,
-            coord_preview: ImageViewTransform::default(),
-            coord_preview_key: None,
-            preview_force: false,
-            overlay_icon_picker_for: None,
-            overlay_icon_search: String::new(),
-            window_picker: ActivePicker::None,
-            screen_cap_pending: None,
-            screen_cap_new_item: false,
-            collection_capture_pending: None,
+            previews: PreviewState::default(),
+            jobs: BackgroundJobs::default(),
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
-            match_check: match_check::MatchCheckSettings::default(),
-            #[cfg(feature = "native-runtime")]
-            match_check_pending: None,
-            #[cfg(feature = "native-runtime")]
-            match_check_cache: None,
-            #[cfg(feature = "native-runtime")]
-            running_programs_pending: None,
+            match_check: match_check::MatchCheckTool::default(),
         }
     }
 }
@@ -504,7 +174,7 @@ impl Default for DataEditor {
 impl DataEditor {
     /// Take the one-shot flag set when a program rename rewrote name tags.
     pub(crate) fn take_hotkey_refresh(&mut self) -> bool {
-        std::mem::take(&mut self.hotkey_refresh)
+        self.jobs.take_hotkey_refresh()
     }
 
     /// Open the editor, expanding it if it was collapsed to the title bar.
@@ -538,15 +208,15 @@ impl DataEditor {
             id.clone(),
             self.selected_program.clone().unwrap_or_default(),
         );
-        btn.macro_name = self.form_overlay_macro.clone();
-        btn.enabled = self.form_overlay_enabled;
-        btn.icon = self.form_overlay_icon.clone();
-        btn.point = self.form_overlay_point.clone();
-        btn.x = self.form_overlay_x;
-        btn.y = self.form_overlay_y;
-        btn.size = self.form_overlay_size;
-        btn.visibility_gate = self.overlay_gate_from_form();
-        self.apply_overlay_style_to_config(&mut btn);
+        btn.macro_name = self.form_overlay.macro_name.clone();
+        btn.enabled = self.form_overlay.enabled;
+        btn.icon = self.form_overlay.icon.clone();
+        btn.point = self.form_overlay.point.clone();
+        btn.x = self.form_overlay.x;
+        btn.y = self.form_overlay.y;
+        btn.size = self.form_overlay.size;
+        btn.visibility_gate = self.form_overlay.gate.to_config();
+        self.form_overlay.apply_style_to_config(&mut btn);
         if sqyre_persist::is_quick_access_hub_id(id) {
             btn.program = sqyre_domain::GENERAL_PROGRAM.into();
             btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
@@ -562,38 +232,6 @@ impl DataEditor {
             );
         }
         Some(btn)
-    }
-
-    pub(crate) fn overlay_gate_from_form(&self) -> OverlayVisibilityGate {
-        let mut gate = OverlayVisibilityGate {
-            mode: if self.form_overlay_gate_enabled {
-                OverlayVisibilityMode::ShowWhenFound
-            } else {
-                OverlayVisibilityMode::Off
-            },
-            targets: self.form_overlay_gate_targets.clone(),
-            search_area: self.form_overlay_gate_search_area.trim().to_string(),
-            tolerance: self.form_overlay_gate_tolerance,
-            blur: self.form_overlay_gate_blur,
-            match_method: self.form_overlay_gate_match_method,
-            interval_ms: self.form_overlay_gate_interval_ms,
-        };
-        gate.clamp();
-        gate
-    }
-
-    pub(crate) fn load_overlay_gate_from_config(&mut self, gate: &OverlayVisibilityGate) {
-        self.form_overlay_gate_enabled = gate.is_active();
-        self.form_overlay_gate_targets = gate.targets.clone();
-        self.form_overlay_gate_search_area = gate.search_area.clone();
-        self.form_overlay_gate_tolerance = gate.tolerance;
-        self.form_overlay_gate_blur = gate.blur;
-        self.form_overlay_gate_match_method = gate.match_method;
-        self.form_overlay_gate_interval_ms = gate.interval_ms;
-    }
-
-    pub(crate) fn reset_overlay_gate_form(&mut self) {
-        self.load_overlay_gate_from_config(&OverlayVisibilityGate::default());
     }
 
     /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
@@ -649,9 +287,9 @@ impl DataEditor {
             if self.selected_entity.as_deref() == Some(id.as_str())
                 && matches!(self.tab, EditorTab::Overlay)
             {
-                self.form_overlay_point.clear();
-                self.form_overlay_x = xf;
-                self.form_overlay_y = yf;
+                self.form_overlay.point.clear();
+                self.form_overlay.x = xf;
+                self.form_overlay.y = yf;
             }
         }
         if dirty {
@@ -659,49 +297,9 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn apply_overlay_style_to_config(&self, btn: &mut OverlayButtonConfig) {
-        btn.corner_radius = self.form_overlay_corner_radius;
-        btn.border_width = self.form_overlay_border_width;
-        btn.border_color = overlay_hex_or_empty(
-            self.form_overlay_border,
-            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
-        );
-        btn.border_alpha = self.form_overlay_border.a();
-        btn.bg_color = if self.form_overlay_bg.a() == 0 {
-            String::new()
-        } else {
-            overlay_hex_or_empty(self.form_overlay_bg, "#000000")
-        };
-        btn.bg_alpha = self.form_overlay_bg.a();
-        btn.icon_color = overlay_hex_or_empty(
-            self.form_overlay_icon_color,
-            sqyre_persist::DEFAULT_OVERLAY_ICON_HEX,
-        );
-        btn.icon_alpha = self.form_overlay_icon_color.a();
-        btn.icon_hover_color = overlay_hex_or_empty(
-            self.form_overlay_icon_hover,
-            sqyre_persist::DEFAULT_OVERLAY_ACCENT_HEX,
-        );
-    }
-
-    pub(crate) fn load_overlay_style_from_config(&mut self, btn: &OverlayButtonConfig) {
-        self.form_overlay_corner_radius = btn.corner_radius;
-        self.form_overlay_border_width = btn.border_width;
-        self.form_overlay_border = rgba_color(btn.border_rgba());
-        self.form_overlay_bg = rgba_color(btn.bg_rgba());
-        self.form_overlay_icon_color = rgba_color(btn.icon_rgba());
-        self.form_overlay_icon_hover = rgba_color(btn.icon_hover_rgba());
-    }
-
-    pub(crate) fn reset_overlay_style_form(&mut self) {
-        let defaults = OverlayButtonConfig::new("", "");
-        self.load_overlay_style_from_config(&defaults);
-    }
-
     fn clear_entity_selection(&mut self) {
         self.selected_entity = None;
-        self.variant_prompt = None;
-        self.overlay_icon_picker_for = None;
+        self.prompts.clear_entity_prompts();
     }
 
     fn switch_tab(&mut self, tab: EditorTab, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -864,13 +462,36 @@ impl DataEditor {
         });
         // `.open` reports the titlebar close; `self.open` the Esc path.
         self.open = open && self.open;
-        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
-        self.draw_confirm(env, previews);
+        if let Some((name, source)) = self
+            .prompts
+            .draw_variant_name_prompt(ctx, env.pending_scale)
+        {
+            self.add_icon_variant(
+                CatalogView::new(env.catalog),
+                env.icons,
+                env.settings,
+                &name,
+                &source,
+            );
+        }
+        let subject = ConfirmSubject {
+            program: self.selected_program.as_deref(),
+            entity: self.selected_entity.as_deref(),
+        };
+        if let Some(confirmed) = self.prompts.draw_confirm(
+            ctx,
+            CatalogView::new(env.catalog),
+            env.icons,
+            subject,
+            env.pending_scale,
+        ) {
+            self.apply_confirm(confirmed, env, previews);
+        }
         self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
-        if self.screen_cap_new_item {
-            self.screen_cap_new_item = false;
+        if self.jobs.screen_cap_new_item {
+            self.jobs.screen_cap_new_item = false;
             self.create_item_from_screen_cap(env, previews);
         }
         self.poll_collection_capture(ctx, env.catalog, env.icons);
@@ -885,7 +506,7 @@ impl DataEditor {
         env: &mut DataEditorCtx<'_>,
         previews: &mut PreviewTooltipCache,
     ) {
-        if !self.window_picker.is_open() {
+        if !self.prompts.window_picker.is_open() {
             return;
         }
         let macro_opts: Vec<(String, Vec<String>)> = env
@@ -895,7 +516,7 @@ impl DataEditor {
             .collect();
         match pickers::show_active_picker(
             env.ctx,
-            &mut self.window_picker,
+            &mut self.prompts.window_picker,
             &mut CatalogPaint {
                 catalog: sqyre_persist::CatalogView::new(env.catalog),
                 icons: env.icons,
@@ -909,18 +530,18 @@ impl DataEditor {
                 process_path,
                 window_title,
             } => {
-                self.form_process_path = process_path;
-                self.form_window_title = window_title;
+                self.form_program.process_path = process_path;
+                self.form_program.window_title = window_title;
             }
             PickerResult::Point(coord) => {
                 if let Ok((x, y)) = env
                     .catalog
                     .resolve_point(&coord, &Macro::new("", 0, vec![]))
                 {
-                    self.form_overlay_x = x as f32;
-                    self.form_overlay_y = y as f32;
+                    self.form_overlay.x = x as f32;
+                    self.form_overlay.y = y as f32;
                 }
-                self.form_overlay_point = coord.0;
+                self.form_overlay.point = coord.0;
                 if matches!(self.tab, EditorTab::Overlay) {
                     if let Some(id) = self.selected_entity.clone() {
                         if let Some(btn) = env
@@ -930,9 +551,9 @@ impl DataEditor {
                             .iter_mut()
                             .find(|b| b.id == id)
                         {
-                            btn.point = self.form_overlay_point.clone();
-                            btn.x = self.form_overlay_x;
-                            btn.y = self.form_overlay_y;
+                            btn.point = self.form_overlay.point.clone();
+                            btn.x = self.form_overlay.x;
+                            btn.y = self.form_overlay.y;
                             self.persist_overlay_settings(env.settings);
                         }
                     }
@@ -945,7 +566,13 @@ impl DataEditor {
                 ) =>
             {
                 if matches!(self.tab, EditorTab::Overlay) {
-                    self.form_overlay_gate_search_area = coord.0;
+                    self.form_overlay.gate.search_area = coord.0;
+                } else if matches!(self.tab, EditorTab::MatchCheck) {
+                    // Keep the selected item; only retarget the preview bounds.
+                    if self.apply_search_area_bounds(CatalogView::new(env.catalog), &coord) {
+                        #[cfg(feature = "native-runtime")]
+                        self.match_check.invalidate();
+                    }
                 } else {
                     self.apply_screen_cap_reference(CatalogView::new(env.catalog), coord);
                 }
@@ -954,7 +581,7 @@ impl DataEditor {
                 targets,
                 target_tags: _,
             } if matches!(self.tab, EditorTab::Overlay) => {
-                self.form_overlay_gate_targets = targets;
+                self.form_overlay.gate.targets = targets;
             }
             _ => {}
         }
@@ -970,8 +597,8 @@ impl DataEditor {
             let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
             self.form_monitor = monitor;
-            self.form_x = rx.to_string();
-            self.form_y = ry.to_string();
+            self.form_point.x = rx.to_string();
+            self.form_point.y = ry.to_string();
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!("Recorded point monitor {monitor} ({rx}, {ry})."));
             captured = true;
@@ -981,10 +608,12 @@ impl DataEditor {
             let (monitor, lx, ty, rx, by) =
                 sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
             self.form_monitor = monitor;
-            self.form_left = lx.to_string();
-            self.form_top = ty.to_string();
-            self.form_right = rx.to_string();
-            self.form_bottom = by.to_string();
+            self.form_rect.load_displays(
+                lx.to_string(),
+                ty.to_string(),
+                rx.to_string(),
+                by.to_string(),
+            );
             previews.invalidate_entity(self.form_name.trim());
             self.set_ok(format!(
                 "Recorded search area monitor {monitor} ({lx},{ty})–({rx},{by})."
@@ -992,256 +621,14 @@ impl DataEditor {
             captured = true;
         }
         if env.screen_click.take_cancelled() {
-            self.save_after_record = false;
+            self.jobs.save_after_record = false;
             self.set_ok("Recording cancelled.");
         }
-        if captured && self.save_after_record {
-            self.save_after_record = false;
+        if captured && self.jobs.save_after_record {
+            self.jobs.save_after_record = false;
             self.on_update(env, previews);
             if !self.status_banner.status_error {
                 self.set_ok("Recorded and saved.");
-            }
-        }
-    }
-}
-
-impl DataEditor {
-    /// Tab strip under the standard window title bar: the search and program
-    /// toggle icons stay adjacent on the left so expanding a pair never moves
-    /// the other icon — its controls open to the right of both toggles. The
-    /// section/subtab icons follow in an overflow scroll.
-    fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        ui.horizontal(|ui| {
-            let just_opened = self.ui_search_toggle(ui);
-            self.program_toggle(ui, CatalogView::new(env.catalog), env.icons, env.settings);
-            if self.search_open {
-                self.ui_search_controls(ui, env.catalog, env.icons, env.settings, just_opened);
-            }
-            if self.program_open {
-                self.ui_program_combo(ui, CatalogView::new(env.catalog), env.icons, env.settings);
-            }
-            crate::widgets::section_separator(ui);
-            crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
-                ui.horizontal(|ui| self.paint_section_bar(ui, env));
-            });
-        });
-    }
-
-    /// Magnifier toggle; returns true on the click that opened the search pair
-    /// (so the caller can focus the freshly-shown field).
-    fn ui_search_toggle(&mut self, ui: &mut egui::Ui) -> bool {
-        let (tip, color) = if self.search_open {
-            ("Hide search", Some(crate::theme::accent()))
-        } else {
-            ("Search this tab's list", None)
-        };
-        let toggle = ui.add(crate::widgets::IconButton::new(
-            egui_phosphor::regular::MAGNIFYING_GLASS,
-            tip,
-            color,
-        ));
-        let just_opened = toggle.clicked() && !self.search_open;
-        if toggle.clicked() {
-            self.search_open = !self.search_open;
-            if self.search_open {
-                self.program_open = false;
-            }
-        }
-        just_opened
-    }
-
-    /// The expanded search pair: query field → scope → item sort → expand/collapse.
-    /// Expand/collapse-all trails the row when the list is grouped by program
-    /// (All programs), matching item/coord pickers. The query is kept (and
-    /// keeps filtering only while visible) when the field hides.
-    fn ui_search_controls(
-        &mut self,
-        ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        settings: &mut UserSettings,
-        just_opened: bool,
-    ) {
-        let hint = format!("Search {}…", self.tab.label());
-        // Hug the query text but stay clear of the tab strip;
-        // `available_width` here is what is left in the header row.
-        let width = crate::widgets::name_edit_width(ui, &self.search, &hint)
-            .min((ui.available_width() * 0.45).max(80.0));
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut self.search)
-                // Stable id: the toggling field would otherwise drop keyboard focus.
-                .id(egui::Id::new("de_header_search"))
-                .hint_text(&hint)
-                .desired_width(width),
-        );
-        resp.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, hint.clone())
-        });
-        if just_opened {
-            resp.request_focus();
-        }
-        if resp.changed() && self.selected_program.is_some() {
-            // A newly-visible selection can scroll into view after filter edits.
-            self.scroll_left_list_to_selection = true;
-        }
-        // Programs lists programs — scope only applies to entity tabs.
-        if !matches!(self.tab, EditorTab::Programs) {
-            // Funnel icon opens the scope menu; tinted while a non-default
-            // scope is active since the icon can't show the selection.
-            let scope_btn = ui.add(crate::widgets::IconButton::new(
-                egui_phosphor::regular::FUNNEL,
-                "List scope",
-                (self.search_scope != SearchScope::SelectedProgram)
-                    .then_some(crate::theme::accent()),
-            ));
-            let mut scope = self.search_scope;
-            crate::widgets::context_menu_popup(
-                ui,
-                scope_btn.id.with("scope_menu"),
-                scope_btn.clicked(),
-                Some(scope_btn.rect),
-                |ui| {
-                    for &s in SearchScope::ALL {
-                        ui.radio_value(&mut scope, s, s.label());
-                    }
-                },
-            );
-            if scope != self.search_scope {
-                self.search_scope = scope;
-                // Same as a tab switch: open + scroll to the selected program's group.
-                self.scroll_left_list_to_selection = self.selected_program.is_some();
-            }
-        }
-        // Items / Match Check sort, next to the scope filter.
-        if matches!(self.tab, EditorTab::Items | EditorTab::MatchCheck) {
-            use sqyre_domain::CatalogItemSort as Sort;
-            let sort_btn = ui.add(crate::widgets::IconButton::new(
-                egui_phosphor::regular::SORT_ASCENDING,
-                "Sort items",
-                (settings.ui.data_editor_items_sort != Sort::NameAsc)
-                    .then_some(crate::theme::accent()),
-            ));
-            // `Popup` (not `Menu`) kind + `parent_popup`: picking a radio,
-            // editing the tag chips, clicking a tag suggestion, or using a
-            // chip's right-click menu must not dismiss it — those nested
-            // popups live on their own egui layers, which `CloseOnClickOutside`
-            // counts as outside. It still closes on a true outside click or
-            // Escape. Temp-data bool, not `open_memory`: the chip context menus
-            // hold the single `Memory::popups` slot while open.
-            let sort_menu_id = sort_btn.id.with("sort_menu");
-            let mut open = ui
-                .ctx()
-                .data(|d| d.get_temp::<bool>(sort_menu_id.with("open")))
-                .unwrap_or(false);
-            if sort_btn.clicked() {
-                open = !open;
-            }
-            let mut sort_changed = false;
-            crate::widgets::parent_popup(
-                egui::Popup::new(
-                    sort_menu_id,
-                    ui.ctx().clone(),
-                    egui::PopupAnchor::ParentRect(sort_btn.rect),
-                    ui.layer_id(),
-                )
-                .kind(egui::PopupKind::Popup)
-                .layout(egui::Layout::top_down_justified(egui::Align::Min))
-                .style(egui::containers::menu::menu_style),
-                &mut open,
-                |ui| {
-                    for &s in Sort::ALL {
-                        if ui
-                            .radio_value(&mut settings.ui.data_editor_items_sort, s, s.label())
-                            .changed()
-                        {
-                            sort_changed = true;
-                        }
-                    }
-                    if settings.ui.data_editor_items_sort == Sort::Tags {
-                        ui.separator();
-                        ui.label(egui::RichText::new("Tag priority").strong().small());
-                        let suggestions =
-                            helpers::collect_all_item_tags(CatalogView::from(catalog));
-                        let program_icons =
-                            icons.program_name_icons(ui.ctx(), CatalogView::from(catalog));
-                        let edit = crate::widgets::tag_chip_editor(
-                            ui,
-                            &mut settings.ui.data_editor_items_tag_priority,
-                            &mut self.items_tag_priority_draft,
-                            &suggestions,
-                            crate::widgets::TagChipOptions {
-                                enabled: true,
-                                show_add_button: true,
-                                label_name: None,
-                                draft_hover: Some(
-                                    "Drag chips to set priority. Unmatched items sort by name after.",
-                                ),
-                                draft_hint: Some("Priority tag…"),
-                                reorderable: true,
-                                signed_filters: false,
-                                single_row: false,
-                                locked: &[],
-                                locked_hover: None,
-                                program_icons: Some(&program_icons),
-                                draft_width: None,
-                                draft_id: None,
-                            },
-                        );
-                        if edit.changed {
-                            sort_changed = true;
-                        }
-                    }
-                },
-            );
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(sort_menu_id.with("open"), open));
-            if sort_changed {
-                if let Err(e) = settings.save_default() {
-                    self.set_err(format!(
-                        "Failed to save item sort: {}",
-                        crate::status_banner::user_error_detail(&e)
-                    ));
-                }
-            }
-        }
-        // Right end of the search row — same slot pickers use for expand/collapse.
-        self.paint_search_expand_collapse(ui, CatalogView::from(catalog));
-    }
-
-    /// Every section's subtab buttons in one row — the subsection buttons are
-    /// self-explanatory, so there are no section-level icons — with separators
-    /// between the sections.
-    fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        let mut items = Vec::new();
-        let mut targets = Vec::new();
-        for sec in [
-            EditorSection::Programs,
-            EditorSection::Items,
-            EditorSection::Coordinates,
-            EditorSection::Tools,
-        ] {
-            if !sec.is_available() {
-                continue;
-            }
-            if !items.is_empty() {
-                items.push(crate::widgets::OverflowItem::Separator);
-                // Separators never register a click; the slot only keeps
-                // `targets` index-aligned with `items`.
-                targets.push(sec.default_tab());
-            }
-            for &tab in sec.subtabs() {
-                items.push(crate::widgets::OverflowItem::Choice {
-                    label: tab.label(),
-                    icon: tab.icon(),
-                    selected: self.tab == tab,
-                });
-                targets.push(tab);
-            }
-        }
-        if let Some(i) = crate::widgets::always_bar(ui, &items) {
-            let next = targets[i];
-            if next != self.tab {
-                self.switch_tab(next, env.catalog, env.settings);
             }
         }
     }
@@ -1522,7 +909,7 @@ impl DataEditor {
     /// Ask to delete the selected program / entity (list row right-click → Delete).
     pub(crate) fn request_delete_selected(&mut self) {
         if let Some(label) = self.selected_delete_label() {
-            self.confirm = Some(PendingConfirm::Delete { label });
+            self.prompts.confirm = Some(PendingConfirm::Delete { label });
         }
     }
 
@@ -1539,10 +926,7 @@ impl DataEditor {
     }
 
     fn owns_delete_key(&self, ui: &egui::Ui) -> bool {
-        self.confirm.is_none()
-            && self.variant_prompt.is_none()
-            && !self.window_picker.is_open()
-            && self.overlay_icon_picker_for.is_none()
+        !self.prompts.any_open()
             && !ui.ctx().any_popup_open()
             && !ui.ctx().text_edit_focused()
             && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
@@ -1550,146 +934,10 @@ impl DataEditor {
 
     /// Enter → Update only when this window is in front and no overlay owns the key.
     fn enter_commits_update(&self, ui: &egui::Ui) -> bool {
-        self.confirm.is_none()
-            && self.variant_prompt.is_none()
-            && !self.window_picker.is_open()
-            && self.overlay_icon_picker_for.is_none()
+        !self.prompts.any_open()
             && !ui.ctx().any_popup_open()
             && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
             && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
-    }
-
-    fn draw_confirm(&mut self, env: &mut DataEditorCtx<'_>, previews: &mut PreviewTooltipCache) {
-        let Some(confirm) = self.confirm.clone() else {
-            return;
-        };
-        let (title, confirm_label) = match &confirm {
-            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
-                ("Delete", "Delete")
-            }
-            PendingConfirm::DeleteMaskImage => ("Remove Image", "Remove"),
-            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
-                ("Overwrite", "Overwrite")
-            }
-        };
-        let ctx = env.ctx;
-        let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {
-            match &confirm {
-                PendingConfirm::Delete { label } => {
-                    ui.horizontal(|ui| {
-                        if let Some(prog) = self.selected_program.as_deref() {
-                            crate::icon_cache::paint_program_icon(
-                                ui,
-                                CatalogView::new(env.catalog),
-                                env.icons,
-                                prog,
-                            );
-                        }
-                        ui.label(format!("Delete {label}? This cannot be undone."));
-                    });
-                }
-                PendingConfirm::Overwrite { kind, name } => {
-                    ui.label(format!(
-                        "{kind} “{name}” already exists. Overwrite / rename onto it?"
-                    ));
-                }
-                PendingConfirm::DeleteVariant { variant } => {
-                    ui.label(format!(
-                        "Delete icon variant “{}”? This cannot be undone.",
-                        variant_display_label(variant)
-                    ));
-                }
-                PendingConfirm::OverwriteVariant { variant, .. } => {
-                    ui.label(format!(
-                        "Variant “{}” already exists. Overwrite it?",
-                        variant_display_label(variant)
-                    ));
-                }
-                PendingConfirm::DeleteMaskImage => {
-                    let name = self.selected_entity.as_deref().unwrap_or_default();
-                    ui.label(format!(
-                        "Remove the mask image for “{name}”? Searches fall back to the shape settings. This cannot be undone."
-                    ));
-                }
-            }
-            match crate::widgets::confirm_cancel_row(ui, confirm_label) {
-                crate::widgets::ConfirmCancel::Cancel => {
-                    self.confirm = None;
-                }
-                crate::widgets::ConfirmCancel::Confirm => match confirm {
-                    PendingConfirm::Delete { .. } => {
-                        self.confirm = None;
-                        self.on_delete(env, previews);
-                    }
-                    PendingConfirm::Overwrite { .. } => {
-                        self.confirm = None;
-                        self.apply_update(env, true, previews);
-                    }
-                    PendingConfirm::DeleteVariant { variant } => {
-                        self.confirm = None;
-                        self.delete_icon_variant(
-                            CatalogView::new(env.catalog),
-                            env.icons,
-                            env.settings,
-                            &variant,
-                        );
-                    }
-                    PendingConfirm::OverwriteVariant { variant, source } => {
-                        self.confirm = None;
-                        self.overwrite_icon_variant(
-                            CatalogView::new(env.catalog),
-                            env.icons,
-                            &variant,
-                            &source,
-                        );
-                    }
-                    PendingConfirm::DeleteMaskImage => {
-                        self.confirm = None;
-                        self.remove_mask_image(CatalogView::new(env.catalog), env.icons);
-                    }
-                },
-                crate::widgets::ConfirmCancel::None => {}
-            }
-        });
-        if !open {
-            self.confirm = None;
-        }
-    }
-
-    fn draw_variant_name_prompt(
-        &mut self,
-        ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        settings: &UserSettings,
-        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
-    ) {
-        let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() else {
-            return;
-        };
-        let mut submit = false;
-        let mut cancel = false;
-        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
-            ui.label("Variant name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.variant_name_draft, "");
-            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(name_w));
-            match crate::widgets::confirm_cancel_row(ui, "Add") {
-                crate::widgets::ConfirmCancel::Cancel => cancel = true,
-                crate::widgets::ConfirmCancel::Confirm => submit = true,
-                crate::widgets::ConfirmCancel::None => {}
-            }
-        });
-        if !open || cancel {
-            self.variant_prompt = None;
-            self.variant_name_draft.clear();
-            return;
-        }
-        if submit {
-            let name = self.variant_name_draft.trim().to_string();
-            self.variant_prompt = None;
-            self.variant_name_draft.clear();
-            self.add_icon_variant(CatalogView::from(catalog), icons, settings, &name, &source);
-        }
     }
 
     pub(crate) fn set_ok(&mut self, msg: impl Into<String>) {
@@ -1711,118 +959,5 @@ impl DataEditor {
 
     pub(crate) fn clear_status(&mut self) {
         self.status_banner.clear();
-    }
-
-    #[cfg(feature = "native-runtime")]
-    fn invalidate_match_check(&mut self) {
-        self.match_check_cache = None;
-        self.match_check_pending = None;
-        self.match_check.show_many_match_boxes = false;
-    }
-
-    #[cfg(feature = "native-runtime")]
-    pub(crate) fn stop_match_check_compute(&mut self) {
-        self.match_check_pending = None;
-        self.match_check_cache = None;
-        self.match_check.last_inputs.clear();
-        self.match_check.paused = true;
-    }
-
-    #[cfg(feature = "native-runtime")]
-    fn poll_match_check(
-        &mut self,
-        ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        previews: &mut PreviewTooltipCache,
-    ) {
-        if !matches!(self.tab, EditorTab::MatchCheck) {
-            if self.match_check_pending.is_some() {
-                self.stop_match_check_compute();
-            }
-            return;
-        }
-        use helpers::form_desktop_area;
-        let (lx, ty, rx, by) = form_desktop_area(
-            CatalogView::from(catalog),
-            self.form_monitor,
-            &self.form_left,
-            &self.form_top,
-            &self.form_right,
-            &self.form_bottom,
-        );
-        let coords_ok = match (
-            self.selected_program.as_deref(),
-            self.selected_entity.as_deref(),
-        ) {
-            (Some(prog), Some(item)) => match_check::can_compute_match_check(
-                CatalogView::from(catalog),
-                prog,
-                item,
-                &self.match_check.variant,
-                lx,
-                ty,
-                rx,
-                by,
-            ),
-            _ => false,
-        };
-        if !coords_ok && self.match_check_pending.is_some() {
-            self.stop_match_check_compute();
-        }
-        if let Some(rx) = self.match_check_pending.as_ref() {
-            match rx.try_recv() {
-                Ok(Ok(result)) => {
-                    self.match_check_pending = None;
-                    if result.data.fingerprint == self.match_check.last_inputs {
-                        if result.data.tolerance_matches.len()
-                            > match_check::MANY_MATCH_BOX_THRESHOLD
-                        {
-                            self.match_check.show_many_match_boxes = false;
-                        }
-                        self.match_check_cache = Some(match_check::finish_cache(ctx, result));
-                    }
-                }
-                Ok(Err(e)) => {
-                    self.match_check_pending = None;
-                    self.match_check.paused = true;
-                    self.set_err(format!(
-                        "{}: {}",
-                        EditorTab::MatchCheck.label(),
-                        crate::status_banner::user_error_detail(&e)
-                    ));
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    ctx.request_repaint();
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.match_check_pending = None;
-                    self.match_check.paused = true;
-                    self.set_err(format!("{}: match failed", EditorTab::MatchCheck.label()));
-                }
-            }
-        }
-        let _ = previews;
-        let _ = catalog;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::EditorTab;
-
-    #[test]
-    fn editor_tab_labels_are_human_titles() {
-        assert_eq!(EditorTab::ScreenCap.label(), "Screen Cap");
-        assert_eq!(EditorTab::MatchCheck.label(), "Match Check");
-        assert_eq!(EditorTab::SearchAreas.label(), "Search Areas");
-        assert_eq!(EditorTab::Programs.label(), "Programs");
-    }
-
-    #[test]
-    fn screen_cap_and_match_check_are_desktop_only() {
-        assert!(EditorTab::ScreenCap.is_desktop_only());
-        assert!(EditorTab::MatchCheck.is_desktop_only());
-        assert!(!EditorTab::Items.is_desktop_only());
-        assert!(!EditorTab::Overlay.is_desktop_only());
     }
 }

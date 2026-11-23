@@ -1,10 +1,10 @@
-//! Shared Image Search match controls (tolerance, blur, method).
+//! Shared Image Search match controls (tolerance, blur, method, plane flip).
 
 use crate::action_tooltip::help as h;
-use crate::widgets::{combo_str, drag_field, NumEntry};
+use crate::widgets::{combo_enum, combo_str, drag_field, NumEntry};
 use eframe::egui;
 use sqyre_domain::{
-    clamp_match_blur, clamp_match_tolerance, MatchMethod, MAX_MATCH_BLUR,
+    clamp_match_blur, clamp_match_tolerance, MatchMethod, PlaneFlip, MAX_MATCH_BLUR,
     MAX_NORMED_MATCH_TOLERANCE, MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_TOLERANCE,
 };
 
@@ -106,4 +106,17 @@ pub fn paint_match_method(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     {
         *match_method = m;
     }
+}
+
+/// Plane flip combo (Image Search Advanced + Match Check).
+pub fn paint_plane_flip(ui: &mut egui::Ui, plane_flip: &mut PlaneFlip) {
+    combo_enum(
+        ui,
+        egui_phosphor::regular::ARROWS_LEFT_RIGHT,
+        "Plane flip",
+        h::IS_PLANE_FLIP,
+        plane_flip,
+        &PlaneFlip::ALL,
+        PlaneFlip::ui_label,
+    );
 }

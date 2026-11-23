@@ -39,8 +39,10 @@ fn image_search_caches_blurred_templates() {
         .unwrap();
 
         let kernel = search_blur_kernel(5);
-        let first = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
-        let second = get_cached_blurred_template(&tmpl_path, kernel).unwrap();
+        let first =
+            get_cached_blurred_template(&tmpl_path, kernel, sqyre_domain::PlaneFlip::None).unwrap();
+        let second =
+            get_cached_blurred_template(&tmpl_path, kernel, sqyre_domain::PlaneFlip::None).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
     });
 }
@@ -233,7 +235,14 @@ fn run_matches_clears_coords_on_miss() {
         ..Default::default()
     };
     let area = CoordinateRef::default();
-    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &[], &branch);
+    let ctx = DetectionCtx::new(
+        ActionId::new(),
+        "test",
+        &area,
+        &[],
+        &branch,
+        crate::run::run_children,
+    );
     run_matches(&mut exec, &ctx, &[], &mut macro_).unwrap();
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());

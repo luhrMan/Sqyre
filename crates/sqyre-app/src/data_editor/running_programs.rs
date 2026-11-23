@@ -160,11 +160,11 @@ fn sanitize_program_name(raw: &str) -> String {
 
 impl DataEditor {
     pub(super) fn add_running_programs_pending(&self) -> bool {
-        self.running_programs_pending.is_some()
+        self.jobs.running_programs_pending.is_some()
     }
 
     pub(super) fn start_add_running_programs(&mut self) {
-        if self.running_programs_pending.is_some() {
+        if self.jobs.running_programs_pending.is_some() {
             return;
         }
         self.clear_status();
@@ -173,17 +173,17 @@ impl DataEditor {
             // Receiver dropped means the editor went away; nothing to report.
             let _ = tx.send(crate::pickers::fetch_open_windows());
         });
-        self.running_programs_pending = Some(rx);
+        self.jobs.running_programs_pending = Some(rx);
     }
 
     pub(super) fn poll_running_programs(&mut self, env: &mut DataEditorCtx<'_>) {
-        let Some(rx) = self.running_programs_pending.as_ref() else {
+        let Some(rx) = self.jobs.running_programs_pending.as_ref() else {
             return;
         };
         let windows = match rx.try_recv() {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
-                self.running_programs_pending = None;
+                self.jobs.running_programs_pending = None;
                 self.set_err(format!(
                     "Could not list running programs: {}",
                     crate::status_banner::user_error_detail(&e)
@@ -195,12 +195,12 @@ impl DataEditor {
                 return;
             }
             Err(TryRecvError::Disconnected) => {
-                self.running_programs_pending = None;
+                self.jobs.running_programs_pending = None;
                 self.set_err("Could not list running programs.");
                 return;
             }
         };
-        self.running_programs_pending = None;
+        self.jobs.running_programs_pending = None;
         let plan = plan_running_programs(&windows, env.catalog);
         if plan.is_empty() {
             self.set_ok("No new running programs to add.");

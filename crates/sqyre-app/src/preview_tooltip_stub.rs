@@ -18,6 +18,14 @@ pub enum PreviewKind {
     Collection,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreviewRefresh {
+    #[default]
+    None,
+    Hard,
+    Soft,
+}
+
 #[derive(Default)]
 pub struct PreviewTooltipCache;
 
@@ -31,6 +39,8 @@ impl PreviewTooltipCache {
     }
 
     pub fn invalidate_entity(&mut self, _name: &str) {}
+
+    pub fn set_hold_pending_swaps(&mut self, _hold: bool) {}
 
     pub fn show_for_entity(
         &mut self,
@@ -122,10 +132,20 @@ impl PreviewTooltipCache {
         _top: Option<i32>,
         _right: Option<i32>,
         _bottom: Option<i32>,
-        _force: bool,
+        _refresh: PreviewRefresh,
         view: &mut ImageViewTransform,
     ) -> (egui::Rect, egui::Vec2) {
         (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
+    }
+
+    pub fn panel_search_area_pending(
+        &self,
+        _left: i32,
+        _top: i32,
+        _right: i32,
+        _bottom: i32,
+    ) -> bool {
+        false
     }
 }
 

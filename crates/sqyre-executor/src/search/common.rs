@@ -1,8 +1,8 @@
 //! Helpers shared across the image search, OCR, and find-pixel implementations.
 
 use crate::backends::{DesktopRect, ItemMeta};
+use crate::ctx::{Executor, RunChildrenFn};
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::run::{run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, CoordinateOutputs, CoordinateRef, DetectionBranch, Macro, MatchGrouping,
     MatchOrder, ScalarValue, WaitTilFoundConfig,
@@ -32,6 +32,7 @@ pub(super) struct DetectionCtx<'a> {
     pub branch: &'a DetectionBranch,
     pub wait_interval_ms: i32,
     pub repeat_interval_ms: i32,
+    pub run_children: RunChildrenFn,
 }
 
 impl<'a> DetectionCtx<'a> {
@@ -41,6 +42,7 @@ impl<'a> DetectionCtx<'a> {
         search_area: &'a CoordinateRef,
         targets: &'a [String],
         branch: &'a DetectionBranch,
+        run_children: RunChildrenFn,
     ) -> Self {
         Self {
             action_id,
@@ -50,6 +52,7 @@ impl<'a> DetectionCtx<'a> {
             branch,
             wait_interval_ms: default_poll_interval_ms(),
             repeat_interval_ms: default_poll_interval_ms(),
+            run_children,
         }
     }
 }
@@ -192,6 +195,7 @@ pub(super) fn run_children_flow(
     exec: &mut Executor<'_>,
     children: &[Action],
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     run_children(exec, children, macro_)
 }
@@ -318,7 +322,7 @@ pub(super) fn run_matches(
     if results.is_empty() {
         clear_coord_outputs(macro_, coords);
         if !ctx.branch.else_actions.is_empty() {
-            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
+            run_children_flow(exec, &ctx.branch.else_actions, macro_, ctx.run_children)?;
         }
         return Ok(());
     }
@@ -369,7 +373,7 @@ pub(super) fn run_matches(
                 .variables
                 .set("ImagePixelHeight", ScalarValue::Int(*tmpl_h as i64));
         }
-        match run_children_flow(exec, &ctx.branch.subactions, macro_) {
+        match run_children_flow(exec, &ctx.branch.subactions, macro_, ctx.run_children) {
             Err(ExecError::Flow(FlowSignal::Break)) => break,
             Err(ExecError::Flow(FlowSignal::Continue)) => continue,
             Err(e) => {
@@ -398,7 +402,7 @@ pub(super) fn apply_detection_hits(
     if matches!(pass, DetectionPass::RepeatWhile { .. }) && hits.is_empty() {
         clear_coord_outputs(macro_, &ctx.branch.coords);
         if !ctx.branch.else_actions.is_empty() {
-            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
+            run_children_flow(exec, &ctx.branch.else_actions, macro_, ctx.run_children)?;
         }
         return Ok(false);
     }

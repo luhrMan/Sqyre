@@ -1,9 +1,10 @@
 //! Flow-control actions: While, ForEachRow, ForEachCell, Pause.
 
 use crate::backends::PortError;
+use crate::ctx::Executor;
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::path_confine::resolve_under_dir;
-use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
+use crate::resolve::{eval_clauses, resolve_int, resolve_text};
 use sqyre_domain::{
     grid_cell_rect, Action, ActionId, ConditionClause, CoordinateRef, ListColumn, Macro, MatchMode,
     ScalarValue, FOREACH_CELL_BUILTIN_BOTTOM, FOREACH_CELL_BUILTIN_COL, FOREACH_CELL_BUILTIN_COUNT,
@@ -22,6 +23,9 @@ pub(crate) struct FlowLoopCtx<'a> {
     pub subactions: &'a [Action],
 }
 
+/// Callback used by flow loops so this module never imports [`crate::run`].
+pub(crate) use crate::ctx::RunChildrenFn;
+
 pub(crate) fn execute_while(
     exec: &mut Executor<'_>,
     ctx: &FlowLoopCtx<'_>,
@@ -29,6 +33,7 @@ pub(crate) fn execute_while(
     clauses: &[ConditionClause],
     max_iterations: i32,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let action_id = ctx.action_id;
     let name = ctx.name;
@@ -80,6 +85,7 @@ pub(crate) fn execute_for_each_row(
     start_row: &ScalarValue,
     end_row: &ScalarValue,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let action_id = ctx.action_id;
     let name = ctx.name;
@@ -167,6 +173,7 @@ pub(crate) fn execute_for_each_cell(
     ctx: &FlowLoopCtx<'_>,
     cells: &CoordinateRef,
     macro_: &mut Macro,
+    run_children: RunChildrenFn,
 ) -> Result<()> {
     let action_id = ctx.action_id;
     let name = ctx.name;

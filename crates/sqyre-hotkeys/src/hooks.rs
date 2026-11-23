@@ -4,10 +4,11 @@
 //! exclusive grab — `rdev::grab` freezes the pointer and makes portal dialogs ignore clicks.
 
 use crate::continue_wait::{rdev_key_name, ContinueWaitBridge};
+use crate::error::HotkeyError;
 use crate::macro_hotkeys::MacroHotkeyBridge;
 use crate::macro_record::{MacroRecordBridge, RecordMouseButton};
 use crate::screen_click::ScreenClickBridge;
-use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
+use crate::service::{HotkeyCallbacks, HotkeyService};
 use parking_lot::Mutex;
 use rdev::{listen, Button, Event, EventType, Key};
 use std::cell::RefCell;
@@ -217,37 +218,41 @@ fn run_hook_loop(mut ctx: HookCtx) {
     #[cfg(target_os = "linux")]
     if linux_uses_evdev_grab() {
         if !linux_can_open_evdev() {
-            eprintln!(
+            (ctx.callbacks.on_warn)(
                 "sqyre-hotkeys: evdev watch skipped (cannot open /dev/input). \
                  Global hotkeys need seat access to input devices (logind ACL), or: \
                  sudo usermod -aG input $USER, then re-login."
+                    .into(),
             );
             return;
         }
         let stop = Arc::clone(&ctx.stop);
+        let on_warn = Arc::clone(&ctx.callbacks.on_warn);
         let ctx = RefCell::new(ctx);
         match crate::linux_evdev::watch_events(stop, move |event: Event| {
             ctx.borrow_mut().dispatch(&event);
         }) {
             Ok(()) => {}
             Err(e) => {
-                eprintln!(
+                (on_warn)(format!(
                     "sqyre-hotkeys: evdev watch failed ({e}). \
                      Ensure /dev/input is readable (seat ACL or: sudo usermod -aG input $USER, then re-login)"
-                );
+                ));
             }
         }
         return;
     }
 
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let on_warn = Arc::clone(&ctx.callbacks.on_warn);
+    let listen_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         listen(move |event: Event| {
             ctx.dispatch(&event);
         })
-    })) {
+    }));
+    match listen_result {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => eprintln!("sqyre-hotkeys: X11 listen failed ({e:?})"),
-        Err(_) => eprintln!("sqyre-hotkeys: X11 listen panicked"),
+        Ok(Err(e)) => (on_warn)(format!("sqyre-hotkeys: X11 listen failed ({e:?})")),
+        Err(_) => (on_warn)("sqyre-hotkeys: X11 listen panicked".into()),
     }
 }
 
@@ -261,6 +266,7 @@ impl HotkeyService for RdevHotkeys {
             crate::linux_portal_shortcuts::spawn(
                 self.macro_hotkeys.clone(),
                 Arc::clone(&callbacks.on_macro_hotkey),
+                Arc::clone(&callbacks.on_warn),
             );
         }
         let ctx = HookCtx {

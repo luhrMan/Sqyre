@@ -10,8 +10,8 @@ mod search_cache;
 
 pub use find_pixel::{find_pixels, find_pixels_clustered};
 pub use image_util::{
-    gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask, resize_nearest, rgb_capture_to_image_buf,
-    rgb_to_grayscale, rgba_to_rgb_buf,
+    flip_image_buf, flip_mask_u8, gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask,
+    resize_nearest, rgb_capture_to_image_buf, rgb_to_grayscale, rgba_to_rgb_buf,
 };
 pub use ocr_boxes::{
     find_target_occurrences, ocr_text_matches, text_from_ocr_boxes, OcrMatch, OcrMatchError,

@@ -687,15 +687,23 @@ fn match_once(
         // Warm caches on this thread before parallel variant match (same deadlock
         // class as image search: inflight gates + nested FFT rayon).
         for path in &paths {
-            let Ok(template_blurred) = get_cached_blurred_template(path, kernel) else {
+            let Ok(template_blurred) =
+                get_cached_blurred_template(path, kernel, sqyre_domain::PlaneFlip::None)
+            else {
                 continue;
             };
             let mask_bytes = mask_path.as_ref().and_then(|p| {
-                get_cached_image_mask(p, template_blurred.height, template_blurred.width)
+                get_cached_image_mask(
+                    p,
+                    template_blurred.height,
+                    template_blurred.width,
+                    sqyre_domain::PlaneFlip::None,
+                )
             });
             let _ = get_cached_prepared_template(
                 path,
                 kernel,
+                sqyre_domain::PlaneFlip::None,
                 template_blurred.as_ref(),
                 mask_path.as_deref(),
                 mask_bytes.as_deref().map(|m| m.as_slice()),
@@ -710,7 +718,9 @@ fn match_once(
             }
         }
         let hit = paths.par_iter().any(|path| {
-            let Ok(template_blurred) = get_cached_blurred_template(path, kernel) else {
+            let Ok(template_blurred) =
+                get_cached_blurred_template(path, kernel, sqyre_domain::PlaneFlip::None)
+            else {
                 return false;
             };
             let tmpl_w = template_blurred.width;
@@ -718,12 +728,13 @@ fn match_once(
             if tmpl_w == 0 || tmpl_h == 0 {
                 return false;
             }
-            let mask_bytes = mask_path
-                .as_ref()
-                .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
+            let mask_bytes = mask_path.as_ref().and_then(|p| {
+                get_cached_image_mask(p, tmpl_h, tmpl_w, sqyre_domain::PlaneFlip::None)
+            });
             let Ok(prepared) = get_cached_prepared_template(
                 path,
                 kernel,
+                sqyre_domain::PlaneFlip::None,
                 template_blurred.as_ref(),
                 mask_path.as_deref(),
                 mask_bytes.as_deref().map(|m| m.as_slice()),

@@ -33,12 +33,10 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, screen_cap_path, OverlayButtonConfig, ProgramCatalog,
-    ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS,
-    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
-    MIN_OVERLAY_GATE_INTERVAL_MS,
+    screen_cap_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+    DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS, MIN_OVERLAY_BORDER_WIDTH,
+    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_GATE_INTERVAL_MS,
 };
 use sqyre_validate::{validate_entity_name, validate_numeric_expression};
 
@@ -134,10 +132,7 @@ impl DataEditor {
             self.selected_program.clone().unwrap_or_default(),
             self.selected_entity.clone().unwrap_or_default(),
         );
-        if self.coord_preview_key.as_ref() != Some(&key) {
-            self.coord_preview.reset();
-            self.coord_preview_key = Some(key);
-        }
+        self.previews.coord.sync_key(key);
     }
 
     /// Preview chrome for a coord panel: refresh / fit / zoom / record on one
@@ -157,7 +152,7 @@ impl DataEditor {
             ui,
             rect,
             true,
-            Some(&mut self.coord_preview),
+            Some(&mut self.previews.coord.transform),
             "Fit image in viewport",
             Some(RecordFloater {
                 tip: record_tip,
@@ -165,10 +160,10 @@ impl DataEditor {
             }),
         );
         if clicks.refresh {
-            self.preview_force = true;
+            self.previews.request_force();
         }
         if clicks.record {
-            self.save_after_record = false;
+            self.jobs.save_after_record = false;
             arm(screen_click);
             self.set_ok(recording_msg);
         }
@@ -245,9 +240,14 @@ impl DataEditor {
             is_dark,
             active_macro,
             &mut [
-                (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
                 (
-                    &mut self.form_y,
+                    &mut self.form_point.x,
+                    CardinalEdge::Left,
+                    "X",
+                    help::DE_POINT_X,
+                ),
+                (
+                    &mut self.form_point.y,
                     CardinalEdge::Bottom,
                     "Y",
                     help::DE_POINT_Y,
@@ -312,43 +312,28 @@ impl DataEditor {
             self.reset_overlay_form();
             return;
         };
-        self.form_overlay_point = btn.point.clone();
-        self.form_overlay_x = btn.x;
-        self.form_overlay_y = btn.y;
-        self.form_overlay_macro = btn.macro_name.clone();
-        self.form_overlay_enabled = btn.enabled;
-        self.form_overlay_icon = if btn.icon.trim().is_empty() {
+        self.form_overlay.point = btn.point.clone();
+        self.form_overlay.x = btn.x;
+        self.form_overlay.y = btn.y;
+        self.form_overlay.macro_name = btn.macro_name.clone();
+        self.form_overlay.enabled = btn.enabled;
+        self.form_overlay.icon = if btn.icon.trim().is_empty() {
             overlay_icons::DEFAULT_ICON_ID.into()
         } else {
             btn.icon.clone()
         };
-        self.form_overlay_size = if btn.size > 0.0 {
+        self.form_overlay.size = if btn.size > 0.0 {
             btn.size
         } else {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
-        self.load_overlay_style_from_config(btn);
-        self.load_overlay_gate_from_config(&btn.visibility_gate);
+        self.form_overlay.load_style_from_config(btn);
+        self.form_overlay.gate =
+            super::form_fields::OverlayGateFields::from_config(&btn.visibility_gate);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
-        self.form_overlay_point.clear();
-        let (x, y) = default_overlay_position(
-            0.0,
-            0.0,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
-            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-            DEFAULT_OVERLAY_BUTTON_SIZE,
-            0,
-        );
-        self.form_overlay_x = x;
-        self.form_overlay_y = y;
-        self.form_overlay_macro.clear();
-        self.form_overlay_enabled = true;
-        self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
-        self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
-        self.reset_overlay_style_form();
-        self.reset_overlay_gate_form();
+        self.form_overlay = super::form_fields::OverlayFields::default();
     }
 
     pub(crate) fn reset_item_form(&mut self) {
@@ -360,21 +345,21 @@ impl DataEditor {
     pub(crate) fn reset_item_param_fields(&mut self) {
         self.form_cols = "1".into();
         self.form_rows = "1".into();
-        self.form_stack_max = "0".into();
-        self.form_mask.clear();
+        self.form_item.stack_max = "0".into();
+        self.form_item.mask.clear();
         self.form_tags.clear();
         self.tag_draft.clear();
     }
 
     pub(crate) fn reset_mask_form(&mut self) {
         self.form_name.clear();
-        self.form_shape = "rectangle".into();
-        self.form_center_x = "50".into();
-        self.form_center_y = "50".into();
-        self.form_base.clear();
-        self.form_height.clear();
-        self.form_radius.clear();
-        self.form_inverse = false;
+        self.form_mask.shape = "rectangle".into();
+        self.form_mask.center_x = "50".into();
+        self.form_mask.center_y = "50".into();
+        self.form_mask.base.clear();
+        self.form_mask.height.clear();
+        self.form_mask.radius.clear();
+        self.form_mask.inverse = false;
     }
 
     pub(crate) fn reset_collection_form(&mut self) {
@@ -385,8 +370,8 @@ impl DataEditor {
 
     pub(crate) fn reset_atlas_form(&mut self) {
         self.form_name.clear();
-        self.form_atlas_members.clear();
-        self.form_atlas_add.clear();
+        self.form_atlas.members.clear();
+        self.form_atlas.add.clear();
     }
 
     /// Returns true when a tag was committed this frame (auto-Update).
@@ -490,7 +475,7 @@ impl DataEditor {
             use sqyre_domain::CoordinateRef;
 
             if self.selected_entity.is_none() {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
             paint_name_field(ui, &mut self.form_name);
@@ -500,7 +485,7 @@ impl DataEditor {
                 ui,
                 catalog,
                 icons,
-                &mut self.window_picker,
+                &mut self.prompts.window_picker,
                 CoordKind::SearchArea,
                 &ref_val,
                 pickers::CoordRefFieldOpts {
@@ -538,7 +523,8 @@ impl DataEditor {
             ) {
                 let variants = super::match_check::variant_options(catalog, prog, item);
                 if !variants.is_empty() {
-                    let mut label = variant_display_label(&self.match_check.variant).to_string();
+                    let mut label =
+                        variant_display_label(&self.match_check.settings.variant).to_string();
                     let labels: Vec<&str> = variants.iter().map(|(_, l)| l.as_str()).collect();
                     crate::widgets::combo_str(
                         ui,
@@ -549,24 +535,24 @@ impl DataEditor {
                         &labels,
                     );
                     if let Some((name, _)) = variants.iter().find(|(_, l)| l == &label) {
-                        if name != &self.match_check.variant {
-                            self.match_check.variant = name.clone();
-                            self.invalidate_match_check();
+                        if name != &self.match_check.settings.variant {
+                            self.match_check.settings.variant = name.clone();
+                            self.match_check.invalidate();
                         }
                     }
                 }
             }
-            match_settings::paint_match_settings_advanced(
+            match_settings::paint_match_settings(
                 ui,
-                &mut self.match_check.tolerance,
-                &mut self.match_check.blur,
-                &mut self.match_check.match_method,
-                |ui, method| {
-                    crate::widgets::advanced_section(ui, "de_matchcheck_match", |ui| {
-                        match_settings::paint_match_method(ui, method);
-                    });
-                },
+                &mut self.match_check.settings.tolerance,
+                &mut self.match_check.settings.blur,
+                &mut self.match_check.settings.match_method,
+                false,
             );
+            crate::widgets::advanced_section(ui, "de_matchcheck_match", |ui| {
+                match_settings::paint_match_method(ui, &mut self.match_check.settings.match_method);
+                match_settings::paint_plane_flip(ui, &mut self.match_check.settings.plane_flip);
+            });
             help::tip(
                 crate::widgets::wrap_unit(ui, |ui| {
                     self.paint_monitor_slot(ui);
@@ -577,40 +563,112 @@ impl DataEditor {
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,
-                &self.form_left,
-                &self.form_top,
-                &self.form_right,
-                &self.form_bottom,
+                &self.form_rect.left,
+                &self.form_rect.top,
+                &self.form_rect.right,
+                &self.form_rect.bottom,
             );
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             };
             let can_compute = super::match_check::can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.match_check.variant,
+                &self.match_check.settings.variant,
                 lx,
                 ty,
                 rx,
                 by,
             );
             if !can_compute {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
             }
             self.sync_coord_preview_view();
-            let force = std::mem::take(&mut self.preview_force);
-            let computing = self.match_check_pending.is_some() && can_compute;
-            if computing {
-                ui.horizontal(|ui| {
+            let now = web_time::Instant::now();
+            // Soft recapture / rematch mid-gesture drops egui's drag target and
+            // can resize the underlay — wait until the pointer is up.
+            let preview_interacting =
+                self.previews.coord_panning() || ui.input(|i| i.pointer.primary_down());
+            let manual_force = self.previews.take_force();
+            if manual_force {
+                // ↻: hard recapture + rematch once the new display is ready.
+                self.match_check.settings.awaiting_panel = true;
+                self.match_check.settings.rematch_once = false;
+                self.match_check.settings.paused = false;
+            }
+            if can_compute
+                && !preview_interacting
+                && super::match_check::live_refresh_due(
+                    &self.match_check.settings,
+                    self.match_check.pending.is_some(),
+                    now,
+                )
+            {
+                super::match_check::arm_live_cycle(&mut self.match_check.settings, now);
+            }
+            ui.horizontal(|ui| {
+                let mut live = !self.match_check.settings.paused;
+                let tip = if live {
+                    "Pause live preview"
+                } else {
+                    "Resume live preview"
+                };
+                if crate::widgets::icon_toggle(
+                    ui,
+                    &mut live,
+                    tip,
+                    egui_phosphor::regular::PLAY,
+                    egui_phosphor::regular::PAUSE,
+                )
+                .changed()
+                {
+                    self.match_check.settings.paused = !live;
+                    if live {
+                        super::match_check::arm_live_cycle(
+                            &mut self.match_check.settings,
+                            web_time::Instant::now(),
+                        );
+                    } else {
+                        self.match_check.settings.capture_once = false;
+                        self.match_check.settings.awaiting_panel = false;
+                        self.match_check.settings.rematch_once = false;
+                    }
+                }
+                if live {
+                    ui.weak("Live");
+                } else {
+                    ui.weak("Paused");
+                }
+                // Only show the spinner on the first compute (no prior heatmap).
+                if self.match_check.pending.is_some()
+                    && can_compute
+                    && self.match_check.cache.is_none()
+                {
                     crate::widgets::brand_spinner(ui);
                     ui.weak("Computing heatmap…");
-                });
-            }
+                }
+            });
+            // Keep one-shot flags parked while the user is dragging.
+            let soft = if preview_interacting {
+                false
+            } else {
+                std::mem::take(&mut self.match_check.settings.capture_once)
+            };
+            let refresh = if manual_force {
+                crate::preview_tooltip::PreviewRefresh::Hard
+            } else if soft {
+                crate::preview_tooltip::PreviewRefresh::Soft
+            } else {
+                crate::preview_tooltip::PreviewRefresh::None
+            };
+            // Freeze underlay swaps for the whole paint so an in-flight soft
+            // capture cannot resize the texture under an active drag.
+            previews.set_hold_pending_swaps(preview_interacting);
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
             let preview_w = crate::widgets::visible_width(ui);
@@ -625,8 +683,8 @@ impl DataEditor {
                         ty,
                         rx,
                         by,
-                        force,
-                        &mut self.coord_preview,
+                        refresh,
+                        &mut self.previews.coord.transform,
                     );
                     self.paint_area_record(
                         ui,
@@ -635,26 +693,31 @@ impl DataEditor {
                         ht::ED_REC_SEARCH,
                         "Recording… click two corners.",
                     );
-                    if let Some(cache) = &self.match_check_cache {
+                    if let Some(cache) = &self.match_check.cache {
                         let inputs = super::match_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),
                             self.selected_entity.as_deref().unwrap_or(""),
-                            &self.match_check.variant,
+                            &self.match_check.settings.variant,
                             lx,
                             ty,
                             rx,
                             by,
-                            self.match_check.blur,
-                            self.match_check.match_method,
-                            self.match_check.tolerance,
-                            self.match_check.refresh_gen,
+                            self.match_check.settings.blur,
+                            self.match_check.settings.match_method,
+                            self.match_check.settings.plane_flip,
+                            self.match_check.settings.tolerance,
+                            self.match_check.settings.refresh_gen,
                             settings.runtime.image_search_close_matches_distance,
                         );
-                        if cache.data.fingerprint == inputs {
+                        // Keep the prior overlay while capture/rematch is in flight.
+                        if cache.data.fingerprint == inputs
+                            || self.match_check.pending.is_some()
+                            || self.match_check.settings.awaiting_panel
+                        {
                             let match_count = cache.data.tolerance_matches.len();
                             let show_boxes = super::match_check::should_paint_match_boxes(
                                 match_count,
-                                self.match_check.show_many_match_boxes,
+                                self.match_check.settings.show_many_match_boxes,
                             );
                             let image_size =
                                 egui::vec2(cache.data.image_w as f32, cache.data.image_h as f32);
@@ -662,11 +725,11 @@ impl DataEditor {
                                 ui,
                                 rect,
                                 image_size,
-                                &self.coord_preview,
+                                &self.previews.coord.transform,
                                 cache,
                                 &mut hover,
-                                self.match_check.match_method,
-                                self.match_check.tolerance as f32,
+                                self.match_check.settings.match_method,
+                                self.match_check.settings.tolerance as f32,
                                 show_boxes,
                             );
                         }
@@ -682,15 +745,16 @@ impl DataEditor {
                     );
                 },
             );
-            if let Some(cache) = &self.match_check_cache {
+            previews.set_hold_pending_swaps(false);
+            if let Some(cache) = &self.match_check.cache {
                 super::match_check::paint_legend(
                     ui,
                     &cache.data.summary,
                     cache.data.tolerance_matches.len(),
-                    &mut self.match_check.show_many_match_boxes,
+                    &mut self.match_check.settings.show_many_match_boxes,
                     hover.as_ref(),
-                    self.match_check.match_method,
-                    self.match_check.tolerance as f32,
+                    self.match_check.settings.match_method,
+                    self.match_check.settings.tolerance as f32,
                     cache.data.tmpl_w,
                     cache.data.tmpl_h,
                 );
@@ -702,25 +766,56 @@ impl DataEditor {
                 }
             }
             if can_compute {
+                let panel_pending = match (lx, ty, rx, by) {
+                    (Some(l), Some(t), Some(r), Some(b)) => {
+                        previews.panel_search_area_pending(l, t, r, b)
+                    }
+                    _ => false,
+                };
                 let display = match (lx, ty, rx, by) {
                     (Some(l), Some(t), Some(r), Some(b)) => {
                         previews.panel_display_image(l, t, r, b)
                     }
                     _ => None,
                 };
-                self.request_match_check(
-                    catalog,
-                    lx,
-                    ty,
-                    rx,
-                    by,
-                    force,
-                    settings.runtime.image_search_close_matches_distance,
-                    display,
-                );
+                // Rematch only after the soft/hard panel capture has a ready frame.
+                if !preview_interacting
+                    && self.match_check.settings.awaiting_panel
+                    && display.is_some()
+                    && !panel_pending
+                {
+                    self.match_check.settings.awaiting_panel = false;
+                    self.match_check.settings.rematch_once = true;
+                }
+                let force_match = !preview_interacting && self.match_check.settings.rematch_once;
+                if !preview_interacting || self.match_check.cache.is_none() {
+                    self.request_match_check(
+                        catalog,
+                        lx,
+                        ty,
+                        rx,
+                        by,
+                        force_match,
+                        settings.runtime.image_search_close_matches_distance,
+                        display,
+                    );
+                }
+                if self.match_check.pending.is_some() {
+                    self.match_check.settings.rematch_once = false;
+                }
             }
-            if can_compute && (force || lx.is_some()) {
-                ui.ctx().request_repaint();
+            if can_compute {
+                if preview_interacting
+                    || refresh != crate::preview_tooltip::PreviewRefresh::None
+                    || self.match_check.pending.is_some()
+                    || self.match_check.settings.rematch_once
+                    || self.match_check.settings.awaiting_panel
+                {
+                    ui.ctx().request_repaint();
+                } else if !self.match_check.settings.paused {
+                    ui.ctx()
+                        .request_repaint_after(super::match_check::LIVE_INTERVAL);
+                }
             }
         }
     }

@@ -3,17 +3,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{PersistError, Result};
+use crate::error::{PersistError, Result};
 
 /// Settings YAML path under the active Sqyre data directory.
 pub fn settings_path() -> PathBuf {
-    crate::sqyre_dir().join(crate::SETTINGS_FILE)
+    crate::paths::sqyre_dir().join(crate::paths::SETTINGS_FILE)
 }
 
 /// XDG pointer that records a relocated data directory (one path per line).
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn data_dir_pointer_path() -> PathBuf {
-    crate::sqyre_config_dir().join("data_dir")
+    crate::paths::sqyre_config_dir().join("data_dir")
 }
 
 /// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
@@ -45,7 +45,7 @@ pub(super) fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    crate::atomic_write(&path, format!("{dir}\n"))?;
+    crate::fs_util::atomic_write(&path, format!("{dir}\n"))?;
     Ok(())
 }
 
@@ -88,8 +88,8 @@ pub fn open_path_in_file_manager(path: impl AsRef<Path>) -> Result<()> {
 
 /// Ensure the Sqyre data directory exists and open it in the file manager.
 pub fn open_sqyre_dir() -> Result<()> {
-    crate::initialize_directories()?;
-    open_path_in_file_manager(crate::sqyre_dir())
+    crate::paths::initialize_directories()?;
+    open_path_in_file_manager(crate::paths::sqyre_dir())
 }
 
 /// Move `src` to `dst`. Falls back to recursive copy on cross-device rename.
@@ -175,6 +175,6 @@ mod tests {
     #[test]
     fn settings_path_joins_settings_file() {
         let path = settings_path();
-        assert!(path.ends_with(crate::SETTINGS_FILE));
+        assert!(path.ends_with(crate::paths::SETTINGS_FILE));
     }
 }

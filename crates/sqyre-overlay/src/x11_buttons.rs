@@ -14,6 +14,9 @@
 //! hover are polled in X root coordinates. Enter/Leave are ignored during
 //! click-through so emptying the shape cannot flash hover off. When focus
 //! returns to native Wayland / Sqyre / unset, rounded ShapeInput is restored.
+//! `XMapRaised` is also skipped for that whole period: restacking OR windows
+//! over a focused XWayland client on Mutter drops held mouse buttons / freezes
+//! the next drag (same reason relocate uses plain `XMapWindow` over games).
 //!
 //! # X11 safety (`HostState`)
 //!
@@ -43,7 +46,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::os::fd::RawFd;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -784,7 +787,8 @@ fn host_loop(
         sync_relocate_shield(&mut state);
 
         // After macros, the game often restacks above OR hits. Re-raise when the
-        // X queue goes quiet (no events at all — not only pointer).
+        // X queue goes quiet (no events at all — not only pointer). Never
+        // MapRaised while click-through — that drops held buttons on XWayland.
         let any_busy = state.buttons.values().any(|b| b.spec.busy);
         let chooser_open = state.chooser.as_ref().is_some_and(|c| c.mapped);
         let relocating = state.drag.is_some();
@@ -814,6 +818,7 @@ fn host_loop(
             last_relocate_raise = Instant::now();
         } else if !state.relocate_mode
             && !relocating
+            && !state.click_through
             && !state.buttons.is_empty()
             && !any_busy
             && !stall_raised
@@ -861,7 +866,7 @@ fn host_loop(
         }
 
         // Hub fan travel must not wait on egui — ROOT starves when unfocused.
-        let fan_animating = tick_hub_fan(&mut state);
+        let fan_animating = crate::host_common::tick_hub_fan(&mut state);
 
         wait_x_or_timeout(
             state.xfd,
@@ -1214,10 +1219,6 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 }
 
 /// Advance hub fan travel on the host clock (independent of egui focus).
-fn tick_hub_fan(state: &mut HostState) -> bool {
-    crate::host_common::tick_hub_fan(state)
-}
-
 fn set_relocate_mode(state: &mut HostState, enabled: bool) {
     if state.relocate_mode == enabled {
         return;
@@ -2243,7 +2244,24 @@ fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
     }
 }
 
+/// `XMapRaised` over a focused XWayland game freezes the next drag and drops
+/// held mouse buttons on Mutter. Same gate as relocate `keep_above=false`.
+fn allow_map_raised(click_through: bool) -> bool {
+    !click_through
+}
+
+static MAP_RAISED_SKIP_NOTED: AtomicBool = AtomicBool::new(false);
+static MAP_RAISED_SKIP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 fn raise_all_hits(state: &HostState) {
+    if !allow_map_raised(state.click_through) {
+        MAP_RAISED_SKIP_COUNT.fetch_add(1, Ordering::Relaxed);
+        if !MAP_RAISED_SKIP_NOTED.swap(true, Ordering::Relaxed) {
+            note("overlay-x11: skip MapRaised while click-through");
+            event_log("SQYRE_OVERLAY", &[("map_raised", "skip_click_through")]);
+        }
+        return;
+    }
     for btn in state.buttons.values() {
         if !btn.mapped {
             continue;
@@ -3725,6 +3743,8 @@ fn set_click_through(state: &mut HostState, click_through: bool) {
         // (Leave must not wipe paint; suppress_crossing-style ignore covers that).
         seed_passthrough_hover_from_x_hover(state);
         CLICK_THROUGH_CROSSING_NOTED.store(false, Ordering::Relaxed);
+        MAP_RAISED_SKIP_NOTED.store(false, Ordering::Relaxed);
+        MAP_RAISED_SKIP_COUNT.store(0, Ordering::Relaxed);
     } else {
         // Polled hover was at the frozen X position, not the Wayland cursor.
         sync_passthrough_hover(state, None);
@@ -3768,6 +3788,11 @@ fn set_click_through(state: &mut HostState, click_through: bool) {
     }
     if let Some(id) = resume_hover {
         resume_x_hover_after_click_through(state, &id);
+    }
+    // Desktop / native Wayland focus again — MapRaised is safe; restack so
+    // hits sit above whatever was focused during the game period.
+    if !click_through {
+        raise_all_hits(state);
     }
     // SAFETY: HostState display invariant.
     unsafe {
@@ -4466,6 +4491,262 @@ mod tests {
             next_click_through(true, true),
             "foreign X11 focus → empty hits for the whole period"
         );
+    }
+
+    #[test]
+    fn map_raised_blocked_during_click_through() {
+        assert!(
+            allow_map_raised(false),
+            "desktop focus may restack with MapRaised"
+        );
+        assert!(
+            !allow_map_raised(true),
+            "foreign X11 / click-through must not MapRaised"
+        );
+    }
+
+    /// Live regression: with overlay buttons mapped and a foreign X11 client
+    /// focused (click-through), `raise_all_hits` must skip `XMapRaised`. Pre-fix
+    /// MapRaised during that period dropped held mouse buttons on Mutter/XWayland.
+    ///
+    /// ```text
+    /// cargo test -p sqyre-overlay --lib live_click_through_hold -- --ignored --nocapture
+    /// # or: make overlay-hold-check
+    /// ```
+    #[test]
+    #[ignore = "requires graphical Wayland+XWayland session"]
+    fn live_click_through_hold_survives_stall_raise_window() {
+        live_click_through_map_raised_skipped_inner();
+    }
+
+    fn live_click_through_map_raised_skipped_inner() {
+        use std::collections::HashMap;
+        use std::ffi::CString;
+        use std::ptr;
+        use x11::xlib::{
+            PropModeReplace, XChangeProperty, XRaiseWindow, XA_WINDOW as XA_WINDOW_ATOM,
+        };
+        use x11::xtest::{XTestFakeButtonEvent, XTestQueryExtension};
+
+        let session = sqyre_capture::LinuxSessionInfo::detect();
+        assert!(
+            session.has_wayland,
+            "click-through hold guard only arms on Wayland (passthrough_hits)"
+        );
+
+        // SAFETY: null name → $DISPLAY; checked before use.
+        let display = unsafe { XOpenDisplay(ptr::null()) };
+        assert!(
+            !display.is_null(),
+            "XOpenDisplay failed — need X11/XWayland DISPLAY"
+        );
+
+        let cleanup = |dpy: *mut Display, game: Window| {
+            // SAFETY: caller-opened display; game may be 0.
+            unsafe {
+                if game != 0 {
+                    XDestroyWindow(dpy, game);
+                }
+                XCloseDisplay(dpy);
+            }
+        };
+
+        // SAFETY: display live; DefaultRootWindow / screen from that display.
+        let (root, screen, game) = unsafe {
+            let screen = XDefaultScreen(display);
+            let root = XDefaultRootWindow(display);
+            let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+            attrs.background_pixel = 0;
+            let game = XCreateWindow(
+                display,
+                root,
+                80,
+                80,
+                640,
+                480,
+                0,
+                XDefaultDepth(display, screen),
+                InputOutput as c_uint,
+                XDefaultVisual(display, screen),
+                CWBackPixel,
+                &mut attrs,
+            );
+            assert!(game != 0, "failed to create foreign X11 fixture window");
+            let title = CString::new("sqyre-overlay-hold-fixture").expect("cstr");
+            XStoreName(display, game, title.as_ptr());
+            XMapRaised(display, game);
+            XFlush(display);
+            (root, screen, game)
+        };
+        let _ = screen;
+
+        // SAFETY: display/root/game live; property buffer is a single Window.
+        unsafe {
+            let Ok(name) = CString::new("_NET_ACTIVE_WINDOW") else {
+                cleanup(display, game);
+                panic!("atom name");
+            };
+            let atom = XInternAtom(display, name.as_ptr(), False);
+            let mut win = game;
+            XChangeProperty(
+                display,
+                root,
+                atom,
+                XA_WINDOW_ATOM,
+                32,
+                PropModeReplace,
+                (&raw mut win).cast::<u8>(),
+                1,
+            );
+            XRaiseWindow(display, game);
+            XSync(display, False);
+        }
+
+        let pending = Arc::new(Mutex::new(Vec::new()));
+        let pending_moves = Arc::new(Mutex::new(Vec::new()));
+        let running = Arc::new(Mutex::new(None));
+        let pending_chooser = Arc::new(Mutex::new(None));
+        let pending_context = Arc::new(Mutex::new(Vec::new()));
+        let visibility = Arc::new(Mutex::new(HashMap::new()));
+        let run_stop = Arc::new(Mutex::new(sqyre_hotkeys::StopFlag::new()));
+        let press_stops = Arc::new(AtomicBool::new(false));
+
+        let host = match X11ButtonHost::start(
+            Arc::clone(&pending),
+            pending_moves,
+            Arc::clone(&running),
+            pending_chooser,
+            pending_context,
+            visibility,
+            run_stop,
+            press_stops,
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                cleanup(display, game);
+                panic!("overlay host start failed: {e:?}");
+            }
+        };
+
+        host.set_buttons(vec![NativeButtonSpec {
+            id: "hold-bench".into(),
+            macro_name: "hold-bench".into(),
+            face: crate::ButtonFace {
+                x: 8,
+                y: 8,
+                w: 48,
+                h: 48,
+                bg: [20, 20, 20, 200],
+                border: [200, 160, 40, 255],
+                border_width: 2.0,
+                corner_radius: 8.0,
+                icon_glyph: '+',
+                icon: [255, 255, 255, 255],
+                icon_hover: [200, 200, 200, 255],
+                brand: false,
+            },
+            tip: String::new(),
+            ui_scale: 1.0,
+            busy: false,
+            visibility_gated: false,
+            input_enabled: true,
+        }]);
+
+        // Map + observe foreign focus → click-through.
+        std::thread::sleep(Duration::from_millis(250));
+
+        // Busy→idle calls raise_all_hits; under click-through that must skip MapRaised.
+        MAP_RAISED_SKIP_COUNT.store(0, Ordering::Relaxed);
+        *running.lock() = Some("hold-bench".into());
+        std::thread::sleep(Duration::from_millis(150));
+        *running.lock() = None;
+        std::thread::sleep(Duration::from_millis(200));
+
+        let skips = MAP_RAISED_SKIP_COUNT.load(Ordering::Relaxed);
+        assert!(
+            skips >= 1,
+            "expected raise_all_hits to skip MapRaised while click-through (count={skips})"
+        );
+
+        // Best-effort hold check: XTest often cannot latch Button1Mask on Mutter.
+        let mut event_base = 0;
+        let mut error_base = 0;
+        let mut major = 0;
+        let mut minor = 0;
+        // SAFETY: display live; out-params are stack locals.
+        let xtest_ok = unsafe {
+            XTestQueryExtension(
+                display,
+                &mut event_base,
+                &mut error_base,
+                &mut major,
+                &mut minor,
+            )
+        } != 0;
+        if xtest_ok {
+            // SAFETY: display live.
+            unsafe {
+                XTestFakeButtonEvent(display, 1, True, CurrentTime);
+                XFlush(display);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+            // SAFETY: display still open; root from that display.
+            if unsafe { button1_down(display, root) } {
+                std::thread::sleep(Duration::from_millis(1200));
+                // SAFETY: same display/root invariant as above.
+                let still = unsafe { button1_down(display, root) };
+                // SAFETY: release before teardown.
+                unsafe {
+                    XTestFakeButtonEvent(display, 1, False, CurrentTime);
+                    XFlush(display);
+                }
+                assert!(
+                    still,
+                    "Button1 dropped across the stall-raise window despite MapRaised skip"
+                );
+            } else {
+                eprintln!(
+                    "overlay-hold-check: XTest Button1 did not latch (common on Mutter); \
+                     MapRaised-skip assertion already passed"
+                );
+                // SAFETY: clear any partial inject.
+                unsafe {
+                    XTestFakeButtonEvent(display, 1, False, CurrentTime);
+                    XFlush(display);
+                }
+            }
+        } else {
+            eprintln!("overlay-hold-check: XTest unavailable; MapRaised-skip assertion passed");
+        }
+
+        host.shutdown();
+        cleanup(display, game);
+    }
+
+    /// SAFETY: `display` open; `root` from that display.
+    unsafe fn button1_down(display: *mut Display, root: Window) -> bool {
+        let mut root_ret = 0;
+        let mut child = 0;
+        let mut root_x = 0;
+        let mut root_y = 0;
+        let mut win_x = 0;
+        let mut win_y = 0;
+        let mut mask = 0u32;
+        // SAFETY: caller guarantees open display + valid root.
+        let ok = unsafe {
+            XQueryPointer(
+                display,
+                root,
+                &mut root_ret,
+                &mut child,
+                &mut root_x,
+                &mut root_y,
+                &mut win_x,
+                &mut win_y,
+                &mut mask,
+            )
+        };
+        ok != 0 && (mask & Button1Mask) != 0
     }
 
     #[test]

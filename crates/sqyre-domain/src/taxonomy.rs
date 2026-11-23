@@ -291,8 +291,6 @@ pub fn action_delay_class(action_type: &str) -> DelayClass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blank_action;
-
     #[test]
     fn table_len_matches_action_kind_count() {
         assert_eq!(
@@ -319,13 +317,15 @@ mod tests {
 
     #[test]
     fn every_taxonomy_row_has_blank_factory() {
+        use crate::{Action, ActionKind};
         for m in ACTION_TYPE_TABLE {
-            let action = blank_action(m.type_key).unwrap_or_else(|| {
+            let kind = ActionKind::from_type_key(m.type_key).unwrap_or_else(|| {
                 panic!(
-                    "blank_action missing for taxonomy type_key {:?}",
+                    "from_type_key missing for taxonomy type_key {:?}",
                     m.type_key
                 )
             });
+            let action = Action::new(kind);
             assert_eq!(
                 action.type_key(),
                 m.type_key,

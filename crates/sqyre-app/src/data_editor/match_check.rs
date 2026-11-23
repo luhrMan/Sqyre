@@ -10,9 +10,11 @@
     reason = "pixel-check helpers share LTRB, match settings, and cache payloads"
 )]
 mod inner {
+    use crate::data_editor::EditorTab;
     use crate::data_editor_preview::variant_display_label;
     use crate::icon_variants::variant_path;
     use crate::image_view::{self, ImageViewTransform};
+    use crate::preview_tooltip::PreviewTooltipCache;
     use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
@@ -22,7 +24,7 @@ mod inner {
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
-    use sqyre_persist::CatalogView;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
     use std::sync::{mpsc, Arc};
@@ -30,6 +32,8 @@ mod inner {
     use web_time::{Duration, Instant};
 
     const DEBOUNCE: Duration = Duration::from_millis(200);
+    /// Wall-clock gap between live recapture+rematch cycles (~5 Hz).
+    pub(crate) const LIVE_INTERVAL: Duration = Duration::from_millis(200);
     /// Above this count, match boxes are hidden until the user opts in (paint cost).
     pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
 
@@ -92,14 +96,23 @@ mod inner {
         pub tolerance: f64,
         pub blur: i32,
         pub match_method: MatchMethod,
+        pub plane_flip: sqyre_domain::PlaneFlip,
         pub variant: String,
         pub refresh_gen: u64,
         pub last_inputs: String,
         pub last_request: Option<Instant>,
-        /// When true, debounced refresh and retries are suppressed until inputs change or ↻.
+        /// When true, live recapture/rematch and debounced retries are suppressed until ↻ or unpause.
         pub paused: bool,
         /// Opt-in paint for match boxes when count exceeds [`MANY_MATCH_BOX_THRESHOLD`].
         pub show_many_match_boxes: bool,
+        /// When the last live cycle was armed (gates [`LIVE_INTERVAL`]).
+        pub last_live_at: Option<Instant>,
+        /// One-shot soft panel recapture (keeps the last frame visible).
+        pub capture_once: bool,
+        /// Wait for the soft panel capture to finish before rematching.
+        pub awaiting_panel: bool,
+        /// Keep retrying a forced rematch until a worker is spawned.
+        pub rematch_once: bool,
     }
 
     impl Default for MatchCheckSettings {
@@ -108,14 +121,74 @@ mod inner {
                 tolerance: 0.95,
                 blur: 0,
                 match_method: MatchMethod::CcoeffNormed,
+                plane_flip: sqyre_domain::PlaneFlip::None,
                 variant: String::new(),
                 refresh_gen: 0,
                 last_inputs: String::new(),
                 last_request: None,
                 paused: false,
                 show_many_match_boxes: false,
+                last_live_at: None,
+                capture_once: false,
+                awaiting_panel: false,
+                rematch_once: false,
             }
         }
+    }
+
+    /// MatchCheck tool state: settings, background match job, uploaded heatmap.
+    #[derive(Default)]
+    pub(crate) struct MatchCheckTool {
+        pub settings: MatchCheckSettings,
+        pub pending: Option<mpsc::Receiver<Result<MatchCheckResult, String>>>,
+        pub cache: Option<MatchCheckCache>,
+    }
+
+    impl MatchCheckTool {
+        /// Drop the current result so the next frame rematches.
+        pub(crate) fn invalidate(&mut self) {
+            self.cache = None;
+            self.pending = None;
+            self.settings.show_many_match_boxes = false;
+        }
+
+        /// Stop live matching and pause until the user resumes.
+        pub(crate) fn stop_compute(&mut self) {
+            self.pending = None;
+            self.cache = None;
+            self.settings.last_inputs.clear();
+            self.settings.paused = true;
+            self.settings.capture_once = false;
+            self.settings.awaiting_panel = false;
+            self.settings.rematch_once = false;
+        }
+    }
+
+    /// Whether a live recapture+rematch should start now.
+    pub(crate) fn live_refresh_due(
+        settings: &MatchCheckSettings,
+        pending: bool,
+        now: Instant,
+    ) -> bool {
+        if settings.paused
+            || pending
+            || settings.rematch_once
+            || settings.capture_once
+            || settings.awaiting_panel
+        {
+            return false;
+        }
+        settings
+            .last_live_at
+            .is_none_or(|t| now.duration_since(t) >= LIVE_INTERVAL)
+    }
+
+    /// Arm a single live cycle: rate-limit, soft-recapture, rematch after the new frame.
+    pub(crate) fn arm_live_cycle(settings: &mut MatchCheckSettings, now: Instant) {
+        settings.last_live_at = Some(now);
+        settings.capture_once = true;
+        settings.awaiting_panel = true;
+        settings.rematch_once = false;
     }
 
     pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
@@ -163,12 +236,13 @@ mod inner {
         by: i32,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f64,
         refresh_gen: u64,
         close_matches_distance: i32,
     ) -> String {
         format!(
-            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
+            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{plane_flip:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
         )
     }
 
@@ -222,6 +296,7 @@ mod inner {
         mask_path: Option<&Path>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
     ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
         let image_w = display.width() as usize;
         let image_h = display.height() as usize;
@@ -235,7 +310,7 @@ mod inner {
         } else {
             search
         };
-        let template_full = get_cached_blurred_template(template_path, kernel)
+        let template_full = get_cached_blurred_template(template_path, kernel, plane_flip)
             .map_err(|e| format!("template: {e}"))?;
         let scale_x = if src_w > 0 {
             image_w as f32 / src_w as f32
@@ -259,7 +334,8 @@ mod inner {
         let tmpl_w = template_blurred.width;
         let tmpl_h = template_blurred.height;
         let mask_owned = mask_path.and_then(|p| {
-            let full = get_cached_image_mask(p, template_full.height, template_full.width)?;
+            let full =
+                get_cached_image_mask(p, template_full.height, template_full.width, plane_flip)?;
             if need_scale {
                 Some(scale_mask(
                     &full,
@@ -654,6 +730,7 @@ mod inner {
         mask_path: Option<PathBuf>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f32,
         close_matches_distance: i32,
     ) -> mpsc::Receiver<Result<MatchCheckResult, String>> {
@@ -668,6 +745,7 @@ mod inner {
                     mask_path.as_deref(),
                     blur,
                     method,
+                    plane_flip,
                 )?;
                 let (heatmap_rgba, summary) = scores_to_heatmap_rgba(
                     &map, image_w, image_h, tmpl_w, tmpl_h, method, tolerance,
@@ -722,6 +800,43 @@ mod inner {
         )
     }
 
+    /// Caption for the best-peak box when nothing clears tolerance.
+    pub(crate) fn no_match_box_caption(closeness_pct: f32) -> String {
+        format!("{closeness_pct:.1}% · no match")
+    }
+
+    /// Hover inspection must not run while a drag is active (pan or click).
+    pub(crate) fn heatmap_hover_allowed(pointer_down: bool, pan_dragging: bool) -> bool {
+        !pointer_down && !pan_dragging
+    }
+
+    fn paint_match_box_caption(
+        painter: &egui::Painter,
+        content: egui::Rect,
+        box_rect: egui::Rect,
+        text: &str,
+        color: Color32,
+    ) {
+        let font = egui::FontId::proportional(12.0);
+        let galley = painter.layout_no_wrap(text.to_owned(), font, color);
+        let pad = egui::vec2(5.0, 2.0);
+        let size = galley.size() + pad * 2.0;
+        // Prefer above the box; fall inside the top edge if that would clip.
+        let mut origin = egui::pos2(
+            box_rect.center().x - size.x * 0.5,
+            box_rect.min.y - size.y - 4.0,
+        );
+        if origin.y < content.min.y {
+            origin.y = box_rect.min.y + 2.0;
+        }
+        origin.x = origin
+            .x
+            .clamp(content.min.x, (content.max.x - size.x).max(content.min.x));
+        let badge = egui::Rect::from_min_size(origin, size);
+        painter.rect_filled(badge, 3.0, crate::theme::preview_scrim());
+        painter.galley(badge.min + pad, galley, color);
+    }
+
     fn paint_tolerance_match_boxes(
         painter: &egui::Painter,
         content: egui::Rect,
@@ -760,7 +875,8 @@ mod inner {
                 egui::Stroke::new(2.0, color),
                 egui::StrokeKind::Outside,
             );
-            painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
+            let pct = closeness_percent(summary.best_score, method, summary);
+            paint_match_box_caption(painter, content, rect, &no_match_box_caption(pct), color);
             return;
         }
         for m in tolerance_matches {
@@ -783,7 +899,8 @@ mod inner {
                 egui::StrokeKind::Outside,
             );
             if is_best {
-                painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
+                let pct = closeness_percent(m.score, method, summary);
+                paint_match_box_caption(painter, content, rect, &format!("{pct:.1}%"), color);
             }
         }
     }
@@ -821,19 +938,14 @@ mod inner {
         );
 
         *hover = None;
-        let hover_resp = ui.interact(
-            content,
-            ui.id().with("match_check_hover"),
-            egui::Sense::hover(),
-        );
-        hover_resp.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Image,
-                true,
-                "Pixel match map — hover a pixel to inspect its match closeness",
-            )
-        });
-        if let Some(pos) = hover_resp.hover_pos() {
+        // Read the pointer without `ui.interact` — a second interactable over the
+        // panel's click_and_drag rect steals the drag and interrupts pan/scroll.
+        let pointer_down = ui.input(|i| i.pointer.any_down());
+        let hover_pos = heatmap_hover_allowed(pointer_down, view.pan_drag.is_some())
+            .then(|| ui.input(|i| i.pointer.hover_pos()))
+            .flatten()
+            .filter(|p| content.contains(*p));
+        if let Some(pos) = hover_pos {
             let scale_x = image_size.x / content.width().max(1.0);
             let scale_y = image_size.y / content.height().max(1.0);
             let ix = ((pos.x - content.min.x) * scale_x).floor() as i32;
@@ -849,16 +961,14 @@ mod inner {
                 tolerance,
             );
         }
-        if let Some(h) = hover {
+        if let (Some(h), Some(pointer)) = (hover.as_ref(), hover_pos) {
             let tol_pct = if method.is_normed() {
                 Some(tolerance * 100.0)
             } else {
                 None
             };
-            if let Some(pointer) = hover_resp.hover_pos() {
-                paint_mouse_follow_tooltip(ui.ctx(), pointer, viewport, h, tol_pct);
-                ui.ctx().request_repaint();
-            }
+            paint_mouse_follow_tooltip(ui.ctx(), pointer, viewport, h, tol_pct);
+            ui.ctx().request_repaint();
         }
     }
 
@@ -977,8 +1087,11 @@ mod inner {
                 }
                 if tolerance_match_count > 0 {
                     ui.weak(format!("{tolerance_match_count} match(es)"));
-                } else if summary.peaks_above > 0 {
-                    ui.weak(format!("{} ≥ tolerance (cells)", summary.peaks_above));
+                } else {
+                    ui.weak("0 matches");
+                    if summary.peaks_above > 0 {
+                        ui.weak(format!("{} ≥ tolerance (cells)", summary.peaks_above));
+                    }
                 }
             }
             if tolerance_match_count > MANY_MATCH_BOX_THRESHOLD {
@@ -1025,6 +1138,7 @@ mod inner {
         bottom: Option<i32>,
         blur: i32,
         method: MatchMethod,
+        plane_flip: sqyre_domain::PlaneFlip,
         tolerance: f64,
         refresh_gen: u64,
         close_matches_distance: i32,
@@ -1043,6 +1157,7 @@ mod inner {
             by,
             blur,
             method,
+            plane_flip,
             tolerance,
             refresh_gen,
             close_matches_distance,
@@ -1109,87 +1224,101 @@ mod inner {
             display: Option<(Arc<RgbaImage>, u32, u32)>,
         ) {
             if force {
-                self.match_check.refresh_gen = self.match_check.refresh_gen.wrapping_add(1);
-                self.match_check.paused = false;
-                self.invalidate_match_check();
+                // Unpause and prepare a new fingerprint, but keep the prior heatmap
+                // until spawn succeeds so live refresh does not flicker.
+                self.match_check.settings.paused = false;
             }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             };
             if !can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.match_check.variant,
+                &self.match_check.settings.variant,
                 left,
                 top,
                 right,
                 bottom,
             ) {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
+            let refresh_gen = if force {
+                self.match_check.settings.refresh_gen.wrapping_add(1)
+            } else {
+                self.match_check.settings.refresh_gen
+            };
             let inputs = inputs_key(
                 prog,
                 item,
-                &self.match_check.variant,
+                &self.match_check.settings.variant,
                 left,
                 top,
                 right,
                 bottom,
-                self.match_check.blur,
-                self.match_check.match_method,
-                self.match_check.tolerance,
-                self.match_check.refresh_gen,
+                self.match_check.settings.blur,
+                self.match_check.settings.match_method,
+                self.match_check.settings.plane_flip,
+                self.match_check.settings.tolerance,
+                refresh_gen,
                 close_matches_distance,
             );
             if inputs.is_empty() {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
-            if inputs != self.match_check.last_inputs {
-                self.match_check.paused = false;
+            if inputs != self.match_check.settings.last_inputs {
+                self.match_check.settings.paused = false;
             }
-            if self.match_check.paused {
+            if self.match_check.settings.paused {
                 return;
             }
-            if self
-                .match_check_cache
-                .as_ref()
-                .is_some_and(|c| c.data.fingerprint == inputs)
+            if !force
+                && self
+                    .match_check
+                    .cache
+                    .as_ref()
+                    .is_some_and(|c| c.data.fingerprint == inputs)
             {
                 return;
             }
             let now = Instant::now();
-            if !should_request(
-                &self.match_check,
-                &inputs,
-                self.match_check_pending.is_some(),
-                now,
-            ) {
+            if !force
+                && !should_request(
+                    &self.match_check.settings,
+                    &inputs,
+                    self.match_check.pending.is_some(),
+                    now,
+                )
+            {
                 return;
             }
             let Ok(template_path) =
-                resolve_template(catalog, prog, item, &self.match_check.variant)
+                resolve_template(catalog, prog, item, &self.match_check.settings.variant)
             else {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             };
             if !template_path.is_file() {
-                self.stop_match_check_compute();
+                self.match_check.stop_compute();
                 return;
             }
             let Some((display, src_w, src_h)) = display else {
                 // Panel capture not ready yet — retry next frame once underlay lands.
                 return;
             };
+            // Commit the forced fingerprint only once capture is ready to spawn.
+            if force {
+                self.match_check.settings.refresh_gen = refresh_gen;
+            }
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
-            let tolerance = self.match_check.tolerance as f32;
+            let tolerance = self.match_check.settings.tolerance as f32;
             let job_rx = spawn_compute(
                 inputs.clone(),
                 display,
@@ -1197,14 +1326,104 @@ mod inner {
                 src_h,
                 template_path,
                 mask_path,
-                self.match_check.blur,
-                self.match_check.match_method,
+                self.match_check.settings.blur,
+                self.match_check.settings.match_method,
+                self.match_check.settings.plane_flip,
                 tolerance,
                 close_matches_distance,
             );
-            self.match_check.last_inputs = inputs;
-            self.match_check.last_request = Some(now);
-            self.match_check_pending = Some(job_rx);
+            self.match_check.settings.last_inputs = inputs;
+            self.match_check.settings.last_request = Some(now);
+            self.match_check.pending = Some(job_rx);
+        }
+
+        pub(crate) fn poll_match_check(
+            &mut self,
+            ctx: &egui::Context,
+            catalog: &ProgramCatalog,
+            previews: &mut PreviewTooltipCache,
+        ) {
+            if !matches!(self.tab, EditorTab::MatchCheck) {
+                if self.match_check.pending.is_some() {
+                    self.match_check.stop_compute();
+                }
+                return;
+            }
+            use crate::data_editor::helpers::form_desktop_area;
+            let (lx, ty, rx, by) = form_desktop_area(
+                CatalogView::from(catalog),
+                self.form_monitor,
+                &self.form_rect.left,
+                &self.form_rect.top,
+                &self.form_rect.right,
+                &self.form_rect.bottom,
+            );
+            let coords_ok = match (
+                self.selected_program.as_deref(),
+                self.selected_entity.as_deref(),
+            ) {
+                (Some(prog), Some(item)) => can_compute_match_check(
+                    CatalogView::from(catalog),
+                    prog,
+                    item,
+                    &self.match_check.settings.variant,
+                    lx,
+                    ty,
+                    rx,
+                    by,
+                ),
+                _ => false,
+            };
+            if !coords_ok && self.match_check.pending.is_some() {
+                self.match_check.stop_compute();
+            }
+            // Applying a rematch mid-drag swaps the heatmap/legend and can end the
+            // user's gesture early across the whole window.
+            let hold_result = self.previews.coord_panning() || ctx.input(|i| i.pointer.any_down());
+            if let Some(rx) = self.match_check.pending.as_ref() {
+                if hold_result {
+                    ctx.request_repaint();
+                } else {
+                    match rx.try_recv() {
+                        Ok(Ok(result)) => {
+                            self.match_check.pending = None;
+                            if result.data.fingerprint == self.match_check.settings.last_inputs {
+                                if result.data.tolerance_matches.len() > MANY_MATCH_BOX_THRESHOLD {
+                                    self.match_check.settings.show_many_match_boxes = false;
+                                }
+                                self.match_check.cache = Some(finish_cache(ctx, result));
+                                self.match_check.settings.last_live_at =
+                                    Some(web_time::Instant::now());
+                                if !self.match_check.settings.paused {
+                                    ctx.request_repaint_after(LIVE_INTERVAL);
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            self.match_check.pending = None;
+                            self.match_check.settings.paused = true;
+                            self.set_err(format!(
+                                "{}: {}",
+                                EditorTab::MatchCheck.label(),
+                                crate::status_banner::user_error_detail(&e)
+                            ));
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            ctx.request_repaint();
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            self.match_check.pending = None;
+                            self.match_check.settings.paused = true;
+                            self.set_err(format!(
+                                "{}: match failed",
+                                EditorTab::MatchCheck.label()
+                            ));
+                        }
+                    }
+                }
+            }
+            let _ = previews;
+            let _ = catalog;
         }
     }
 }
@@ -1215,12 +1434,15 @@ pub(crate) use inner::*;
 #[cfg(all(test, feature = "native-runtime"))]
 mod tests {
     use super::inner::{
-        closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
-        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary,
-        MANY_MATCH_BOX_THRESHOLD,
+        arm_live_cycle, closeness_percent, collect_tolerance_matches, coords_displayable,
+        fingerprint, heatmap_hover_allowed, hover_at_image, live_refresh_due, no_match_box_caption,
+        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchCheckSettings,
+        MatchCheckTool, MatchSummary, LIVE_INTERVAL, MANY_MATCH_BOX_THRESHOLD,
     };
-    use sqyre_domain::MatchMethod;
+    use sqyre_domain::{MatchMethod, PlaneFlip};
     use sqyre_match::{ImageBuf, MatchMap};
+    use std::sync::mpsc;
+    use web_time::{Duration, Instant};
 
     fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {
         MatchMap {
@@ -1390,5 +1612,130 @@ mod tests {
             false
         ));
         assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, true));
+    }
+
+    #[test]
+    fn live_refresh_due_respects_pause_pending_and_interval() {
+        let now = Instant::now();
+        let mut settings = MatchCheckSettings::default();
+        assert!(live_refresh_due(&settings, false, now));
+        assert!(!live_refresh_due(&settings, true, now));
+        settings.paused = true;
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.paused = false;
+        settings.last_live_at = Some(now);
+        assert!(!live_refresh_due(&settings, false, now));
+        assert!(live_refresh_due(
+            &settings,
+            false,
+            now + LIVE_INTERVAL + Duration::from_millis(1)
+        ));
+    }
+
+    #[test]
+    fn no_match_box_caption_includes_percent_and_status() {
+        assert_eq!(no_match_box_caption(87.3), "87.3% · no match");
+        assert_eq!(no_match_box_caption(0.0), "0.0% · no match");
+    }
+
+    #[test]
+    fn heatmap_hover_skips_while_pointer_or_pan_drag_active() {
+        assert!(heatmap_hover_allowed(false, false));
+        assert!(!heatmap_hover_allowed(true, false));
+        assert!(!heatmap_hover_allowed(false, true));
+        assert!(!heatmap_hover_allowed(true, true));
+    }
+
+    #[test]
+    fn arm_live_cycle_is_one_shot_until_flags_clear() {
+        let now = Instant::now();
+        let mut settings = MatchCheckSettings::default();
+        assert!(live_refresh_due(&settings, false, now));
+        arm_live_cycle(&mut settings, now);
+        assert!(settings.capture_once);
+        assert!(settings.awaiting_panel);
+        assert!(!settings.rematch_once);
+        // Rate-limit + in-flight flags must stop re-arming every frame.
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.capture_once = false;
+        assert!(!live_refresh_due(&settings, false, now));
+        settings.awaiting_panel = false;
+        assert!(!live_refresh_due(&settings, false, now));
+        assert!(live_refresh_due(
+            &settings,
+            false,
+            now + LIVE_INTERVAL + Duration::from_millis(1)
+        ));
+    }
+
+    #[test]
+    fn fingerprint_includes_plane_flip() {
+        let none = fingerprint(
+            "Prog",
+            "Item",
+            "",
+            0,
+            0,
+            10,
+            10,
+            0,
+            MatchMethod::CcoeffNormed,
+            PlaneFlip::None,
+            0.95,
+            0,
+            8,
+        );
+        let horiz = fingerprint(
+            "Prog",
+            "Item",
+            "",
+            0,
+            0,
+            10,
+            10,
+            0,
+            MatchMethod::CcoeffNormed,
+            PlaneFlip::Horizontal,
+            0.95,
+            0,
+            8,
+        );
+        assert_ne!(none, horiz);
+        assert!(horiz.contains("Horizontal"));
+    }
+
+    #[test]
+    fn invalidate_clears_job_and_many_boxes_flag() {
+        let (_tx, rx) = mpsc::channel();
+        let mut tool = MatchCheckTool {
+            pending: Some(rx),
+            ..Default::default()
+        };
+        tool.settings.show_many_match_boxes = true;
+        tool.invalidate();
+        assert!(tool.pending.is_none());
+        assert!(tool.cache.is_none());
+        assert!(!tool.settings.show_many_match_boxes);
+    }
+
+    #[test]
+    fn stop_compute_pauses_and_clears_live_flags() {
+        let (_tx, rx) = mpsc::channel();
+        let mut tool = MatchCheckTool {
+            pending: Some(rx),
+            ..Default::default()
+        };
+        tool.settings.last_inputs = "inputs".into();
+        tool.settings.capture_once = true;
+        tool.settings.awaiting_panel = true;
+        tool.settings.rematch_once = true;
+        tool.stop_compute();
+        assert!(tool.pending.is_none());
+        assert!(tool.cache.is_none());
+        assert!(tool.settings.last_inputs.is_empty());
+        assert!(tool.settings.paused);
+        assert!(!tool.settings.capture_once);
+        assert!(!tool.settings.awaiting_panel);
+        assert!(!tool.settings.rematch_once);
     }
 }

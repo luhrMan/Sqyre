@@ -1407,8 +1407,8 @@ Raid:
     #[test]
     fn database_set_programs_from_catalog_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
-            crate::initialize_directories().unwrap();
+        crate::paths::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            crate::paths::initialize_directories().unwrap();
 
             let mut cat = ProgramCatalog::default();
             cat.set_resolution_key("1920x1080");
