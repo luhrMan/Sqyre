@@ -660,23 +660,40 @@ mod tests {
 
     #[test]
     fn high_dpi_satellites_do_not_overlap() {
-        let hub = test_hub_button();
-        let ppp = 2.0;
-        let btns = hub_overlay_buttons(&hub, 1.0, ppp, false);
-        assert_eq!(btns.len(), 5);
-        let sats: Vec<_> = btns
-            .iter()
-            .filter(|b| b.id != QUICK_ACCESS_HUB_ID)
+        // Layout-only: do not call hub_overlay_buttons → preferred_monitor_rects.
+        // Windows CI has a real display; a 1920×1080 fixture hub can snap to the
+        // wrong edge on a larger physical desktop and pack the fan until faces
+        // overlap. Sister tests already pin SatelliteLayout to a fixed monitor.
+        let ppp = 2.0_f32;
+        let hub_pt = 26.0_f32;
+        let hub_size = (hub_pt * ppp).round();
+        let sat_size = ((hub_pt * 0.92) * ppp).round();
+        let mon_w = 1920.0_f32;
+        let mon_h = 1080.0_f32;
+        let layout = SatelliteLayout {
+            hub_x: mon_w - hub_size,
+            hub_y: (mon_h - hub_size) * 0.5,
+            hub_size,
+            sat_size,
+            edge: HubEdge::Right,
+            radius: hub_size * 2.15,
+            mon_x: 0.0,
+            mon_y: 0.0,
+            mon_w,
+            mon_h,
+            count: 4,
+        };
+        let sats: Vec<_> = (0..layout.count)
+            .map(|i| satellite_top_left(layout, i))
             .collect();
-        let phys = |b: &OverlayButtonConfig| (b.size * ppp).round();
-        for (i, a) in sats.iter().enumerate() {
-            for b in sats.iter().skip(i + 1) {
-                let ax = a.x + phys(a) * 0.5;
-                let ay = a.y + phys(a) * 0.5;
-                let bx = b.x + phys(b) * 0.5;
-                let by = b.y + phys(b) * 0.5;
-                let dist = ((ax - bx).hypot(ay - by)).max(0.0);
-                let min_sep = (phys(a) + phys(b)) * 0.5;
+        for (i, (ax, ay)) in sats.iter().enumerate() {
+            for (bx, by) in sats.iter().skip(i + 1) {
+                let acx = ax + sat_size * 0.5;
+                let acy = ay + sat_size * 0.5;
+                let bcx = bx + sat_size * 0.5;
+                let bcy = by + sat_size * 0.5;
+                let dist = (acx - bcx).hypot(acy - bcy);
+                let min_sep = sat_size;
                 assert!(
                     dist + 0.5 >= min_sep,
                     "satellites overlap at {ppp}×: dist={dist} min={min_sep}"
