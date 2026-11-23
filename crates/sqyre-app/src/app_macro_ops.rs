@@ -35,7 +35,11 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_add_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_add_sound_if(s.play_add_sound, s.sound_volume, &s.add_sound_file);
+        crate::sound::play_add_sound_if(
+            s.sound.play_add_sound,
+            s.sound.sound_volume,
+            &s.sound.add_sound_file,
+        );
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -45,9 +49,9 @@ impl SqyreApp {
     pub(crate) fn play_ui_delete_sound(&self) {
         let s = self.settings_ui.settings();
         crate::sound::play_delete_sound_if(
-            s.play_delete_sound,
-            s.sound_volume,
-            &s.delete_sound_file,
+            s.sound.play_delete_sound,
+            s.sound.sound_volume,
+            &s.sound.delete_sound_file,
         );
     }
 
@@ -95,10 +99,10 @@ impl SqyreApp {
     /// Write [`Workspace::hotkey_tag_filters`] into settings when it drifted.
     pub(crate) fn persist_hotkey_tag_filter(&mut self) {
         let filter = self.workspace.hotkey_tag_filters.clone();
-        if self.settings_ui.settings().hotkey_tag_filters == filter {
+        if self.settings_ui.settings().runtime.hotkey_tag_filters == filter {
             return;
         }
-        self.settings_ui.settings_mut().hotkey_tag_filters = filter;
+        self.settings_ui.settings_mut().runtime.hotkey_tag_filters = filter;
         if let Err(e) = self.settings_ui.save_settings() {
             crate::log::warn(format!("failed to save hotkey tag filter: {e}"));
         }
@@ -192,7 +196,7 @@ impl SqyreApp {
 
     /// Surface a failed `persist_database` to the toolbar status line.
     ///
-    /// [`Self::persist_database`] already sets [`Workspace::save_error`] (macro-list banner);
+    /// [`Workspace::persist_database`] already sets [`Workspace::save_error`] (macro-list banner);
     /// this also pushes the same failure into the always-visible run status.
     pub(crate) fn report_persist_failure(&mut self, action: &str, err: &str) {
         crate::log::warn(format_args!("{action}: {err}"));
@@ -206,7 +210,7 @@ impl SqyreApp {
         if idx >= self.workspace.macros.len() {
             return false;
         }
-        match self.persist_database() {
+        match self.workspace.persist_database() {
             Ok(()) => {
                 self.refresh_macro_hotkey_bindings();
                 true
@@ -252,10 +256,10 @@ impl SqyreApp {
         else {
             return;
         };
-        if self.settings_ui.settings().last_selected_macro == name {
+        if self.settings_ui.settings().runtime.last_selected_macro == name {
             return;
         }
-        self.settings_ui.settings_mut().last_selected_macro = name.to_string();
+        self.settings_ui.settings_mut().runtime.last_selected_macro = name.to_string();
         let _ = self.settings_ui.save_settings();
     }
 
@@ -264,15 +268,15 @@ impl SqyreApp {
         let mut m = Macro::new(name.clone(), 0, vec![]);
         {
             let s = self.settings_ui.settings();
-            m.keyboard_delay = s.default_keyboard_delay_ms;
-            m.mouse_delay = s.default_mouse_delay_ms;
-            m.hotkey_trigger = s.default_hotkey_trigger.clone();
+            m.keyboard_delay = s.runtime.default_keyboard_delay_ms;
+            m.mouse_delay = s.runtime.default_mouse_delay_ms;
+            m.hotkey_trigger = s.runtime.default_hotkey_trigger.clone();
         }
         self.workspace.macros.push(m);
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Create macro", &e);
             return;
@@ -293,7 +297,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Import AI macro", &e);
             return;
@@ -357,7 +361,7 @@ impl SqyreApp {
                 .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         }
 
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             // Roll back.
             if let Some(i) = self
                 .workspace
@@ -405,7 +409,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Import YAML macro", &e);
             return;
@@ -431,7 +435,7 @@ impl SqyreApp {
         self.workspace
             .macros
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             self.report_persist_failure("Duplicate macro", &e);
             return;
@@ -447,7 +451,7 @@ impl SqyreApp {
         };
         // Persist first; only drop history / YAML drafts after disk agrees.
         let removed = self.workspace.macros.remove(pos);
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             self.workspace.macros.insert(pos, removed);
             self.report_persist_failure("Delete macro", &e);
             return;
@@ -505,7 +509,7 @@ impl SqyreApp {
         }
         self.macro_yaml_builder
             .on_macro_renamed(&old_name, &new_name);
-        if let Err(e) = self.persist_database() {
+        if let Err(e) = self.workspace.persist_database() {
             // Roll memory (+ overlay / history / YAML drafts) back to the old name.
             if let Some(i) = self
                 .workspace
@@ -630,7 +634,7 @@ impl SqyreApp {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
-                if let Err(e) = self.persist_database() {
+                if let Err(e) = self.workspace.persist_database() {
                     // Persist failed after undo/redo — reverse so memory matches disk.
                     self.reverse_last_undo_redo(was_undo);
                     self.report_persist_failure(label, &e);
@@ -1011,7 +1015,7 @@ mod tests {
         sqyre_persist::with_sqyre_dir_override(dir.path().to_path_buf(), || {
             sqyre_persist::initialize_directories().unwrap();
             let mut app = SqyreApp::for_docs();
-            app.persist_database().expect("initial save");
+            app.workspace.persist_database().expect("initial save");
             make_unwritable(dir.path());
             f(&mut app);
             make_writable(dir.path());

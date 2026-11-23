@@ -22,16 +22,18 @@ pub use macro_yaml_draft::{macro_yaml_builder_path, MacroYamlBuilderDrafts, Macr
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
-    merge_fs_warning, monitor_slot_for_point, FsWarn, MonitorRect, ProgramAtlas, ProgramCatalog,
-    ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+    merge_fs_warning, monitor_slot_for_point, CatalogView, FsWarn, MonitorRect, ProgramAtlas,
+    ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint,
+    ProgramSearchArea,
 };
 pub use settings::{
     available_worker_threads, default_overlay_position, default_quick_access_hub_button,
     default_worker_threads, ensure_quick_access_hub_button, hub_position_on_monitor,
     is_quick_access_hub_id, move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path,
     snap_hub_button_to_monitor, snap_hub_to_monitor, snap_hub_xy_to_monitor, ActionColorPrefs,
-    HotkeyWhileRunning, HubEdge, OverlayButtonConfig, OverlayVisibilityGate, OverlayVisibilityMode,
-    UiDensity, UiFontFamily, UserSettings, DEFAULT_ACTION_LOG_MAX_ENTRIES,
+    DataLifecycle, HotkeyWhileRunning, HubEdge, OverlayButtonConfig, OverlaySettings,
+    OverlayVisibilityGate, OverlayVisibilityMode, RuntimePrefs, SoundSettings, UiDensity,
+    UiFontFamily, UiLayout, UserSettings, DEFAULT_ACTION_LOG_MAX_ENTRIES,
     DEFAULT_AUTO_UPDATE_CHECK, DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP,
     DEFAULT_CLICK_FLASH_MS, DEFAULT_DATA_EDITOR_LEFT_FRAC, DEFAULT_HIDE_APP_DURING_RECORDING,
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY,

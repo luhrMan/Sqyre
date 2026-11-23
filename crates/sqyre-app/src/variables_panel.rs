@@ -84,7 +84,7 @@ impl VariablesPanelUi {
         {
             *self
                 .cached_monitor_count
-                .get_or_insert_with(sqyre_capture::monitor_count)
+                .get_or_insert_with(crate::native_capture::monitor_count)
         }
         #[cfg(not(feature = "native-runtime"))]
         {

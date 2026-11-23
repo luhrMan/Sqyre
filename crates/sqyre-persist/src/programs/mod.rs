@@ -4,12 +4,14 @@ mod encode;
 mod mutate;
 mod name_tag;
 mod parse;
+mod read;
 mod resolve;
 mod seed_general;
 mod types;
 mod util;
 
 pub use mutate::{merge_fs_warning, FsWarn};
+pub use read::CatalogView;
 
 pub use seed_general::ensure_general_program;
 pub use types::{

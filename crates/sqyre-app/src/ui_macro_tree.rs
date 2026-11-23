@@ -205,9 +205,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             TreeDragMode::Idle | TreeDragMode::Reorder
                         );
 
-                    let show_logs = app.settings_ui.settings().save_meta_images;
+                    let show_logs = app.settings_ui.settings().runtime.save_meta_images;
                     let catalog = &app.workspace.catalog;
-                    let icons = &mut app.icon_cache;
+                    let icons = &mut app.assets.icon_cache;
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
                     if root_children.is_empty() {
@@ -429,8 +429,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         let selected = app.tree.selected_actions.clone();
         let name = app.workspace.macros[idx].name.clone();
         let catalog = &app.workspace.catalog;
-        let icons = &mut app.icon_cache;
-        let previews = &mut app.preview_tooltips;
+        let icons = &mut app.assets.icon_cache;
+        let previews = &mut app.assets.preview_tooltips;
         let macros: Vec<(String, Vec<String>)> = app
             .workspace
             .macros
@@ -477,7 +477,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     macro_hotkeys: &app.run_session.macro_hotkeys,
                     screen_click: &app.screen_click,
                 },
-                compact_program_headers: app.settings_ui.settings().compact_program_headers,
+                compact_program_headers: app.settings_ui.settings().ui.compact_program_headers,
                 pending_scale: pending.as_ref(),
             };
             action_tooltip::show(

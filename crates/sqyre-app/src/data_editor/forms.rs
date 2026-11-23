@@ -308,7 +308,7 @@ impl DataEditor {
             self.reset_overlay_form();
             return;
         };
-        let Some(btn) = settings.overlay_buttons.iter().find(|b| b.id == id) else {
+        let Some(btn) = settings.overlay.overlay_buttons.iter().find(|b| b.id == id) else {
             self.reset_overlay_form();
             return;
         };
@@ -650,7 +650,7 @@ impl DataEditor {
                             self.pixel_check.match_method,
                             self.pixel_check.tolerance,
                             self.pixel_check.refresh_gen,
-                            settings.image_search_close_matches_distance,
+                            settings.runtime.image_search_close_matches_distance,
                         );
                         if cache.data.fingerprint == inputs {
                             let match_count = cache.data.tolerance_matches.len();
@@ -710,7 +710,7 @@ impl DataEditor {
                     rx,
                     by,
                     force,
-                    settings.image_search_close_matches_distance,
+                    settings.runtime.image_search_close_matches_distance,
                 );
             }
             if can_compute && (force || lx.is_some()) {

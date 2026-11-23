@@ -105,7 +105,7 @@ pub fn run_scene(scene: &str) {
 
     for size_case in SIZE_CASES {
         let mut harness = build_docs_harness(size_case.size, |app| {
-            app.docs_settings_mut().ui_scale = size_case.ui_scale;
+            app.docs_settings_mut().ui.ui_scale = size_case.ui_scale;
             setup_scene(app, scene);
         });
         let content_rect = harness.ctx.content_rect();

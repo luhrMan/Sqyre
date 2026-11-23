@@ -213,7 +213,7 @@ impl UpdateManager {
 }
 
 pub fn note_check_time(settings: &mut sqyre_persist::UserSettings) {
-    settings.last_update_check_unix = SystemTime::now()
+    settings.data.last_update_check_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);

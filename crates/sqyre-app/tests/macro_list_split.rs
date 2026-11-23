@@ -38,7 +38,7 @@ fn macro_list_drag_persists_split_to_settings() {
     h.drop_at(egui::pos2(edge_x - 150.0, 400.0));
     h.run_ok();
 
-    let frac = h.state().docs_settings().macro_list_split;
+    let frac = h.state().docs_settings().ui.macro_list_split;
     let size2 = panel_size(&h.ctx).expect("panel state after drag");
     assert!(
         (frac - size2.x / 1280.0).abs() < 0.02,
@@ -49,14 +49,14 @@ fn macro_list_drag_persists_split_to_settings() {
     // isolated data-dir override).
     let reloaded = sqyre_persist::UserSettings::load_default().unwrap();
     assert!(
-        (reloaded.macro_list_split - frac).abs() < 0.001,
+        (reloaded.ui.macro_list_split - frac).abs() < 0.001,
         "settings file split {} != in-memory {frac}",
-        reloaded.macro_list_split
+        reloaded.ui.macro_list_split
     );
 
     // A "restart" (fresh ctx, no PanelState) restores the saved width.
     let mut h2 = build_docs_harness([1280.0, 800.0], |app| {
-        app.docs_settings_mut().macro_list_split = frac;
+        app.docs_settings_mut().ui.macro_list_split = frac;
     });
     h2.run_ok();
     let size3 = panel_size(&h2.ctx).expect("panel state after restart");
@@ -71,7 +71,7 @@ fn macro_list_stale_panel_state_yields_to_settings() {
     // A stale eframe-persisted PanelState (e.g. saved at a different window
     // size) must be realigned to the settings fraction.
     let mut h = build_docs_harness([1280.0, 800.0], |app| {
-        app.docs_settings_mut().macro_list_split = 0.30;
+        app.docs_settings_mut().ui.macro_list_split = 0.30;
     });
     h.run_ok();
 
@@ -99,14 +99,14 @@ fn macro_list_window_resize_keeps_saved_split() {
     // fraction — PanelState is absolute pixels, so size.x/win_w drifts on
     // every resize — and the panel should track the fraction at the new size.
     let mut h = build_docs_harness([1280.0, 800.0], |app| {
-        app.docs_settings_mut().macro_list_split = 0.30;
+        app.docs_settings_mut().ui.macro_list_split = 0.30;
     });
     h.run_ok();
 
     h.set_size(egui::vec2(800.0, 800.0));
     h.run_ok();
 
-    let frac = h.state().docs_settings().macro_list_split;
+    let frac = h.state().docs_settings().ui.macro_list_split;
     assert!(
         (frac - 0.30).abs() < 0.001,
         "window resize must not rewrite the saved split, got {frac}"
@@ -118,8 +118,8 @@ fn macro_list_window_resize_keeps_saved_split() {
     );
     let reloaded = sqyre_persist::UserSettings::load_default().unwrap();
     assert!(
-        (reloaded.macro_list_split - 0.30).abs() < 0.001,
+        (reloaded.ui.macro_list_split - 0.30).abs() < 0.001,
         "settings file split {} should be unchanged",
-        reloaded.macro_list_split
+        reloaded.ui.macro_list_split
     );
 }

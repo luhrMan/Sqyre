@@ -16,6 +16,17 @@ pub(crate) const HUB_NEW_AREA: &str = "__sqyre_hub_new_area";
 pub(crate) const HUB_SCREEN_CAP: &str = "__sqyre_hub_screen_cap";
 pub(crate) const HUB_TOGGLE_WINDOW: &str = "__sqyre_hub_toggle";
 
+/// Edge hub radial fan animation state (owned by [`SqyreApp`]).
+#[derive(Debug, Default)]
+pub(crate) struct QuickAccessFan {
+    /// Fan is open (satellites travel toward rested slots).
+    pub expanded: bool,
+    /// Fan progress at the start of the current open/close transition.
+    pub fan_from: f32,
+    /// When the current fan transition started (`None` = settled at target).
+    pub anim_start: Option<std::time::Instant>,
+}
+
 /// Actions offered by the hub fan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuickAccessAction {
@@ -385,29 +396,29 @@ impl SqyreApp {
 
     pub(crate) fn toggle_quick_access_fan(&mut self, ctx: &egui::Context) {
         self.begin_quick_access_fan_anim();
-        self.quick_access_expanded = !self.quick_access_expanded;
+        self.quick_access.expanded = !self.quick_access.expanded;
         // Wake once so sync forwards the new expand flag; travel runs on the host.
         ctx.request_repaint();
     }
 
     pub(crate) fn close_quick_access_fan(&mut self) {
-        if self.quick_access_expanded {
+        if self.quick_access.expanded {
             self.begin_quick_access_fan_anim();
         }
-        self.quick_access_expanded = false;
+        self.quick_access.expanded = false;
     }
 
     /// Snap the fan shut without playing the collapse motion (mode switches).
     pub(crate) fn snap_quick_access_fan_closed(&mut self) {
-        self.quick_access_expanded = false;
-        self.quick_access_fan_from = 0.0;
-        self.quick_access_fan_anim_start = None;
+        self.quick_access.expanded = false;
+        self.quick_access.fan_from = 0.0;
+        self.quick_access.anim_start = None;
     }
 
     /// Wall-clock fan progress (logic only — visuals are host-driven).
     pub(crate) fn quick_access_fan_t(&self) -> f32 {
-        let target = if self.quick_access_expanded { 1.0 } else { 0.0 };
-        let Some(start) = self.quick_access_fan_anim_start else {
+        let target = if self.quick_access.expanded { 1.0 } else { 0.0 };
+        let Some(start) = self.quick_access.anim_start else {
             return target;
         };
         #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -415,17 +426,17 @@ impl SqyreApp {
         #[cfg(not(all(feature = "native-runtime", feature = "overlay-buttons")))]
         let secs = 0.18_f32;
         let u = (start.elapsed().as_secs_f32() / secs).clamp(0.0, 1.0);
-        self.quick_access_fan_from + (target - self.quick_access_fan_from) * u
+        self.quick_access.fan_from + (target - self.quick_access.fan_from) * u
     }
 
     fn begin_quick_access_fan_anim(&mut self) {
-        self.quick_access_fan_from = self.quick_access_fan_t();
-        self.quick_access_fan_anim_start = Some(std::time::Instant::now());
+        self.quick_access.fan_from = self.quick_access_fan_t();
+        self.quick_access.anim_start = Some(std::time::Instant::now());
     }
 
     /// Esc collapses an open fan.
     pub(crate) fn poll_quick_access_escape(&mut self, ctx: &egui::Context) {
-        if !self.quick_access_expanded && self.quick_access_fan_t() <= 0.001 {
+        if !self.quick_access.expanded && self.quick_access_fan_t() <= 0.001 {
             return;
         }
         sqyre_hotkeys::claim_popup_escape(true);
@@ -449,7 +460,7 @@ impl SqyreApp {
             return false;
         };
         // Satellites fire only when the fan is fully open (host also empties hits).
-        if (self.quick_access_fan_t() - 1.0).abs() > 0.001 || !self.quick_access_expanded {
+        if (self.quick_access_fan_t() - 1.0).abs() > 0.001 || !self.quick_access.expanded {
             return true;
         }
         self.close_quick_access_fan();
@@ -478,7 +489,7 @@ impl SqyreApp {
                 db: &mut self.workspace.db,
                 macros: &mut self.workspace.macros,
                 catalog: &mut self.workspace.catalog,
-                icons: &mut self.icon_cache,
+                icons: &mut self.assets.icon_cache,
                 screen_click: &self.screen_click,
                 settings: self.settings_ui.settings_mut(),
                 hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,

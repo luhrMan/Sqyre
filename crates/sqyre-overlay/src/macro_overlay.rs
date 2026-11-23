@@ -44,7 +44,7 @@ use crate::win_buttons::{WinButtonHost, WinButtonSpec};
 use crate::x11_buttons::{HotkeyChooserSpec, NativeButtonSpec, X11ButtonHost};
 
 #[cfg(target_os = "linux")]
-pub use crate::x11_buttons::{HotkeyChooserResult as NativeHotkeyChooserResult, OverlayButtonMove};
+pub use crate::x11_buttons::HotkeyChooserResult as NativeHotkeyChooserResult;
 
 #[cfg(not(target_os = "linux"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,14 +53,7 @@ pub enum NativeHotkeyChooserResult {
     Dismissed,
 }
 
-/// Desktop position committed after a relocate-mode drag (root coordinates).
-#[cfg(not(target_os = "linux"))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OverlayButtonMove {
-    pub id: String,
-    pub x: i32,
-    pub y: i32,
-}
+pub use crate::host_common::OverlayButtonMove;
 
 const FOCUS_POLL: Duration = Duration::from_millis(500);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);

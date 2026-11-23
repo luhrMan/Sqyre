@@ -42,7 +42,7 @@ pub struct AddActionPicker {
     pub open: bool,
     /// Overrides for blank templates keyed by action type.
     defaults: HashMap<String, Action>,
-    /// `settings.action_defaults` snapshot `defaults` was loaded from — a
+    /// `settings.runtime.action_defaults` snapshot `defaults` was loaded from — a
     /// Settings-side reset drifts it and triggers a reload.
     synced_action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
     /// View / edit tip for a type’s default prototype.
@@ -109,15 +109,15 @@ impl AddActionPicker {
     /// Reload per-type prototypes when `action_defaults` changed elsewhere
     /// (e.g. a Settings-side reset). Cheap enough to call every frame.
     pub fn sync_from_settings(&mut self, settings: &UserSettings) {
-        if self.synced_action_defaults != settings.action_defaults {
+        if self.synced_action_defaults != settings.runtime.action_defaults {
             self.load_from_settings(settings);
         }
     }
 
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
-        self.synced_action_defaults = settings.action_defaults.clone();
+        self.synced_action_defaults = settings.runtime.action_defaults.clone();
         self.defaults.clear();
-        for (ty, map) in &settings.action_defaults {
+        for (ty, map) in &settings.runtime.action_defaults {
             match action_from_map(map) {
                 Ok(action) => {
                     self.defaults.insert(ty.clone(), action);
@@ -134,10 +134,10 @@ impl AddActionPicker {
     }
 
     pub fn store_into_settings(&self, settings: &mut UserSettings) {
-        settings.action_defaults.clear();
+        settings.runtime.action_defaults.clear();
         for (ty, action) in &self.defaults {
             if let Ok(map) = action_to_map(action) {
-                settings.action_defaults.insert(ty.clone(), map);
+                settings.runtime.action_defaults.insert(ty.clone(), map);
             }
         }
     }

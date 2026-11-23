@@ -18,13 +18,16 @@ use std::sync::Arc;
 pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
     #[cfg(feature = "native-runtime")]
     {
-        if let Some(key) = sqyre_capture::main_monitor_resolution_key() {
+        use sqyre_ports::MonitorLayout;
+        let layout = crate::native_capture::monitor_layout();
+        if let Some(key) = layout.primary_resolution_key() {
             catalog.set_resolution_key(key);
         }
-        if let Some(scale) = sqyre_capture::main_monitor_scale() {
+        if let Some(scale) = layout.primary_scale() {
             catalog.set_runtime_scale(scale);
         }
-        let rects: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+        let rects: Vec<MonitorRect> = layout
+            .preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
@@ -49,7 +52,9 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
     #[cfg(feature = "native-runtime")]
     {
-        let from_layout: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+        use sqyre_ports::MonitorLayout;
+        let from_layout: Vec<MonitorRect> = crate::native_capture::monitor_layout()
+            .preferred_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
@@ -117,7 +122,7 @@ pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool 
 }
 
 #[cfg(feature = "native-runtime")]
-pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
+pub struct CatalogResolver<'a>(pub sqyre_persist::CatalogView<'a>);
 
 #[cfg(feature = "native-runtime")]
 impl CoordinateResolver for CatalogResolver<'_> {
@@ -157,7 +162,7 @@ impl CoordinateResolver for CatalogResolver<'_> {
 }
 
 #[cfg(feature = "native-runtime")]
-pub struct CatalogIcons<'a>(pub &'a ProgramCatalog);
+pub struct CatalogIcons<'a>(pub sqyre_persist::CatalogView<'a>);
 
 #[cfg(feature = "native-runtime")]
 impl IconStore for CatalogIcons<'_> {
@@ -254,7 +259,7 @@ Game:
     #[cfg(feature = "native-runtime")]
     fn catalog_resolver_resolves_point_and_area() {
         let cat = sample_catalog();
-        let resolver = CatalogResolver(&cat);
+        let resolver = CatalogResolver((&cat).into());
         let m = Macro::new("t", 0, vec![]);
         assert_eq!(
             resolver
@@ -284,7 +289,7 @@ Game:
     #[cfg(feature = "native-runtime")]
     fn catalog_icons_expose_item_meta() {
         let cat = sample_catalog();
-        let icons = CatalogIcons(&cat);
+        let icons = CatalogIcons((&cat).into());
         let meta = icons.item_meta("Game~Sword").expect("meta");
         assert_eq!(meta.name, "Sword");
         assert_eq!(meta.stack_max, 1);

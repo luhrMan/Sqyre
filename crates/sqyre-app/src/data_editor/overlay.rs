@@ -12,7 +12,7 @@ use sqyre_persist::{
 pub(crate) fn primary_overlay_screen_rect(catalog: &ProgramCatalog) -> (f32, f32, f32, f32) {
     #[cfg(feature = "native-runtime")]
     {
-        if let Some(r) = sqyre_capture::preferred_monitor_rects()
+        if let Some(r) = crate::native_capture::preferred_rects()
             .into_iter()
             .find(|r| r.w > 1 && r.h > 1)
         {
@@ -65,7 +65,12 @@ impl DataEditor {
         id: &str,
         enabled: bool,
     ) -> bool {
-        let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) else {
+        let Some(btn) = settings
+            .overlay
+            .overlay_buttons
+            .iter_mut()
+            .find(|b| b.id == id)
+        else {
             return false;
         };
         btn.enabled = enabled;
@@ -97,7 +102,12 @@ impl DataEditor {
             self.set_err("Pick a macro.");
             return;
         }
-        let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) else {
+        let Some(btn) = settings
+            .overlay
+            .overlay_buttons
+            .iter_mut()
+            .find(|b| b.id == id)
+        else {
             self.set_err("Overlay button not found.");
             return;
         };
@@ -230,7 +240,7 @@ mod tests {
         let mut settings = UserSettings::default();
         let mut btn = OverlayButtonConfig::new("b1", "Game");
         btn.enabled = true;
-        settings.overlay_buttons.push(btn);
+        settings.overlay.overlay_buttons.push(btn);
 
         let mut ed = DataEditor {
             selected_program: Some("Game".into()),
@@ -240,7 +250,7 @@ mod tests {
         };
 
         assert!(ed.set_overlay_button_enabled(&mut settings, "b1", false));
-        assert!(!settings.overlay_buttons[0].enabled);
+        assert!(!settings.overlay.overlay_buttons[0].enabled);
         assert!(!ed.form_overlay_enabled);
         assert!(!ed.set_overlay_button_enabled(&mut settings, "missing", false));
     }
@@ -253,7 +263,7 @@ mod tests {
         let mut settings = UserSettings::default();
         let mut btn = OverlayButtonConfig::new("b1", "Game");
         btn.macro_name = "Macro".into();
-        settings.overlay_buttons.push(btn);
+        settings.overlay.overlay_buttons.push(btn);
 
         let ctx = Context::default();
         let mut ed = DataEditor::default();

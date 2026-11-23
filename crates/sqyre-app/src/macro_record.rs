@@ -38,10 +38,10 @@ pub(crate) struct RecordThresholds {
 impl RecordThresholds {
     pub(crate) fn from_settings(s: &sqyre_persist::UserSettings) -> Self {
         Self {
-            wait_ms: s.record_wait_threshold_ms,
-            move_min_px: s.record_move_min_distance,
-            tap_max_ms: s.record_tap_max_ms,
-            snap_point_px: s.record_snap_point_px,
+            wait_ms: s.runtime.record_wait_threshold_ms,
+            move_min_px: s.runtime.record_move_min_distance,
+            tap_max_ms: s.runtime.record_tap_max_ms,
+            snap_point_px: s.runtime.record_snap_point_px,
         }
     }
 }

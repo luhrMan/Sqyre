@@ -29,6 +29,7 @@ impl SqyreApp {
                 let Some(program) = self
                     .settings_ui
                     .settings()
+                    .overlay
                     .overlay_buttons
                     .iter()
                     .find(|b| b.id == button_id)

@@ -6,8 +6,11 @@
 //! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
+use crate::host_common::{
+    place_hub_satellite_face, point_in_rounded_rect, tip_refresh_decision, HubFanHost,
+    TipButtonView, TipRefreshInput,
+};
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
-use crate::OverlayButtonMove;
 use parking_lot::Mutex;
 use sqyre_capture::{self, event_log, mark_site, note};
 use std::cell::Cell;
@@ -64,20 +67,7 @@ thread_local! {
     static HOST: Cell<*mut HostState> = const { Cell::new(std::ptr::null_mut()) };
 }
 
-/// Desired on-screen button (physical pixels, virtual-desktop coordinates).
-#[derive(Debug, Clone, PartialEq)]
-pub struct WinButtonSpec {
-    pub id: String,
-    pub macro_name: String,
-    pub face: crate::ButtonFace,
-    pub tip: String,
-    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
-    pub ui_scale: f32,
-    pub busy: bool,
-    pub visibility_gated: bool,
-    /// When false, hit-tests pass through and presses are ignored (hub fan travel).
-    pub input_enabled: bool,
-}
+pub use crate::host_common::{OverlayButtonMove, OverlayButtonSpec as WinButtonSpec};
 
 enum HostCmd {
     SetButtons(Vec<WinButtonSpec>),
@@ -390,18 +380,21 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
         }
     }
     let tip_refresh = state.tip.as_ref().and_then(|tip| {
-        if !tip.mapped {
-            return None;
-        }
-        let btn = state.buttons.get(tip.for_id.as_str())?;
-        let text = btn.spec.tip.trim();
-        if text.is_empty() {
-            return Some((tip.for_id.clone(), false));
-        }
-        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
-            return Some((tip.for_id.clone(), true));
-        }
-        None
+        tip_refresh_decision(
+            TipRefreshInput {
+                for_id: tip.for_id.as_str(),
+                text: tip.text.as_str(),
+                ui_scale: tip.ui_scale,
+                mapped: tip.mapped,
+            },
+            state
+                .buttons
+                .get(tip.for_id.as_str())
+                .map(|btn| TipButtonView {
+                    text: btn.spec.tip.as_str(),
+                    ui_scale: btn.spec.ui_scale,
+                }),
+        )
     });
     let stale: Vec<String> = state
         .buttons
@@ -448,26 +441,38 @@ fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
 }
 
 fn place_hub_satellite_spec(state: &HostState, spec: &mut WinButtonSpec) {
-    let rest = (spec.face.x, spec.face.y);
-    let (hx, hy, hw, hh) = hub_face_geom(state);
-    let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
-    spec.face.x = x;
-    spec.face.y = y;
-    spec.input_enabled = state.hub_fan.fully_open();
+    place_hub_satellite_face(&state.hub_fan, hub_face_geom(state), spec);
+}
+
+impl HubFanHost for HostState {
+    fn hub_fan(&mut self) -> &mut crate::hub_fan::HubFanState {
+        &mut self.hub_fan
+    }
+
+    fn place_all_satellites(&mut self) {
+        place_all_hub_satellites(self);
+    }
+
+    fn rearm_satellite_input(&mut self) {
+        rearm_hub_satellite_input(self);
+    }
+
+    fn apply_fan_visibility(&mut self) {
+        apply_visibility(self);
+    }
+
+    fn sync_dismiss_arm(&mut self) {
+        sync_hub_fan_dismiss_arm(self);
+    }
+
+    fn flush_after_fan(&mut self) {
+        // Win hosts blit immediately; no display flush.
+        let _ = self;
+    }
 }
 
 fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
-    let was_open = state.hub_fan.fully_open();
-    state.hub_fan.set_expanded(expanded, snap);
-    if snap || !state.hub_fan.animating() {
-        place_all_hub_satellites(state);
-    }
-    if was_open != state.hub_fan.fully_open() {
-        rearm_hub_satellite_input(state);
-    }
-    apply_visibility(state);
-    sync_hub_fan_dismiss_arm(state);
+    crate::host_common::apply_hub_fan_cmd(state, expanded, snap);
 }
 
 fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
@@ -519,23 +524,7 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 }
 
 fn tick_hub_fan(state: &mut HostState) {
-    let was_open = state.hub_fan.fully_open();
-    let was_traveling = state.hub_fan.open_or_traveling();
-    if !state.hub_fan.tick() {
-        if was_traveling && !state.hub_fan.open_or_traveling() {
-            apply_visibility(state);
-        }
-        sync_hub_fan_dismiss_arm(state);
-        return;
-    }
-    if !was_traveling {
-        apply_visibility(state);
-    }
-    place_all_hub_satellites(state);
-    if was_open != state.hub_fan.fully_open() {
-        rearm_hub_satellite_input(state);
-    }
-    sync_hub_fan_dismiss_arm(state);
+    let _ = crate::host_common::tick_hub_fan(state);
 }
 
 fn update_button(state: &mut HostState, spec: WinButtonSpec) {
@@ -1085,7 +1074,7 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
     let over_hub = state.buttons.values().any(|btn| {
         btn.mapped
             && crate::hub_fan::is_hub_chrome_id(&btn.spec.id)
-            && inside_rounded(
+            && point_in_rounded_rect(
                 pt.x - btn.spec.face.x,
                 pt.y - btn.spec.face.y,
                 btn.spec.face.w,
@@ -1284,7 +1273,7 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
     }
     let local_x = screen_x - btn.spec.face.x;
     let local_y = screen_y - btn.spec.face.y;
-    if inside_rounded(
+    if point_in_rounded_rect(
         local_x,
         local_y,
         btn.spec.face.w,
@@ -1295,37 +1284,6 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
     } else {
         LRESULT(HTTRANSPARENT as isize)
     }
-}
-
-fn inside_rounded(x: i32, y: i32, w: u32, h: u32, radius: f32) -> bool {
-    if w == 0 || h == 0 {
-        return false;
-    }
-    let xf = x as f32;
-    let yf = y as f32;
-    let wf = w as f32;
-    let hf = h as f32;
-    if xf < 0.0 || yf < 0.0 || xf >= wf || yf >= hf {
-        return false;
-    }
-    let r = radius.clamp(0.0, wf.min(hf) * 0.5);
-    let cx = if xf < r {
-        r
-    } else if xf > wf - r {
-        wf - r
-    } else {
-        xf
-    };
-    let cy = if yf < r {
-        r
-    } else if yf > hf - r {
-        hf - r
-    } else {
-        yf
-    };
-    let dx = xf - cx;
-    let dy = yf - cy;
-    dx * dx + dy * dy <= r * r
 }
 
 fn lparam_xy(lp: LPARAM) -> (i32, i32) {

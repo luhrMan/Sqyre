@@ -33,7 +33,12 @@ $dataDir = Join-Path $env:USERPROFILE ".sqyre"
 $settingsFile = Join-Path $dataDir "settings.yaml"
 if (-not (Test-Path $settingsFile)) {
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-    Set-Content -Path $settingsFile -Value "permissions_intro_done: true" -Encoding ascii
+    # Nested UserSettings shape (runtime partition); a flat key is ignored and the
+    # first-start intro would block CAP/INPUT/HOTKEY probes indefinitely.
+    Set-Content -Path $settingsFile -Value @"
+runtime:
+  permissions_intro_done: true
+"@ -Encoding ascii
 }
 
 $log1 = Join-Path $out "first.log"

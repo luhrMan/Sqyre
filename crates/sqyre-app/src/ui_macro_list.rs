@@ -462,6 +462,7 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
         return;
     }
     let program_icons = app
+        .assets
         .icon_cache
         .program_name_icons(ui.ctx(), &app.workspace.catalog);
     let filters = &app.workspace.hotkey_tag_filters;
@@ -550,7 +551,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     // Panel size is a fraction of the window body it splits, not absolute points,
     // so the 15%–75% limits track window resizes.
     let win_w = ui.max_rect().width().max(1.0);
-    let frac = app.settings_ui.settings().macro_list_split.clamp(
+    let frac = app.settings_ui.settings().ui.macro_list_split.clamp(
         sqyre_persist::MIN_MACRO_LIST_FRAC,
         sqyre_persist::MAX_MACRO_LIST_FRAC,
     );
@@ -683,8 +684,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let filter = app.macro_list_filter.trim().to_string();
                 let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
                 let tag_icons =
-                    program_tag_icons(ui.ctx(), &app.workspace.catalog, &mut app.icon_cache);
-                let compact = app.settings_ui.settings().compact_program_headers;
+                    program_tag_icons(ui.ctx(), &app.workspace.catalog, &mut app.assets.icon_cache);
+                let compact = app.settings_ui.settings().ui.compact_program_headers;
                 let mut row_action: Option<MacroRowAction> = None;
                 let mut clicked_tag: Option<String> = None;
                 let mut row_nav = RowNav::default();
@@ -803,9 +804,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 sqyre_persist::MIN_MACRO_LIST_FRAC,
                 sqyre_persist::MAX_MACRO_LIST_FRAC,
             );
-            let cur = app.settings_ui.settings().macro_list_split;
+            let cur = app.settings_ui.settings().ui.macro_list_split;
             if (frac - cur).abs() > 0.005 {
-                app.settings_ui.settings_mut().macro_list_split = frac;
+                app.settings_ui.settings_mut().ui.macro_list_split = frac;
                 let _ = app.settings_ui.save_settings();
             }
         }

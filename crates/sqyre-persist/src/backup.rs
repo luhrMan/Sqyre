@@ -379,14 +379,14 @@ fn sanitize_staged_settings(path: &Path) -> Result<()> {
     // Staging happens before the live tree is moved aside, so the current
     // settings are still readable here.
     let live_dir = UserSettings::load_from_path(crate::settings_path())
-        .map(|s| s.sqyre_dir)
+        .map(|s| s.data.sqyre_dir)
         .unwrap_or_default();
     let mut settings = UserSettings::load_from_path(path)
         .map_err(|e| BackupError::Message(format!("restored settings.yaml is invalid: {e}")))?;
-    if settings.sqyre_dir.trim() == live_dir.trim() {
+    if settings.data.sqyre_dir.trim() == live_dir.trim() {
         return Ok(());
     }
-    settings.sqyre_dir = live_dir;
+    settings.data.sqyre_dir = live_dir;
     settings
         .save_to_path(path)
         .map_err(|e| BackupError::Message(format!("failed to sanitize settings.yaml: {e}")))
@@ -609,7 +609,7 @@ mod tests {
         let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images/icons"))?;
         fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
+        fs::write(data.join(SETTINGS_FILE), "data:\n  backup_enabled: false\n")?;
         fs::write(data.join("images/icons/a.png"), b"png")?;
         fs::write(data.join("crash.log"), "ignore")?;
 
@@ -662,7 +662,7 @@ mod tests {
             let mut zip = ZipWriter::new(file);
             let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             zip.start_file(SETTINGS_FILE, opts)?;
-            zip.write_all(b"backup_enabled: false\n")?;
+            zip.write_all(b"data:\n  backup_enabled: false\n")?;
             zip.finish()?;
         }
 
@@ -749,7 +749,10 @@ mod tests {
         fs::create_dir_all(&data)?;
         fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
         // A legitimately relocated data dir must survive restore.
-        fs::write(data.join(SETTINGS_FILE), "sqyre_dir: /tmp/live-sqyre-dir\n")?;
+        fs::write(
+            data.join(SETTINGS_FILE),
+            "data:\n  sqyre_dir: /tmp/live-sqyre-dir\n",
+        )?;
 
         let zip_path = tmp.path().join("redirect.zip");
         {
@@ -759,7 +762,7 @@ mod tests {
             zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: {}\nprograms: {}\n")?;
             zip.start_file(SETTINGS_FILE, opts)?;
-            zip.write_all(b"sqyre_dir: /tmp/evil-sqyre-dir\nbackup_enabled: true\n")?;
+            zip.write_all(b"data:\n  sqyre_dir: /tmp/evil-sqyre-dir\n  backup_enabled: true\n")?;
             zip.finish()?;
         }
 
@@ -767,7 +770,7 @@ mod tests {
             restore_backup(&zip_path)?;
             let restored = UserSettings::load_from_path(data.join(SETTINGS_FILE))
                 .map_err(|e| BackupError::Message(e.to_string()))?;
-            assert_eq!(restored.sqyre_dir, "/tmp/live-sqyre-dir");
+            assert_eq!(restored.data.sqyre_dir, "/tmp/live-sqyre-dir");
             Ok(())
         })?;
         Ok(())
@@ -779,7 +782,7 @@ mod tests {
         let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(&data)?;
         fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
+        fs::write(data.join(SETTINGS_FILE), "data:\n  backup_enabled: false\n")?;
         let original = fs::read_to_string(data.join(SETTINGS_FILE)).unwrap();
 
         let zip_path = tmp.path().join("bomb.zip");
@@ -831,7 +834,7 @@ macros:
 programs: {}
 "#,
         )?;
-        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
+        fs::write(data.join(SETTINGS_FILE), "data:\n  backup_enabled: false\n")?;
         fs::write(data.join("images/icons/shared.png"), b"live-shared")?;
         fs::write(data.join("images/icons/live-only.png"), b"live-only")?;
         fs::write(data.join("variables/keep.txt"), b"keep")?;
@@ -864,7 +867,10 @@ macros:
 programs: {}
 "#,
         )?;
-        fs::write(backup_root.join(SETTINGS_FILE), "backup_enabled: true\n")?;
+        fs::write(
+            backup_root.join(SETTINGS_FILE),
+            "data:\n  backup_enabled: true\n",
+        )?;
         fs::write(
             backup_root.join("images/icons/shared.png"),
             b"imported-shared",
@@ -899,7 +905,7 @@ programs: {}
             assert!(db.macros.contains_key("B"));
             assert_eq!(
                 fs::read_to_string(data.join(SETTINGS_FILE)).unwrap(),
-                "backup_enabled: true\n"
+                "data:\n  backup_enabled: true\n"
             );
             assert_eq!(
                 fs::read(data.join("images/icons/shared.png")).unwrap(),
@@ -925,7 +931,7 @@ programs: {}
         let data = tmp.path().join(sqyre_ports::APP_DIR_NAME);
         fs::create_dir_all(data.join("images/icons"))?;
         fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
-        fs::write(data.join(SETTINGS_FILE), "backup_enabled: false\n")?;
+        fs::write(data.join(SETTINGS_FILE), "data:\n  backup_enabled: false\n")?;
         fs::write(data.join("images/icons/live-only.png"), b"gone")?;
 
         let zip_path = tmp.path().join("overwrite.zip");
@@ -936,7 +942,7 @@ programs: {}
             zip.start_file(DB_FILE, opts)?;
             zip.write_all(b"macros: {}\nprograms: {}\n")?;
             zip.start_file(SETTINGS_FILE, opts)?;
-            zip.write_all(b"backup_enabled: true\n")?;
+            zip.write_all(b"data:\n  backup_enabled: true\n")?;
             zip.start_file("images/icons/from-backup.png", opts)?;
             zip.write_all(b"new")?;
             zip.finish()?;
@@ -951,7 +957,7 @@ programs: {}
             );
             assert_eq!(
                 fs::read_to_string(data.join(SETTINGS_FILE)).unwrap(),
-                "backup_enabled: true\n"
+                "data:\n  backup_enabled: true\n"
             );
             Ok(())
         })?;

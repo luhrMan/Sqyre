@@ -234,15 +234,15 @@ impl SettingsUi {
             if !prop.iter().any(|n| n == "Hack") {
                 // After Ubuntu (UI text), before emoji fallbacks; first overall
                 // when the whole UI renders monospace.
-                let insert_at = if settings.ui_font_family == sqyre_persist::UiFontFamily::Monospace
-                {
-                    0
-                } else {
-                    prop.iter()
-                        .position(|n| n == "Ubuntu-Light")
-                        .map(|i| i + 1)
-                        .unwrap_or(0)
-                };
+                let insert_at =
+                    if settings.ui.ui_font_family == sqyre_persist::UiFontFamily::Monospace {
+                        0
+                    } else {
+                        prop.iter()
+                            .position(|n| n == "Ubuntu-Light")
+                            .map(|i| i + 1)
+                            .unwrap_or(0)
+                    };
                 prop.insert(insert_at, "Hack".to_owned());
             }
         }
@@ -251,8 +251,8 @@ impl SettingsUi {
 
     /// Apply appearance prefs to the egui context (Sqyre theme, fonts, scale).
     pub fn apply_appearance(ctx: &egui::Context, settings: &UserSettings) {
-        let scale = if settings.ui_scale > 0.0 {
-            settings.ui_scale
+        let scale = if settings.ui.ui_scale > 0.0 {
+            settings.ui.ui_scale
         } else {
             DEFAULT_UI_SCALE
         };
@@ -264,28 +264,30 @@ impl SettingsUi {
 
         // Accent feeds `theme::apply` visuals and every `theme::accent()` draw.
         sqyre_ui_theme::set_accent(
-            sqyre_domain::parse_hex_color(settings.accent_color.trim())
+            sqyre_domain::parse_hex_color(settings.ui.accent_color.trim())
                 .map(|[r, g, b, _]| [r, g, b]),
         );
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
             // `Some(true)` when the toggle is on; `None` keeps `SQYRE_DIAG` honored.
-            sqyre_capture::set_disk_logging(settings.diagnostic_logging.then_some(true));
-            sqyre_capture::set_pipewire_suspend_on_idle(settings.suspend_screen_capture_when_idle);
+            sqyre_capture::set_disk_logging(settings.runtime.diagnostic_logging.then_some(true));
+            sqyre_capture::set_pipewire_suspend_on_idle(
+                settings.runtime.suspend_screen_capture_when_idle,
+            );
             crate::mem_diag::set_enabled(
-                settings.memory_logging,
-                settings.memory_logging_interval_ms,
+                settings.runtime.memory_logging,
+                settings.runtime.memory_logging_interval_ms,
             );
             #[cfg(target_os = "linux")]
-            crate::desktop_entry::set_autostart(settings.launch_on_login);
+            crate::desktop_entry::set_autostart(settings.data.launch_on_login);
         }
         Self::install_fonts(ctx, settings);
         crate::theme::apply(ctx);
 
         let mut style = (*ctx.global_style()).clone();
-        let base = settings.ui_font_size.max(10) as f32;
-        let mono_base = if settings.mono_font_size > 0 {
-            settings.mono_font_size.max(8) as f32
+        let base = settings.ui.ui_font_size.max(10) as f32;
+        let mono_base = if settings.ui.mono_font_size > 0 {
+            settings.ui.mono_font_size.max(8) as f32
         } else {
             base
         };
@@ -327,7 +329,7 @@ impl SettingsUi {
     /// Settings window closed.
     pub fn handle_zoom_keys(&mut self, ctx: &egui::Context) {
         use egui::gui_zoom::kb_shortcuts;
-        let mut scale = self.settings.ui_scale;
+        let mut scale = self.settings.ui.ui_scale;
         if !ctx.input_mut(|i| {
             if i.consume_shortcut(&kb_shortcuts::ZOOM_RESET) {
                 scale = DEFAULT_UI_SCALE;
@@ -346,10 +348,10 @@ impl SettingsUi {
             return;
         }
         let scale = ((scale * 10.0).round() / 10.0).clamp(MIN_UI_SCALE, MAX_UI_SCALE);
-        if scale == self.settings.ui_scale {
+        if scale == self.settings.ui.ui_scale {
             return;
         }
-        self.settings.ui_scale = scale;
+        self.settings.ui.ui_scale = scale;
         self.persist();
         Self::apply_appearance(ctx, &self.settings);
     }
@@ -362,8 +364,8 @@ impl SettingsUi {
     /// points — they do not scale with resolution.
     fn effective_density(ctx: &egui::Context, settings: &UserSettings) -> UiDensity {
         Self::density_for(
-            settings.ui_density,
-            settings.auto_compact_density,
+            settings.ui.ui_density,
+            settings.ui.auto_compact_density,
             ctx.content_rect().width(),
         )
     }
@@ -417,7 +419,7 @@ impl SettingsUi {
     pub fn apply_action_colors(settings: &UserSettings) {
         clear_all_custom_action_colors();
         for &(key, _) in ACTION_COLOR_CATEGORIES {
-            let hex = settings.action_colors.get(key);
+            let hex = settings.ui.action_colors.get(key);
             if hex.is_empty() {
                 continue;
             }
@@ -498,7 +500,7 @@ impl SettingsUi {
             self.draw_confirm(ctx, confirm, pending_scale, data);
         }
         if let Some(key) = self.panic_record.show(ctx, macro_hotkeys, pending_scale) {
-            self.settings.panic_key = key;
+            self.settings.runtime.panic_key = key;
             self.mark_dirty();
         }
         if self.dirty {
@@ -711,7 +713,10 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
             ui.horizontal(|ui| {
                 if crate::action_tooltip::help::tip(
-                    ui.checkbox(&mut self.settings.save_meta_images, "Log Meta Images"),
+                    ui.checkbox(
+                        &mut self.settings.runtime.save_meta_images,
+                        "Log Meta Images",
+                    ),
                     crate::action_tooltip::help::SETTING_LOG_META,
                 )
                 .changed()
@@ -719,7 +724,7 @@ impl SettingsUi {
                     self.mark_dirty();
                 }
                 ui.label("Keep at most:");
-                let mut v = self.settings.action_log_max_entries;
+                let mut v = self.settings.runtime.action_log_max_entries;
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
@@ -733,7 +738,7 @@ impl SettingsUi {
                     .on_hover_text(ht::SET_LOG_CAP)
                     .changed()
                 {
-                    self.settings.action_log_max_entries = v;
+                    self.settings.runtime.action_log_max_entries = v;
                     self.mark_dirty();
                 }
             });
@@ -744,7 +749,7 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 ui.label("CPU threads for image work:");
                 let max = sqyre_persist::available_worker_threads();
-                let mut v = self.settings.worker_threads;
+                let mut v = self.settings.runtime.worker_threads;
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
@@ -757,7 +762,7 @@ impl SettingsUi {
                     ))
                     .changed()
                 {
-                    self.settings.worker_threads = v;
+                    self.settings.runtime.worker_threads = v;
                     self.mark_dirty();
                 }
                 ui.label(format!("of {max}"));
@@ -772,7 +777,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_LAST_MACRO)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.restore_last_macro,
+                &mut self.settings.runtime.restore_last_macro,
                 "Re-select the last used macro on launch",
                 ht::SET_LAST_MACRO,
             )
@@ -785,7 +790,7 @@ impl SettingsUi {
             if setting_visible(q, section_hit, SETTING_CLOSE_TO_TRAY)
                 && dirty_checkbox(
                     ui,
-                    &mut self.settings.close_to_tray,
+                    &mut self.settings.data.close_to_tray,
                     "Closing the window minimizes to the tray",
                     ht::SET_CLOSE_TO_TRAY,
                 )
@@ -796,7 +801,7 @@ impl SettingsUi {
             if setting_visible(q, section_hit, SETTING_START_MINIMIZED)
                 && dirty_checkbox(
                     ui,
-                    &mut self.settings.start_minimized,
+                    &mut self.settings.data.start_minimized,
                     "Start in the tray",
                     ht::SET_START_MINIMIZED,
                 )
@@ -808,7 +813,7 @@ impl SettingsUi {
             if setting_visible(q, section_hit, SETTING_AUTOSTART)
                 && dirty_checkbox(
                     ui,
-                    &mut self.settings.launch_on_login,
+                    &mut self.settings.data.launch_on_login,
                     "Launch on login",
                     ht::SET_AUTOSTART,
                 )
@@ -820,7 +825,7 @@ impl SettingsUi {
             if setting_visible(q, section_hit, SETTING_SUSPEND_CAPTURE)
                 && dirty_checkbox(
                     ui,
-                    &mut self.settings.suspend_screen_capture_when_idle,
+                    &mut self.settings.runtime.suspend_screen_capture_when_idle,
                     "Sleep screen capture when idle",
                     ht::SET_SUSPEND_CAPTURE,
                 )
@@ -839,7 +844,7 @@ impl SettingsUi {
             if show_diag
                 && dirty_checkbox(
                     ui,
-                    &mut self.settings.diagnostic_logging,
+                    &mut self.settings.runtime.diagnostic_logging,
                     "Write diagnostic log (diag.log)",
                     ht::SET_DIAG_LOG,
                 )
@@ -850,14 +855,14 @@ impl SettingsUi {
                 ui.horizontal(|ui| {
                     if dirty_checkbox(
                         ui,
-                        &mut self.settings.memory_logging,
+                        &mut self.settings.runtime.memory_logging,
                         "Sample memory (mem.log)",
                         ht::SET_MEM_LOG,
                     ) {
                         self.mark_dirty();
                     }
                     ui.label("every");
-                    let mut v = self.settings.memory_logging_interval_ms;
+                    let mut v = self.settings.runtime.memory_logging_interval_ms;
                     if ui
                         .add(
                             crate::widgets::num_entry(&mut v)
@@ -871,7 +876,7 @@ impl SettingsUi {
                         .on_hover_text(ht::SET_MEM_INTERVAL)
                         .changed()
                     {
-                        self.settings.memory_logging_interval_ms = v;
+                        self.settings.runtime.memory_logging_interval_ms = v;
                         self.mark_dirty();
                     }
                 });
@@ -930,7 +935,7 @@ impl SettingsUi {
         if show_highlight
             && dirty_checkbox(
                 ui,
-                &mut self.settings.highlight_active_action,
+                &mut self.settings.runtime.highlight_active_action,
                 "Highlight the currently executing action",
                 ht::SET_RUN_ROW_HL,
             )
@@ -941,7 +946,7 @@ impl SettingsUi {
         if show_click_fx
             && dirty_checkbox(
                 ui,
-                &mut self.settings.click_effect,
+                &mut self.settings.runtime.click_effect,
                 "Flash a marker where clicks land",
                 ht::SET_CLICK_MARKER,
             )
@@ -952,7 +957,7 @@ impl SettingsUi {
         if show_release
             && dirty_checkbox(
                 ui,
-                &mut self.settings.release_held_inputs_on_end,
+                &mut self.settings.runtime.release_held_inputs_on_end,
                 "Release held keys and buttons when a macro ends",
                 ht::SET_RELEASE_KEYS,
             )
@@ -964,7 +969,7 @@ impl SettingsUi {
         if show_cursor
             && dirty_checkbox(
                 ui,
-                &mut self.settings.restore_cursor_on_end,
+                &mut self.settings.runtime.restore_cursor_on_end,
                 "Restore the mouse position when a macro ends",
                 ht::SET_RESTORE_CURSOR,
             )
@@ -975,7 +980,7 @@ impl SettingsUi {
         if show_overlay_stop
             && dirty_checkbox(
                 ui,
-                &mut self.settings.overlay_press_stops_run,
+                &mut self.settings.overlay.overlay_press_stops_run,
                 "Overlay buttons stop the running macro",
                 ht::SET_OVL_STOP,
             )
@@ -986,7 +991,7 @@ impl SettingsUi {
         if show_overlay_detect
             && dirty_checkbox(
                 ui,
-                &mut self.settings.overlay_buttons_in_detection,
+                &mut self.settings.overlay.overlay_buttons_in_detection,
                 "Overlay buttons appear in detection",
                 ht::SET_CAPTURE_BUTTONS,
             )
@@ -997,7 +1002,7 @@ impl SettingsUi {
         if show_overlay_over
             && dirty_checkbox(
                 ui,
-                &mut self.settings.overlay_buttons_over_sqyre,
+                &mut self.settings.overlay.overlay_buttons_over_sqyre,
                 "Show overlay buttons over Sqyre",
                 ht::SET_BUTTONS_FRONT,
             )
@@ -1019,7 +1024,7 @@ impl SettingsUi {
                     if show_flash_ms {
                         ui.horizontal(|ui| {
                             ui.label("Click marker stays visible for:");
-                            let mut v = self.settings.click_flash_ms;
+                            let mut v = self.settings.runtime.click_flash_ms;
                             if ui
                                 .add(
                                     crate::widgets::num_entry(&mut v)
@@ -1033,7 +1038,7 @@ impl SettingsUi {
                                 .on_hover_text(ht::SET_CLICK_FLASH_MS)
                                 .changed()
                             {
-                                self.settings.click_flash_ms = v;
+                                self.settings.runtime.click_flash_ms = v;
                                 self.mark_dirty();
                             }
                         });
@@ -1042,7 +1047,7 @@ impl SettingsUi {
                     if show_while {
                         ui.horizontal(|ui| {
                             ui.label("Stop endless loops after:");
-                            let mut v = self.settings.while_max_iterations;
+                            let mut v = self.settings.runtime.while_max_iterations;
                             if ui
                                 .add(
                                     crate::widgets::num_entry(&mut v)
@@ -1056,7 +1061,7 @@ impl SettingsUi {
                                 .on_hover_text(ht::SET_WHILE_BUDGET)
                                 .changed()
                             {
-                                self.settings.while_max_iterations = v;
+                                self.settings.runtime.while_max_iterations = v;
                                 self.mark_dirty();
                             }
                         });
@@ -1065,7 +1070,7 @@ impl SettingsUi {
                     if show_depth {
                         ui.horizontal(|ui| {
                             ui.label("Limit nested Run Macro calls:");
-                            let mut v = self.settings.run_macro_max_depth;
+                            let mut v = self.settings.runtime.run_macro_max_depth;
                             if ui
                                 .add(
                                     crate::widgets::num_entry(&mut v)
@@ -1078,7 +1083,7 @@ impl SettingsUi {
                                 .on_hover_text(ht::SET_RUN_DEPTH)
                                 .changed()
                             {
-                                self.settings.run_macro_max_depth = v;
+                                self.settings.runtime.run_macro_max_depth = v;
                                 self.mark_dirty();
                             }
                         });
@@ -1105,7 +1110,7 @@ impl SettingsUi {
         if show_hide
             && dirty_checkbox(
                 ui,
-                &mut self.settings.hide_app_during_recording,
+                &mut self.settings.ui.hide_app_during_recording,
                 "Hide Sqyre while recording points and search areas",
                 ht::SET_HIDE_ON_RECORD,
             )
@@ -1122,7 +1127,7 @@ impl SettingsUi {
                 |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Write a Wait after a pause of:");
-                        let mut v = self.settings.record_wait_threshold_ms;
+                        let mut v = self.settings.runtime.record_wait_threshold_ms;
                         if ui
                             .add(
                                 crate::widgets::num_entry(&mut v)
@@ -1136,13 +1141,13 @@ impl SettingsUi {
                             .on_hover_text(ht::SET_REC_WAIT)
                             .changed()
                         {
-                            self.settings.record_wait_threshold_ms = v;
+                            self.settings.runtime.record_wait_threshold_ms = v;
                             self.mark_dirty();
                         }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Drop mouse moves shorter than:");
-                        let mut v = self.settings.record_move_min_distance;
+                        let mut v = self.settings.runtime.record_move_min_distance;
                         if ui
                             .add(
                                 crate::widgets::num_entry(&mut v)
@@ -1156,13 +1161,13 @@ impl SettingsUi {
                             .on_hover_text(ht::SET_REC_MOVE)
                             .changed()
                         {
-                            self.settings.record_move_min_distance = v;
+                            self.settings.runtime.record_move_min_distance = v;
                             self.mark_dirty();
                         }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Clicks held longer than this become down/up:");
-                        let mut v = self.settings.record_tap_max_ms;
+                        let mut v = self.settings.runtime.record_tap_max_ms;
                         if ui
                             .add(
                                 crate::widgets::num_entry(&mut v)
@@ -1176,13 +1181,13 @@ impl SettingsUi {
                             .on_hover_text(ht::SET_REC_TAP)
                             .changed()
                         {
-                            self.settings.record_tap_max_ms = v;
+                            self.settings.runtime.record_tap_max_ms = v;
                             self.mark_dirty();
                         }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Snap recorded points to saved points within:");
-                        let mut v = self.settings.record_snap_point_px;
+                        let mut v = self.settings.runtime.record_snap_point_px;
                         if ui
                             .add(
                                 crate::widgets::num_entry(&mut v)
@@ -1196,7 +1201,7 @@ impl SettingsUi {
                             .on_hover_text(ht::SET_REC_SNAP)
                             .changed()
                         {
-                            self.settings.record_snap_point_px = v;
+                            self.settings.runtime.record_snap_point_px = v;
                             self.mark_dirty();
                         }
                     });
@@ -1232,7 +1237,7 @@ impl SettingsUi {
         if show_tags
             && dirty_checkbox(
                 ui,
-                &mut self.settings.hotkey_tags_while_focused,
+                &mut self.settings.runtime.hotkey_tags_while_focused,
                 "Select hotkey tags while a Program is focused",
                 ht::SET_HOTKEY_TAGS,
             )
@@ -1244,10 +1249,10 @@ impl SettingsUi {
         if show_panic {
             ui.horizontal(|ui| {
                 ui.label("Panic/stop key:").on_hover_text(ht::SET_PANIC_KEY);
-                let label = if self.settings.panic_key.trim().is_empty() {
+                let label = if self.settings.runtime.panic_key.trim().is_empty() {
                     "(disabled)".to_string()
                 } else {
-                    self.settings.panic_key.trim().to_string()
+                    self.settings.runtime.panic_key.trim().to_string()
                 };
                 ui.label(egui::RichText::new(label).monospace());
                 if crate::widgets::record_icon_button(ui, ht::SET_PANIC_KEY, true).clicked() {
@@ -1260,11 +1265,11 @@ impl SettingsUi {
                 )
                 .clicked()
                 {
-                    self.settings.panic_key = "esc".to_string();
+                    self.settings.runtime.panic_key = "esc".to_string();
                     self.mark_dirty();
                 }
                 if crate::widgets::clear_icon_button(ui, "Disable panic/stop key").clicked() {
-                    self.settings.panic_key.clear();
+                    self.settings.runtime.panic_key.clear();
                     self.mark_dirty();
                 }
             });
@@ -1274,7 +1279,7 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 ui.label("Hotkey pressed while its macro is running:")
                     .on_hover_text(ht::SET_RETRIGGER);
-                let mut policy = self.settings.hotkey_while_running;
+                let mut policy = self.settings.runtime.hotkey_while_running;
                 egui::ComboBox::from_id_salt("settings_hotkey_while_running")
                     .selected_text(policy.label())
                     .show_ui(ui, |ui| {
@@ -1282,8 +1287,8 @@ impl SettingsUi {
                             ui.selectable_value(&mut policy, p, p.label());
                         }
                     });
-                if policy != self.settings.hotkey_while_running {
-                    self.settings.hotkey_while_running = policy;
+                if policy != self.settings.runtime.hotkey_while_running {
+                    self.settings.runtime.hotkey_while_running = policy;
                     self.mark_dirty();
                 }
             });
@@ -1293,8 +1298,9 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 ui.label("New macro hotkeys fire on:")
                     .on_hover_text(ht::SET_DEFAULT_TRIGGER);
-                let mut trigger =
-                    sqyre_hotkeys::HotkeyTrigger::parse(&self.settings.default_hotkey_trigger);
+                let mut trigger = sqyre_hotkeys::HotkeyTrigger::parse(
+                    &self.settings.runtime.default_hotkey_trigger,
+                );
                 egui::ComboBox::from_id_salt("settings_default_hotkey_trigger")
                     .selected_text(trigger.as_str())
                     .show_ui(ui, |ui| {
@@ -1309,8 +1315,8 @@ impl SettingsUi {
                             "release",
                         );
                     });
-                if trigger.as_str() != self.settings.default_hotkey_trigger {
-                    self.settings.default_hotkey_trigger = trigger.as_str().to_string();
+                if trigger.as_str() != self.settings.runtime.default_hotkey_trigger {
+                    self.settings.runtime.default_hotkey_trigger = trigger.as_str().to_string();
                     self.mark_dirty();
                 }
             });
@@ -1341,7 +1347,7 @@ impl SettingsUi {
                     .on_hover_text(ht::SET_DEFAULT_DELAYS);
                 if dirty_i32(
                     ui,
-                    &mut self.settings.default_keyboard_delay_ms,
+                    &mut self.settings.runtime.default_keyboard_delay_ms,
                     ht::SET_DEFAULT_DELAYS,
                     |d| d.range(0..=60_000).speed(5).suffix(" ms"),
                 ) {
@@ -1350,7 +1356,7 @@ impl SettingsUi {
                 ui.label("mouse:");
                 if dirty_i32(
                     ui,
-                    &mut self.settings.default_mouse_delay_ms,
+                    &mut self.settings.runtime.default_mouse_delay_ms,
                     ht::SET_DEFAULT_DELAYS,
                     |d| d.range(0..=60_000).speed(5).suffix(" ms"),
                 ) {
@@ -1362,7 +1368,7 @@ impl SettingsUi {
         if show_log_edge {
             ui.horizontal(|ui| {
                 ui.label("Logged search images capped at:");
-                let mut v = self.settings.log_image_max_edge;
+                let mut v = self.settings.runtime.log_image_max_edge;
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
@@ -1376,14 +1382,14 @@ impl SettingsUi {
                     .on_hover_text(ht::SET_LOG_IMAGE_EDGE)
                     .changed()
                 {
-                    self.settings.log_image_max_edge = v;
+                    self.settings.runtime.log_image_max_edge = v;
                     self.mark_dirty();
                 }
             });
         }
 
         if show_saved {
-            let saved = self.settings.action_defaults.len();
+            let saved = self.settings.runtime.action_defaults.len();
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(
@@ -1396,7 +1402,7 @@ impl SettingsUi {
                     )
                     .clicked()
                 {
-                    self.settings.action_defaults.clear();
+                    self.settings.runtime.action_defaults.clear();
                     self.mark_dirty();
                 }
                 ui.label(egui::RichText::new(format!("{saved} saved")).weak().small());
@@ -1422,7 +1428,7 @@ impl SettingsUi {
         if show_variant
             && dirty_checkbox(
                 ui,
-                &mut self.settings.image_search_variant_exit_early,
+                &mut self.settings.runtime.image_search_variant_exit_early,
                 "Stop at the first matching icon variant",
                 ht::SET_VARIANT_STOP,
             )
@@ -1441,7 +1447,7 @@ impl SettingsUi {
                         ui.label("Ignore nearby duplicate image matches:");
                         if dirty_i32(
                             ui,
-                            &mut self.settings.image_search_close_matches_distance,
+                            &mut self.settings.runtime.image_search_close_matches_distance,
                             ht::SET_DEDUP_PX,
                             |d| d.range(0..=100).speed(1).suffix(" px"),
                         ) {
@@ -1471,7 +1477,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_FINISH_SOUND)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.play_finish_sound,
+                &mut self.settings.sound.play_finish_sound,
                 "Play a sound when a macro finishes",
                 ht::SET_FINISH_CUE,
             )
@@ -1482,13 +1488,13 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_UI_SOUNDS) {
             let mut changed = dirty_checkbox(
                 ui,
-                &mut self.settings.play_add_sound,
+                &mut self.settings.sound.play_add_sound,
                 "Play a sound when adding",
                 ht::SET_ADD_DEL_CUES,
             );
             changed |= dirty_checkbox(
                 ui,
-                &mut self.settings.play_delete_sound,
+                &mut self.settings.sound.play_delete_sound,
                 "Play a sound when deleting",
                 ht::SET_ADD_DEL_CUES,
             );
@@ -1500,13 +1506,13 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_SOUND_VOLUME) {
             ui.horizontal(|ui| {
                 ui.label("Sound volume:");
-                let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
+                let mut pct = (self.settings.sound.sound_volume * 100.0).round() as i32;
                 if ui
                     .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
                     .on_hover_text(ht::SET_CUE_VOLUME)
                     .changed()
                 {
-                    self.settings.sound_volume = pct as f32 / 100.0;
+                    self.settings.sound.sound_volume = pct as f32 / 100.0;
                     self.mark_dirty();
                 }
             });
@@ -1519,21 +1525,21 @@ impl SettingsUi {
                 "Finish sound:",
                 PickPurpose::FinishSound,
                 ht::SET_FINISH_FILE,
-                |s| &mut s.finish_sound_file,
+                |s| &mut s.sound.finish_sound_file,
             );
             self.sound_file_row(
                 ui,
                 "Add sound:",
                 PickPurpose::AddSound,
                 ht::SET_ADD_FILE,
-                |s| &mut s.add_sound_file,
+                |s| &mut s.sound.add_sound_file,
             );
             self.sound_file_row(
                 ui,
                 "Delete sound:",
                 PickPurpose::DeleteSound,
                 ht::SET_DELETE_FILE,
-                |s| &mut s.delete_sound_file,
+                |s| &mut s.sound.delete_sound_file,
             );
         }
     }
@@ -1600,10 +1606,10 @@ impl SettingsUi {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let current = if self.settings.sqyre_dir.trim().is_empty() {
+            let current = if self.settings.data.sqyre_dir.trim().is_empty() {
                 sqyre_dir()
             } else {
-                PathBuf::from(self.settings.sqyre_dir.trim())
+                PathBuf::from(self.settings.data.sqyre_dir.trim())
             };
             ui.label(current.display().to_string());
 
@@ -1638,7 +1644,7 @@ impl SettingsUi {
                     if settings_folder_btn(ui, ht::SET_HOST_FOLDER).clicked() {
                         self.choose_host_sqyre_location();
                     }
-                    if !self.settings.sqyre_dir.trim().is_empty()
+                    if !self.settings.data.sqyre_dir.trim().is_empty()
                         && settings_reset_btn(ui, ht::SET_FLATPAK_RESET).clicked()
                     {
                         self.reset_sqyre_to_sandbox(db, macros, catalog);
@@ -1670,7 +1676,7 @@ impl SettingsUi {
 
             if dirty_checkbox(
                 ui,
-                &mut self.settings.backup_enabled,
+                &mut self.settings.data.backup_enabled,
                 "Automatic backups",
                 ht::SET_AUTO_BACKUP,
             ) {
@@ -1681,7 +1687,7 @@ impl SettingsUi {
                 ui.label("Interval (hours):");
                 if dirty_i32(
                     ui,
-                    &mut self.settings.backup_interval_hours,
+                    &mut self.settings.data.backup_interval_hours,
                     ht::SET_BACKUP_HOURS,
                     |d| {
                         d.range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
@@ -1691,7 +1697,7 @@ impl SettingsUi {
                     self.mark_dirty();
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
-                    self.settings.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
+                    self.settings.data.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
                     self.mark_dirty();
                 }
             });
@@ -1700,14 +1706,14 @@ impl SettingsUi {
                 ui.label("Keep at most:");
                 if dirty_i32(
                     ui,
-                    &mut self.settings.backup_max_keep,
+                    &mut self.settings.data.backup_max_keep,
                     ht::SET_BACKUP_KEEP,
                     |d| d.range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP).speed(1),
                 ) {
                     self.mark_dirty();
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
-                    self.settings.backup_max_keep = DEFAULT_BACKUP_MAX_KEEP;
+                    self.settings.data.backup_max_keep = DEFAULT_BACKUP_MAX_KEEP;
                     self.mark_dirty();
                 }
             });
@@ -1729,16 +1735,16 @@ impl SettingsUi {
                         Some(&backups_dir()),
                     );
                 }
-                if !self.settings.backup_dir.trim().is_empty()
+                if !self.settings.data.backup_dir.trim().is_empty()
                     && settings_reset_btn(ui, ht::SET_BACKUP_DIR).clicked()
                 {
-                    self.settings.backup_dir.clear();
+                    self.settings.data.backup_dir.clear();
                     self.settings.apply_backup_dir_override();
                     self.mark_dirty();
                 }
             });
             ui.label(
-                egui::RichText::new(format_last_backup(self.settings.last_backup_unix))
+                egui::RichText::new(format_last_backup(self.settings.data.last_backup_unix))
                     .weak()
                     .small(),
             );
@@ -1777,7 +1783,7 @@ impl SettingsUi {
     fn run_manual_backup(&mut self) {
         match create_backup() {
             Ok(path) => {
-                let keep = self.settings.backup_max_keep.max(1) as usize;
+                let keep = self.settings.data.backup_max_keep.max(1) as usize;
                 if let Err(e) = prune_backups(keep) {
                     self.set_err(format!(
                         "Backup created but prune failed: {}",
@@ -1806,7 +1812,7 @@ impl SettingsUi {
 
     /// Record a successful backup timestamp and persist settings.
     pub fn note_backup_success(&mut self, path: &std::path::Path) {
-        self.settings.last_backup_unix = SystemTime::now()
+        self.settings.data.last_backup_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
@@ -1840,19 +1846,19 @@ impl SettingsUi {
                 self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(path));
             }
             PickPurpose::FinishSound => {
-                self.settings.finish_sound_file = path.to_string_lossy().into_owned();
+                self.settings.sound.finish_sound_file = path.to_string_lossy().into_owned();
                 self.mark_dirty();
             }
             PickPurpose::AddSound => {
-                self.settings.add_sound_file = path.to_string_lossy().into_owned();
+                self.settings.sound.add_sound_file = path.to_string_lossy().into_owned();
                 self.mark_dirty();
             }
             PickPurpose::DeleteSound => {
-                self.settings.delete_sound_file = path.to_string_lossy().into_owned();
+                self.settings.sound.delete_sound_file = path.to_string_lossy().into_owned();
                 self.mark_dirty();
             }
             PickPurpose::BackupDir => {
-                self.settings.backup_dir = path.to_string_lossy().into_owned();
+                self.settings.data.backup_dir = path.to_string_lossy().into_owned();
                 self.settings.apply_backup_dir_override();
                 self.mark_dirty();
             }
@@ -1892,7 +1898,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_AUTO_UPDATE)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.auto_update_check,
+                &mut self.settings.data.auto_update_check,
                 "Check for updates on startup",
                 ht::SET_UPDATE_CHECK,
             )
@@ -1903,7 +1909,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_UPDATE_INTERVAL) {
             ui.horizontal(|ui| {
                 ui.label("Check for updates every:");
-                let mut v = self.settings.update_check_interval_hours;
+                let mut v = self.settings.data.update_check_interval_hours;
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
@@ -1917,7 +1923,7 @@ impl SettingsUi {
                     .on_hover_text(ht::SET_UPDATE_INTERVAL)
                     .changed()
                 {
-                    self.settings.update_check_interval_hours = v;
+                    self.settings.data.update_check_interval_hours = v;
                     self.mark_dirty();
                 }
             });
@@ -1931,7 +1937,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_UPDATE_PRERELEASE)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.update_include_prerelease,
+                &mut self.settings.data.update_include_prerelease,
                 "Include pre-release versions",
                 ht::SET_UPDATE_PRERELEASE,
             )
@@ -1953,7 +1959,7 @@ impl SettingsUi {
                     )
                     .clicked()
                 {
-                    update.start_check(self.settings.update_include_prerelease);
+                    update.start_check(self.settings.data.update_include_prerelease);
                     ui.ctx().request_repaint();
                 }
                 match &update.state {
@@ -2056,10 +2062,10 @@ impl SettingsUi {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
     ) {
-        if self.settings.sqyre_dir.trim().is_empty() {
+        if self.settings.data.sqyre_dir.trim().is_empty() {
             return;
         }
-        self.settings.sqyre_dir.clear();
+        self.settings.data.sqyre_dir.clear();
         set_sqyre_dir_override(None);
         self.persist();
         let path = sqyre_dir();
@@ -2284,7 +2290,7 @@ impl SettingsUi {
             }
         }
 
-        self.settings.sqyre_dir = new_dir.display().to_string();
+        self.settings.data.sqyre_dir = new_dir.display().to_string();
         set_sqyre_dir_override(Some(new_dir.clone()));
         self.persist();
         self.reload_data_from_disk(
@@ -2342,7 +2348,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_COMPACT_HEADERS)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.compact_program_headers,
+                &mut self.settings.ui.compact_program_headers,
                 "Compact program headers with icons",
                 ht::SET_ICON_HEADERS,
             )
@@ -2353,7 +2359,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_EMPTY_HEADERS)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.show_empty_program_headers,
+                &mut self.settings.ui.show_empty_program_headers,
                 "Show empty program headers",
                 ht::SET_KEEP_HEADERS,
             )
@@ -2364,7 +2370,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.window_border,
+                &mut self.settings.ui.window_border,
                 "Window border",
                 ht::SET_WIN_OUTLINE,
             )
@@ -2376,13 +2382,13 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_WINDOW_DECORATIONS)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.window_decorations,
+                &mut self.settings.ui.window_decorations,
                 "OS title bar",
                 ht::SET_WIN_DECORATIONS,
             )
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(
-                self.settings.window_decorations,
+                self.settings.ui.window_decorations,
             ));
             // Keep resize grips even after OS chrome is removed.
             ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
@@ -2392,7 +2398,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.run_button_glow,
+                &mut self.settings.ui.run_button_glow,
                 "Glowing Run button",
                 ht::SET_RUN_GLOW,
             )
@@ -2403,7 +2409,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_PREVIEW_OUTLINE)
             && dirty_checkbox(
                 ui,
-                &mut self.settings.preview_desktop_outline,
+                &mut self.settings.ui.preview_desktop_outline,
                 "Outline preview locations on the desktop",
                 ht::SET_PREVIEW_OUTLINE,
             )
@@ -2416,7 +2422,7 @@ impl SettingsUi {
                 ui.label("Accent color:").on_hover_text(ht::SET_ACCENT);
                 let mut color = sqyre_ui_theme::accent();
                 if ui.color_edit_button_srgba(&mut color).changed() {
-                    self.settings.accent_color =
+                    self.settings.ui.accent_color =
                         format_hex_color([color.r(), color.g(), color.b(), 255]);
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
@@ -2430,10 +2436,10 @@ impl SettingsUi {
                     egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
                     egui::StrokeKind::Outside,
                 );
-                if !self.settings.accent_color.trim().is_empty()
+                if !self.settings.ui.accent_color.trim().is_empty()
                     && settings_reset_btn(ui, "Reset accent color").clicked()
                 {
-                    self.settings.accent_color.clear();
+                    self.settings.ui.accent_color.clear();
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -2443,7 +2449,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_FONT_FAMILY) {
             ui.horizontal(|ui| {
                 ui.label("Font family:").on_hover_text(ht::SET_FONT_FAMILY);
-                let mut family = self.settings.ui_font_family;
+                let mut family = self.settings.ui.ui_font_family;
                 egui::ComboBox::from_id_salt("settings_ui_font_family")
                     .selected_text(family.label())
                     .show_ui(ui, |ui| {
@@ -2451,8 +2457,8 @@ impl SettingsUi {
                             ui.selectable_value(&mut family, f, f.label());
                         }
                     });
-                if family != self.settings.ui_font_family {
-                    self.settings.ui_font_family = family;
+                if family != self.settings.ui.ui_font_family {
+                    self.settings.ui.ui_font_family = family;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -2462,18 +2468,18 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_MONO_SIZE) {
             ui.horizontal(|ui| {
                 ui.label("Code font size:").on_hover_text(ht::SET_MONO_SIZE);
-                let mut v = self.settings.mono_font_size;
+                let mut v = self.settings.ui.mono_font_size;
                 if ui
                     .add(crate::widgets::num_entry(&mut v).range(0..=40).speed(1))
                     .on_hover_text(ht::SET_MONO_SIZE)
                     .changed()
                 {
-                    self.settings.mono_font_size = v;
+                    self.settings.ui.mono_font_size = v;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
-                    self.settings.mono_font_size = 0;
+                    self.settings.ui.mono_font_size = 0;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -2488,18 +2494,18 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
             ui.horizontal(|ui| {
                 ui.label("Font size:");
-                let mut v = self.settings.ui_font_size;
+                let mut v = self.settings.ui.ui_font_size;
                 if ui
                     .add(crate::widgets::num_entry(&mut v).range(10..=28).speed(1))
                     .on_hover_text(ht::SET_FONT_SIZE)
                     .changed()
                 {
-                    self.settings.ui_font_size = v;
+                    self.settings.ui.ui_font_size = v;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
-                    self.settings.ui_font_size = DEFAULT_UI_FONT_SIZE;
+                    self.settings.ui.ui_font_size = DEFAULT_UI_FONT_SIZE;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -2509,7 +2515,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_UI_SCALE) {
             ui.horizontal(|ui| {
                 ui.label("UI scale:");
-                let mut v = self.settings.ui_scale;
+                let mut v = self.settings.ui.ui_scale;
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
@@ -2520,12 +2526,12 @@ impl SettingsUi {
                     .on_hover_text(ht::SET_UI_SCALE)
                     .changed()
                 {
-                    self.settings.ui_scale = v;
+                    self.settings.ui.ui_scale = v;
                     self.mark_dirty();
                     self.ui_scale_apply_pending = true;
                 }
                 if settings_reset_btn(ui, "Reset to default").clicked() {
-                    self.settings.ui_scale = DEFAULT_UI_SCALE;
+                    self.settings.ui.ui_scale = DEFAULT_UI_SCALE;
                     self.mark_dirty();
                     self.ui_scale_apply_pending = false;
                     Self::apply_appearance(ctx, &self.settings);
@@ -2541,7 +2547,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_SPACING) {
             ui.horizontal(|ui| {
                 ui.label("Spacing:");
-                let mut density = self.settings.ui_density;
+                let mut density = self.settings.ui.ui_density;
                 egui::ComboBox::from_id_salt("settings_ui_density")
                     .selected_text(density.label())
                     .show_ui(ui, |ui| {
@@ -2551,14 +2557,14 @@ impl SettingsUi {
                     })
                     .response
                     .on_hover_text(ht::SET_DENSITY);
-                if density != self.settings.ui_density {
-                    self.settings.ui_density = density;
+                if density != self.settings.ui.ui_density {
+                    self.settings.ui.ui_density = density;
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
                 if dirty_checkbox(
                     ui,
-                    &mut self.settings.auto_compact_density,
+                    &mut self.settings.ui.auto_compact_density,
                     "Auto-compact",
                     ht::SET_AUTO_COMPACT,
                 ) {
@@ -2588,13 +2594,13 @@ impl SettingsUi {
                     crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if settings_reset_btn(ui, "Reset to default").clicked() {
-                            self.settings.action_colors.set(key, String::new());
+                            self.settings.ui.action_colors.set(key, String::new());
                             clear_custom_action_color(key);
                             self.mark_dirty();
                         }
 
                         let sample = sample_action_type_for_color_key(key);
-                        let current = if self.settings.action_colors.get(key).is_empty() {
+                        let current = if self.settings.ui.action_colors.get(key).is_empty() {
                             default_action_pastel_color(sample, is_dark)
                         } else {
                             action_pastel_color(sample, is_dark)
@@ -2604,7 +2610,10 @@ impl SettingsUi {
                         );
                         if ui.color_edit_button_srgba(&mut color).changed() {
                             let rgba = [color.r(), color.g(), color.b(), 255];
-                            self.settings.action_colors.set(key, format_hex_color(rgba));
+                            self.settings
+                                .ui
+                                .action_colors
+                                .set(key, format_hex_color(rgba));
                             set_custom_action_color(key, rgba);
                             self.mark_dirty();
                         }
@@ -2629,7 +2638,7 @@ impl SettingsUi {
             if setting_visible(q, section_hit, SETTING_ACTION_COLORS)
                 && settings_reset_btn(ui, "Reset all action colors").clicked()
             {
-                self.settings.action_colors.clear_all();
+                self.settings.ui.action_colors.clear_all();
                 clear_all_custom_action_colors();
                 self.mark_dirty();
             }

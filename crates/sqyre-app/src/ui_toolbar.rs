@@ -34,7 +34,7 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
             #[cfg(not(target_arch = "wasm32"))]
-            let undecorated = !app.settings_ui.settings().window_decorations;
+            let undecorated = !app.settings_ui.settings().ui.window_decorations;
             #[cfg(not(target_arch = "wasm32"))]
             if undecorated {
                 // Interact first so later chrome keeps click priority; empty
@@ -63,7 +63,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         #[cfg(not(target_arch = "wasm32"))]
         let mid_right = {
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                if !app.settings_ui.settings().window_decorations {
+                if !app.settings_ui.settings().ui.window_decorations {
                     crate::window_frame::window_control_buttons(ui);
                 }
                 show_update_banner(app, ui);
@@ -256,7 +256,7 @@ fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
         // The shield stays; the S inside it becomes the trace spinner —
         // drawn into a hollow cut by `sqyre_shell` at the S's exact
         // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).
-        let shell = app.icon_cache.sqyre_shell(ui.ctx());
+        let shell = app.assets.icon_cache.sqyre_shell(ui.ctx());
         ui.painter().image(
             shell.id(),
             icon_rect,
@@ -281,7 +281,7 @@ fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
         ui.ctx()
             .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
     } else {
-        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+        let tex = app.assets.icon_cache.sqyre_fallback(ui.ctx());
         ui.painter().image(
             tex.id(),
             icon_rect,
@@ -321,6 +321,7 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
             .map(|name| name.as_str()),
     );
     let program_icons = app
+        .assets
         .icon_cache
         .program_name_icons(ui.ctx(), &app.workspace.catalog);
     let m = &mut app.workspace.macros[idx];
@@ -360,7 +361,7 @@ fn paint_run_glow(
 /// Run button that becomes a red-glowing Stop button while a macro runs, followed by a separator.
 #[cfg(not(target_arch = "wasm32"))]
 fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
-    let glow = (running || app.settings_ui.settings().run_button_glow)
+    let glow = (running || app.settings_ui.settings().ui.run_button_glow)
         .then(|| ui.painter().add(egui::Shape::Noop));
     let (icon, tip, color) = if running {
         (
@@ -632,7 +633,7 @@ pub fn action_toolbar(
                 &mut app.workspace.catalog,
             )
         {
-            if let Err(e) = app.persist_database() {
+            if let Err(e) = app.workspace.persist_database() {
                 app.report_persist_failure("Save after record prep", &e);
             }
         }

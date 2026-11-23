@@ -635,7 +635,12 @@ impl DataEditor {
         for (id, x, y) in moves {
             let xf = x as f32;
             let yf = y as f32;
-            if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) {
+            if let Some(btn) = settings
+                .overlay
+                .overlay_buttons
+                .iter_mut()
+                .find(|b| b.id == id)
+            {
                 btn.point.clear();
                 btn.x = xf;
                 btn.y = yf;
@@ -897,7 +902,7 @@ impl DataEditor {
                 previews,
             },
             &macro_opts,
-            env.settings.compact_program_headers,
+            env.settings.ui.compact_program_headers,
             env.pending_scale,
         ) {
             PickerResult::Window {
@@ -918,8 +923,12 @@ impl DataEditor {
                 self.form_overlay_point = coord.0;
                 if matches!(self.tab, EditorTab::Overlay) {
                     if let Some(id) = self.selected_entity.clone() {
-                        if let Some(btn) =
-                            env.settings.overlay_buttons.iter_mut().find(|b| b.id == id)
+                        if let Some(btn) = env
+                            .settings
+                            .overlay
+                            .overlay_buttons
+                            .iter_mut()
+                            .find(|b| b.id == id)
                         {
                             btn.point = self.form_overlay_point.clone();
                             btn.x = self.form_overlay_x;
@@ -1109,7 +1118,7 @@ impl DataEditor {
             let sort_btn = ui.add(crate::widgets::IconButton::new(
                 egui_phosphor::regular::SORT_ASCENDING,
                 "Sort items",
-                (settings.data_editor_items_sort != Sort::NameAsc)
+                (settings.ui.data_editor_items_sort != Sort::NameAsc)
                     .then_some(crate::theme::accent()),
             ));
             // `Popup` (not `Menu`) kind + `parent_popup`: picking a radio,
@@ -1142,20 +1151,20 @@ impl DataEditor {
                 |ui| {
                     for &s in Sort::ALL {
                         if ui
-                            .radio_value(&mut settings.data_editor_items_sort, s, s.label())
+                            .radio_value(&mut settings.ui.data_editor_items_sort, s, s.label())
                             .changed()
                         {
                             sort_changed = true;
                         }
                     }
-                    if settings.data_editor_items_sort == Sort::Tags {
+                    if settings.ui.data_editor_items_sort == Sort::Tags {
                         ui.separator();
                         ui.label(egui::RichText::new("Tag priority").strong().small());
                         let suggestions = helpers::collect_all_item_tags(catalog);
                         let program_icons = icons.program_name_icons(ui.ctx(), catalog);
                         let edit = crate::widgets::tag_chip_editor(
                             ui,
-                            &mut settings.data_editor_items_tag_priority,
+                            &mut settings.ui.data_editor_items_tag_priority,
                             &mut self.items_tag_priority_draft,
                             &suggestions,
                             crate::widgets::TagChipOptions {
@@ -1290,6 +1299,7 @@ impl DataEditor {
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
         let frac = env
             .settings
+            .ui
             .data_editor_left_split
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
         self.left_width = (avail_w * frac).clamp(min_left, max_left);
@@ -1342,7 +1352,7 @@ impl DataEditor {
             if let Some(pos) = split_resp.interact_pointer_pos() {
                 self.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
                 if avail_w > 1.0 {
-                    env.settings.data_editor_left_split = (self.left_width / avail_w)
+                    env.settings.ui.data_editor_left_split = (self.left_width / avail_w)
                         .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                 }
             }
@@ -1371,7 +1381,7 @@ impl DataEditor {
                 if next != self.left_width {
                     self.left_width = next;
                     if avail_w > 1.0 {
-                        env.settings.data_editor_left_split = (self.left_width / avail_w)
+                        env.settings.ui.data_editor_left_split = (self.left_width / avail_w)
                             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                     }
                     self.split_key_moved = true;

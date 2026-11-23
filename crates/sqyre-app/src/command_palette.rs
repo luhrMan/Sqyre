@@ -8,7 +8,9 @@ use crate::widgets::VectorIcon;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Sense};
 use sqyre_domain::{action_type_table, Macro};
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
+#[cfg(test)]
+use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{CatalogView, OverlayButtonConfig};
 use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
@@ -73,7 +75,7 @@ pub(crate) struct CommandItem {
 
 pub(crate) struct CommandSources<'a> {
     pub macros: &'a [Macro],
-    pub catalog: &'a ProgramCatalog,
+    pub catalog: CatalogView<'a>,
     pub overlay_buttons: &'a [OverlayButtonConfig],
     pub running: bool,
 }
@@ -556,7 +558,7 @@ fn push_actions(out: &mut Vec<CommandItem>) {
 
 fn push_catalog_entities(
     out: &mut Vec<CommandItem>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     overlay_buttons: &[OverlayButtonConfig],
 ) {
     for name in catalog.program_names() {
@@ -919,7 +921,7 @@ impl SqyreApp {
                         db: &mut self.workspace.db,
                         macros: &mut self.workspace.macros,
                         catalog: &mut self.workspace.catalog,
-                        icons: &mut self.icon_cache,
+                        icons: &mut self.assets.icon_cache,
                         screen_click: &self.screen_click,
                         settings: self.settings_ui.settings_mut(),
                         hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,
@@ -968,7 +970,7 @@ mod tests {
     ) -> CommandSources<'a> {
         CommandSources {
             macros,
-            catalog,
+            catalog: catalog.into(),
             overlay_buttons: overlay,
             running,
         }

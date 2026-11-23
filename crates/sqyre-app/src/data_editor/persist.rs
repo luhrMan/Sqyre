@@ -16,9 +16,9 @@ use sqyre_validate::validate_entity_name;
 pub(super) fn play_ui_add_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
     crate::sound::play_add_sound_if(
-        settings.play_add_sound,
-        settings.sound_volume,
-        &settings.add_sound_file,
+        settings.sound.play_add_sound,
+        settings.sound.sound_volume,
+        &settings.sound.add_sound_file,
     );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
@@ -27,9 +27,9 @@ pub(super) fn play_ui_add_sound(settings: &UserSettings) {
 fn play_ui_delete_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
     crate::sound::play_delete_sound_if(
-        settings.play_delete_sound,
-        settings.sound_volume,
-        &settings.delete_sound_file,
+        settings.sound.play_delete_sound,
+        settings.sound.sound_volume,
+        &settings.sound.delete_sound_file,
     );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
@@ -396,6 +396,7 @@ impl DataEditor {
                     return;
                 };
                 let n = settings
+                    .overlay
                     .overlay_buttons
                     .iter()
                     .filter(|b| b.program == prog)
@@ -406,24 +407,24 @@ impl DataEditor {
                 btn.x = x;
                 btn.y = y;
                 // New-button defaults from Settings → Overlays.
-                btn.size = settings.overlay_default_size;
-                btn.corner_radius = settings.overlay_default_corner_radius;
-                btn.border_width = settings.overlay_default_border_width;
-                let accent = settings.overlay_default_accent_color.trim();
+                btn.size = settings.overlay.overlay_default_size;
+                btn.corner_radius = settings.overlay.overlay_default_corner_radius;
+                btn.border_width = settings.overlay.overlay_default_border_width;
+                let accent = settings.overlay.overlay_default_accent_color.trim();
                 if !accent.is_empty() {
                     btn.border_color = accent.to_string();
                     btn.icon_hover_color = accent.to_string();
                 }
-                let icon_color = settings.overlay_default_icon_color.trim();
+                let icon_color = settings.overlay.overlay_default_icon_color.trim();
                 if !icon_color.is_empty() {
                     btn.icon_color = icon_color.to_string();
                 }
-                btn.visibility_gate.interval_ms = settings.overlay_gate_default_interval_ms;
+                btn.visibility_gate.interval_ms = settings.overlay.overlay_gate_default_interval_ms;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();
                 }
                 let id = btn.id.clone();
-                settings.overlay_buttons.push(btn);
+                settings.overlay.overlay_buttons.push(btn);
                 self.selected_entity = Some(id);
                 self.load_form(catalog, settings);
                 if self.persist_overlay_settings(settings) {
@@ -620,7 +621,7 @@ impl DataEditor {
                             for m in macros.iter_mut() {
                                 m.rename_program(&old, &new_name);
                             }
-                            for btn in settings.overlay_buttons.iter_mut() {
+                            for btn in settings.overlay.overlay_buttons.iter_mut() {
                                 if btn.program == old {
                                     btn.program = new_name.clone();
                                 }
@@ -630,8 +631,8 @@ impl DataEditor {
                             let live_filters = &mut **hotkey_tag_filters;
                             sqyre_domain::rename_tags_for_program(live_filters, &old, &new_name);
                             let _ = settings.rename_hotkey_tag_program(&old, &new_name);
-                            if settings.hotkey_tag_filters != *live_filters {
-                                settings.hotkey_tag_filters.clone_from(live_filters);
+                            if settings.runtime.hotkey_tag_filters != *live_filters {
+                                settings.runtime.hotkey_tag_filters.clone_from(live_filters);
                             }
                             overlay_settings_dirty = true;
                             self.hotkey_refresh = true;
@@ -999,7 +1000,7 @@ impl DataEditor {
                 self.set_err("The Quick Access hub cannot be deleted. Disable it instead.");
                 return;
             }
-            settings.overlay_buttons.retain(|b| b.id != id);
+            settings.overlay.overlay_buttons.retain(|b| b.id != id);
             if self.overlay_icon_picker_for.as_deref() == Some(id.as_str()) {
                 self.overlay_icon_picker_for = None;
             }
@@ -1020,7 +1021,7 @@ impl DataEditor {
                 catalog.delete_program(&name).inspect(|_| {
                     if settings.remove_overlay_buttons_for_program(&name) {
                         if let Some(id) = self.overlay_icon_picker_for.as_deref() {
-                            if !settings.overlay_buttons.iter().any(|b| b.id == id) {
+                            if !settings.overlay.overlay_buttons.iter().any(|b| b.id == id) {
                                 self.overlay_icon_picker_for = None;
                             }
                         }
@@ -1136,7 +1137,7 @@ impl DataEditor {
         macros: &[Macro],
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
-        crate::SqyreApp::persist_database_for_editor(db, macros, catalog)?;
+        crate::workspace::Workspace::persist_database_for_editor(db, macros, catalog)?;
         self.rebuild_list_cache(catalog);
         Ok(())
     }

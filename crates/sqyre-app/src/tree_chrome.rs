@@ -1210,8 +1210,11 @@ mod tests {
         let ctx = egui::Context::default();
         crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
         let settings = sqyre_persist::UserSettings {
-            ui_scale: 1.25,
-            ui_font_size: 16,
+            ui: sqyre_persist::UiLayout {
+                ui_scale: 1.25,
+                ui_font_size: 16,
+                ..Default::default()
+            },
             ..Default::default()
         };
         crate::settings::SettingsUi::apply_appearance(&ctx, &settings);
