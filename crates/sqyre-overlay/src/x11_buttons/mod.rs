@@ -75,8 +75,8 @@ use x11::xlib::{
 
 mod geometry;
 mod host_loop;
-mod visibility;
 mod paint;
+mod visibility;
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
 const SHAPE_BOUNDING: c_int = 0;
@@ -1657,7 +1657,6 @@ fn create_button(
     })
 }
 
-
 fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
     // SAFETY: caller passes host-thread display and live face+hit for one button.
     unsafe {
@@ -2114,7 +2113,6 @@ fn create_chooser_window(
     }
 }
 
-
 fn create_tip_window(
     state: &HostState,
     x: i32,
@@ -2158,10 +2156,6 @@ fn create_tip_window(
         Ok(win)
     }
 }
-
-
-
-
 
 fn drain_x_events(state: &mut HostState) -> bool {
     let mut saw_pointer = false;
@@ -2733,7 +2727,6 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
         libc::poll(&mut fds, 1, timeout_ms as c_int);
     }
 }
-
 
 use crate::host_press::{overlay_press_kind, OverlayPressKind};
 
@@ -3361,13 +3354,6 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bo
         sqyre_persist::QUICK_ACCESS_HUB_DISMISS.into(),
     );
 }
-
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests;

@@ -136,7 +136,13 @@ pub(super) fn place_channel(value: u8, mask: u64) -> u32 {
 }
 
 /// Transparent face: chrome-only Bounding + empty Input (hollow stays clickable via hit).
-pub(super) fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32, rgba: &[u8]) {
+pub(super) fn apply_face_chrome_bounding(
+    display: *mut Display,
+    win: Window,
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -162,7 +168,13 @@ pub(super) fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: 
     apply_empty_input_shape(display, win);
 }
 
-pub(super) fn apply_chooser_input_shape(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
+pub(super) fn apply_chooser_input_shape(
+    display: *mut Display,
+    hit: Window,
+    w: u32,
+    h: u32,
+    radius_px: f32,
+) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -185,7 +197,13 @@ pub(super) fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32
 }
 
 /// Hit cover: rounded ShapeInput matching the button disk.
-pub(super) fn apply_hit_rounded_input(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
+pub(super) fn apply_hit_rounded_input(
+    display: *mut Display,
+    hit: Window,
+    w: u32,
+    h: u32,
+    radius_px: f32,
+) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -219,7 +237,13 @@ pub(super) fn apply_empty_input_shape(display: *mut Display, win: Window) {
 }
 
 /// Opaque tip panel: rounded Bounding + empty Input.
-pub(super) fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
+pub(super) fn apply_rounded_shape(
+    display: *mut Display,
+    win: Window,
+    w: u32,
+    h: u32,
+    radius_px: f32,
+) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -263,7 +287,12 @@ pub(super) fn xfixes_supported(display: *mut Display) -> bool {
     })
 }
 
-pub(super) fn apply_shape_region(display: *mut Display, win: Window, kind: c_int, rects: &mut [XRectangle]) {
+pub(super) fn apply_shape_region(
+    display: *mut Display,
+    win: Window,
+    kind: c_int,
+    rects: &mut [XRectangle],
+) {
     if rects.is_empty() || !xfixes_supported(display) {
         return;
     }
