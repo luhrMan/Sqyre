@@ -178,6 +178,8 @@ impl SqyreApp {
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
+            quick_access_expanded: false,
+            quick_access_fan_t: 0.0,
             start_when_idle: None,
             panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
             // Match product default so main-window goldens include the Macros sidebar.
@@ -477,6 +479,13 @@ impl SqyreApp {
 
     pub fn open_delay_dialog_for_docs(&mut self) {
         self.workspace.macro_meta.open_delay_for_docs();
+    }
+
+    /// Clear tags on the selected macro (docs / interaction harnesses).
+    pub fn clear_selected_macro_tags_for_docs(&mut self) {
+        if let Some(macro_) = self.workspace.macros.get_mut(self.workspace.selected_macro) {
+            macro_.tags.clear();
+        }
     }
 
     /// Show the macro list panel (docs / interaction harnesses).

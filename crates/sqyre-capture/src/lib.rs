@@ -2,6 +2,8 @@
 
 #[cfg(target_os = "android")]
 mod android_capture;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod click_fx_host;
 mod diag;
 mod error;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -93,6 +95,9 @@ pub use linux::wayland::OsWindowFocuser;
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub use click_fx_host::ClickFxHost;
+
 #[cfg(target_os = "linux")]
 pub use x11_outline::{x11_root_pointer, SelectionOutline};
 #[cfg(target_os = "linux")]
@@ -131,7 +136,7 @@ pub fn unregister_secondary_x_display(display: *mut std::ffi::c_void) {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub use outline_stub::{PointMarkerOverlay, SelectionOutline};
+pub use outline_stub::{ClickFxHost, PointMarkerOverlay, SelectionOutline};
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use grab_stub::SelectionGrab;

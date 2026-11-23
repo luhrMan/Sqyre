@@ -194,6 +194,54 @@ fn top_bar_chrome_row_under_brand() {
     assert!(!harness.state().docs_macro_list_open());
 }
 
+/// Untagged macros must keep the chip band so chrome does not drop under the
+/// brand and leave empty space in the header.
+#[test]
+fn top_bar_chrome_keeps_tag_plane_without_tags() {
+    let measure = |clear_tags: bool| {
+        let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+            app.open_macro_list_for_docs();
+            if clear_tags {
+                app.clear_selected_macro_tags_for_docs();
+            }
+        });
+        harness.run_steps(4);
+        let brand = harness.get_by_label("Sqyre").rect();
+        let data_editor = harness.get_by_label("Data Editor").rect();
+        let list_toggle = harness.get_by_label("Hide macro list").rect();
+        let bar_rect =
+            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+                .map(|s| s.outer_rect)
+                .unwrap_or(egui::Rect::NOTHING);
+        (brand, data_editor, list_toggle, bar_rect)
+    };
+
+    let (tagged_brand, tagged_data, _tagged_list, tagged_bar) = measure(false);
+    let (bare_brand, bare_data, bare_list, bare_bar) = measure(true);
+
+    assert!(
+        bare_data.top() > bare_brand.center().y,
+        "untagged Data Editor should sit under the brand (brand={bare_brand:?}, data={bare_data:?})"
+    );
+    assert!(
+        (bare_list.center().y - bare_data.center().y).abs() < bare_data.height(),
+        "untagged list toggle should share the tag-row plane (list={bare_list:?}, data={bare_data:?})"
+    );
+    assert!(
+        (bare_data.center().y - tagged_data.center().y).abs() < 4.0,
+        "clearing tags should not drop chrome (tagged={tagged_data:?}, bare={bare_data:?})"
+    );
+    assert!(
+        (bare_bar.height() - tagged_bar.height()).abs() < 4.0,
+        "untagged header should keep the chip-band height (tagged={tagged_bar:?}, bare={bare_bar:?}, brand={tagged_brand:?})"
+    );
+    assert!(
+        bare_bar.height() < bare_brand.height() + bare_data.height() * 2.4,
+        "untagged chrome should not add a third strip (bar_h={}, brand={bare_brand:?}, data={bare_data:?})",
+        bare_bar.height()
+    );
+}
+
 fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
     harness
         .query_all_by_label("Wait")
@@ -244,6 +292,18 @@ fn add_action_edit_defaults_affordance_is_visible() {
     harness.run();
     // Defaults edit must not be right-click-only (icon chrome + tip).
     harness.get_by_label("Edit the selected action's default fields (also right-click a tile)");
+}
+
+#[test]
+fn delay_dialog_uses_icon_field_labels() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_delay_dialog_for_docs();
+    });
+    harness.run();
+    // C3: delay rows use pair_labeled icons, not Body text captions.
+    harness.get_by_label("Global");
+    harness.get_by_label("Keyboard");
+    harness.get_by_label("Mouse");
 }
 
 #[test]
@@ -682,6 +742,90 @@ fn data_editor_scope_all_programs_restores_group_headers() {
     harness.get_by_label("center");
 }
 
+/// All-programs expand/collapse-all must open groups when collapsed and close
+/// them when expanded (and flip its tip/glyph with that state). The toggle
+/// trails the header search row — same slot as item/coord pickers.
+#[test]
+fn data_editor_all_programs_expand_collapse_all() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        // Macro list also has Expand/Collapse all — close it so labels stay unique.
+        app.set_macro_list_open_for_docs(false);
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("List scope").click();
+    harness.run();
+    harness.get_by_label("All programs").click();
+    harness.run();
+
+    let search_right = harness.get_by_label("Search Points…").rect().right();
+    // Selection scroll opens the demo group, so the toggle starts as Collapse.
+    let collapse = harness.get_by_label("Collapse all");
+    assert!(
+        collapse.rect().left() + 1.0 >= search_right,
+        "expand/collapse must trail the search field (collapse={:?}, search_right={search_right})",
+        collapse.rect()
+    );
+    collapse.click();
+    harness.run();
+    harness.get_by_label("Expand all");
+    assert!(
+        harness.query_by_label("center").is_none(),
+        "collapse-all should hide entity rows under closed groups"
+    );
+
+    harness.get_by_label("Expand all").click();
+    harness.run();
+    harness.get_by_label("Collapse all");
+    harness.get_by_label("center");
+}
+
+/// Macro-list expand/collapse-all trails the search bar and toggles every
+/// tag group (same control as item/coord pickers and the Data Editor).
+#[test]
+fn macro_list_expand_collapse_all_trails_search() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+
+    // The search field's AccessKit name is the magnifier ("Search"); place the
+    // toggle relative to the in-pair New macro icon which sits just left of it.
+    let new_macro_right = harness.get_by_label("New macro").rect().right();
+    // Docs macros ship under collapsed tag groups, so the toggle starts Expand.
+    let expand = harness.get_by_label("Expand all");
+    assert!(
+        expand.rect().left() + 1.0 >= new_macro_right,
+        "expand/collapse must trail the search pair (expand={:?}, new_macro_right={new_macro_right})",
+        expand.rect()
+    );
+    assert!(
+        harness.query_by_label("Demo Macro").is_none(),
+        "tag groups start collapsed"
+    );
+
+    expand.click();
+    harness.run();
+    // Tip flips once every tag group is open.
+    harness.get_by_label("Collapse all");
+    // AccessKit labels include the hotkey line under the name.
+    assert!(
+        harness.query_by_label("Quick Pause\nf8").is_some()
+            || harness.query_by_label("Quick Pause").is_some(),
+        "expand-all should reveal macros under tag groups"
+    );
+    harness.get_by_label("Collapse all").click();
+    harness.run();
+    harness.get_by_label("Expand all");
+    assert!(
+        harness.query_by_label("Quick Pause\nf8").is_none()
+            && harness.query_by_label("Quick Pause").is_none(),
+        "collapse-all should hide macros under closed tag groups"
+    );
+}
+
 /// The header search and program selector share one toggle cluster: both
 /// collapse to adjacent icons, expanding one replaces the other's pair, and
 /// the expanded controls open to the right of both icons.
@@ -729,6 +873,36 @@ fn data_editor_search_and_program_pairs_swap() {
     harness.run();
     harness.get_by_label("Program: Demo Program");
     assert!(harness.query_by_label("Search Points…").is_none());
+}
+
+/// Program selector tip must attach once — IconButton already tips, so a
+/// second `on_hover_text` stacked a duplicate popup.
+#[test]
+fn data_editor_program_selector_shows_single_hover_tip() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    harness
+        .ctx
+        .all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    let tip = "Program: Demo Program";
+    let rect = harness.get_by_label(tip).rect();
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    let tip_galleys = harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Text(t) => t.galley.text() == tip,
+            _ => false,
+        })
+        .count();
+    assert_eq!(
+        tip_galleys, 1,
+        "program selector must paint one hover tip, got {tip_galleys}"
+    );
 }
 
 #[test]

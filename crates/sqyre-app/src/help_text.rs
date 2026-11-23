@@ -70,6 +70,10 @@ pub const ED_ADD_ALL_PROGRAMS: &str =
 
 /// Generate button for the AI prompt draft.
 pub const PROMPT_GENERATE: &str = "Build a schema-aware prompt for an external AI tool";
+/// Copy the generated prompt to the clipboard.
+pub const PROMPT_COPY: &str = "Copy prompt";
+/// Validate pasted AI YAML before import.
+pub const PROMPT_VALIDATE: &str = "Validate pasted YAML";
 /// Import button for pasted YAML.
 pub const PROMPT_IMPORT: &str = "Decode, validate, and add as a new macro";
 
@@ -84,6 +88,12 @@ pub const REC_SCREEN_Y: &str = "Screen Y (physical pixels)";
 
 // --- YAML builder ---
 
+/// Check YAML against the macro schema.
+pub const YAML_VALIDATE: &str = "Validate YAML";
+/// Discard edits and reload the tree's current macro.
+pub const YAML_RELOAD_TREE: &str = "Reload from Tree";
+/// Restore the saved draft that no longer matches the tree.
+pub const YAML_RESTORE_DRAFT: &str = "Restore Draft";
 /// Import as a new macro.
 pub const YAML_IMPORT_NEW: &str = "Add this YAML as a new macro";
 /// Import over the selected macro.
@@ -182,7 +192,7 @@ pub const SET_LOG_CAP: &str =
 pub const SET_RUN_ROW_HL: &str = "Scroll and tint the tree row of the action running now.";
 /// Gold click marker on the desktop.
 pub const SET_CLICK_MARKER: &str =
-    "During a run, a shrinking gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).";
+    "During a run, a gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).";
 /// Release held keys/buttons on run end.
 pub const SET_RELEASE_KEYS: &str =
     "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.";
@@ -195,6 +205,7 @@ pub const SET_CAPTURE_BUTTONS: &str =
 /// Button visibility while Sqyre is focused.
 pub const SET_BUTTONS_FRONT: &str =
     "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.";
+/// Edge quick-access hub enable.
 /// While-loop safety budget.
 pub const SET_WHILE_BUDGET: &str =
     "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.";

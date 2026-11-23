@@ -26,7 +26,7 @@ use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
-use crate::widgets::{match_settings, searchable_combo, SearchableComboOpts};
+use crate::widgets::{match_settings, SearchableComboOpts};
 use eframe::egui;
 use sqyre_domain::{
     collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
@@ -174,17 +174,128 @@ impl DataEditor {
         }
     }
 
-    fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
-        crate::widgets::pair_labeled(ui, egui_phosphor::regular::MONITOR, "Monitor", |ui| {
-            help::tip(
-                ui.add(
-                    crate::widgets::num_entry(&mut self.form_monitor)
-                        .speed(1)
-                        .range(1..=8),
+    /// Two-corner record controls on a search-area preview.
+    fn paint_area_record(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        screen_click: &ScreenClickBridge,
+        record_tip: &'static str,
+        recording_msg: &'static str,
+    ) {
+        self.paint_preview_controls(
+            ui,
+            rect,
+            screen_click,
+            record_tip,
+            recording_msg,
+            ScreenClickBridge::arm_search_area,
+        );
+    }
+
+    /// Size badge and edge chips under a search-area preview.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "preview rect + edges + var theme; shared by three area forms"
+    )]
+    fn paint_area_chips(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        preview_image_size: egui::Vec2,
+        edges: (Option<i32>, Option<i32>, Option<i32>, Option<i32>),
+        known: &KnownVariableNames,
+        is_dark: bool,
+        active_macro: Option<&Macro>,
+    ) {
+        let (lx, ty, rx, by) = edges;
+        paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
+        paint_coord_chips(
+            ui,
+            rect,
+            known,
+            is_dark,
+            active_macro,
+            &mut self.area_edge_fields(),
+        );
+    }
+
+    /// Point record control and the X/Y chips on the preview.
+    fn paint_point_tail(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        screen_click: &ScreenClickBridge,
+        known: &KnownVariableNames,
+        is_dark: bool,
+        active_macro: Option<&Macro>,
+    ) {
+        self.paint_preview_controls(
+            ui,
+            rect,
+            screen_click,
+            crate::help_text::ED_REC_POINT,
+            "Recording… left-click to capture.",
+            ScreenClickBridge::arm_point,
+        );
+        paint_coord_chips(
+            ui,
+            rect,
+            known,
+            is_dark,
+            active_macro,
+            &mut [
+                (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
+                (
+                    &mut self.form_y,
+                    CardinalEdge::Bottom,
+                    "Y",
+                    help::DE_POINT_Y,
                 ),
-                help::DE_MONITOR,
-            );
-        });
+            ],
+        );
+    }
+
+    /// Record controls, size badge, and edge chips. Pixel check paints its heatmap
+    /// between [`Self::paint_area_record`] and [`Self::paint_area_chips`] instead.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "record tips + edge chips + var theme; shared by search-area forms"
+    )]
+    fn paint_search_area_tail(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        preview_image_size: egui::Vec2,
+        edges: (Option<i32>, Option<i32>, Option<i32>, Option<i32>),
+        screen_click: &ScreenClickBridge,
+        record_tip: &'static str,
+        recording_msg: &'static str,
+        known: &KnownVariableNames,
+        is_dark: bool,
+        active_macro: Option<&Macro>,
+    ) {
+        self.paint_area_record(ui, rect, screen_click, record_tip, recording_msg);
+        self.paint_area_chips(
+            ui,
+            rect,
+            preview_image_size,
+            edges,
+            known,
+            is_dark,
+            active_macro,
+        );
+    }
+
+    fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
+        crate::widgets::drag_field(
+            ui,
+            egui_phosphor::regular::MONITOR,
+            "Monitor",
+            help::DE_MONITOR,
+            &mut self.form_monitor,
+            |d| d.speed(1).range(1..=8),
+        );
     }
 
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -267,7 +378,6 @@ impl DataEditor {
     }
 
     pub(crate) fn reset_collection_form(&mut self) {
-        self.form_name.clear();
         self.form_search_area.clear();
         self.form_rows = "1".into();
         self.form_cols = "1".into();
@@ -377,7 +487,7 @@ impl DataEditor {
         #[cfg(feature = "native-runtime")]
         {
             use crate::data_editor_preview::variant_display_label;
-            use crate::pickers::{ActivePicker, CoordKind};
+            use crate::pickers::CoordKind;
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
@@ -386,45 +496,44 @@ impl DataEditor {
                 return;
             }
             paint_name_field(ui, &mut self.form_name);
-            let reference = CoordinateRef(self.form_search_area.clone());
-            crate::widgets::pair_labeled(ui, crate::model_icons::SEARCH_AREA, "Reference", |ui| {
-                if let Some(prog) = reference.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                }
-                let resp = ui.monospace(reference.as_str());
-                if !reference.is_empty() {
-                    let kind = if reference.is_collection() {
-                        PreviewKind::Collection
+            let ref_val = self.form_search_area.clone();
+            let reference = CoordinateRef(ref_val.clone());
+            pickers::coord_ref_field(
+                ui,
+                catalog,
+                icons,
+                &mut self.window_picker,
+                CoordKind::SearchArea,
+                &ref_val,
+                pickers::CoordRefFieldOpts {
+                    icon: crate::model_icons::SEARCH_AREA,
+                    pick_tip: "Pick search area or collection cell…",
+                    display: reference.as_str(),
+                    program: reference.program(),
+                    color: None,
+                    truncate: false,
+                    clear_tip: None,
+                },
+                |ui, resp| {
+                    if !reference.is_empty() {
+                        let kind = if reference.is_collection() {
+                            PreviewKind::Collection
+                        } else {
+                            PreviewKind::SearchArea
+                        };
+                        previews.show_for_coordinate_ref(
+                            ui,
+                            resp,
+                            catalog,
+                            &reference,
+                            kind,
+                            help::DE_SCREENCAP_REF,
+                        );
                     } else {
-                        PreviewKind::SearchArea
-                    };
-                    previews.show_for_coordinate_ref(
-                        ui,
-                        &resp,
-                        catalog,
-                        &reference,
-                        kind,
-                        help::DE_SCREENCAP_REF,
-                    );
-                } else {
-                    help::tip(resp, help::DE_SCREENCAP_REF);
-                }
-                if crate::widgets::icon_button(
-                    ui,
-                    crate::model_icons::SEARCH_AREA,
-                    "Pick search area or collection cell…",
-                )
-                .clicked()
-                {
-                    self.window_picker = ActivePicker::Coord {
-                        kind: CoordKind::SearchArea,
-                        search: String::new(),
-                        value: self.form_search_area.clone(),
-                        cell_pick: None,
-                        scroll_to_selection: true,
-                    };
-                }
-            });
+                        help::tip(resp.clone(), help::DE_SCREENCAP_REF);
+                    }
+                },
+            );
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -449,16 +558,17 @@ impl DataEditor {
                     }
                 }
             }
-            match_settings::paint_match_settings(
+            match_settings::paint_match_settings_advanced(
                 ui,
                 &mut self.pixel_check.tolerance,
                 &mut self.pixel_check.blur,
                 &mut self.pixel_check.match_method,
-                false,
+                |ui, method| {
+                    crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
+                        match_settings::paint_match_method(ui, method);
+                    });
+                },
             );
-            crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
-                match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
-            });
             help::tip(
                 crate::widgets::wrap_unit(ui, |ui| {
                     self.paint_monitor_slot(ui);
@@ -520,13 +630,12 @@ impl DataEditor {
                         force,
                         &mut self.coord_preview,
                     );
-                    self.paint_preview_controls(
+                    self.paint_area_record(
                         ui,
                         rect,
                         screen_click,
                         ht::ED_REC_SEARCH,
                         "Recording… click two corners.",
-                        ScreenClickBridge::arm_search_area,
                     );
                     if let Some(cache) = &self.pixel_check_cache {
                         let inputs = super::pixel_check::inputs_key(
@@ -564,14 +673,14 @@ impl DataEditor {
                             );
                         }
                     }
-                    paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
-                    paint_coord_chips(
+                    self.paint_area_chips(
                         ui,
                         rect,
+                        preview_image_size,
+                        (lx, ty, rx, by),
                         known,
                         is_dark,
                         active_macro,
-                        &mut self.area_edge_fields(),
                     );
                 },
             );

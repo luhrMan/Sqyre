@@ -20,8 +20,8 @@ use std::collections::HashMap;
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
 /// Pill inner padding (4×2).
-const PILL_MARGIN_X: i8 = 4;
-const PILL_MARGIN_Y: i8 = 2;
+const PILL_MARGIN_X: i8 = crate::theme::SPACE_4 as i8;
+const PILL_MARGIN_Y: i8 = crate::theme::SPACE_2 as i8;
 const PILL_RADIUS: f32 = 5.0;
 /// Item thumbnail max height — match action cell so rows stay uniform.
 const TARGET_THUMB_MAX_H: f32 = ICON_SIZE;
@@ -384,7 +384,16 @@ fn paint_image_search_extras(
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
     ui.spacing_mut().item_spacing.x = TARGET_THUMB_GAP;
-    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel, false);
+    let count_pill = paint_pill(
+        ui,
+        &format!(
+            "{} {}",
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+            targets.len()
+        ),
+        pastel,
+        false,
+    );
     extend_drag_handle(drag_handle, count_pill.rect);
     if count_pill.hovered() {
         tip_hovered = true;
@@ -453,7 +462,14 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         d.sort_then,
         &d.tag_priority,
     );
-    ui.add(egui::Label::new(format!("🔍 {}", display.len())).wrap());
+    ui.add(
+        egui::Label::new(format!(
+            "{} {}",
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+            display.len()
+        ))
+        .wrap(),
+    );
 
     if !d.target_tags.is_empty() {
         crate::widgets::title_with_count(

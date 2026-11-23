@@ -260,7 +260,8 @@ pub const DE_SCREENCAP_NEW_ITEM: &str =
 #[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_BOUNDS: &str =
     "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
-pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
+pub const DE_COLLECTION_AREA: &str =
+    "Search area this collection covers. The collection takes the same name.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";
 pub const DE_ATLAS_MEMBERS: &str =
@@ -282,6 +283,8 @@ pub const VARS_DECLARED: &str =
     "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.";
 pub const DE_COLLECTION_CELL_ZOOM: &str =
     "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
+pub const DE_OVERLAY_HUB: &str =
+    "Built-in edge hub for New Point, New Search Area, Screen Cap, and Show/Hide. Drag it while this Overlay tab is open; it snaps to the nearest screen edge on release. Disable it from the list if you do not want it.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =

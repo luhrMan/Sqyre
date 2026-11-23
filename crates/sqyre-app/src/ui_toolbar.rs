@@ -297,6 +297,13 @@ fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
 
 /// Selected macro's name entry, tag field to its right, created tags below.
 fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_enabled: bool) {
+    let validation_err = sqyre_validate::validate_macro(&app.workspace.macros[idx])
+        .err()
+        .map(|e| format!("Validation: {e}"));
+    // Left of the Name widget (same mid strip as name/tags).
+    if let Some(err) = &validation_err {
+        crate::widgets::error_icon(ui, err);
+    }
     app.workspace
         .macro_meta
         .sync_selection(idx, &app.workspace.macros[idx]);
@@ -453,7 +460,7 @@ pub fn wasm_editor_note(ui: &mut egui::Ui) {
     crate::widgets::section_separator(ui);
 }
 
-/// Name/tags editor, delay popup, and validation status for the selected macro.
+/// Delay popup for the selected macro (validation lives beside Name in the top bar).
 /// Returns `false` if macros became empty (caller should stop drawing the editor).
 pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
@@ -470,9 +477,6 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         if delay_out.persist {
             app.persist_macro_at(idx);
         }
-    }
-    if let Err(e) = sqyre_validate::validate_macro(&app.workspace.macros[idx]) {
-        crate::widgets::error_icon(ui, &format!("Validation: {e}"));
     }
     // Selection / length may have changed after rename.
     app.workspace.selected_macro = app.workspace.selected_macro_index().unwrap_or(0);
@@ -561,12 +565,10 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         // Right-to-left: builder menu rightmost; then hotkey controls, chord,
         // key toggle, delay — the same left-to-right order the footer strip had.
         paint_builder_menu(app, ui);
+        // Same row as the other icons. A section frame around `ui.horizontal`
+        // is offered the strip's full width, and that row becomes the chip.
         if app.workspace.macro_meta.hotkey_open {
-            theme::section_frame(ui)
-                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
-                });
+            paint_hotkey_controls(app, ui, idx, running);
         }
         let hk_label = {
             let m = &app.workspace.macros[idx];
@@ -724,6 +726,105 @@ mod tests {
         assert!(
             tag_y > name_y + 8.0,
             "tag field did not wrap under the name (name_y {name_y}, tag_y {tag_y})"
+        );
+    }
+
+    /// Macro validation status sits immediately left of the Name field in the header.
+    #[test]
+    fn validation_icon_sits_left_of_name() {
+        let mut app = crate::SqyreApp::for_docs();
+        // Catalog delimiter makes the stored name fail `validate_macro`.
+        app.workspace.macros[0].name = "bad~name".into();
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 640.0),
+        );
+        let mut icon_x = None;
+        let mut name_x = None;
+        for frame in 0..3 {
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| {
+                    super::top_bar(&mut app, ui);
+                },
+            );
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Text(text) = &clipped.shape {
+                    let label = text.galley.text();
+                    if label == egui_phosphor::regular::X_CIRCLE {
+                        icon_x = Some(text.pos.x);
+                    } else if label.contains("bad~name") {
+                        name_x = Some(text.pos.x);
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        let icon_x = icon_x.expect("validation icon in the header");
+        let name_x = name_x.expect("macro name in the header");
+        assert!(
+            icon_x < name_x,
+            "validation icon ({icon_x}) should be left of Name ({name_x})"
+        );
+    }
+
+    /// Opening the hotkey controls must not stretch the footer chip across the pane
+    /// or make it taller than the icon row.
+    #[test]
+    fn hotkey_controls_keep_footer_chip_hugged() {
+        let mut app = crate::SqyreApp::for_docs();
+        app.workspace.macros[0].hotkey = vec!["ctrl".into(), "shift".into(), "f1".into()];
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 600.0),
+        );
+        let measure = |app: &mut crate::SqyreApp| {
+            let mut chip = eframe::egui::Rect::NOTHING;
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ui| super::footer_floats(app, ui),
+            );
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Rect(rect) = &clipped.shape {
+                    let r = rect.rect;
+                    if r.top() > 540.0 && r.height() > 8.0 && r.width() > chip.width() {
+                        chip = r;
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+            chip
+        };
+        app.workspace.macro_meta.hotkey_open = false;
+        let closed = measure(&mut app);
+        app.workspace.macro_meta.hotkey_open = true;
+        let open = measure(&mut app);
+        assert!(
+            closed.width() > 40.0 && closed.height() > 8.0,
+            "closed chip not found: {closed:?}"
+        );
+        assert!(
+            open.height() <= closed.height() + 2.0,
+            "hotkey controls grew the chip taller: closed {closed:?} open {open:?}"
+        );
+        assert!(
+            open.width() < closed.width() + 120.0 && open.width() < 400.0,
+            "hotkey controls stretched the chip: closed {closed:?} open {open:?}"
         );
     }
 }

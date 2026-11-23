@@ -281,7 +281,7 @@ fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Resul
     let mut changed = false;
     for n in 1..=monitor_count {
         let name = format!("Monitor {n}");
-        if upsert_collection(catalog, &name, &name, 2, 2)? {
+        if upsert_collection(catalog, &name, 2, 2)? {
             changed = true;
         }
     }
@@ -403,7 +403,6 @@ fn upsert_area(
 fn upsert_collection(
     catalog: &mut ProgramCatalog,
     name: &str,
-    search_area: &str,
     rows: i32,
     cols: i32,
 ) -> Result<bool> {
@@ -411,7 +410,7 @@ fn upsert_collection(
         .get(GENERAL_PROGRAM)
         .and_then(|p| p.collections.get(name))
     {
-        if existing.search_area == search_area && existing.rows == rows && existing.cols == cols {
+        if existing.rows == rows && existing.cols == cols {
             return Ok(false);
         }
     }
@@ -419,7 +418,6 @@ fn upsert_collection(
         GENERAL_PROGRAM,
         ProgramCollection {
             name: name.into(),
-            search_area: search_area.into(),
             rows,
             cols,
         },
@@ -496,7 +494,7 @@ mod tests {
         assert_eq!(monitor.bottom_y, ScalarValue::Int(1080));
 
         let col = p.collections.get("Monitor 1").expect("collection");
-        assert_eq!(col.search_area, "Monitor 1");
+        assert_eq!(col.name, "Monitor 1");
         assert_eq!(col.rows, 2);
         assert_eq!(col.cols, 2);
 
@@ -552,7 +550,7 @@ mod tests {
             .collections
             .get("Monitor 2")
             .expect("Monitor 2 collection");
-        assert_eq!(m2_col.search_area, "Monitor 2");
+        assert_eq!(m2_col.name, "Monitor 2");
         assert_eq!(m2_col.rows, 2);
         assert_eq!(m2_col.cols, 2);
 

@@ -50,8 +50,8 @@ pub fn dialog_scroll(max_w: f32, max_h: f32) -> egui::ScrollArea {
         .max_height(max_h.max(1.0))
 }
 
-/// The scroll viewport expanded through the enclosing frame's padding, plus
-/// the margin to re-apply inside the scroll content.
+/// The scroll viewport expanded through enclosing chrome padding, plus the
+/// margin to re-apply inside the scroll content.
 ///
 /// egui anchors floating bars at the scroll's outer rect, so a frame's
 /// `inner_margin` insets the bar as well as the content. Walking the ui stack
@@ -62,13 +62,32 @@ pub fn dialog_scroll(max_w: f32, max_h: f32) -> egui::ScrollArea {
 /// the same move [`egui::Window`] makes for `Window::scroll`, which routes
 /// `window_margin` into `content_margin`.
 ///
+/// [`split_view`] also insets each pane by [`crate::widgets::sections::PANE_PAD`]
+/// from the splitter. Without reclaiming that pad, the V-bar floats a gap off
+/// the separator — same visual as a frame-margin gap. The pane's splitter
+/// span (through the painted line) is the flush target.
+///
 /// Returns `None` when there is no margin to reclaim, or when the gap to the
-/// frame edge is wider than the margin — a column/row-bound scroll keeps its
-/// own edge instead of detaching into a sibling's region. The clip is a
-/// second bound so expansion never escapes a pane.
+/// edge is wider than the chrome pad — a column/row-bound scroll keeps its
+/// own edge instead of detaching into a sibling's region.
 fn scroll_edge_expand(ui: &egui::Ui) -> Option<(egui::Rect, egui::Margin)> {
     let avail = ui.available_rect_before_wrap();
     let clip = ui.clip_rect();
+    let mut max = avail.max;
+
+    // Split pane: reclaim through PANE_PAD (+ half the splitter) so the V-bar
+    // sits on the separator line. Clip is the inset content rect — allow past
+    // it when it still matches `avail` on that axis (footer/header clips must
+    // not zero a healthy X reclaim).
+    if let Some(span) = crate::widgets::sections::split_pane_span(ui) {
+        let max_gap =
+            crate::widgets::sections::PANE_PAD + crate::theme::PANEL_SPLITTER_W * 0.5 + 0.5;
+        let gap_r = span.max - avail.max.x;
+        if gap_r > 0.5 && gap_r <= max_gap && clip.max.x + 0.5 >= avail.max.x {
+            max.x = max.x.max(span.max);
+        }
+    }
+
     for node in ui.stack().iter() {
         let frame = node.frame();
         let m = frame.inner_margin;
@@ -91,35 +110,52 @@ fn scroll_edge_expand(ui: &egui::Ui) -> Option<(egui::Rect, egui::Margin)> {
         // Expand an axis only when its whole gap is the frame's margin — a
         // wider gap means another bound is in the way and the bar would float
         // into a sibling's region instead of reaching the edge.
-        let grow = egui::vec2(
-            if outer.max.x - avail.max.x <= f32::from(m.right) + 0.5 {
-                (outer.max.x - avail.max.x).max(0.0)
-            } else {
-                0.0
-            },
-            if outer.max.y - avail.max.y <= f32::from(m.bottom) + 0.5 {
-                (outer.max.y - avail.max.y).max(0.0)
-            } else {
-                0.0
-            },
-        );
-        let max = egui::pos2(
-            (avail.max.x + grow.x).min(clip.max.x),
-            (avail.max.y + grow.y).min(clip.max.y),
-        );
-        if max.x <= avail.max.x + 0.5 && max.y <= avail.max.y + 0.5 {
-            return None;
-        }
-        return Some((
-            egui::Rect::from_min_max(avail.min, max),
-            egui::Margin {
-                right: (max.x - avail.max.x).max(0.0).round() as i8,
-                bottom: (max.y - avail.max.y).max(0.0).round() as i8,
-                ..Default::default()
-            },
-        ));
+        let grow_x = if outer.max.x - avail.max.x <= f32::from(m.right) + 0.5 {
+            (outer.max.x - avail.max.x).max(0.0)
+        } else {
+            0.0
+        };
+        let grow_y = if outer.max.y - avail.max.y <= f32::from(m.bottom) + 0.5 {
+            (outer.max.y - avail.max.y).max(0.0)
+        } else {
+            0.0
+        };
+        // Per-axis ceiling. `fill_resize_body` clips to the margin-inset content
+        // rect; a footer/list slot clips Y shorter than the frame while X still
+        // sits on the content edge — requiring both axes to match used to zero
+        // a valid X reclaim (macro list, Settings with status footer, …).
+        let ceil_x = if grow_x > 0.0
+            && ((outer.max.x - clip.max.x).abs() <= f32::from(m.right) + 0.5
+                || (clip.max.x - avail.max.x).abs() <= 0.5)
+        {
+            outer.max.x
+        } else {
+            clip.max.x.min(outer.max.x)
+        };
+        let ceil_y = if grow_y > 0.0
+            && ((outer.max.y - clip.max.y).abs() <= f32::from(m.bottom) + 0.5
+                || (clip.max.y - avail.max.y).abs() <= 0.5)
+        {
+            outer.max.y
+        } else {
+            clip.max.y.min(outer.max.y)
+        };
+        max.x = max.x.max((avail.max.x + grow_x).min(ceil_x));
+        max.y = max.y.max((avail.max.y + grow_y).min(ceil_y));
+        break;
     }
-    None
+
+    if max.x <= avail.max.x + 0.5 && max.y <= avail.max.y + 0.5 {
+        return None;
+    }
+    Some((
+        egui::Rect::from_min_max(avail.min, max),
+        egui::Margin {
+            right: (max.x - avail.max.x).max(0.0).round() as i8,
+            bottom: (max.y - avail.max.y).max(0.0).round() as i8,
+            ..Default::default()
+        },
+    ))
 }
 
 /// Run `scroll` in a [`Ui::new_child`] bounded by `rect`, then report only the
@@ -142,6 +178,10 @@ fn show_expanded<R>(
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    // Floating bars follow `clip_rect`. Parents that clip to the content
+    // rect (inside frame margin) would otherwise pull the bar back off the
+    // edge we just reclaimed — expand the clip to cover the viewport.
+    child.set_clip_rect(ui.clip_rect().union(rect));
     let out = scroll.show(&mut child, add_contents);
     // egui's auto-shrink paints `content_size.min(inner.size())`; mirror it so
     // overflowing content claims the capped viewport, not the full content.
@@ -711,6 +751,146 @@ mod tests {
             .drop_without_applying_deltas();
         }
         assert!(last_h > 12.0, "header collapsed to a sliver ({last_h}px)");
+    }
+
+    /// Left split pane: V-bar must reclaim through [`PANE_PAD`] onto the
+    /// separator line — otherwise a gap sits between the thumb and the gold
+    /// splitter (Data Editor list, Settings sidebar).
+    #[test]
+    fn scroll_viewport_expands_to_split_separator() {
+        use crate::theme::PANEL_SPLITTER_W;
+        use crate::widgets::sections::{split_view, PANE_PAD};
+
+        let ctx = egui::Context::default();
+        let mut viewport = egui::Rect::NOTHING;
+        let mut separator_x = 0.0_f32;
+        let mut content_right = 0.0_f32;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(400.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.set_clip_rect(pane);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::same(8))
+                .show(&mut pane_ui, |ui| {
+                    let body = ui.max_rect();
+                    let crate::widgets::SplitView {
+                        mut left,
+                        right: _,
+                        splitter,
+                    } = split_view(ui, body, 160.0);
+                    separator_x = splitter.center().x;
+                    content_right = left.max_rect().max.x;
+                    assert!(
+                        (separator_x - content_right - PANE_PAD - PANEL_SPLITTER_W * 0.5).abs()
+                            < 0.5,
+                        "content should sit PANE_PAD + half-splitter before the line \
+                         (content_right={content_right}, sep={separator_x})"
+                    );
+                    let scroll_w = left.available_width();
+                    let scroll_h = left.available_height();
+                    let out = show_dialog_scroll(&mut left, scroll_w, scroll_h, |ui| {
+                        ui.allocate_space(egui::vec2(50.0, 500.0));
+                    });
+                    viewport = out.inner_rect;
+                });
+        })
+        .drop_without_applying_deltas();
+
+        assert!(
+            (viewport.max.x - separator_x).abs() < 0.5,
+            "viewport right {viewport:?} should reach separator {separator_x} \
+             (content was at {content_right})"
+        );
+    }
+
+    /// Footer-clipped Y must not block reclaiming the frame's right margin.
+    #[test]
+    fn scroll_viewport_expands_x_when_only_y_clip_is_short() {
+        let ctx = egui::Context::default();
+        let margin = egui::Margin::same(8);
+        let mut viewport = egui::Rect::NOTHING;
+        let mut frame_outer_right = 0.0_f32;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(300.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.set_clip_rect(pane);
+            egui::Frame::new()
+                .inner_margin(margin)
+                .show(&mut pane_ui, |ui| {
+                    let content = ui.max_rect();
+                    frame_outer_right = content.max.x + f32::from(margin.right);
+                    // List slot: full width, short height (footer below).
+                    let list_h = content.height() - 40.0;
+                    let list_rect =
+                        egui::Rect::from_min_size(content.min, egui::vec2(content.width(), list_h));
+                    let mut list = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(list_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    list.set_clip_rect(list_rect);
+                    let out = show_dialog_scroll(
+                        &mut list,
+                        list_rect.width(),
+                        list_rect.height(),
+                        |ui| {
+                            ui.allocate_space(egui::vec2(50.0, 500.0));
+                        },
+                    );
+                    viewport = out.inner_rect;
+                });
+        })
+        .drop_without_applying_deltas();
+        assert!(
+            (viewport.max.x - frame_outer_right).abs() < 0.5,
+            "viewport right {viewport:?} should reach frame outer {frame_outer_right} \
+             even when Y clip stops above the footer"
+        );
+    }
+
+    /// `fill_resize_body`-style clip (content-sized) must not block reclaiming
+    /// the frame margin — otherwise floating bars sit a margin inward of the
+    /// dialog edge.
+    #[test]
+    fn scroll_viewport_expands_when_clip_matches_frame_content() {
+        let ctx = egui::Context::default();
+        let margin = egui::Margin::same(6);
+        let mut viewport = egui::Rect::NOTHING;
+        let mut frame_outer_right = 0.0_f32;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(300.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.set_clip_rect(pane);
+            egui::Frame::new()
+                .inner_margin(margin)
+                .show(&mut pane_ui, |ui| {
+                    let content = ui.max_rect();
+                    frame_outer_right = content.max.x + f32::from(margin.right);
+                    // Mimic fill_resize_body: child clipped to content, not outer.
+                    let (body_rect, _) =
+                        ui.allocate_exact_size(content.size(), egui::Sense::hover());
+                    let mut body = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(body_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    body.set_clip_rect(body_rect);
+                    let out = show_dialog_scroll(
+                        &mut body,
+                        body_rect.width(),
+                        body_rect.height(),
+                        |ui| {
+                            ui.allocate_space(egui::vec2(50.0, 500.0));
+                        },
+                    );
+                    viewport = out.inner_rect;
+                });
+        })
+        .drop_without_applying_deltas();
+        assert!(
+            (viewport.max.x - frame_outer_right).abs() < 0.5,
+            "viewport right {viewport:?} should reach frame outer {frame_outer_right}"
+        );
     }
 
     /// Inside a framed container the scroll viewport reaches the frame's

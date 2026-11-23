@@ -229,7 +229,6 @@ impl DataEditor {
             .and_then(|p| catalog.get(p))
             .map(|p| p.masks.keys().cloned().collect())
             .unwrap_or_default();
-        let mut current = self.form_mask.clone();
         let prog = self.selected_program.clone();
         let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
             if name.is_empty() {
@@ -246,29 +245,25 @@ impl DataEditor {
                 &format!("{prog}~{name}"),
             );
         };
-        crate::widgets::pair_labeled(ui, crate::model_icons::MASK, "Mask", |ui| {
-            help::tip(
-                searchable_combo(
-                    ui,
-                    "item_mask",
-                    &mut current,
-                    crate::widgets::SearchableComboOpts {
-                        options: &masks,
-                        empty_text: sqyre_domain::EMPTY_NONE,
-                        none_label: Some(sqyre_domain::EMPTY_NONE),
-                        width: None,
-                        on_option_hover: Some(&mut on_hover),
-                        option_icon: None,
-                        closed_icon: true,
-                        option_label: None,
-                    },
-                ),
-                help::DE_MASK,
-            );
-        });
-        if current != self.form_mask {
-            self.form_mask = current;
-        }
+        let _ = crate::widgets::labeled_searchable_combo(
+            ui,
+            crate::model_icons::MASK,
+            "Mask",
+            help::DE_MASK,
+            "item_mask",
+            &mut self.form_mask,
+            crate::widgets::SearchableComboOpts {
+                options: &masks,
+                empty_text: sqyre_domain::EMPTY_NONE,
+                none_label: Some(sqyre_domain::EMPTY_NONE),
+                width: None,
+                on_option_hover: Some(&mut on_hover),
+                option_icon: None,
+                closed_icon: true,
+                option_label: None,
+            },
+            None,
+        );
         if let (Some(prog), mask) = (self.selected_program.as_deref(), self.form_mask.as_str()) {
             if !mask.is_empty() {
                 if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {

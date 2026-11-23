@@ -307,6 +307,242 @@ impl HotkeyWhileRunning {
     }
 }
 
+/// Which screen edge the quick-access hub docks to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HubEdge {
+    Left,
+    #[default]
+    Right,
+    Top,
+    Bottom,
+}
+
+impl HubEdge {
+    /// All selectable values.
+    pub const ALL: [Self; 4] = [Self::Left, Self::Right, Self::Top, Self::Bottom];
+
+    /// Short label for settings / diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+            Self::Top => "Top",
+            Self::Bottom => "Bottom",
+        }
+    }
+}
+
+/// Reserved overlay id and fire token for the quick-access hub button.
+pub const QUICK_ACCESS_HUB_ID: &str = "__sqyre_hub";
+/// Fire token that only collapses an open hub fan (outside click / dismiss).
+pub const QUICK_ACCESS_HUB_DISMISS: &str = "__sqyre_hub_dismiss";
+/// List / tooltip label for the seeded hub overlay button.
+pub const QUICK_ACCESS_HUB_LABEL: &str = "Quick Access";
+/// Default hub face / brand opacity (0–255).
+pub const DEFAULT_QUICK_ACCESS_OPACITY: u8 = 220;
+/// Brand icon id for the hub face.
+pub const QUICK_ACCESS_HUB_ICON: &str = "sqyre-brand";
+
+/// True when `id` is the reserved quick-access hub overlay button.
+pub fn is_quick_access_hub_id(id: &str) -> bool {
+    id == QUICK_ACCESS_HUB_ID
+}
+
+/// Top-left desktop position for a hub face docked to `edge` at `offset`.
+///
+/// `size_px` and the monitor rect share units (physical desktop pixels when
+/// the rect comes from capture monitor metrics).
+pub fn hub_position_on_monitor(
+    edge: HubEdge,
+    offset: f32,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+    size_px: f32,
+) -> (f32, f32) {
+    let size = hub_layout_size_px(size_px, mon_w, mon_h);
+    let o = if offset.is_finite() {
+        offset.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let max_x = (mon_w - size).max(0.0);
+    let max_y = (mon_h - size).max(0.0);
+    match edge {
+        HubEdge::Left => (mon_x, mon_y + o * max_y),
+        HubEdge::Right => (mon_x + max_x, mon_y + o * max_y),
+        HubEdge::Top => (mon_x + o * max_x, mon_y),
+        HubEdge::Bottom => (mon_x + o * max_x, mon_y + max_y),
+    }
+}
+
+/// On-screen hub edge length in the monitor's coordinate space.
+fn hub_layout_size_px(size_px: f32, mon_w: f32, mon_h: f32) -> f32 {
+    let fallback = DEFAULT_OVERLAY_BUTTON_SIZE;
+    let size = if size_px.is_finite() && size_px > 0.0 {
+        size_px
+    } else {
+        fallback
+    };
+    size.min(mon_w.max(1.0)).min(mon_h.max(1.0)).max(1.0)
+}
+
+/// Snap a dragged hub top-left to the nearest edge of `monitor`; returns edge + offset.
+///
+/// `size` is the on-screen button edge in the same units as the monitor rect
+/// (physical pixels when relocating a native overlay face).
+pub fn snap_hub_to_monitor(
+    x: f32,
+    y: f32,
+    size: f32,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+) -> (HubEdge, f32) {
+    let size = hub_layout_size_px(size, mon_w, mon_h);
+    let cx = x + size * 0.5;
+    let cy = y + size * 0.5;
+    let dist_left = (cx - mon_x).abs();
+    let dist_right = (cx - (mon_x + mon_w)).abs();
+    let dist_top = (cy - mon_y).abs();
+    let dist_bottom = (cy - (mon_y + mon_h)).abs();
+    let max_x = (mon_w - size).max(0.0);
+    let max_y = (mon_h - size).max(0.0);
+
+    let edge = if dist_left <= dist_right && dist_left <= dist_top && dist_left <= dist_bottom {
+        HubEdge::Left
+    } else if dist_right <= dist_top && dist_right <= dist_bottom {
+        HubEdge::Right
+    } else if dist_top <= dist_bottom {
+        HubEdge::Top
+    } else {
+        HubEdge::Bottom
+    };
+
+    let offset = match edge {
+        HubEdge::Left | HubEdge::Right => {
+            if max_y <= f32::EPSILON {
+                0.5
+            } else {
+                ((y - mon_y) / max_y).clamp(0.0, 1.0)
+            }
+        }
+        HubEdge::Top | HubEdge::Bottom => {
+            if max_x <= f32::EPSILON {
+                0.5
+            } else {
+                ((x - mon_x) / max_x).clamp(0.0, 1.0)
+            }
+        }
+    };
+    (edge, offset)
+}
+
+/// Write edge-docked `x`/`y` onto `btn` after snapping its current top-left.
+///
+/// `size_px` must match the units used for `btn.x`/`btn.y` and the monitor rect
+/// (points when the Data Editor relocates; physical pixels for native faces).
+pub fn snap_hub_button_to_monitor(
+    btn: &mut OverlayButtonConfig,
+    mon_x: f32,
+    mon_y: f32,
+    mon_w: f32,
+    mon_h: f32,
+    size_px: f32,
+) -> HubEdge {
+    let (edge, offset) = snap_hub_to_monitor(btn.x, btn.y, size_px, mon_x, mon_y, mon_w, mon_h);
+    let (x, y) = hub_position_on_monitor(edge, offset, mon_x, mon_y, mon_w, mon_h, size_px);
+    btn.point.clear();
+    btn.x = x;
+    btn.y = y;
+    edge
+}
+
+/// Seeded General overlay button for the edge-docked quick-access hub.
+pub fn default_quick_access_hub_button() -> OverlayButtonConfig {
+    let size = DEFAULT_OVERLAY_BUTTON_SIZE;
+    let (x, y) = hub_position_on_monitor(
+        HubEdge::Right,
+        0.5,
+        0.0,
+        0.0,
+        DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+        DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+        size,
+    );
+    OverlayButtonConfig {
+        id: QUICK_ACCESS_HUB_ID.into(),
+        program: sqyre_domain::GENERAL_PROGRAM.into(),
+        enabled: true,
+        macro_name: QUICK_ACCESS_HUB_ID.into(),
+        icon: QUICK_ACCESS_HUB_ICON.into(),
+        point: String::new(),
+        x,
+        y,
+        size,
+        // Hit disk only — face paints the brand logo with no chrome.
+        corner_radius: (size * 0.5).clamp(MIN_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_CORNER_RADIUS),
+        border_width: 0.0,
+        border_color: String::new(),
+        border_alpha: 0,
+        bg_color: String::new(),
+        bg_alpha: 0,
+        icon_color: DEFAULT_OVERLAY_ICON_HEX.into(),
+        icon_alpha: DEFAULT_QUICK_ACCESS_OPACITY,
+        icon_hover_color: DEFAULT_OVERLAY_ACCENT_HEX.into(),
+        visibility_gate: OverlayVisibilityGate::default(),
+    }
+}
+
+/// Insert the hub button when missing; repair locked identity/chrome fields when present.
+///
+/// Returns `true` when the settings list changed.
+pub fn ensure_quick_access_hub_button(settings: &mut UserSettings) -> bool {
+    if let Some(btn) = settings
+        .overlay_buttons
+        .iter_mut()
+        .find(|b| is_quick_access_hub_id(&b.id))
+    {
+        let mut dirty = false;
+        if btn.program != sqyre_domain::GENERAL_PROGRAM {
+            btn.program = sqyre_domain::GENERAL_PROGRAM.into();
+            dirty = true;
+        }
+        if btn.macro_name != QUICK_ACCESS_HUB_ID {
+            btn.macro_name = QUICK_ACCESS_HUB_ID.into();
+            dirty = true;
+        }
+        if btn.icon != QUICK_ACCESS_HUB_ICON {
+            btn.icon = QUICK_ACCESS_HUB_ICON.into();
+            dirty = true;
+        }
+        if !btn.point.is_empty() {
+            btn.point.clear();
+            dirty = true;
+        }
+        if btn.border_width != 0.0 {
+            btn.border_width = 0.0;
+            dirty = true;
+        }
+        if btn.border_alpha != 0 {
+            btn.border_alpha = 0;
+            dirty = true;
+        }
+        if btn.bg_alpha != 0 {
+            btn.bg_alpha = 0;
+            dirty = true;
+        }
+        return dirty;
+    }
+    settings
+        .overlay_buttons
+        .insert(0, default_quick_access_hub_button());
+    true
+}
+
 /// Proportional font family used for UI text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -564,6 +800,9 @@ impl OverlayButtonConfig {
 
     /// Display name for lists (macro name, else id).
     pub fn display_name(&self) -> &str {
+        if is_quick_access_hub_id(&self.id) {
+            return QUICK_ACCESS_HUB_LABEL;
+        }
         let macro_name = self.macro_name.trim();
         if !macro_name.is_empty() {
             return macro_name;
@@ -735,6 +974,7 @@ pub struct UserSettings {
     /// [`Self::overlay_buttons_over_sqyre`] is on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
+    /// Edge-docked quick-access hub (New Point / Search Area / Screen Cap / Show-Hide).
     /// Automatically zip the data directory on a schedule.
     #[serde(default)]
     pub backup_enabled: bool,
@@ -1285,9 +1525,12 @@ impl UserSettings {
     }
 
     /// Remove overlay buttons bound to a deleted program.
+    ///
+    /// The seeded Quick Access hub is kept even if its program name matches.
     pub fn remove_overlay_buttons_for_program(&mut self, program: &str) -> bool {
         let before = self.overlay_buttons.len();
-        self.overlay_buttons.retain(|btn| btn.program != program);
+        self.overlay_buttons
+            .retain(|btn| btn.program != program || is_quick_access_hub_id(&btn.id));
         self.overlay_buttons.len() != before
     }
 
@@ -1510,6 +1753,7 @@ impl UserSettings {
         if self.window_pos_y.is_some_and(|v| !v.is_finite()) {
             self.window_pos_y = None;
         }
+        let _ = ensure_quick_access_hub_button(self);
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -1679,19 +1923,30 @@ mod tests {
         assert!(!loaded.image_search_variant_exit_early);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
-        assert_eq!(loaded.overlay_buttons.len(), 1);
-        assert!(loaded.overlay_buttons[0].enabled);
-        assert_eq!(loaded.overlay_buttons[0].program, "Demo Game");
-        assert_eq!(loaded.overlay_buttons[0].macro_name, "demo");
-        assert_eq!(loaded.overlay_buttons[0].icon, "bolt");
-        assert!((loaded.overlay_buttons[0].size - 64.0).abs() < f32::EPSILON);
-        assert!((loaded.overlay_buttons[0].corner_radius - 12.0).abs() < f32::EPSILON);
-        assert_eq!(loaded.overlay_buttons[0].border_color, "#ff0000");
-        assert_eq!(loaded.overlay_buttons[0].border_alpha, 200);
-        assert_eq!(loaded.overlay_buttons[0].bg_color, "#112233");
-        assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
-        assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
-        assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+        assert!(
+            loaded
+                .overlay_buttons
+                .iter()
+                .any(|b| is_quick_access_hub_id(&b.id)),
+            "load clamps and seeds the hub"
+        );
+        let btn = loaded
+            .overlay_buttons
+            .iter()
+            .find(|b| b.id == "btn-1")
+            .expect("demo button");
+        assert!(btn.enabled);
+        assert_eq!(btn.program, "Demo Game");
+        assert_eq!(btn.macro_name, "demo");
+        assert_eq!(btn.icon, "bolt");
+        assert!((btn.size - 64.0).abs() < f32::EPSILON);
+        assert!((btn.corner_radius - 12.0).abs() < f32::EPSILON);
+        assert_eq!(btn.border_color, "#ff0000");
+        assert_eq!(btn.border_alpha, 200);
+        assert_eq!(btn.bg_color, "#112233");
+        assert_eq!(btn.bg_alpha, 128);
+        assert_eq!(btn.icon_color, "#abcdef");
+        assert_eq!(btn.icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert_eq!(loaded.ui_density, UiDensity::Spaced);
         assert_eq!(loaded.last_selected_macro, "farm loop");
@@ -1703,6 +1958,85 @@ mod tests {
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
         );
+    }
+
+    #[test]
+    fn default_settings_do_not_seed_hub_until_clamp() {
+        assert!(
+            UserSettings::default().overlay_buttons.is_empty(),
+            "defaults do not seed the hub until clamp"
+        );
+    }
+
+    #[test]
+    fn ensure_quick_access_hub_button_seeds_and_repairs() {
+        let mut s = UserSettings::default();
+        assert!(ensure_quick_access_hub_button(&mut s));
+        assert_eq!(s.overlay_buttons.len(), 1);
+        let hub = &s.overlay_buttons[0];
+        assert_eq!(hub.id, QUICK_ACCESS_HUB_ID);
+        assert_eq!(hub.program, sqyre_domain::GENERAL_PROGRAM);
+        assert_eq!(hub.macro_name, QUICK_ACCESS_HUB_ID);
+        assert_eq!(hub.icon, QUICK_ACCESS_HUB_ICON);
+        assert_eq!(hub.display_name(), QUICK_ACCESS_HUB_LABEL);
+        assert_eq!(hub.border_width, 0.0);
+        assert_eq!(hub.bg_alpha, 0);
+        assert_eq!(hub.icon_alpha, DEFAULT_QUICK_ACCESS_OPACITY);
+        assert!(!ensure_quick_access_hub_button(&mut s));
+
+        s.overlay_buttons[0].program = "Other".into();
+        s.overlay_buttons[0].macro_name = "wrong".into();
+        s.overlay_buttons[0].icon = "bolt".into();
+        s.overlay_buttons[0].point = "General~Monitor 1 Center".into();
+        s.overlay_buttons[0].border_width = 2.0;
+        s.overlay_buttons[0].border_alpha = 200;
+        s.overlay_buttons[0].bg_alpha = 128;
+        assert!(ensure_quick_access_hub_button(&mut s));
+        let hub = &s.overlay_buttons[0];
+        assert_eq!(hub.program, sqyre_domain::GENERAL_PROGRAM);
+        assert_eq!(hub.macro_name, QUICK_ACCESS_HUB_ID);
+        assert_eq!(hub.icon, QUICK_ACCESS_HUB_ICON);
+        assert!(hub.point.is_empty());
+        assert_eq!(hub.border_width, 0.0);
+        assert_eq!(hub.border_alpha, 0);
+        assert_eq!(hub.bg_alpha, 0);
+    }
+
+    #[test]
+    fn clamp_seeds_quick_access_hub_button() {
+        let mut s = UserSettings::default();
+        s.clamp();
+        assert!(s
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
+    }
+
+    #[test]
+    fn snap_hub_prefers_nearest_edge() {
+        let (edge, offset) = snap_hub_to_monitor(0.0, 200.0, 26.0, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Left);
+        assert!((offset - 200.0 / (1080.0 - 26.0)).abs() < 0.01);
+
+        let (edge, offset) = snap_hub_to_monitor(1894.0, 540.0, 26.0, 0.0, 0.0, 1920.0, 1080.0);
+        assert_eq!(edge, HubEdge::Right);
+        assert!((offset - 540.0 / (1080.0 - 26.0)).abs() < 0.01);
+
+        let (x, y) = hub_position_on_monitor(HubEdge::Right, 0.5, 0.0, 0.0, 1920.0, 1080.0, 26.0);
+        assert!((x - (1920.0 - 26.0)).abs() < f32::EPSILON);
+        assert!((y - 0.5 * (1080.0 - 26.0)).abs() < f32::EPSILON);
+
+        // Physical face size at 2× must not be clamped to the points max (128).
+        let (x2, _) = hub_position_on_monitor(HubEdge::Right, 0.5, 0.0, 0.0, 3840.0, 2160.0, 52.0);
+        assert!((x2 - (3840.0 - 52.0)).abs() < f32::EPSILON);
+
+        let mut btn = default_quick_access_hub_button();
+        btn.x = 100.0;
+        btn.y = 400.0;
+        let edge = snap_hub_button_to_monitor(&mut btn, 0.0, 0.0, 1920.0, 1080.0, 26.0);
+        assert_eq!(edge, HubEdge::Left);
+        assert!((btn.x - 0.0).abs() < f32::EPSILON);
+        assert!((btn.y - 400.0).abs() < 1.0);
     }
 
     #[test]
@@ -2070,19 +2404,40 @@ mod tests {
             .push(OverlayButtonConfig::new("drop-a", "Gone"));
         s.overlay_buttons
             .push(OverlayButtonConfig::new("drop-b", "Gone"));
+        s.overlay_buttons.push(default_quick_access_hub_button());
         assert!(s.remove_overlay_buttons_for_program("Gone"));
-        assert_eq!(s.overlay_buttons.len(), 1);
-        assert_eq!(s.overlay_buttons[0].id, "keep");
+        assert_eq!(s.overlay_buttons.len(), 2);
+        assert!(s.overlay_buttons.iter().any(|b| b.id == "keep"));
+        assert!(s
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
         assert!(!s.remove_overlay_buttons_for_program("Gone"));
         assert!(!s.remove_overlay_buttons_for_program("Missing"));
+        // Hub stays even when clearing General program buttons.
+        assert!(!s.remove_overlay_buttons_for_program(sqyre_domain::GENERAL_PROGRAM));
+        assert!(s
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
 
         let dir = tempdir().unwrap();
         let path = dir.path().join(crate::SETTINGS_FILE);
         s.save_to_path(&path).unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
-        assert_eq!(loaded.overlay_buttons.len(), 1);
-        assert_eq!(loaded.overlay_buttons[0].id, "keep");
-        assert_eq!(loaded.overlay_buttons[0].program, "Other");
+        assert!(loaded.overlay_buttons.iter().any(|b| b.id == "keep"));
+        assert!(loaded
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
+        assert_eq!(
+            loaded
+                .overlay_buttons
+                .iter()
+                .find(|b| b.id == "keep")
+                .map(|b| b.program.as_str()),
+            Some("Other")
+        );
     }
 
     #[test]
@@ -2132,7 +2487,11 @@ overlay_buttons:
         )
         .unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
-        let btn = &loaded.overlay_buttons[0];
+        let btn = loaded
+            .overlay_buttons
+            .iter()
+            .find(|b| b.id == "btn-legacy")
+            .expect("legacy button");
         assert!(btn.enabled);
         assert!((btn.corner_radius - DEFAULT_OVERLAY_CORNER_RADIUS).abs() < f32::EPSILON);
         assert!((btn.border_width - DEFAULT_OVERLAY_BORDER_WIDTH).abs() < f32::EPSILON);
@@ -2144,6 +2503,10 @@ overlay_buttons:
             btn.border_rgba(),
             OverlayButtonConfig::resolve_rgba("", 255, DEFAULT_OVERLAY_ACCENT_HEX)
         );
+        assert!(loaded
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
     }
 
     #[test]

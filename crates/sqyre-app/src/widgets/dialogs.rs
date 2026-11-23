@@ -1,7 +1,6 @@
 //! Shared dialog chrome: Save/Cancel, Confirm/Cancel, and dismiss-only rows.
 
 use eframe::egui::{self, Key, Modifiers};
-use egui::containers::scroll_area::{DragScroll, ScrollBarVisibility};
 
 /// Keep floating dialogs at least this fraction of the viewport away from each edge.
 pub const DIALOG_EDGE_MARGIN_FRAC: f32 = 0.025;
@@ -21,15 +20,9 @@ pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
 pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
 /// Command palette floor.
 pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
-/// Space reserved below a scroll for a laid-out footer (status, tag filters).
-/// Floating Save chips use [`crate::widgets::float_bottom_right`] with no reserve —
-/// prefer [`crate::widgets::footer_reserve_action`] only when content must clear
-/// a painted chip and cannot fill under it.
-pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
-
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
-/// Floating dialogs apply this via [`fit_dialog_popup`] / [`fit_dialog_window`] so
+/// Floating dialogs apply this via [`fit_dialog_popup`] so
 /// their size and position keep the same fraction of the viewport.
 #[derive(Debug, Clone, Copy)]
 pub struct ViewportScaleEvent {
@@ -37,34 +30,52 @@ pub struct ViewportScaleEvent {
     pub new_content: egui::Rect,
 }
 
+fn viewport_size_changed(a: egui::Rect, b: egui::Rect) -> bool {
+    (a.width() - b.width()).abs() > VIEWPORT_SIZE_EPSILON
+        || (a.height() - b.height()).abs() > VIEWPORT_SIZE_EPSILON
+}
+
 /// Track OS window size; set [`ViewportScaleEvent`] for one frame when it changes.
 ///
-/// Steady-state (size unchanged): clear any stale pending event and return — no
-/// allocations, no layer scans.
+/// Steady-state (size unchanged): clear any stale pending event and return.
+///
+/// While the primary button is held (client-side `BeginResize` after OS title
+/// bar is off), suppress mid-drag scale events and keep the pre-resize origin
+/// so open floaters are not relayout'd on every configure. The coalesced event
+/// fires on the first size delta after release. WM-driven size changes without
+/// a held click (tiling, maximize, harness zoom) still emit immediately.
 pub fn sync_viewport_window_scale(
     ctx: &egui::Context,
     last_content: &mut Option<egui::Rect>,
     pending: &mut Option<ViewportScaleEvent>,
 ) {
     let content = ctx.content_rect();
-    let Some(prev) = *last_content else {
+    let Some(applied) = *last_content else {
         *last_content = Some(content);
         *pending = None;
         return;
     };
-    let dw = (content.width() - prev.width()).abs();
-    let dh = (content.height() - prev.height()).abs();
-    if dw <= VIEWPORT_SIZE_EPSILON && dh <= VIEWPORT_SIZE_EPSILON {
+
+    if !viewport_size_changed(content, applied) {
         *pending = None;
         return;
     }
-    if prev.width() <= 1.0 || prev.height() <= 1.0 {
+
+    if applied.width() <= 1.0 || applied.height() <= 1.0 {
         *last_content = Some(content);
         *pending = None;
         return;
     }
+
+    // BeginResize keeps primary_down true for the whole gesture; CSD/WM
+    // resizes that never pressed inside the egui surface are unaffected.
+    if ctx.input(|i| i.pointer.primary_down()) {
+        *pending = None;
+        return;
+    }
+
     *pending = Some(ViewportScaleEvent {
-        old_content: prev,
+        old_content: applied,
         new_content: content,
     });
     *last_content = Some(content);
@@ -119,15 +130,6 @@ fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egu
     window.constrain_to(rect).max_size(rect.size())
 }
 
-/// egui's default title frame inherits `window_margin` (6pt) on every side,
-/// which inflates the bar well past the Heading row it already has to hold.
-/// Dialogs get a slim bar: horizontal margins match the window, vertical 2pt.
-/// Applies to every `fit_dialog_*` window; ignored where `title_bar` is false.
-fn compact_title_frame(style: &egui::Style) -> egui::Frame {
-    let m = style.spacing.window_margin;
-    egui::Frame::window(style).inner_margin(egui::Margin::symmetric(m.left, 2))
-}
-
 fn fit_dialog_common<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -136,7 +138,10 @@ fn fit_dialog_common<'a>(
 ) -> egui::Window<'a> {
     let window = window.id(id);
     let window = apply_dialog_bounds(window, ctx);
-    let window = window.title_frame(compact_title_frame(ctx.global_style().as_ref()));
+    // Title chrome SSOT lives next to `popup_frame` / `chrome_inner_margin`.
+    let window = window.title_frame(crate::theme::compact_title_frame(
+        ctx.global_style().as_ref(),
+    ));
     match pending_scale {
         Some(pending) => apply_pending_viewport_scale(window, ctx, id, pending),
         None => window,
@@ -146,7 +151,7 @@ fn fit_dialog_common<'a>(
 /// Visible layout budget for a Ui — not leftover room toward a Window `max_size`.
 ///
 /// egui [`Window`]s auto-expand to content `min_size` and do not shrink. Dialogs
-/// use [`fit_dialog_window`] / [`fit_dialog_popup`], which set `max_size` to the
+/// use [`fit_dialog_popup`], which sets `max_size` to the
 /// screen constrain rect. Widgets that treat `available_width()` as a **minimum**
 /// (`set_width` / `set_min_width` / `TextEdit::desired_width` / column counts /
 /// `ScrollArea::auto_shrink([false, _])` without a max) therefore grow the window
@@ -254,8 +259,8 @@ pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
 /// reports a shrinking `min_size` and the window stair-steps toward its final
 /// size a few points per frame.
 ///
-/// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
-/// scroll makes `available_size` track `max_size` and defeats this.
+/// Use with [`fit_dialog_popup`]: an outer Window scroll would make
+/// `available_size` track `max_size` and defeat this.
 pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) -> egui::Response {
     let cap = dialog_constrain_rect(ui.ctx()).size();
     let avail = ui.available_size();
@@ -272,31 +277,14 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
     resp
 }
 
-/// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
-/// on **both** axes when content is larger than the window.
-///
-/// Prefer this only when the body is one scroll region and has no
-/// [`fill_resize_body`] / inner [`crate::widgets::show_dialog_scroll`]. Nested
-/// outer+inner scrolls steal the wheel and defeat resize fill — use
-/// [`fit_dialog_popup`] for those (Add Action, defaults edit, Variables,
-/// Settings, Data Editor, pickers).
-pub fn fit_dialog_window<'a>(
-    window: egui::Window<'a>,
-    ctx: &egui::Context,
-    id: egui::Id,
-    pending_scale: Option<&ViewportScaleEvent>,
-) -> egui::Window<'a> {
-    fit_dialog_common(window, ctx, id, pending_scale)
-        .scroll([true, true])
-        .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
-        .drag_to_scroll(DragScroll::Never)
-}
-
-/// No outer scroll — for compact auto-sized confirms / record modals, and for
-/// panes that allocate their own body/footer and inner [`ScrollArea`]s.
+/// Keep a floating dialog inside [`dialog_constrain_rect`] with **no** outer
+/// scroll — for compact auto-sized confirms / record modals, and for panes that
+/// allocate their own body/footer and inner [`ScrollArea`]s.
 ///
 /// Pair with [`fill_resize_body`] when the window is resizable and owns an
-/// inner scroll (Add Action, defaults edit, Variables, Settings, Data Editor).
+/// inner scroll (Add Action, defaults edit, Variables, Settings, Data Editor,
+/// pickers, action logs, recorded-actions review). An outer Window scroll
+/// nests badly with those and defeats resize fill.
 pub fn fit_dialog_popup<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -432,7 +420,9 @@ fn right_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(h);
 }
 
-/// Cancel-only footer for record / dismiss-only dialogs.
+/// Cancel-only footer for record / dismiss-only dialogs **without** a title-bar
+/// close control (borderless / viewport chrome). Titled `fit_dialog_popup`
+/// windows use the title-bar ✕ plus Esc instead — do not paint a Cancel twin.
 ///
 /// Right-aligned like [`confirm_cancel_row`] (Cancel at the right edge). When
 /// `esc_dismisses`, Esc is consumed as Cancel (same path as confirms). Pass
@@ -780,5 +770,107 @@ mod tests {
         assert_eq!(FLOATER_MIN_PICKER, [400.0, 280.0]);
         assert_eq!(FLOATER_MIN_PALETTE, [400.0, 200.0]);
         assert_eq!(FLOATER_MIN_EDITOR, [520.0, 280.0]);
+    }
+
+    fn screen(w: f32, h: f32) -> RawInput {
+        RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(w, h),
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn screen_with_primary_down(w: f32, h: f32) -> RawInput {
+        let mut input = screen(w, h);
+        input.events.push(Event::PointerButton {
+            pos: egui::pos2(w * 0.5, h * 0.5),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        input
+    }
+
+    /// Client-side BeginResize (primary held) must not emit a scale event every
+    /// configure — only once after release, from the pre-drag origin.
+    #[test]
+    fn viewport_scale_coalesces_while_primary_held() {
+        let ctx = egui::Context::default();
+        let mut last = None;
+        let mut pending = None;
+
+        ctx.run_ui(screen(800.0, 600.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        assert!(pending.is_none(), "first frame only seeds origin");
+        let origin = last.expect("origin seeded");
+
+        for (w, h) in [(780.0, 590.0), (760.0, 580.0), (740.0, 570.0)] {
+            ctx.run_ui(screen_with_primary_down(w, h), |ui| {
+                assert!(
+                    ui.input(|i| i.pointer.primary_down()),
+                    "test setup must hold primary"
+                );
+                sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+            })
+            .drop_without_applying_deltas();
+            assert!(
+                pending.is_none(),
+                "mid-drag frame must not scale floaters ({w}x{h})"
+            );
+            assert_eq!(last, Some(origin), "applied origin stays put mid-drag");
+        }
+
+        let mut release = screen(740.0, 570.0);
+        release.events.push(Event::PointerButton {
+            pos: egui::pos2(370.0, 285.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        ctx.run_ui(release, |ui| {
+            assert!(
+                !ui.input(|i| i.pointer.primary_down()),
+                "release frame must clear primary_down"
+            );
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        let event = pending.expect("release emits one scale event");
+        assert_eq!(event.old_content, origin);
+        assert!(
+            (event.new_content.width() - 740.0).abs() < 0.5
+                && (event.new_content.height() - 570.0).abs() < 0.5,
+            "new_content should be the post-drag size, got {:?}",
+            event.new_content
+        );
+        assert_eq!(last.map(|r| (r.width(), r.height())), Some((740.0, 570.0)));
+    }
+
+    /// Size changes without a held click (tiling / harness zoom) still emit
+    /// immediately so dialogs track the viewport without an extra settle frame.
+    #[test]
+    fn viewport_scale_emits_immediately_without_pointer() {
+        let ctx = egui::Context::default();
+        let mut last = None;
+        let mut pending = None;
+
+        ctx.run_ui(screen(800.0, 600.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(screen(640.0, 480.0), |ui| {
+            sync_viewport_window_scale(ui.ctx(), &mut last, &mut pending);
+        })
+        .drop_without_applying_deltas();
+        let event = pending.expect("pointer-up size change emits immediately");
+        assert!(
+            (event.old_content.width() - 800.0).abs() < 0.5
+                && (event.new_content.width() - 640.0).abs() < 0.5
+        );
     }
 }

@@ -204,9 +204,10 @@ impl MacroMetaUi {
             if focused_now != editing {
                 ui.ctx().request_repaint();
             }
-            let (chips_changed, chips_rect) = if m.tags.is_empty() {
-                (false, None)
-            } else {
+            // Always reserve the chip band — empty tags still claim one row so
+            // the window chrome (Data Editor / Settings / list toggle) stays on
+            // the same plane as a tagged header instead of dropping under the brand.
+            let (chips_changed, chips_rect) = {
                 let (changed, rect) = crate::widgets::tag_chip_list(
                     ui,
                     &mut m.tags,
@@ -266,7 +267,10 @@ impl MacroMetaUi {
 
         let mut close = false;
         // Avoid `.auto_sized()`: egui paints the title Frame at title+close width
-        // without allocating it, so the header stroke outruns the body.
+        // without allocating it, so the header stroke outruns the body. Content
+        // `set_min_width` matches the title on the first paint (window-level
+        // min_width grows across frames and trips the layout ratchet).
+        let delay_w = crate::widgets::FLOATER_MIN_COMPACT[0];
         crate::widgets::fit_dialog_popup(
             egui::Window::new("Delay between actions")
                 .collapsible(false)
@@ -277,18 +281,38 @@ impl MacroMetaUi {
             pending_scale,
         )
         .show(ui.ctx(), |ui| {
+            ui.set_min_width(delay_w);
             ui.add_enabled_ui(enabled, |ui| {
-                if delay_row(ui, "Global (ms)", &mut m.global_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::TIMER,
+                    "Global",
+                    "Pause after every action (ms).",
+                    &mut m.global_delay,
+                ) {
                     out.persist = true;
                 }
-                if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::KEYBOARD,
+                    "Keyboard",
+                    "Extra pause after keyboard actions (ms).",
+                    &mut m.keyboard_delay,
+                ) {
                     out.persist = true;
                 }
-                if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
+                if delay_row(
+                    ui,
+                    egui_phosphor::regular::MOUSE,
+                    "Mouse",
+                    "Extra pause after mouse actions (ms).",
+                    &mut m.mouse_delay,
+                ) {
                     out.persist = true;
                 }
             });
-            if crate::widgets::dismiss_row(ui, true) {
+            // Title-bar ✕ closes via `.open`; Esc only — no painted Cancel twin.
+            if crate::widgets::consume_escape(ui) {
                 close = true;
             }
         });
@@ -300,18 +324,12 @@ impl MacroMetaUi {
     }
 }
 
-fn delay_row(ui: &mut egui::Ui, label: &str, value: &mut i32) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let resp = ui.add(
-            crate::widgets::num_entry(value)
-                .range(DELAY_MIN..=DELAY_MAX)
-                .speed(1),
-        );
-        changed = resp.changed();
+fn delay_row(ui: &mut egui::Ui, icon: &str, name: &str, tip: &str, value: &mut i32) -> bool {
+    let before = *value;
+    crate::widgets::drag_field(ui, icon, name, tip, value, |d| {
+        d.range(DELAY_MIN..=DELAY_MAX).speed(1).suffix(" ms")
     });
-    changed
+    *value != before
 }
 
 fn format_delay_tooltip(m: &Macro) -> String {
@@ -662,7 +680,23 @@ mod tests {
         }
 
         let (bare, _, _) = paint_header(pane_w, "Alpha", &[], "Alpha");
-        assert!(bare.chips_rect.is_none(), "empty tags reserved a chip row");
+        let bare_chips = bare
+            .chips_rect
+            .expect("empty tags should still reserve a chip row");
+        let row_bottom = bare.name_rect.bottom().max(bare.tag_rect.bottom());
+        assert!(
+            bare_chips.top() + 1.0 >= row_bottom,
+            "empty chip band is not below the name/tag row: chips {bare_chips:?} row_bottom {row_bottom}"
+        );
+        assert!(
+            bare_chips.height() > 8.0,
+            "empty chip band has no height: {bare_chips:?}"
+        );
+        let short_chips = short.chips_rect.expect("short chips");
+        assert!(
+            (bare_chips.top() - short_chips.top()).abs() < 2.0,
+            "empty and tagged chip bands should share a baseline (bare {bare_chips:?}, tagged {short_chips:?})"
+        );
     }
 
     #[test]

@@ -101,6 +101,7 @@ pub struct ButtonPaint {
     pub icon_glyph: char,
     pub icon: [u8; 4],
     pub icon_hover: [u8; 4],
+    pub brand: bool,
     pub hovered: bool,
     pub busy: bool,
     pub busy_phase: f32,
@@ -119,6 +120,7 @@ impl ButtonPaint {
             icon_glyph: face.icon_glyph,
             icon: face.icon,
             icon_hover: face.icon_hover,
+            brand: face.brand,
             hovered,
             busy,
             busy_phase,
@@ -645,7 +647,7 @@ pub fn rasterize_argb(paint: &ButtonPaint) -> Vec<u8> {
     rgba
 }
 
-/// Icon glyph or busy spinner composited onto the painted face.
+/// Icon glyph, brand S, or busy spinner composited onto the painted face.
 fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: InkMode) {
     // Icon: the busy spinner replaces it outright (no dimmed ghost behind).
     let icon_c = if paint.hovered {
@@ -654,7 +656,11 @@ fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: In
         paint.icon
     };
     let mut canvas = Canvas { rgba, w, h };
-    if !paint.busy && paint.icon_glyph != '\0' && icon_c[3] > 0 {
+    if paint.busy {
+        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, mode);
+    } else if paint.brand && icon_c[3] > 0 {
+        draw_brand_mark(&mut canvas, icon_c, mode);
+    } else if paint.icon_glyph != '\0' && icon_c[3] > 0 {
         blit_glyph(
             &mut canvas,
             paint.icon_glyph,
@@ -662,10 +668,6 @@ fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: In
             icon_c,
             mode,
         );
-    }
-
-    if paint.busy {
-        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, mode);
     }
 }
 
@@ -817,6 +819,65 @@ fn s_coverage(cov: &mut Vec<f32>, w: u32, h: u32, weight: impl Fn(f32, f32) -> f
             &weight,
         );
     }
+}
+
+/// Full Sqyre shield logo (embedded PNG), scaled into the face.
+///
+/// Logo colors are preserved; `color[3]` scales overall opacity (hover/idle
+/// alphas from the button style). Busy state still uses the S spinner.
+fn draw_brand_mark(canvas: &mut Canvas<'_>, color: [u8; 4], mode: InkMode) {
+    let (lw, lh, src) = brand_logo_rgba();
+    if *lw == 0 || *lh == 0 || src.is_empty() {
+        return;
+    }
+    let side = (canvas.w.min(canvas.h) as f32 * brand_s::FACE_FILL)
+        .round()
+        .max(1.0);
+    let dw = side.min(canvas.w as f32);
+    let dh = side.min(canvas.h as f32);
+    let ox = (canvas.w as f32 - dw) * 0.5;
+    let oy = (canvas.h as f32 - dh) * 0.5;
+    let a_scale = color[3] as f32 / 255.0;
+    let x0 = ox.floor() as i32;
+    let y0 = oy.floor() as i32;
+    let x1 = (ox + dw).ceil() as i32;
+    let y1 = (oy + dh).ceil() as i32;
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let Some(i) = canvas.index(px, py) else {
+                continue;
+            };
+            let u = ((px as f32 + 0.5 - ox) / dw).clamp(0.0, 1.0);
+            let v = ((py as f32 + 0.5 - oy) / dh).clamp(0.0, 1.0);
+            let sx = (u * (lw.saturating_sub(1) as f32)).round() as u32;
+            let sy = (v * (lh.saturating_sub(1) as f32)).round() as u32;
+            let si = ((sy * lw + sx) * 4) as usize;
+            if si + 3 >= src.len() {
+                continue;
+            }
+            let a = src[si + 3] as f32 / 255.0 * a_scale;
+            if a < 0.01 {
+                continue;
+            }
+            let sample = [src[si], src[si + 1], src[si + 2], 255];
+            stamp_mode(&mut canvas.rgba[i..i + 4], sample, a, mode);
+        }
+    }
+}
+
+/// Decoded `assets/sqyre.png` (RGBA8), loaded once.
+fn brand_logo_rgba() -> &'static (u32, u32, Vec<u8>) {
+    static LOGO: OnceLock<(u32, u32, Vec<u8>)> = OnceLock::new();
+    LOGO.get_or_init(|| {
+        let bytes = include_bytes!("../assets/sqyre.png");
+        match image::load_from_memory(bytes) {
+            Ok(img) => {
+                let rgba = img.into_rgba8();
+                (rgba.width(), rgba.height(), rgba.into_raw())
+            }
+            Err(_) => (0, 0, Vec::new()),
+        }
+    })
 }
 
 /// Brand spinner: the two S half-strokes drawn as themselves, gated by a
@@ -971,6 +1032,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            brand: false,
             hovered: false,
             busy: true,
             busy_phase: 0.0,
@@ -1004,6 +1066,7 @@ mod tip_tests {
             icon_glyph: egui_phosphor::regular::PLAY.chars().next().unwrap(),
             icon: [0xf5, 0xe6, 0xc0, 0xff],
             icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            brand: false,
             hovered: false,
             busy: true,
             busy_phase: 0.0,
@@ -1057,6 +1120,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0, 0, 0, 0],
+            brand: false,
             hovered: false,
             busy: false,
             busy_phase: 0.0,
@@ -1110,6 +1174,21 @@ mod tip_tests {
     }
 
     #[test]
+    fn brand_logo_paints_on_clear_face() {
+        let paint = ButtonPaint {
+            brand: true,
+            icon: [0xff, 0xff, 0xff, 220],
+            ..argb_paint([0, 0, 0, 0], [0, 0, 0, 0], 0.0, 20.0)
+        };
+        let rgba = rasterize_argb(&paint);
+        let ink = rgba.chunks_exact(4).filter(|p| p[3] > 8).count();
+        assert!(ink > 40, "logo should leave opaque ink on a clear face");
+        // Corners of the square face stay clear (logo is inset, shield is not a square).
+        assert_eq!(rgba[3], 0);
+        assert_eq!(rgba[px(0, 39) + 3], 0);
+    }
+
+    #[test]
     fn transparent_bg_leaves_interior_clear_and_shapes_chrome() {
         let paint = ButtonPaint {
             w: 32,
@@ -1121,6 +1200,7 @@ mod tip_tests {
             icon_glyph: '\u{0}',
             icon: [0, 0, 0, 0],
             icon_hover: [0, 0, 0, 0],
+            brand: false,
             hovered: false,
             busy: false,
             busy_phase: 0.0,

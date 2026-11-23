@@ -387,8 +387,7 @@ impl FormState for CollectionsForm {
             ed.reset_collection_form();
             return;
         };
-        ed.form_name = col.name.clone();
-        ed.form_search_area = col.search_area.clone();
+        ed.form_search_area = col.name.clone();
         ed.form_rows = col.rows.to_string();
         ed.form_cols = col.cols.to_string();
         ed.collection_preview_key = Some((prog.to_string(), name.to_string()));
@@ -399,13 +398,14 @@ impl FormState for CollectionsForm {
             ed.selected_program.as_deref(),
             ed.selected_entity.as_deref(),
         ) else {
-            return !ed.form_name.trim().is_empty();
+            return !ed.form_search_area.trim().is_empty()
+                || ed.form_rows != "1"
+                || ed.form_cols != "1";
         };
         let Some(col) = catalog.get(prog).and_then(|p| p.collections.get(ent)) else {
             return true;
         };
-        ed.form_name.trim() != col.name
-            || ed.form_search_area != col.search_area
+        ed.form_search_area.trim() != col.name
             || parse_i32(&ed.form_rows) != Some(col.rows)
             || parse_i32(&ed.form_cols) != Some(col.cols)
     }

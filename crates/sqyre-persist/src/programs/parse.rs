@@ -247,7 +247,6 @@ pub(super) fn parse_collection(name: &str, v: &Value) -> ProgramCollection {
         name: name.to_string(),
         rows: 1,
         cols: 1,
-        ..Default::default()
     };
     let Some(map) = v.as_mapping() else {
         return col;
@@ -257,12 +256,6 @@ pub(super) fn parse_collection(name: &str, v: &Value) -> ProgramCollection {
         .and_then(|x| x.as_str())
     {
         col.name = n.to_string();
-    }
-    if let Some(s) = map
-        .get(Value::String("searcharea".into()))
-        .and_then(|x| x.as_str())
-    {
-        col.search_area = s.to_string();
     }
     if let Some(n) = yaml_i64(map.get(Value::String("rows".into()))) {
         col.rows = n.max(1) as i32;

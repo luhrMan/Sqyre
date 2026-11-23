@@ -73,6 +73,8 @@ pub struct WinButtonSpec {
     pub tip: String,
     pub busy: bool,
     pub visibility_gated: bool,
+    /// When false, hit-tests pass through and presses are ignored (hub fan travel).
+    pub input_enabled: bool,
 }
 
 enum HostCmd {
@@ -80,6 +82,7 @@ enum HostCmd {
     SetRelocate(bool),
     SetVisibility(Arc<Mutex<HashMap<String, bool>>>),
     SetWake(egui::Context),
+    SetHubFanDismiss(bool),
     Shutdown,
 }
 
@@ -157,6 +160,10 @@ impl WinButtonHost {
         let _ = self.cmd_tx.send(HostCmd::SetWake(ctx));
     }
 
+    pub fn set_hub_fan_dismiss(&self, enabled: bool) {
+        let _ = self.cmd_tx.send(HostCmd::SetHubFanDismiss(enabled));
+    }
+
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(HostCmd::Shutdown);
@@ -211,6 +218,8 @@ struct HostState {
     size_all: HCURSOR,
     module: HINSTANCE,
     last_busy: Instant,
+    hub_fan_dismiss: bool,
+    last_hub_dismiss_btn1: bool,
 }
 
 #[expect(
@@ -259,6 +268,8 @@ fn host_loop(
         size_all,
         module,
         last_busy: Instant::now(),
+        hub_fan_dismiss: false,
+        last_hub_dismiss_btn1: false,
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
@@ -279,6 +290,13 @@ fn host_loop(
                     apply_visibility(&mut state);
                 }
                 Ok(HostCmd::SetWake(ctx)) => state.wake = Some(ctx),
+                Ok(HostCmd::SetHubFanDismiss(enabled)) => {
+                    if state.hub_fan_dismiss != enabled {
+                        state.hub_fan_dismiss = enabled;
+                        state.last_hub_dismiss_btn1 = false;
+                        note(&format!("overlay-win: hub_fan_dismiss={enabled}"));
+                    }
+                }
                 Ok(HostCmd::Shutdown) => {
                     stop.store(true, Ordering::Relaxed);
                     break;
@@ -297,6 +315,9 @@ fn host_loop(
         unsafe { drain_messages() };
         tick_busy(&mut state);
         apply_visibility(&mut state);
+        if state.hub_fan_dismiss {
+            poll_hub_fan_outside_dismiss(&mut state);
+        }
         thread::sleep(Duration::from_millis(POLL_MS));
     }
     destroy_all(&mut state);
@@ -357,6 +378,7 @@ fn update_button(state: &mut HostState, spec: WinButtonSpec) {
         || live.spec.face.border != spec.face.border
         || live.spec.face.icon != spec.face.icon
         || live.spec.face.icon_glyph != spec.face.icon_glyph
+        || live.spec.face.brand != spec.face.brand
         || live.spec.busy != spec.busy;
     live.spec = spec;
     live.spec.face.x = x;
@@ -486,6 +508,45 @@ fn paint_live(btn: &mut LiveButton) {
     blit_layered(btn.hwnd, btn.spec.face.x, btn.spec.face.y, w, h, &btn.bgra);
 }
 
+fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
+    let rects = sqyre_capture::preferred_monitor_rects();
+    for r in &rects {
+        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
+            return (r.x, r.y, r.w, r.h);
+        }
+    }
+    if let Some(r) = rects.first() {
+        return (r.x, r.y, r.w, r.h);
+    }
+    (0, 0, 1920, 1080)
+}
+
+struct TipPlace {
+    btn_x: i32,
+    btn_y: i32,
+    btn_w: i32,
+    btn_h: i32,
+    tip_w: i32,
+    tip_h: i32,
+    mon: (i32, i32, i32, i32),
+}
+
+fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
+    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
+    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
+    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
+    let mon_right = mon_x.saturating_add(mon_w);
+    let mon_bottom = mon_y.saturating_add(mon_h);
+    if tip_y.saturating_add(p.tip_h) > mon_bottom {
+        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
+    }
+    let max_x = (mon_right - p.tip_w).max(mon_x);
+    let max_y = (mon_bottom - p.tip_h).max(mon_y);
+    tip_x = tip_x.clamp(mon_x, max_x);
+    tip_y = tip_y.clamp(mon_y, max_y);
+    (tip_x, tip_y)
+}
+
 fn show_tip(state: &mut HostState, id: &str) {
     if state.relocate || state.drag.is_some() {
         hide_tip(state);
@@ -517,8 +578,17 @@ fn show_tip(state: &mut HostState, id: &str) {
         return;
     }
     let bgra = rgba_to_bgra(&rgba);
-    let tip_x = x;
-    let tip_y = y + h as i32 + TIP_GAP_PX;
+    let btn_w = btn.spec.face.w as i32;
+    let mon = monitor_rect_for_point(x + btn_w / 2, y + h as i32 / 2);
+    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
+        btn_x: x,
+        btn_y: y,
+        btn_w,
+        btn_h: h as i32,
+        tip_w: tw as i32,
+        tip_h: th as i32,
+        mon,
+    });
     if state.tip.is_none() {
         // SAFETY: same class and module as the buttons; destroyed in `destroy_all`.
         let hwnd = unsafe {
@@ -584,6 +654,50 @@ fn hide_tip(state: &mut HostState) {
     }
 }
 
+fn poll_hub_fan_outside_dismiss(state: &mut HostState) {
+    let btn1 = sqyre_hotkeys::left_button_down();
+    let pressed = btn1 && !state.last_hub_dismiss_btn1;
+    state.last_hub_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    let mut pt = POINT::default();
+    // SAFETY: `pt` is a valid out-param for the cursor position.
+    if unsafe { GetCursorPos(&mut pt) }.is_err() {
+        return;
+    }
+    let over_hub = state.buttons.values().any(|btn| {
+        btn.mapped
+            && btn.spec.input_enabled
+            && btn.spec.id.starts_with("__sqyre_hub")
+            && inside_rounded(
+                pt.x - btn.spec.face.x,
+                pt.y - btn.spec.face.y,
+                btn.spec.face.w,
+                btn.spec.face.h,
+                btn.spec.face.corner_radius,
+            )
+    });
+    if over_hub {
+        return;
+    }
+    note(&format!(
+        "overlay-win: hub fan dismiss (outside) at {},{}",
+        pt.x, pt.y
+    ));
+    mark_site("overlay-win:hub-dismiss=outside");
+    let name = sqyre_persist::QUICK_ACCESS_HUB_DISMISS.to_string();
+    {
+        let mut q = state.pending.lock();
+        if !q.iter().any(|n| n == &name) {
+            q.push(name);
+        }
+    }
+    if let Some(ctx) = &state.wake {
+        crate::pending_wake::wake_until_drained(ctx, &state.pending);
+    }
+}
+
 fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32) {
     if state.relocate {
         state.drag = Some(Drag {
@@ -614,6 +728,10 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
     let Some(btn) = state.buttons.get(id) else {
         return;
     };
+    if !btn.spec.input_enabled {
+        note(&format!("overlay-win: press-disabled id={id}"));
+        return;
+    }
     if btn.spec.busy {
         note(&format!("overlay-win: press-busy-ignore id={id}"));
         return;
@@ -628,9 +746,17 @@ fn on_button_down(state: &mut HostState, id: &str, client_x: i32, client_y: i32)
         "SQYRE_OVERLAY",
         &[("click", "press"), ("id", id), ("name", name.as_str())],
     );
-    state.pending.lock().push(name);
+    {
+        let mut q = state.pending.lock();
+        if name.trim() == sqyre_persist::QUICK_ACCESS_HUB_ID && q.iter().any(|n| n == &name) {
+            note("overlay-win: coalesce hub toggle (already queued)");
+            event_log("SQYRE_OVERLAY", &[("click", "coalesce"), ("id", id)]);
+        } else {
+            q.push(name);
+        }
+    }
     if let Some(ctx) = &state.wake {
-        ctx.request_repaint();
+        crate::pending_wake::wake_until_drained(ctx, &state.pending);
     }
 }
 
@@ -732,7 +858,8 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
         .lock()
         .as_deref()
         .is_some_and(|n| !n.trim().is_empty());
-    let pass = btn.spec.busy && running && !state.press_stops.load(Ordering::Relaxed);
+    let pass = !btn.spec.input_enabled
+        || (btn.spec.busy && running && !state.press_stops.load(Ordering::Relaxed));
     if pass {
         return LRESULT(HTTRANSPARENT as isize);
     }

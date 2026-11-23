@@ -910,6 +910,7 @@ impl SqyreApp {
             }
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
+                self.refresh_focused_program_hint();
                 let pending = self.pending_viewport_scale;
                 self.data_editor.open_new(
                     tab,

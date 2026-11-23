@@ -1190,14 +1190,14 @@ fn entity_preview_spec(
                 .collections
                 .get(name)
                 .ok_or(EntityPreviewError::Missing)?;
-            if col.search_area.is_empty() {
+            if col.name.is_empty() {
                 return Err(EntityPreviewError::Missing);
             }
             let sa = pdata
                 .search_areas
                 .get(res)
                 .or_else(|| pdata.search_areas.values().next())
-                .and_then(|m| m.get(&col.search_area))
+                .and_then(|m| m.get(&col.name))
                 .ok_or(EntityPreviewError::Missing)?;
             require_literal_area(sa)?;
             let rows = col.rows.max(1);
@@ -2303,15 +2303,14 @@ mod tests {
         cat.upsert_collection(
             "Game",
             sqyre_persist::ProgramCollection {
-                name: "Bag".into(),
-                search_area: "Box".into(),
+                name: "Box".into(),
                 rows: 2,
                 cols: 2,
             },
         )
         .unwrap();
         let (_, _, coords) =
-            entity_preview_spec(&cat, "Game", "Bag", PreviewKind::Collection).unwrap();
+            entity_preview_spec(&cat, "Game", "Box", PreviewKind::Collection).unwrap();
         match coords {
             PreviewCoords::SearchArea {
                 left,

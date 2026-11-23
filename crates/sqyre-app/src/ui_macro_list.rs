@@ -22,6 +22,12 @@ const UNTAGGED_KEY: &str = "";
 /// change row spacing, not tree indentation).
 const NEST_INDENT: f32 = SPACE_12;
 
+/// Absolute collapsing id so expand/collapse-all (on the search row) can target
+/// the same state as each tag header inside the scroll list.
+fn macro_list_tag_collapse_id(path: &str) -> egui::Id {
+    egui::Id::new(("macro_list_tag", path))
+}
+
 /// One node in the `/`-nested tag tree for the macrolist.
 #[derive(Debug, Default)]
 struct TagTreeNode {
@@ -176,8 +182,8 @@ struct RowNav {
 
 /// Macro indices in painted order — groups render rows only when expanded.
 ///
-/// Header ids must match `paint_tag_node` (`ui.make_persistent_id`), or the
-/// open-state lookup always misses and the order silently collapses to empty.
+/// Header ids must match `paint_tag_node` ([`macro_list_tag_collapse_id`]), or
+/// the open-state lookup always misses and the order silently collapses to empty.
 fn visible_macro_order(ui: &egui::Ui, tree: &TagTreeNode, untagged: &[usize]) -> Vec<usize> {
     let mut out = Vec::new();
     for (seg, child) in &tree.children {
@@ -190,8 +196,21 @@ fn visible_macro_order(ui: &egui::Ui, tree: &TagTreeNode, untagged: &[usize]) ->
 }
 
 fn group_is_open(ui: &egui::Ui, path: &str) -> bool {
-    let id = ui.make_persistent_id(("macro_list_tag", path));
+    let id = macro_list_tag_collapse_id(path);
     egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open())
+}
+
+/// Every tag-group path in `tree`, depth-first, for expand/collapse-all.
+fn collect_tag_collapse_paths(node: &TagTreeNode, path: &str, out: &mut Vec<String>) {
+    for (seg, child) in &node.children {
+        let child_path = if path.is_empty() {
+            seg.clone()
+        } else {
+            format!("{path}/{seg}")
+        };
+        out.push(child_path.clone());
+        collect_tag_collapse_paths(child, &child_path, out);
+    }
 }
 
 fn collect_open_group(ui: &egui::Ui, path: &str, node: &TagTreeNode, out: &mut Vec<usize>) {
@@ -302,7 +321,7 @@ fn paint_tag_node(
     label: &str,
     node: &TagTreeNode,
 ) {
-    let id = ui.make_persistent_id(("macro_list_tag", path));
+    let id = macro_list_tag_collapse_id(path);
     let open =
         egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
     if open {
@@ -577,20 +596,45 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            // New macro sits inside the search pair, after the clear eraser.
-            let search = crate::widgets::search_field(
+            // Expand/collapse-all trails the search row (picker convention);
+            // New macro stays inside the search pair after the clear eraser.
+            let (all_tree, all_untagged) = build_tag_tree(&app.workspace.macros, "");
+            let mut collapse_paths = Vec::new();
+            collect_tag_collapse_paths(&all_tree, "", &mut collapse_paths);
+            if !all_untagged.is_empty() {
+                collapse_paths.push(UNTAGGED_KEY.to_string());
+            }
+            let search = crate::widgets::fill_row(
                 ui,
-                &mut app.macro_list_filter,
-                crate::widgets::SearchFieldOpts {
-                    hint: "Search macros or tags…",
-                    focus_id: None,
-                    clearable: true,
-                    stable_id: Some(egui::Id::new("macro_list_search")),
-                    trailing: Some(crate::widgets::SearchTrailing {
-                        glyph: egui_phosphor::regular::PLUS,
-                        tip: "New macro",
-                        color: Some(crate::theme::MACRO_START),
-                    }),
+                |ui| {
+                    if collapse_paths.is_empty() {
+                        return;
+                    }
+                    let ids = collapse_paths.iter().map(|p| macro_list_tag_collapse_id(p));
+                    pickers::collapse_all_button(ui, ids, |ctx, open| {
+                        pickers::set_collapsing_openness(
+                            ctx,
+                            collapse_paths.iter().map(|p| macro_list_tag_collapse_id(p)),
+                            open,
+                        );
+                    });
+                },
+                |ui| {
+                    crate::widgets::search_field(
+                        ui,
+                        &mut app.macro_list_filter,
+                        crate::widgets::SearchFieldOpts {
+                            hint: "Search macros or tags…",
+                            focus_id: None,
+                            clearable: true,
+                            stable_id: Some(egui::Id::new("macro_list_search")),
+                            trailing: Some(crate::widgets::SearchTrailing {
+                                glyph: egui_phosphor::regular::PLUS,
+                                tip: "New macro",
+                                color: Some(crate::theme::MACRO_START),
+                            }),
+                        },
+                    )
                 },
             );
             let search_resp = search.response.on_hover_text(ht::MLIST_SEARCH_TIP);

@@ -22,110 +22,132 @@ impl DataEditor {
         if self.selected_program.is_none() || self.selected_entity.is_none() {
             return false;
         }
+        let hub = self
+            .selected_entity
+            .as_deref()
+            .is_some_and(sqyre_persist::is_quick_access_hub_id);
         let icon = overlay_icons::resolve(&self.form_overlay_icon);
         crate::widgets::pair_labeled(ui, egui_phosphor::regular::SMILEY, icon.label, |ui| {
             let mut preview_cfg = OverlayButtonConfig::new("preview", "");
             self.apply_overlay_style_to_config(&mut preview_cfg);
+            if hub {
+                preview_cfg.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+                preview_cfg.border_width = 0.0;
+                preview_cfg.border_alpha = 0;
+                preview_cfg.bg_alpha = 0;
+            }
             let style = overlay_icons::OverlayPaintStyle::from_config(&preview_cfg);
             let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style)
-                .on_hover_text(help::DE_OVERLAY_ICON);
-            if preview.clicked() {
+                .on_hover_text(if hub {
+                    help::DE_OVERLAY_HUB
+                } else {
+                    help::DE_OVERLAY_ICON
+                });
+            if !hub && preview.clicked() {
                 if let Some(id) = self.selected_entity.clone() {
                     self.overlay_icon_search.clear();
                     self.overlay_icon_picker_for = Some(id);
                 }
             }
         });
-        let mut selected = self.form_overlay_macro.clone();
-        let before = selected.clone();
-        let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-        crate::widgets::pair_labeled(ui, crate::model_icons::MACRO, "Macro", |ui| {
+        if hub {
             help::tip(
-                searchable_combo(
-                    ui,
-                    "overlay_form_macro",
-                    &mut selected,
-                    crate::widgets::SearchableComboOpts {
-                        options: &macro_names,
-                        empty_text: "(pick macro)",
-                        none_label: Some(sqyre_domain::EMPTY_NONE),
-                        width: Some(220.0),
-                        on_option_hover: None,
-                        option_icon: None,
-                        closed_icon: true,
-                        option_label: None,
-                    },
-                ),
-                help::DE_OVERLAY_MACRO,
+                ui.label(sqyre_persist::QUICK_ACCESS_HUB_LABEL),
+                help::DE_OVERLAY_HUB,
             );
-        });
-        if selected != before {
-            self.form_overlay_macro = selected;
+            ui.weak("Drag on screen to move; snaps to a screen edge.");
+        } else {
+            let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
+            let _ = crate::widgets::labeled_searchable_combo(
+                ui,
+                crate::model_icons::MACRO,
+                "Macro",
+                help::DE_OVERLAY_MACRO,
+                "overlay_form_macro",
+                &mut self.form_overlay_macro,
+                crate::widgets::SearchableComboOpts {
+                    options: &macro_names,
+                    empty_text: "(pick macro)",
+                    none_label: Some(sqyre_domain::EMPTY_NONE),
+                    width: Some(220.0),
+                    on_option_hover: None,
+                    option_icon: None,
+                    closed_icon: true,
+                    option_label: None,
+                },
+                None,
+            );
         }
-        {
-            use crate::pickers::{ActivePicker, CoordKind};
+        if !hub {
+            use crate::pickers::CoordKind;
             use sqyre_domain::CoordinateRef;
-            let point = CoordinateRef(self.form_overlay_point.clone());
+            let point_val = self.form_overlay_point.clone();
+            let point = CoordinateRef(point_val.clone());
             let display = if point.is_empty() {
                 "(unset — use X/Y below)"
             } else {
                 point.as_str()
             };
-            crate::widgets::pair_labeled(ui, crate::model_icons::POINT, "Point", |ui| {
-                if let Some(prog) = point.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                }
-                let resp = ui.monospace(display);
-                if !point.is_empty() {
-                    previews.show_for_coordinate_ref(
-                        ui,
-                        &resp,
-                        catalog,
-                        &point,
-                        PreviewKind::Point,
-                        help::DE_OVERLAY_POINT,
-                    );
-                } else {
-                    help::tip(resp, help::DE_OVERLAY_POINT);
-                }
-                if crate::widgets::icon_button(ui, crate::model_icons::POINT, "Pick point…")
-                    .clicked()
-                {
-                    self.window_picker = ActivePicker::Coord {
-                        kind: CoordKind::Point,
-                        search: String::new(),
-                        value: self.form_overlay_point.clone(),
-                        cell_pick: None,
-                        scroll_to_selection: true,
-                    };
-                }
-                if !self.form_overlay_point.is_empty()
-                    && crate::widgets::clear_icon_button(
-                        ui,
-                        "Clear — use manual X/Y instead of a catalog point",
-                    )
-                    .clicked()
-                {
-                    self.form_overlay_point.clear();
-                }
-            });
+            let clear_tip = (!point_val.is_empty())
+                .then_some("Clear — use manual X/Y instead of a catalog point");
+            if pickers::coord_ref_field(
+                ui,
+                catalog,
+                icons,
+                &mut self.window_picker,
+                CoordKind::Point,
+                &point_val,
+                pickers::CoordRefFieldOpts {
+                    icon: crate::model_icons::POINT,
+                    pick_tip: "Pick point…",
+                    display,
+                    program: point.program(),
+                    color: None,
+                    truncate: false,
+                    clear_tip,
+                },
+                |ui, resp| {
+                    if !point.is_empty() {
+                        previews.show_for_coordinate_ref(
+                            ui,
+                            resp,
+                            catalog,
+                            &point,
+                            PreviewKind::Point,
+                            help::DE_OVERLAY_POINT,
+                        );
+                    } else {
+                        help::tip(resp.clone(), help::DE_OVERLAY_POINT);
+                    }
+                },
+            ) {
+                self.form_overlay_point.clear();
+            }
         }
-        let point_set = !self.form_overlay_point.trim().is_empty();
+        let point_set = !hub && !self.form_overlay_point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_HORIZONTAL,
                     "X",
-                    help::DE_OVERLAY_X,
+                    if hub {
+                        help::DE_OVERLAY_HUB
+                    } else {
+                        help::DE_OVERLAY_X
+                    },
                     &mut self.form_overlay_x,
                     |d| d.speed(1.0).suffix(" px"),
                 );
                 crate::widgets::drag_field(
                     ui,
-                    egui_phosphor::regular::CROSSHAIR,
+                    egui_phosphor::regular::ARROWS_VERTICAL,
                     "Y",
-                    help::DE_OVERLAY_Y,
+                    if hub {
+                        help::DE_OVERLAY_HUB
+                    } else {
+                        help::DE_OVERLAY_Y
+                    },
                     &mut self.form_overlay_y,
                     |d| d.speed(1.0).suffix(" px"),
                 );
@@ -138,6 +160,23 @@ impl DataEditor {
             loc.y = self.form_overlay_y;
             let (rx, ry) = loc.resolved_position(catalog);
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
+        }
+        if hub {
+            crate::widgets::drag_field(
+                ui,
+                egui_phosphor::regular::RULER,
+                "Size",
+                help::DE_OVERLAY_SIZE,
+                &mut self.form_overlay_size,
+                |d| {
+                    d.speed(1)
+                        .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
+                },
+            );
+            ui.horizontal(|ui| {
+                color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
+            });
+            return false;
         }
         crate::widgets::collapsible_section(
             ui,
@@ -152,83 +191,79 @@ impl DataEditor {
                 });
                 ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
                     {
-                        use crate::pickers::{ActivePicker, CoordKind};
-                        let area = CoordinateRef(self.form_overlay_gate_search_area.clone());
+                        use crate::pickers::CoordKind;
+                        let area_val = self.form_overlay_gate_search_area.clone();
+                        let area = CoordinateRef(area_val.clone());
                         let display = if area.is_empty() {
                             "(pick search area)"
                         } else {
                             area.as_str()
                         };
-                        crate::widgets::pair_labeled(
+                        let clear_tip = (!area_val.is_empty()).then_some("Clear search area");
+                        if pickers::coord_ref_field(
                             ui,
-                            crate::model_icons::SEARCH_AREA,
-                            "Search area",
-                            |ui| {
-                                if let Some(prog) = area.program() {
-                                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                                }
-                                let resp = ui.monospace(display);
+                            catalog,
+                            icons,
+                            &mut self.window_picker,
+                            CoordKind::SearchArea,
+                            &area_val,
+                            pickers::CoordRefFieldOpts {
+                                icon: crate::model_icons::SEARCH_AREA,
+                                pick_tip: "Pick search area…",
+                                display,
+                                program: area.program(),
+                                color: None,
+                                truncate: false,
+                                clear_tip,
+                            },
+                            |ui, resp| {
                                 if !area.is_empty() {
                                     previews.show_for_coordinate_ref(
                                         ui,
-                                        &resp,
+                                        resp,
                                         catalog,
                                         &area,
                                         PreviewKind::SearchArea,
                                         help::DE_OVERLAY_GATE_AREA,
                                     );
                                 } else {
-                                    help::tip(resp, help::DE_OVERLAY_GATE_AREA);
-                                }
-                                if crate::widgets::icon_button(
-                                    ui,
-                                    crate::model_icons::SEARCH_AREA,
-                                    "Pick search area…",
-                                )
-                                .clicked()
-                                {
-                                    self.window_picker = ActivePicker::Coord {
-                                        kind: CoordKind::SearchArea,
-                                        search: String::new(),
-                                        value: self.form_overlay_gate_search_area.clone(),
-                                        cell_pick: None,
-                                        scroll_to_selection: true,
-                                    };
-                                }
-                                if !self.form_overlay_gate_search_area.is_empty()
-                                    && crate::widgets::clear_icon_button(ui, "Clear search area")
-                                        .clicked()
-                                {
-                                    self.form_overlay_gate_search_area.clear();
+                                    help::tip(resp.clone(), help::DE_OVERLAY_GATE_AREA);
                                 }
                             },
-                        );
-                    }
-                    crate::widgets::pair_labeled(ui, crate::model_icons::ITEM, "Items", |ui| {
-                        help::tip(
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "({})",
-                                    self.form_overlay_gate_targets.len()
-                                ))
-                                .weak(),
-                            ),
-                            help::DE_OVERLAY_GATE_ITEMS,
-                        );
-                        if crate::widgets::icon_button(
-                            ui,
-                            crate::model_icons::ITEM,
-                            "Add / edit gate items",
-                        )
-                        .clicked()
-                        {
-                            self.window_picker = pickers::ActivePicker::Items {
-                                search: String::new(),
-                                staged: self.form_overlay_gate_targets.clone(),
-                                staged_tags: None,
-                            };
+                        ) {
+                            self.form_overlay_gate_search_area.clear();
                         }
-                    });
+                    }
+                    crate::widgets::pair_leading(
+                        ui,
+                        |ui| {
+                            if crate::widgets::entity_pick_button(
+                                ui,
+                                crate::model_icons::ITEM,
+                                "Add / edit gate items",
+                            )
+                            .clicked()
+                            {
+                                self.window_picker = pickers::ActivePicker::Items {
+                                    search: String::new(),
+                                    staged: self.form_overlay_gate_targets.clone(),
+                                    staged_tags: None,
+                                };
+                            }
+                        },
+                        |ui| {
+                            help::tip(
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "({})",
+                                        self.form_overlay_gate_targets.len()
+                                    ))
+                                    .weak(),
+                                ),
+                                help::DE_OVERLAY_GATE_ITEMS,
+                            );
+                        },
+                    );
                     if self.form_overlay_gate_targets.is_empty() {
                         ui.label(sqyre_domain::EMPTY_NONE);
                     } else {
@@ -254,54 +289,47 @@ impl DataEditor {
                             self.form_overlay_gate_targets.remove(i);
                         }
                     }
-                    match_settings::paint_match_settings(
+                    match_settings::paint_match_settings_advanced(
                         ui,
                         &mut self.form_overlay_gate_tolerance,
                         &mut self.form_overlay_gate_blur,
                         &mut self.form_overlay_gate_match_method,
-                        false,
-                    );
-                    crate::widgets::advanced_section(ui, "de_overlay_gate_adv", |ui| {
-                        match_settings::paint_match_method(
-                            ui,
-                            &mut self.form_overlay_gate_match_method,
-                        );
-                        crate::widgets::pair_labeled(
-                            ui,
-                            egui_phosphor::regular::TIMER,
-                            "Interval",
-                            |ui| {
-                                help::tip(
-                                    ui.add(
-                                        crate::widgets::num_entry(
-                                            &mut self.form_overlay_gate_interval_ms,
-                                        )
-                                        .speed(50)
-                                        .range(
-                                            MIN_OVERLAY_GATE_INTERVAL_MS
-                                                ..=MAX_OVERLAY_GATE_INTERVAL_MS,
-                                        )
-                                        .suffix(" ms"),
-                                    ),
+                        |ui, method| {
+                            crate::widgets::advanced_section(ui, "de_overlay_gate_adv", |ui| {
+                                match_settings::paint_match_method(ui, method);
+                                crate::widgets::drag_field(
+                                    ui,
+                                    egui_phosphor::regular::TIMER,
+                                    "Interval",
                                     help::DE_OVERLAY_GATE_INTERVAL,
+                                    &mut self.form_overlay_gate_interval_ms,
+                                    |d| {
+                                        d.speed(50)
+                                            .range(
+                                                MIN_OVERLAY_GATE_INTERVAL_MS
+                                                    ..=MAX_OVERLAY_GATE_INTERVAL_MS,
+                                            )
+                                            .suffix(" ms")
+                                    },
                                 );
-                            },
-                        );
-                    });
+                            });
+                        },
+                    );
                 });
             },
         );
         // Size is common-path — keep it outside collapsed Appearance.
-        crate::widgets::pair_labeled(ui, egui_phosphor::regular::RULER, "Size", |ui| {
-            help::tip(
-                ui.add(
-                    crate::widgets::num_entry(&mut self.form_overlay_size)
-                        .speed(1)
-                        .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
-                ),
-                help::DE_OVERLAY_SIZE,
-            );
-        });
+        crate::widgets::drag_field(
+            ui,
+            egui_phosphor::regular::RULER,
+            "Size",
+            help::DE_OVERLAY_SIZE,
+            &mut self.form_overlay_size,
+            |d| {
+                d.speed(1)
+                    .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
+            },
+        );
         crate::widgets::collapsible_section(ui, "Appearance", "de_overlay_appearance", |ui| {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(

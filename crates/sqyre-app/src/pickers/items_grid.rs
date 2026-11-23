@@ -38,9 +38,9 @@ pub fn set_collapsing_openness(
     }
 }
 
-/// Expand/collapse-all toggle for program-header lists — one button matching
-/// the macro tree / entity list convention: Expand all while any group is
-/// closed, Collapse all once every group is open.
+/// Expand/collapse-all toggle for grouped model lists — trails the search row
+/// (pickers, Data Editor, macro list). Expand all while any group is closed;
+/// Collapse all once every group is open.
 pub fn collapse_all_button(
     ui: &mut egui::Ui,
     ids: impl IntoIterator<Item = egui::Id>,
@@ -59,7 +59,8 @@ pub fn collapse_all_button(
         )
     };
     if crate::widgets::icon_button(ui, icon, tip).clicked() {
-        on_set(ui.ctx(), !any_collapsed);
+        // Match the macro-tree toolbar: expand when any group is closed.
+        on_set(ui.ctx(), any_collapsed);
     }
 }
 
@@ -234,14 +235,8 @@ pub fn paint_items_icon_grid(
         let prog_selected = selected_program == Some(prog.as_str());
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = items_icon_grid_collapse_id(prog);
-        let mut state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
         let want_scroll = scroll_to_selected_program.as_ref().is_some_and(|s| **s) && prog_selected;
-        if want_scroll && !state.is_open() {
-            state.set_open(true);
-            state.store(ui.ctx());
-        }
-        state
+        crate::widgets::collapsing_state(ui, id, want_scroll)
             .show_header(ui, |ui| {
                 let resp = crate::icon_cache::paint_program_label(
                     ui,
@@ -314,6 +309,8 @@ pub(crate) fn sort_by_display_name(rows: &mut [(String, String)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui;
+    use egui_kittest::kittest::Queryable;
     use sqyre_persist::{ProgramData, ProgramItem};
 
     fn pdata() -> ProgramData {
@@ -350,5 +347,38 @@ mod tests {
         assert_eq!(by_name, vec!["Game~sword"]);
         let by_tag = program_item_targets(&data, "Game", "armor", false, sort, &[]);
         assert_eq!(by_tag, vec!["Game~shield"]);
+    }
+
+    fn group_open(ctx: &egui::Context, id: egui::Id) -> bool {
+        egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false).is_open()
+    }
+
+    /// Regression: the toggle used to pass `!any_collapsed`, so "Expand all"
+    /// only collapsed and the tip/icon never flipped.
+    #[test]
+    fn collapse_all_button_expands_then_collapses() {
+        let ids = [egui::Id::new("collapse_a"), egui::Id::new("collapse_b")];
+        let mut harness = egui_kittest::Harness::new_ui(|ui| {
+            collapse_all_button(ui, ids, |ctx, open| {
+                set_collapsing_openness(ctx, ids, open);
+            });
+        });
+        harness.run();
+        assert!(ids.iter().all(|id| !group_open(&harness.ctx, *id)));
+        harness.get_by_label("Expand all").click();
+        harness.run();
+        assert!(
+            ids.iter().all(|id| group_open(&harness.ctx, *id)),
+            "Expand all should open every group"
+        );
+        harness.get_by_label("Collapse all").click();
+        harness.run();
+        assert!(
+            ids.iter().all(|id| !group_open(&harness.ctx, *id)),
+            "Collapse all should close every group"
+        );
+        // Tip (and therefore glyph) must flip with openness.
+        assert!(harness.query_by_label("Expand all").is_some());
+        assert!(harness.query_by_label("Collapse all").is_none());
     }
 }

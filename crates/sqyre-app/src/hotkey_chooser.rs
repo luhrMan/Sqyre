@@ -9,9 +9,14 @@ use std::sync::atomic::Ordering;
 const CHOOSER_ID: &str = "sqyre_hotkey_chooser";
 const MENU_OFFSET: Vec2 = Vec2::new(crate::theme::SPACE_12, crate::theme::SPACE_12);
 const ROW_H: f32 = 28.0;
-const PAD: f32 = crate::theme::SPACE_8;
 const MIN_W: f32 = 180.0;
 const MAX_W: f32 = 360.0;
+
+/// Match [`crate::theme::popup_frame`] padding when sizing the chooser viewport.
+fn chooser_pad(ctx: &egui::Context) -> egui::Vec2 {
+    let m = crate::theme::chrome_inner_margin_ctx(ctx);
+    egui::vec2(f32::from(m.left), f32::from(m.top))
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct HotkeyChooserState {
@@ -147,7 +152,8 @@ impl SqyreApp {
         let chord_label = chord.0.replace('+', " + ");
         let row_count = names.len().max(1) as f32;
         let title_h = 22.0;
-        let height = PAD * 2.0 + title_h + row_count * ROW_H + 4.0;
+        let pad = chooser_pad(ctx);
+        let height = pad.y * 2.0 + title_h + row_count * ROW_H + crate::theme::SPACE_4;
         let width = names
             .iter()
             .chain(std::iter::once(&chord_label))
@@ -155,7 +161,7 @@ impl SqyreApp {
             .max()
             .unwrap_or(12) as f32
             * 8.0
-            + PAD * 2.0;
+            + pad.x * 2.0;
         let width = width.clamp(MIN_W, MAX_W);
         let anchor = clamp_to_monitor(ctx, cursor_screen_points(ctx), width, height);
 
@@ -313,7 +319,8 @@ impl SqyreApp {
 
         let row_count = state.names.len().max(1) as f32;
         let title_h = 22.0;
-        let height = PAD * 2.0 + title_h + row_count * ROW_H + 4.0;
+        let pad = chooser_pad(ctx);
+        let height = pad.y * 2.0 + title_h + row_count * ROW_H + crate::theme::SPACE_4;
         let width = state
             .names
             .iter()
@@ -322,7 +329,7 @@ impl SqyreApp {
             .max()
             .unwrap_or(12) as f32
             * 8.0
-            + PAD * 2.0;
+            + pad.x * 2.0;
         let width = width.clamp(MIN_W, MAX_W);
 
         let id = ViewportId::from_hash_of(CHOOSER_ID);

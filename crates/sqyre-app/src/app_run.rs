@@ -62,6 +62,15 @@ impl SqyreApp {
         let (groups, direct) =
             crate::hotkey_chooser::partition_pending(&pending, &self.workspace.macros);
         for name in direct {
+            if self.dispatch_quick_access_token(&name, ctx) {
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                sqyre_capture::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
+                // Push hub fan map/unmap to the overlay host in this same drain —
+                // don't wait for the later paint-path sync (lags under game focus).
+                #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+                crate::ui_overlays::sync_macro_overlay(self, ctx);
+                continue;
+            }
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             sqyre_capture::event_log(
                 "SQYRE_OVERLAY",
@@ -409,7 +418,6 @@ mod native_run {
             action_log.clear();
             runtime_vars.clear();
             highlighter.clear_all();
-            click_fx.clear();
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = macros
                     .iter()

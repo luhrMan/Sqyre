@@ -68,10 +68,11 @@ impl DataEditor {
             self.set_err("Select an overlay button first.");
             return;
         };
+        let hub = sqyre_persist::is_quick_access_hub_id(&id);
         let Some(prog) = self.selected_program_or_err() else {
             return;
         };
-        if self.form_overlay_macro.trim().is_empty() {
+        if !hub && self.form_overlay_macro.trim().is_empty() {
             self.set_err("Pick a macro.");
             return;
         }
@@ -79,16 +80,36 @@ impl DataEditor {
             self.set_err("Overlay button not found.");
             return;
         };
-        btn.program = prog;
-        btn.macro_name = self.form_overlay_macro.trim().to_string();
-        btn.enabled = self.form_overlay_enabled;
-        btn.icon = self.form_overlay_icon.clone();
-        btn.point = self.form_overlay_point.trim().to_string();
-        btn.x = self.form_overlay_x;
-        btn.y = self.form_overlay_y;
-        btn.size = self.form_overlay_size;
-        btn.visibility_gate = self.overlay_gate_from_form();
-        self.apply_overlay_style_to_config(btn);
+        if hub {
+            btn.program = sqyre_domain::GENERAL_PROGRAM.into();
+            btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
+            btn.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+            btn.point.clear();
+            btn.enabled = self.form_overlay_enabled;
+            btn.x = self.form_overlay_x;
+            btn.y = self.form_overlay_y;
+            btn.size = self.form_overlay_size;
+            btn.visibility_gate = Default::default();
+            self.apply_overlay_style_to_config(btn);
+            btn.border_width = 0.0;
+            btn.border_alpha = 0;
+            btn.bg_alpha = 0;
+            btn.corner_radius = (btn.size * 0.5).clamp(
+                sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
+                sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
+            );
+        } else {
+            btn.program = prog;
+            btn.macro_name = self.form_overlay_macro.trim().to_string();
+            btn.enabled = self.form_overlay_enabled;
+            btn.icon = self.form_overlay_icon.clone();
+            btn.point = self.form_overlay_point.trim().to_string();
+            btn.x = self.form_overlay_x;
+            btn.y = self.form_overlay_y;
+            btn.size = self.form_overlay_size;
+            btn.visibility_gate = self.overlay_gate_from_form();
+            self.apply_overlay_style_to_config(btn);
+        }
         if self.persist_overlay_settings(settings) {
             self.set_ok("Saved overlay button.");
         }
@@ -103,6 +124,10 @@ impl DataEditor {
         let Some(button_id) = self.overlay_icon_picker_for.clone() else {
             return;
         };
+        if sqyre_persist::is_quick_access_hub_id(&button_id) {
+            self.overlay_icon_picker_for = None;
+            return;
+        }
         if self.selected_entity.as_deref() != Some(button_id.as_str()) {
             self.overlay_icon_picker_for = None;
             return;

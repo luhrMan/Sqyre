@@ -235,18 +235,6 @@ pub fn paint_variable_name_pill(
     })
 }
 
-/// Tree-row summary pill: binding names get name chips; values get `${}` segmentation.
-pub fn paint_summary_pill(
-    ui: &mut egui::Ui,
-    action_type: &str,
-    pill: &SummaryPill,
-    known: &KnownVariableNames,
-    is_dark: bool,
-) -> egui::Response {
-    let budget = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
-    paint_summary_pill_limited(ui, action_type, pill, known, is_dark, budget, true)
-}
-
 pub(crate) fn paint_summary_pill_limited(
     ui: &mut egui::Ui,
     action_type: &str,
@@ -286,16 +274,26 @@ pub(crate) fn paint_summary_pill_tip(
     known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
+    // Tip summary rows wrap whole `wrap_unit`s. Never wrap a Label of raw
+    // `${ref} - n` inside the pastel Frame: mid-row leftover width stacked the
+    // expression while `wrap_unit` treated that tall narrow size as fitting.
+    // `${}` / mid-row pills paint at natural segmented width so the unit moves
+    // to the next row. Long plain Type text that already owns the tip column
+    // may still wrap inside the frame (AccessKit keeps the full string).
     let full = summary_pill_text(pill);
     let font = egui::TextStyle::Small.resolve(ui.style());
     let fill = summary_fill(action_type, pill, is_dark);
     let full_width = ui
         .painter()
-        .layout_no_wrap(full.clone(), font.clone(), Color32::WHITE)
+        .layout_no_wrap(full.clone(), font, Color32::WHITE)
         .size()
         .x
         + OUTER_MARGIN_X as f32 * 2.0;
-    if full_width > ui.available_width() {
+    let at_row_start = ui.cursor().min.x <= ui.max_rect().left() + 0.5;
+    if full_width > ui.available_width() && at_row_start && !sqyre_varref::contains(&pill.text) {
+        // Long plain Type text: wrap inside the tip column (AccessKit exposes
+        // the full string for hover disclosure tests). `${}` expressions never
+        // take this path — they stay single-line segmented chips.
         let fg = contrast_fg(fill);
         return egui::Frame::new()
             .fill(fill)
@@ -310,7 +308,10 @@ pub(crate) fn paint_summary_pill_tip(
             })
             .response;
     }
-    paint_summary_pill(ui, action_type, pill, known, is_dark)
+    match &pill.prefix {
+        Some(label) => paint_variable_name_pill(ui, label, &pill.text, action_type, known, is_dark),
+        None => paint_value_pill(ui, &pill.text, action_type, known, is_dark),
+    }
 }
 
 fn summary_pill_text(pill: &SummaryPill) -> String {
@@ -1001,7 +1002,7 @@ mod tests {
                 text: "${step}".into(),
                 prefix: None,
             };
-            paint_summary_pill(ui, "setvariable", &pill, &known, true);
+            paint_summary_pill_tip(ui, "setvariable", &pill, &known, true);
         })
         .drop_without_applying_deltas();
     }
@@ -1066,5 +1067,75 @@ mod tests {
             });
         })
         .drop_without_applying_deltas();
+    }
+
+    /// Tip summary rows wrap whole units. A mid-row leftover narrower than
+    /// `${foundY} - 10` must keep the expression pill single-line (and move it
+    /// to the next row) — not wrap raw `${}` text inside the pastel chrome.
+    #[test]
+    fn tip_expression_pills_stay_single_line_on_wrap_row() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["foundY"]);
+        let expr = SummaryPill {
+            text: "${foundY} - 10".into(),
+            prefix: None,
+        };
+        let tip_w = 200.0_f32;
+        let mut ref_h = 0.0_f32;
+        let mut tip_h = 0.0_f32;
+        let mut spacer_max_y = 0.0_f32;
+        let mut expr_min_y = 0.0_f32;
+        for frame in 0..6 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                // Unconstrained reference: segmented expression pill height.
+                ref_h = paint_value_pill(ui, &expr.text, "setvariable", &known, true)
+                    .rect
+                    .height();
+                ui.set_width(tip_w);
+                ui.set_max_width(tip_w);
+                crate::widgets::wrapped_row(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
+                    let band_h = summary_pill_height(ui);
+                    // Leave only a narrow leftover so the expression cannot fit
+                    // mid-row (the old wrapping-Label overflow path).
+                    let prev_h = ui.spacing().interact_size.y;
+                    ui.spacing_mut().interact_size.y = band_h;
+                    let spacer = crate::widgets::wrap_unit(ui, |ui| {
+                        ui.spacing_mut().interact_size.y = prev_h;
+                        ui.allocate_exact_size(egui::vec2(tip_w - 36.0, band_h), Sense::hover())
+                            .1
+                    })
+                    .inner;
+                    spacer_max_y = spacer.rect.max.y;
+                    let painted = crate::widgets::wrap_unit(ui, |ui| {
+                        ui.spacing_mut().interact_size.y = prev_h;
+                        paint_summary_pill_tip(ui, "setvariable", &expr, &known, true)
+                    })
+                    .inner;
+                    ui.spacing_mut().interact_size.y = prev_h;
+                    tip_h = painted.rect.height();
+                    expr_min_y = painted.rect.min.y;
+                });
+            });
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            (tip_h - ref_h).abs() < 0.5,
+            "tip expression pill stacked inside chrome: ref {ref_h:.1} vs tip {tip_h:.1}"
+        );
+        assert!(
+            expr_min_y >= spacer_max_y - 1.0,
+            "expression pill stayed on the leftover slot instead of wrapping to the next row \
+             (spacer max y {spacer_max_y:.1}, expr min y {expr_min_y:.1})"
+        );
     }
 }

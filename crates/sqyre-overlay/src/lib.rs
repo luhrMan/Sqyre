@@ -32,10 +32,14 @@ pub struct ButtonFace {
     pub icon_glyph: char,
     pub icon: [u8; 4],
     pub icon_hover: [u8; 4],
+    /// Paint the static Sqyre brand S instead of [`Self::icon_glyph`].
+    pub brand: bool,
 }
 
 #[cfg(feature = "runtime")]
 mod macro_overlay;
+#[cfg(all(feature = "runtime", any(target_os = "linux", target_os = "windows")))]
+mod pending_wake;
 
 #[cfg(all(feature = "runtime", target_os = "android"))]
 mod android_buttons;
