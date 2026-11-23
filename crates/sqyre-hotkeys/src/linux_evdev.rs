@@ -245,6 +245,27 @@ fn evdev_key(key: &evdev_rs::enums::EV_KEY) -> Option<Key> {
         EV_KEY::KEY_DELETE => Key::Delete,
         EV_KEY::KEY_LEFTMETA => Key::MetaLeft,
         EV_KEY::KEY_RIGHTMETA => Key::MetaRight,
+        EV_KEY::KEY_NUMLOCK => Key::NumLock,
+        EV_KEY::KEY_SCROLLLOCK => Key::ScrollLock,
+        EV_KEY::KEY_PAUSE => Key::Pause,
+        EV_KEY::KEY_SYSRQ => Key::PrintScreen,
+        EV_KEY::KEY_102ND => Key::IntlBackslash,
+        EV_KEY::KEY_KP0 => Key::Kp0,
+        EV_KEY::KEY_KP1 => Key::Kp1,
+        EV_KEY::KEY_KP2 => Key::Kp2,
+        EV_KEY::KEY_KP3 => Key::Kp3,
+        EV_KEY::KEY_KP4 => Key::Kp4,
+        EV_KEY::KEY_KP5 => Key::Kp5,
+        EV_KEY::KEY_KP6 => Key::Kp6,
+        EV_KEY::KEY_KP7 => Key::Kp7,
+        EV_KEY::KEY_KP8 => Key::Kp8,
+        EV_KEY::KEY_KP9 => Key::Kp9,
+        EV_KEY::KEY_KPENTER => Key::KpReturn,
+        EV_KEY::KEY_KPPLUS => Key::KpPlus,
+        EV_KEY::KEY_KPMINUS => Key::KpMinus,
+        EV_KEY::KEY_KPASTERISK => Key::KpMultiply,
+        EV_KEY::KEY_KPSLASH => Key::KpDivide,
+        EV_KEY::KEY_KPDOT => Key::KpDelete,
         _ => return None,
     })
 }
@@ -270,5 +291,17 @@ mod tests {
             convert_event(&click, &mut 0.0, &mut 0.0),
             Some(EventType::ButtonPress(Button::Left))
         ));
+    }
+
+    #[test]
+    fn maps_operator_and_lock_keys() {
+        use evdev_rs::enums::EV_KEY;
+        assert_eq!(evdev_key(&EV_KEY::KEY_MINUS), Some(Key::Minus));
+        assert_eq!(evdev_key(&EV_KEY::KEY_EQUAL), Some(Key::Equal));
+        assert_eq!(evdev_key(&EV_KEY::KEY_LEFTBRACE), Some(Key::LeftBracket));
+        assert_eq!(evdev_key(&EV_KEY::KEY_GRAVE), Some(Key::BackQuote));
+        assert_eq!(evdev_key(&EV_KEY::KEY_CAPSLOCK), Some(Key::CapsLock));
+        assert_eq!(evdev_key(&EV_KEY::KEY_NUMLOCK), Some(Key::NumLock));
+        assert_eq!(evdev_key(&EV_KEY::KEY_KPPLUS), Some(Key::KpPlus));
     }
 }

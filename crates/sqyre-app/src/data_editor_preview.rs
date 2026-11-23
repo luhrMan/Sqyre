@@ -5,7 +5,7 @@ use crate::var_pills;
 use crate::widgets::elide::single_line_galley;
 use eframe::egui;
 use sqyre_domain::{KnownVariableNames, ScalarValue};
-use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
+use sqyre_persist::{CatalogView, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
 
 /// Screen-record arm drawn in the preview floater row. `enabled=false` while a
@@ -407,7 +407,7 @@ pub(crate) fn search_area_pixel_size(sa: &ProgramSearchArea) -> Option<(i32, i32
 }
 
 pub(crate) fn catalog_search_area_pixel_size(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     name: &str,
 ) -> Option<(i32, i32)> {
@@ -753,7 +753,7 @@ pub(crate) fn paint_grid_overlay_painter(
 
 /// Per-monitor `(x, y, w, h)` in virtual-desktop coordinates for the atlas plane.
 /// Catalog layout first so monitor boxes match [`sqyre_persist::ProgramCatalog::resolve_search_area`].
-fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+fn atlas_monitor_rects(catalog: sqyre_persist::CatalogView<'_>) -> Vec<(i32, i32, i32, i32)> {
     let cached = catalog.monitor_rects();
     if !cached.is_empty() {
         return cached.to_vec();
@@ -845,7 +845,7 @@ fn atlas_plane_desktop_bounds(
 pub(crate) fn paint_zoomable_atlas_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
-    catalog: &sqyre_persist::ProgramCatalog,
+    catalog: sqyre_persist::CatalogView<'_>,
     program: &str,
     members: &[String],
     view: &mut ImageViewTransform,

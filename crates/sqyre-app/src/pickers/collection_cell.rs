@@ -5,7 +5,7 @@ use crate::icon_cache::IconCache;
 use crate::image_view::{self};
 use crate::theme::{cell_selection_fill, cell_selection_stroke};
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 
 fn fit_panel(w: f32, h: f32) -> Vec2 {
     crate::data_editor_preview::fit_panel(w, h)
@@ -15,7 +15,7 @@ fn fit_panel(w: f32, h: f32) -> Vec2 {
 /// Wheel zooms at cursor; when zoomed, drag pans. `back` is set by ◂ Back.
 pub fn paint_collection_cell_picker(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     pick: &mut CollectionCellPick,
     back: &mut bool,

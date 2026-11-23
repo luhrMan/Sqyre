@@ -29,7 +29,7 @@ pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filters: &[String]) -> bool {
 impl SqyreApp {
     /// Provide egui context so background hotkey fires can wake an idle UI frame.
     pub(crate) fn bind_hotkey_repaint(&self, ctx: egui::Context) {
-        *self.hotkey_repaint.lock() = Some(ctx);
+        *self.hotkey.hotkey_repaint.lock() = Some(ctx);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

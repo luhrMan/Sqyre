@@ -6,6 +6,7 @@ use crate::theme;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
 
@@ -207,7 +208,7 @@ fn paint_list_toggle(app: &mut SqyreApp, ui: &mut egui::Ui) {
 fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     #[cfg(feature = "native-runtime")]
-    let waking = sqyre_capture::pipewire_stream_waking();
+    let waking = sqyre_ports::pipewire_stream_waking();
     #[cfg(not(feature = "native-runtime"))]
     let waking = false;
     let busy = running || waking;
@@ -323,7 +324,7 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
     let program_icons = app
         .assets
         .icon_cache
-        .program_name_icons(ui.ctx(), &app.workspace.catalog);
+        .program_name_icons(ui.ctx(), CatalogView::from(&app.workspace.catalog));
     let m = &mut app.workspace.macros[idx];
     let laid = app.workspace.macro_meta.paint_name_and_tags(
         ui,
@@ -388,7 +389,7 @@ fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
         });
         if pressed || released {
             let layer = pos.and_then(|p| ui.ctx().layer_id_at(p));
-            sqyre_capture::event_log(
+            sqyre_ports::event_log(
                 "SQYRE_STOPBTN",
                 &[
                     ("phase", if pressed { "press" } else { "release" }),
@@ -432,7 +433,7 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     format!("v{version} installed — restart to finish"),
                 );
                 if ui.small_button("Restart").clicked() {
-                    crate::update::restart_app(&mut app.instance_lock);
+                    crate::update::restart_app(&mut app.lifecycle.instance_lock);
                 }
             });
         }
@@ -629,7 +630,7 @@ pub fn action_toolbar(
             .clicked()
             && app.macro_record.open(
                 &app.run_session.macro_hotkeys,
-                &app.macro_record_bridge,
+                &app.hotkey.macro_record_bridge,
                 &mut app.workspace.catalog,
             )
         {

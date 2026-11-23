@@ -15,7 +15,8 @@ use sqyre_android::{
     bridge, clear_overlay_input_handlers, frames, overlay_input, request_overlay_run, request_stop,
     AndroidError, Projection,
 };
-use sqyre_capture::{get_active_window, note};
+use sqyre_capture::get_active_window;
+use sqyre_ports::note;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -195,7 +196,7 @@ fn install_input_handlers(
             return;
         }
         note(&format!("overlay-android: click id={id} macro={name}"));
-        sqyre_capture::event_log(
+        sqyre_ports::event_log(
             "SQYRE_OVERLAY",
             &[("click", "press"), ("id", id), ("name", name.as_str())],
         );

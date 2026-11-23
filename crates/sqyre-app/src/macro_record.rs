@@ -17,7 +17,7 @@ use sqyre_domain::{
 use sqyre_hotkeys::{
     MacroHotkeyBridge, MacroRecordBridge, MacroRecordEvent, RecordMouseButton, ScreenClickBridge,
 };
-use sqyre_persist::{ProgramCatalog, ProgramPoint};
+use sqyre_persist::{CatalogView, ProgramCatalog, ProgramPoint};
 use sqyre_ui_model::SummaryPill;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -407,7 +407,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                         let interaction = tree_chrome::paint_action_row(
                             ui,
                             action,
-                            catalog,
+                            CatalogView::new(catalog),
                             icons,
                             &known_vars,
                             is_dark,
@@ -481,7 +481,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
     {
         let mut tip_ui = TipUiCtx {
             paint: CatalogPaint {
-                catalog,
+                catalog: CatalogView::new(catalog),
                 icons,
                 previews,
             },

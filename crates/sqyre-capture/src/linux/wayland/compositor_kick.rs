@@ -9,8 +9,7 @@
 //!    Mapping steals activation on GNOME — callers must refocus the prior
 //!    window after `release_stage` before injecting EIS clicks.
 
-use crate::{cap_log, mark_site};
-use sqyre_ports::DesktopRect;
+use sqyre_ports::{cap_log, mark_site, DesktopRect};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -172,7 +171,7 @@ impl Drop for DamageKick {
         if let Some(t) = self.thread.take() {
             // A in-flight compositor round-trip can block join for seconds; on
             // process exit abandon the kick thread (fds reclaimed on exit).
-            if crate::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 cap_log(
                     "PORTAL",
                     "kick-drop",

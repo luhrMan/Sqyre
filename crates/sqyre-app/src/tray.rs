@@ -125,7 +125,7 @@ impl SystemTray {
             self.start_wake_poller(ctx);
         }
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-        sqyre_capture::event_log(
+        sqyre_ports::event_log(
             "SQYRE_TRAY",
             &[("visible", if show { "yes" } else { "no" }), ("via", "hub")],
         );
@@ -150,7 +150,7 @@ impl SystemTray {
                         self.start_wake_poller(ctx);
                     }
                     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-                    sqyre_capture::event_log(
+                    sqyre_ports::event_log(
                         "SQYRE_TRAY",
                         &[("visible", if visible { "yes" } else { "no" })],
                     );
@@ -204,7 +204,7 @@ impl SystemTray {
         if let Some((stop, join)) = poller.take() {
             stop.store(true, Ordering::Relaxed);
             #[cfg(feature = "native-runtime")]
-            if sqyre_capture::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 // Up to 250ms otherwise; process exit does not need a clean join.
                 std::mem::forget(join);
                 return;
@@ -223,7 +223,7 @@ impl Default for SystemTray {
 impl Drop for SystemTray {
     fn drop(&mut self) {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-        sqyre_capture::mark_site("tray:drop:start");
+        sqyre_ports::mark_site("tray:drop:start");
         self.stop_wake_poller();
         #[cfg(target_os = "linux")]
         {
@@ -232,12 +232,12 @@ impl Drop for SystemTray {
                 // ksni unregister is a sync D-Bus round-trip; abandon on process
                 // exit — the connection drop cleans up the StatusNotifierItem.
                 #[cfg(feature = "native-runtime")]
-                if sqyre_capture::process_exiting() {
-                    sqyre_capture::cap_log("TRAY", "drop", "handle=abandon");
+                if sqyre_ports::process_exiting() {
+                    sqyre_ports::cap_log("TRAY", "drop", "handle=abandon");
                     std::mem::forget(handle);
                 } else {
                     drop(handle);
-                    sqyre_capture::cap_log(
+                    sqyre_ports::cap_log(
                         "TRAY",
                         "drop",
                         &format!("handle_ms={}", t0.elapsed().as_millis()),
@@ -248,7 +248,7 @@ impl Drop for SystemTray {
             }
         }
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-        sqyre_capture::mark_site("tray:drop:done");
+        sqyre_ports::mark_site("tray:drop:done");
     }
 }
 
@@ -277,7 +277,7 @@ fn hide_application(ctx: &Context, window: Option<&Arc<winit::window::Window>>) 
     }
     ctx.send_viewport_cmd(ViewportCommand::Visible(false));
     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-    sqyre_capture::event_log("SQYRE_TRAY", &[("hide", "unmap")]);
+    sqyre_ports::event_log("SQYRE_TRAY", &[("hide", "unmap")]);
     ctx.request_repaint();
 }
 
@@ -298,8 +298,8 @@ fn set_application_visible(
 fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     #[cfg(feature = "native-runtime")]
     {
-        sqyre_capture::set_process_exiting();
-        sqyre_capture::mark_site("app:tray_quit");
+        sqyre_ports::set_process_exiting();
+        sqyre_ports::mark_site("app:tray_quit");
     }
     // Hide immediately — do not map the window just to tear it down (that made
     // tray Quit flash the UI for the whole portal/wgpu shutdown).

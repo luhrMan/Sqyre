@@ -130,8 +130,8 @@ impl PermissionsPanel {
         self.running = true;
         self.error = None;
         self.probed_at = Some(Instant::now());
-        self.refresh_when_capture_ready = sqyre_capture::shared_capturer_open_may_block()
-            && sqyre_capture::shared_capturer_if_ready().is_none();
+        self.refresh_when_capture_ready =
+            sqyre_ports::shared_capturer_open_may_block() && !sqyre_ports::shared_capturer_ready();
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
         thread::spawn(move || {
@@ -165,16 +165,14 @@ impl PermissionsPanel {
         if self.running {
             return;
         }
-        if sqyre_capture::shared_capturer_is_opening() {
+        if sqyre_ports::shared_capturer_is_opening() {
             ctx.request_repaint_after(Duration::from_millis(100));
             return;
         }
         if !self.refresh_when_capture_ready {
             return;
         }
-        if sqyre_capture::shared_capturer_if_ready().is_some()
-            || sqyre_capture::portal_screencast_granted()
-        {
+        if sqyre_ports::shared_capturer_ready() || sqyre_ports::portal_screencast_granted() {
             self.refresh_when_capture_ready = false;
             self.refresh(ctx);
             return;
@@ -201,7 +199,7 @@ impl PermissionsPanel {
             );
             if self.running
                 || self.refresh_when_capture_ready
-                || sqyre_capture::shared_capturer_is_opening()
+                || sqyre_ports::shared_capturer_is_opening()
             {
                 crate::widgets::brand_spinner(ui);
                 ui.weak("Checking…");
@@ -257,13 +255,13 @@ impl PermissionsPanel {
         for item in self.items.clone() {
             match paint_permission_row(ui, ctx, &item) {
                 PermissionRowAction::ShareScreen => {
-                    sqyre_capture::request_portal_screencast_picker();
+                    sqyre_ports::request_portal_screencast_picker();
                     self.refresh_when_capture_ready = true;
                     self.update_live_status();
                     ctx.request_repaint();
                 }
                 PermissionRowAction::Revoke => {
-                    sqyre_capture::revoke_portal_grants();
+                    sqyre_ports::revoke_portal_grants();
                     mark_portal_permissions_revoked(&mut self.items);
                     self.update_live_status();
                     self.refresh(ctx);
@@ -290,13 +288,11 @@ fn any_missing(items: &[PermissionItem]) -> bool {
 }
 
 fn apply_live_capture_status(items: &mut [PermissionItem]) {
-    let portal_session = sqyre_capture::shared_capturer_open_may_block();
-    let capture_granted = sqyre_capture::portal_screencast_granted();
-    let capture_dead = sqyre_capture::shared_capturer_if_ready()
-        .and_then(|r| r.ok())
-        .is_some_and(|c| c.is_dead());
-    let opening = sqyre_capture::shared_capturer_is_opening();
-    let input_ready = sqyre_capture::portal_input_ready();
+    let portal_session = sqyre_ports::shared_capturer_open_may_block();
+    let capture_granted = sqyre_ports::portal_screencast_granted();
+    let capture_dead = sqyre_ports::shared_capturer_dead();
+    let opening = sqyre_ports::shared_capturer_is_opening();
+    let input_ready = sqyre_ports::portal_input_ready();
 
     for item in items {
         match item.id {
@@ -408,7 +404,7 @@ fn paint_permission_row(
     item: &PermissionItem,
 ) -> PermissionRowAction {
     let mut action = PermissionRowAction::None;
-    let portal_session = sqyre_capture::shared_capturer_open_may_block();
+    let portal_session = sqyre_ports::shared_capturer_open_may_block();
     super::row_frame(ui).show(ui, |ui| {
         super::row_header(
             ui,
@@ -456,7 +452,7 @@ fn paint_permission_row(
                     } else {
                         "Share screen"
                     };
-                    let enabled = !sqyre_capture::shared_capturer_is_opening();
+                    let enabled = !sqyre_ports::shared_capturer_is_opening();
                     if ui
                         .add_enabled(enabled, egui::Button::new(label).small())
                         .on_hover_text(ht::PERM_PORTAL_PICKER)

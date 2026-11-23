@@ -264,6 +264,9 @@ impl ContinueWaitBridge {
 
 /// Map an rdev key to a Sqyre hotkey name (lowercase).
 /// Stable key names for `db.yaml` chords (X11 keysym → hook name).
+///
+/// Punctuation uses word names (`minus`, `equal`, …) so chords never collide with
+/// the `+` join / `-` empty-hotkey sentinels in [`crate::format_hotkey`] / parse.
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
 pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
     use rdev::Key;
@@ -290,6 +293,13 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
         Key::End => "end",
         Key::PageUp => "pageup",
         Key::PageDown => "pagedown",
+        Key::Insert => "insert",
+        Key::CapsLock => "capslock",
+        Key::NumLock => "numlock",
+        Key::ScrollLock => "scrolllock",
+        Key::PrintScreen => "printscreen",
+        Key::Pause => "pause",
+        Key::Function => "fn",
         Key::F1 => "f1",
         Key::F2 => "f2",
         Key::F3 => "f3",
@@ -338,6 +348,18 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
         Key::Num7 => "7",
         Key::Num8 => "8",
         Key::Num9 => "9",
+        Key::Minus => "minus",
+        Key::Equal => "equal",
+        Key::LeftBracket => "leftbracket",
+        Key::RightBracket => "rightbracket",
+        Key::SemiColon => "semicolon",
+        Key::Quote => "quote",
+        Key::BackQuote => "grave",
+        Key::BackSlash => "backslash",
+        Key::IntlBackslash => "intlbackslash",
+        Key::Comma => "comma",
+        Key::Dot => "period",
+        Key::Slash => "slash",
         Key::Kp0 => "num0",
         Key::Kp1 => "num1",
         Key::Kp2 => "num2",
@@ -354,7 +376,8 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
         Key::KpMultiply => "num_asterisk",
         Key::KpDivide => "num_slash",
         Key::KpDelete => "num_period",
-        _ => return None,
+        // OS-specific scan codes — no stable cross-platform name.
+        Key::Unknown(_) => return None,
     };
     Some(name)
 }
@@ -388,6 +411,12 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
         0x23 => "end",                   // VK_END
         0x21 => "pageup",                // VK_PRIOR
         0x22 => "pagedown",              // VK_NEXT
+        0x2D => "insert",                // VK_INSERT
+        0x14 => "capslock",              // VK_CAPITAL
+        0x90 => "numlock",               // VK_NUMLOCK
+        0x91 => "scrolllock",            // VK_SCROLL
+        0x2C => "printscreen",           // VK_SNAPSHOT
+        0x13 => "pause",                 // VK_PAUSE
         0x70 => "f1",
         0x71 => "f2",
         0x72 => "f3",
@@ -436,6 +465,18 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
         0x37 => "7",
         0x38 => "8",
         0x39 => "9",
+        0xBD => "minus",         // VK_OEM_MINUS
+        0xBB => "equal",         // VK_OEM_PLUS (= / +)
+        0xDB => "leftbracket",   // VK_OEM_4 ([ / {)
+        0xDD => "rightbracket",  // VK_OEM_6 (] / })
+        0xBA => "semicolon",     // VK_OEM_1 (; / :)
+        0xDE => "quote",         // VK_OEM_7 (' / ")
+        0xC0 => "grave",         // VK_OEM_3 (` / ~)
+        0xDC => "backslash",     // VK_OEM_5 (\ / |)
+        0xE2 => "intlbackslash", // VK_OEM_102
+        0xBC => "comma",         // VK_OEM_COMMA
+        0xBE => "period",        // VK_OEM_PERIOD
+        0xBF => "slash",         // VK_OEM_2 (/ / ?)
         0x60 => "num0",
         0x61 => "num1",
         0x62 => "num2",
@@ -454,6 +495,25 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
         _ => return None,
     };
     Some(name)
+}
+
+#[cfg(all(test, feature = "hooks", not(target_os = "windows")))]
+mod rdev_key_name_tests {
+    use super::rdev_key_name;
+    use rdev::Key;
+
+    #[test]
+    fn maps_operator_and_lock_keys() {
+        assert_eq!(rdev_key_name(Key::Minus), Some("minus"));
+        assert_eq!(rdev_key_name(Key::Equal), Some("equal"));
+        assert_eq!(rdev_key_name(Key::LeftBracket), Some("leftbracket"));
+        assert_eq!(rdev_key_name(Key::RightBracket), Some("rightbracket"));
+        assert_eq!(rdev_key_name(Key::BackQuote), Some("grave"));
+        assert_eq!(rdev_key_name(Key::CapsLock), Some("capslock"));
+        assert_eq!(rdev_key_name(Key::NumLock), Some("numlock"));
+        assert_eq!(rdev_key_name(Key::KpPlus), Some("num_plus"));
+        assert_eq!(rdev_key_name(Key::Unknown(42)), None);
+    }
 }
 
 #[cfg(test)]

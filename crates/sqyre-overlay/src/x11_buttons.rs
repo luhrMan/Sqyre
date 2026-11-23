@@ -35,9 +35,10 @@ use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX}
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
 use sqyre_capture::{
-    event_log, mark_site, note, register_secondary_x_display, unregister_secondary_x_display,
-    OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE,
+    register_secondary_x_display, unregister_secondary_x_display, OVERLAY_TIP_WM_TITLE,
+    OVERLAY_WM_TITLE,
 };
+use sqyre_ports::{event_log, mark_site, note};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::os::fd::RawFd;
@@ -239,8 +240,8 @@ impl X11ButtonHost {
         if let Some(join) = self.join.lock().take() {
             // XCloseDisplay / flush under a busy XWayland client can stall for
             // seconds; on process exit abandon the host thread.
-            if sqyre_capture::process_exiting() {
-                sqyre_capture::note("overlay-x11: shutdown abandon join");
+            if sqyre_ports::process_exiting() {
+                sqyre_ports::note("overlay-x11: shutdown abandon join");
                 std::mem::forget(join);
             } else {
                 let _ = join.join();
@@ -1149,14 +1150,13 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
 
 fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
     let want = state.hub_fan.open_or_traveling();
-    if state.hub_fan_dismiss == want {
-        return;
+    if crate::hub_dismiss::sync_hub_fan_dismiss_fields(
+        &mut state.hub_fan_dismiss,
+        &mut state.last_hub_dismiss_btn1,
+        want,
+    ) {
+        note(&format!("overlay-x11: hub_fan_dismiss={want} (fan)"));
     }
-    state.hub_fan_dismiss = want;
-    // Require a full release+repress after arming so the open click cannot
-    // count as an outside dismiss (host arms on the same poll as SetHubFan).
-    state.last_hub_dismiss_btn1 = want;
-    note(&format!("overlay-x11: hub_fan_dismiss={want} (fan)"));
 }
 
 fn place_all_hub_satellites(state: &mut HostState) {
@@ -1492,7 +1492,7 @@ fn poll_relocate_pointer(state: &mut HostState) -> Option<(i32, i32, bool)> {
     let p = unsafe { query_pointer_root(dpy)? };
     let x11_pos = (p.x, p.y);
     let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
-    let portal = sqyre_capture::portal_cursor_position();
+    let portal = sqyre_ports::portal_cursor_position();
     let x11_moved = pointer_moved(state.last_x11_pos, Some(x11_pos));
     let portal_moved = pointer_moved(state.last_portal_pos, portal);
     update_portal_alignment(state, Some(x11_pos), portal, x11_moved, portal_moved);
@@ -1596,7 +1596,7 @@ fn begin_relocate_drag(state: &mut HostState, id: &str, root_x: i32, root_y: i32
 }
 
 fn shield_desktop_bounds(state: &HostState) -> (i32, i32, u32, u32) {
-    let rects = sqyre_capture::preferred_monitor_rects();
+    let rects = sqyre_ports::preferred_monitor_rects();
     if !rects.is_empty() {
         let mut min_x = i32::MAX;
         let mut min_y = i32::MAX;
@@ -2275,9 +2275,7 @@ fn fire_overlay_click(state: &mut HostState, id: &str, macro_name: String) {
         // Hub expand/collapse is a toggle. Under a slow UI wake, stacked presses
         // invert the fan before the first drain lands — keep at most one.
         // Outside-click dismiss is likewise coalesced (closing twice is a no-op).
-        let hub_token = is_hub_face_token(&macro_name)
-            || macro_name.trim() == sqyre_persist::QUICK_ACCESS_HUB_DISMISS;
-        if hub_token && q.iter().any(|n| n == &macro_name) {
+        if crate::host_press::should_coalesce_hub_click(&q, &macro_name) {
             note("overlay-x11: coalesce hub toggle (already queued)");
             event_log("SQYRE_OVERLAY", &[("click", "coalesce"), ("id", id)]);
         } else {
@@ -2289,10 +2287,6 @@ fn fire_overlay_click(state: &mut HostState, id: &str, macro_name: String) {
     if let Some(ctx) = &state.wake {
         crate::pending_wake::wake_until_drained(ctx, &state.pending);
     }
-}
-
-fn is_hub_face_token(name: &str) -> bool {
-    name.trim() == sqyre_persist::QUICK_ACCESS_HUB_ID
 }
 
 /// Map/unmap gated buttons from the image-search found map (no egui frame needed).
@@ -2667,9 +2661,7 @@ fn hide_tip(state: &mut HostState) {
 }
 
 fn chooser_row_at(ch: &ChooserWindow, x: i32, y: i32) -> Option<usize> {
-    ch.rows.iter().position(|(_, rx, ry, rw, rh)| {
-        x >= *rx && y >= *ry && x < *rx + *rw as i32 && y < *ry + *rh as i32
-    })
+    crate::chooser_hit::chooser_row_at(&ch.rows, x, y)
 }
 
 fn repaint_chooser(state: &mut HostState) {
@@ -3682,35 +3674,7 @@ fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32
     apply_empty_input_shape(display, win);
 }
 
-/// What a left press on a button should do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OverlayPressKind {
-    /// A macro is running and press-to-stop is on.
-    Stop,
-    /// This button is the busy one and press-to-stop is off.
-    IgnoreBusy,
-    /// Press already consumed; wait for release.
-    IgnoreArmed,
-    /// Enqueue the button's macro.
-    Fire,
-}
-
-fn overlay_press_kind(
-    press_stops: bool,
-    running: bool,
-    busy: bool,
-    armed: bool,
-) -> OverlayPressKind {
-    if press_stops && running {
-        OverlayPressKind::Stop
-    } else if busy {
-        OverlayPressKind::IgnoreBusy
-    } else if armed {
-        OverlayPressKind::IgnoreArmed
-    } else {
-        OverlayPressKind::Fire
-    }
-}
+use crate::host_press::{overlay_press_kind, OverlayPressKind};
 
 /// Rounded input, or empty while [`HostState::click_through`] is on.
 fn sync_hit_input(
@@ -3969,7 +3933,7 @@ fn sample_pointer_seat(state: &HostState) -> (Option<RootPointer>, Option<(i32, 
     };
     // SAFETY: quiet or host display is open on this thread.
     let x11 = unsafe { query_pointer_root(dpy) };
-    let portal = sqyre_capture::portal_cursor_position();
+    let portal = sqyre_ports::portal_cursor_position();
     (x11, portal)
 }
 
@@ -4307,12 +4271,16 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bo
             (p.x, p.y, btn1 || p.button1)
         }
     };
-    let pressed = btn1 && !state.last_hub_dismiss_btn1;
-    state.last_hub_dismiss_btn1 = btn1;
-    if !pressed {
+    if !crate::hub_dismiss::rising_edge(btn1, &mut state.last_hub_dismiss_btn1) {
         return;
     }
-    if hub_chrome_contains(state, x, y) {
+    // Include traveling satellites (input_enabled is false mid-fan) so an
+    // outside-dismiss does not fire when the pointer is still over chrome.
+    if crate::hub_dismiss::hub_chrome_contains_specs(
+        state.buttons.values().map(|btn| (btn.mapped, &btn.spec)),
+        x,
+        y,
+    ) {
         return;
     }
     note(&format!(
@@ -4324,16 +4292,6 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bo
         sqyre_persist::QUICK_ACCESS_HUB_DISMISS,
         sqyre_persist::QUICK_ACCESS_HUB_DISMISS.into(),
     );
-}
-
-fn hub_chrome_contains(state: &HostState, x: i32, y: i32) -> bool {
-    // Include traveling satellites (input_enabled is false mid-fan) so an
-    // outside-dismiss does not fire when the pointer is still over chrome.
-    state.buttons.values().any(|btn| {
-        btn.mapped
-            && crate::hub_fan::is_hub_chrome_id(&btn.spec.id)
-            && spec_contains_rounded(&btn.spec, x, y)
-    })
 }
 
 /// Hit cover: rounded ShapeInput matching the button disk.
@@ -4469,32 +4427,6 @@ fn circle_inset(r: i32, y_from_edge: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn overlay_press_kind_matches_click_policy() {
-        assert_eq!(
-            overlay_press_kind(true, true, true, false),
-            OverlayPressKind::Stop,
-            "press-to-stop wins over busy"
-        );
-        assert_eq!(
-            overlay_press_kind(false, true, true, false),
-            OverlayPressKind::IgnoreBusy
-        );
-        assert_eq!(
-            overlay_press_kind(false, false, false, true),
-            OverlayPressKind::IgnoreArmed
-        );
-        assert_eq!(
-            overlay_press_kind(false, false, false, false),
-            OverlayPressKind::Fire
-        );
-        assert_eq!(
-            overlay_press_kind(true, false, false, false),
-            OverlayPressKind::Fire,
-            "press-to-stop does nothing while idle"
-        );
-    }
 
     #[test]
     fn button_crossing_deferred_during_click_through() {

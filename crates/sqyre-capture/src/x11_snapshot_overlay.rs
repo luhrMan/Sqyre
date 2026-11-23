@@ -84,7 +84,7 @@ impl FrozenSelectionOverlay {
     /// Prefers a 32-bit ARGB window so the gold rubber-band is opaque while the
     /// rest stays transparent. Falls back to a low-opacity InputOutput cover.
     pub fn open_input_cover() -> Result<Self, CaptureError> {
-        crate::mark_site("snapshot:input_cover");
+        sqyre_ports::mark_site("snapshot:input_cover");
         let bounds = input_cover_bounds()?;
         // SAFETY: `XOpenDisplay(null)` is null-checked; failure paths close it.
         unsafe { open_input_overlay(bounds) }
@@ -92,14 +92,14 @@ impl FrozenSelectionOverlay {
 
     /// Capture the current desktop and map a cover window over it.
     pub fn capture_and_open() -> Result<Self, CaptureError> {
-        crate::mark_site("snapshot:capture_start");
+        sqyre_ports::mark_site("snapshot:capture_start");
         let cap = crate::shared_capturer_nonblocking()?;
         let bounds = cap.virtual_bounds_ref()?;
-        crate::mark_site("snapshot:capture_rect");
+        sqyre_ports::mark_site("snapshot:capture_rect");
         let image = cap.capture_rect_ref(bounds)?;
-        crate::mark_site("snapshot:map");
+        sqyre_ports::mark_site("snapshot:map");
         let overlay = Self::open(image, bounds)?;
-        crate::mark_site("snapshot:ready");
+        sqyre_ports::mark_site("snapshot:ready");
         Ok(overlay)
     }
 
@@ -278,7 +278,7 @@ impl FrozenSelectionOverlay {
         }
         let ms = t0.elapsed().as_millis();
         if ms >= 32 {
-            crate::note(&format!(
+            sqyre_ports::note(&format!(
                 "snapshot paint slow ms={ms} edges={}",
                 rect.is_some()
             ));
@@ -288,12 +288,12 @@ impl FrozenSelectionOverlay {
 
 impl Drop for FrozenSelectionOverlay {
     fn drop(&mut self) {
-        crate::mark_site("snapshot:drop:start");
+        sqyre_ports::mark_site("snapshot:drop:start");
         let t0 = std::time::Instant::now();
         // Mid-session we must flush/close so the override-redirect cover unmaps
         // (skipping XFlush left a "frozen" screen until process exit). On process
         // quit, skip flush/close — they block for seconds under busy XWayland.
-        let exiting = crate::process_exiting();
+        let exiting = sqyre_ports::process_exiting();
         // SAFETY: destroy only resources we created on `self.display`; each handle
         // is zeroed/nulled after release so nothing is freed twice.
         unsafe {
@@ -330,7 +330,7 @@ impl Drop for FrozenSelectionOverlay {
                 }
             }
         }
-        crate::cap_log(
+        sqyre_ports::cap_log(
             "SNAPSHOT",
             "drop",
             &format!(
@@ -339,7 +339,7 @@ impl Drop for FrozenSelectionOverlay {
                 exiting as u8
             ),
         );
-        crate::mark_site("snapshot:drop:done");
+        sqyre_ports::mark_site("snapshot:drop:done");
     }
 }
 
@@ -587,7 +587,7 @@ unsafe fn map_input_overlay(
         XFlush(display);
 
         let mode = if argb { "argb" } else { "opacity" };
-        crate::event_log(
+        sqyre_ports::event_log(
             "SQYRE_SNAPSHOT",
             &[
                 ("op", "input_cover"),
@@ -599,7 +599,7 @@ unsafe fn map_input_overlay(
                 ("depth", &depth.to_string()),
             ],
         );
-        crate::mark_site("snapshot:ready");
+        sqyre_ports::mark_site("snapshot:ready");
 
         let _ = visual; // used above for gold / create
         Ok(FrozenSelectionOverlay {
@@ -778,7 +778,7 @@ unsafe fn map_overlay(
         let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
         XFlush(display);
 
-        crate::event_log(
+        sqyre_ports::event_log(
             "SQYRE_SNAPSHOT",
             &[
                 ("op", "open"),

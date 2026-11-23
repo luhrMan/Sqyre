@@ -2,7 +2,7 @@
 
 use crate::data_editor::helpers::copy_image_as_png;
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::{confined_join, ProgramCatalog};
+use sqyre_persist::{confined_join, CatalogView};
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ pub struct VariantExistsError {
 /// `Err` when `item`/`variant` from `db.yaml` is not a safe path component —
 /// imported names reach the filesystem here.
 pub fn variant_path(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant: &str,
@@ -37,7 +37,7 @@ pub fn variant_path(
     confined_join(&dir, &name).map_err(|e| format!("unsafe icon path: {e}"))
 }
 
-pub fn variant_names(catalog: &ProgramCatalog, program: &str, item: &str) -> Vec<String> {
+pub fn variant_names(catalog: CatalogView<'_>, program: &str, item: &str) -> Vec<String> {
     let target = format!("{program}{PROGRAM_DELIMITER}{item}");
     let mut names: Vec<String> = catalog
         .variant_paths(&target)
@@ -99,7 +99,7 @@ pub enum AddVariantError {
 }
 
 fn prepare_new_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -139,7 +139,7 @@ fn prepare_new_variant(
 }
 
 pub fn add_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -154,7 +154,7 @@ pub fn add_variant(
 /// Write `img` as a new variant PNG. The first variant is always named `Original`.
 #[cfg(any(test, feature = "native-runtime"))]
 pub fn add_variant_image(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     img: &image::RgbaImage,
@@ -167,7 +167,7 @@ pub fn add_variant_image(
 }
 
 pub fn overwrite_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -186,7 +186,7 @@ pub fn overwrite_variant(
 }
 
 pub fn delete_variant(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     item: &str,
     variant_name: &str,
@@ -211,7 +211,7 @@ pub fn delete_variant(
     }
 }
 
-fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
+fn invalidate_item_templates(catalog: CatalogView<'_>, program: &str, item: &str) {
     let prefix = catalog.icons_dir(program).join(item);
     sqyre_persist::invalidate_icon_fs_cache_under(&prefix);
     #[cfg(feature = "native-runtime")]
@@ -221,7 +221,7 @@ fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::ProgramCatalog;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
     use tempfile::tempdir;
 
     fn catalog_with_icons(root: &Path) -> ProgramCatalog {
@@ -239,11 +239,13 @@ mod tests {
         let src = dir.path().join("src.png");
         std::fs::write(&src, PNG_SIGNATURE).unwrap();
         // Need a valid enough PNG - signature alone may fail later loads, but validate only checks header
-        let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
+        let name = add_variant(CatalogView::from(&cat), "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
-        assert!(variant_path(&cat, "Prog", "Sword", "Original")
-            .unwrap()
-            .is_file());
+        assert!(
+            variant_path(CatalogView::from(&cat), "Prog", "Sword", "Original")
+                .unwrap()
+                .is_file()
+        );
     }
 
     #[test]
@@ -254,9 +256,9 @@ mod tests {
         image::RgbImage::from_pixel(2, 2, image::Rgb([10, 20, 30]))
             .save(&src)
             .unwrap();
-        let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
+        let name = add_variant(CatalogView::from(&cat), "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
-        let path = variant_path(&cat, "Prog", "Sword", "Original").unwrap();
+        let path = variant_path(CatalogView::from(&cat), "Prog", "Sword", "Original").unwrap();
         assert!(validate_png_file(&path).is_ok());
     }
 
@@ -268,13 +270,13 @@ mod tests {
         std::fs::create_dir_all(&icons).unwrap();
         let src = dir.path().join("src.png");
         std::fs::write(&src, PNG_SIGNATURE).unwrap();
-        add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
+        add_variant(CatalogView::from(&cat), "Prog", "Sword", "ignored", &src).unwrap();
         let jpg = dir.path().join("new.jpg");
         image::RgbImage::from_pixel(2, 2, image::Rgb([40, 50, 60]))
             .save(&jpg)
             .unwrap();
-        overwrite_variant(&cat, "Prog", "Sword", "Original", &jpg).unwrap();
-        let path = variant_path(&cat, "Prog", "Sword", "Original").unwrap();
+        overwrite_variant(CatalogView::from(&cat), "Prog", "Sword", "Original", &jpg).unwrap();
+        let path = variant_path(CatalogView::from(&cat), "Prog", "Sword", "Original").unwrap();
         assert!(validate_png_file(&path).is_ok());
     }
 
@@ -283,9 +285,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cat = catalog_with_icons(dir.path());
         let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([10, 20, 30, 255]));
-        let name = add_variant_image(&cat, "Prog", "Potion", &img).unwrap();
+        let name = add_variant_image(CatalogView::from(&cat), "Prog", "Potion", &img).unwrap();
         assert_eq!(name, "Original");
-        let path = variant_path(&cat, "Prog", "Potion", "Original").unwrap();
+        let path = variant_path(CatalogView::from(&cat), "Prog", "Potion", "Original").unwrap();
         assert!(path.is_file());
         assert!(validate_png_file(&path).is_ok());
     }
@@ -294,10 +296,10 @@ mod tests {
     fn variant_path_rejects_traversal_names() {
         let dir = tempdir().unwrap();
         let cat = catalog_with_icons(dir.path());
-        assert!(variant_path(&cat, "Prog", "../../escape", "v").is_err());
-        assert!(variant_path(&cat, "Prog", "a/b", "v").is_err());
-        assert!(variant_path(&cat, "Prog", "Item", "../x").is_err());
-        assert!(variant_path(&cat, "Prog", "Item", "/abs").is_err());
+        assert!(variant_path(CatalogView::from(&cat), "Prog", "../../escape", "v").is_err());
+        assert!(variant_path(CatalogView::from(&cat), "Prog", "a/b", "v").is_err());
+        assert!(variant_path(CatalogView::from(&cat), "Prog", "Item", "../x").is_err());
+        assert!(variant_path(CatalogView::from(&cat), "Prog", "Item", "/abs").is_err());
     }
 
     #[test]
@@ -306,7 +308,13 @@ mod tests {
         let cat = catalog_with_icons(dir.path());
         let outside = dir.path().join("victim.txt");
         std::fs::write(&outside, "keep me").unwrap();
-        let err = delete_variant(&cat, "Prog", "victim", "../../victim.txt").unwrap_err();
+        let err = delete_variant(
+            CatalogView::from(&cat),
+            "Prog",
+            "victim",
+            "../../victim.txt",
+        )
+        .unwrap_err();
         assert!(err.contains("unsafe icon path"), "{err}");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep me");
     }

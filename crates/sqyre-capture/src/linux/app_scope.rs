@@ -6,7 +6,7 @@
 //! `session-N.scope` does not match, so the portal id is empty and COSMIC
 //! shows "unknown application".
 
-use crate::cap_log;
+use sqyre_ports::cap_log;
 use std::time::{Duration, Instant};
 use zbus::zvariant::Value;
 

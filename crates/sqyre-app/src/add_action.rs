@@ -808,7 +808,7 @@ mod tests {
         let known_vars = sqyre_domain::KnownVariableNames::default();
         let mut tip = crate::paint_ctx::TipUiCtx {
             paint: crate::paint_ctx::CatalogPaint {
-                catalog: &catalog,
+                catalog: sqyre_persist::CatalogView::from(&catalog),
                 icons: &mut icons,
                 previews: &mut previews,
             },

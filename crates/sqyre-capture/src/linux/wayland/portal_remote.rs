@@ -49,6 +49,6 @@ impl PortalRemoteInput for PortalEisInput {
     }
 
     fn note(&self, msg: &str) {
-        crate::note(msg);
+        sqyre_ports::note(msg);
     }
 }

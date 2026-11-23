@@ -2,10 +2,10 @@
 
 use super::helpers::{parse_i32, rgba_color};
 #[cfg(feature = "native-runtime")]
-use super::pixel_check;
+use super::match_check;
 use super::{DataEditor, EditorTab};
 use sqyre_domain::{Macro, ScalarValue};
-use sqyre_persist::{ProgramCatalog, UserSettings};
+use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
 use sqyre_validate::{
     validate_entity_name, validate_item_grid_fields, validate_numeric_expression,
     validate_search_area_literal_bounds,
@@ -33,7 +33,7 @@ pub(crate) fn load_tab(
         EditorTab::Collections => CollectionsForm::load(ed, catalog, settings),
         EditorTab::Atlases => AtlasesForm::load(ed, catalog, settings),
         EditorTab::ScreenCap => ScreenCapForm::load(ed, catalog, settings),
-        EditorTab::PixelCheck => PixelCheckForm::load(ed, catalog, settings),
+        EditorTab::MatchCheck => MatchCheckForm::load(ed, catalog, settings),
         EditorTab::Overlay => OverlayForm::load(ed, catalog, settings),
     }
 }
@@ -53,7 +53,7 @@ pub(crate) fn dirty_tab(
         EditorTab::Collections => CollectionsForm::is_dirty(ed, catalog, settings),
         EditorTab::Atlases => AtlasesForm::is_dirty(ed, catalog, settings),
         EditorTab::ScreenCap => ScreenCapForm::is_dirty(ed, catalog, settings),
-        EditorTab::PixelCheck => PixelCheckForm::is_dirty(ed, catalog, settings),
+        EditorTab::MatchCheck => MatchCheckForm::is_dirty(ed, catalog, settings),
         EditorTab::Overlay => OverlayForm::is_dirty(ed, catalog, settings),
     }
 }
@@ -71,7 +71,7 @@ pub(crate) fn valid_tab(tab: EditorTab, ed: &DataEditor, active_macro: Option<&M
         EditorTab::Collections => CollectionsForm::is_valid(ed, active_macro),
         EditorTab::Atlases => AtlasesForm::is_valid(ed, active_macro),
         EditorTab::ScreenCap => ScreenCapForm::is_valid(ed, active_macro),
-        EditorTab::PixelCheck => PixelCheckForm::is_valid(ed, active_macro),
+        EditorTab::MatchCheck => MatchCheckForm::is_valid(ed, active_macro),
         EditorTab::Overlay => OverlayForm::is_valid(ed, active_macro),
     }
 }
@@ -84,7 +84,7 @@ pub(crate) struct MasksForm;
 pub(crate) struct CollectionsForm;
 pub(crate) struct AtlasesForm;
 pub(crate) struct ScreenCapForm;
-pub(crate) struct PixelCheckForm;
+pub(crate) struct MatchCheckForm;
 pub(crate) struct OverlayForm;
 
 impl FormState for ProgramsForm {
@@ -479,7 +479,7 @@ impl FormState for ScreenCapForm {
         }
         let coord =
             sqyre_domain::CoordinateRef(format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER));
-        if ed.apply_screen_cap_reference(catalog, coord) {
+        if ed.apply_screen_cap_reference(CatalogView::from(catalog), coord) {
             return;
         }
         let res = catalog.resolution_key();
@@ -512,17 +512,17 @@ impl FormState for ScreenCapForm {
     }
 }
 
-impl FormState for PixelCheckForm {
+impl FormState for MatchCheckForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         #[cfg(feature = "native-runtime")]
         {
-            ed.invalidate_pixel_check();
+            ed.invalidate_match_check();
             if let (Some(prog), Some(item)) = (
                 ed.selected_program.as_deref(),
                 ed.selected_entity.as_deref(),
             ) {
-                let variant = pixel_check::default_variant(catalog, prog, item);
-                ed.pixel_check.variant = variant;
+                let variant = match_check::default_variant(CatalogView::from(catalog), prog, item);
+                ed.match_check.variant = variant;
             }
         }
         #[cfg(not(feature = "native-runtime"))]

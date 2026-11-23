@@ -36,10 +36,16 @@ pub struct ButtonFace {
     pub brand: bool,
 }
 
+#[cfg(all(feature = "runtime", any(target_os = "linux", target_os = "windows")))]
+mod chooser_hit;
 #[cfg(feature = "runtime")]
 mod context_menu;
 #[cfg(feature = "runtime")]
 mod host_common;
+#[cfg(feature = "runtime")]
+mod host_press;
+#[cfg(feature = "runtime")]
+mod hub_dismiss;
 #[cfg(feature = "runtime")]
 mod hub_fan;
 #[cfg(feature = "runtime")]

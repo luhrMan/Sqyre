@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen Cap, Pixel Check).
+//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen Cap, Match Check).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -10,10 +10,10 @@ mod forms;
 pub(crate) mod helpers;
 mod lists;
 pub(crate) mod mask_preview;
+#[cfg(feature = "native-runtime")]
+mod match_check;
 mod overlay;
 mod persist;
-#[cfg(feature = "native-runtime")]
-mod pixel_check;
 #[cfg(feature = "native-runtime")]
 mod running_programs;
 mod variants;
@@ -32,7 +32,7 @@ use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_e
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, Database, OverlayButtonConfig, OverlayVisibilityGate,
+    default_overlay_position, CatalogView, Database, OverlayButtonConfig, OverlayVisibilityGate,
     OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
     DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
@@ -85,11 +85,11 @@ impl EditorSection {
                 EditorTab::Collections,
                 EditorTab::Atlases,
             ],
-            Self::Tools => &[EditorTab::ScreenCap, EditorTab::PixelCheck],
+            Self::Tools => &[EditorTab::ScreenCap, EditorTab::MatchCheck],
         }
     }
 
-    /// Tools (Screen Cap / Pixel Check) are desktop-only — omitted on WASM.
+    /// Tools (Screen Cap / Match Check) are desktop-only — omitted on WASM.
     fn is_available(self) -> bool {
         #[cfg(target_arch = "wasm32")]
         {
@@ -110,7 +110,7 @@ pub(crate) enum EditorTab {
     Items,
     Masks,
     ScreenCap,
-    PixelCheck,
+    MatchCheck,
     Points,
     SearchAreas,
     Collections,
@@ -126,7 +126,7 @@ impl EditorTab {
             Self::Items => "Items",
             Self::Masks => "Masks",
             Self::ScreenCap => "Screen Cap",
-            Self::PixelCheck => "Pixel Check",
+            Self::MatchCheck => "Match Check",
             Self::Points => "Points",
             Self::SearchAreas => "Search Areas",
             Self::Collections => "Collections",
@@ -145,7 +145,7 @@ impl EditorTab {
             Self::Items => crate::model_icons::ITEM,
             Self::Masks => crate::model_icons::MASK,
             Self::ScreenCap => CAMERA,
-            Self::PixelCheck => EYEDROPPER,
+            Self::MatchCheck => MAGNIFYING_GLASS,
             Self::Points => crate::model_icons::POINT,
             Self::SearchAreas => crate::model_icons::SEARCH_AREA,
             Self::Collections => crate::model_icons::COLLECTION,
@@ -161,7 +161,7 @@ impl EditorTab {
         expect(dead_code, reason = "only the WASM editor hides desktop-only tabs")
     )]
     pub(crate) fn is_desktop_only(self) -> bool {
-        matches!(self, Self::ScreenCap | Self::PixelCheck)
+        matches!(self, Self::ScreenCap | Self::MatchCheck)
     }
 
     /// Entity noun for this tab (`item “foo”` in the delete confirmation,
@@ -177,7 +177,7 @@ impl EditorTab {
             Self::Collections => Some("collection"),
             Self::Atlases => Some("atlas"),
             Self::Overlay => Some("overlay button"),
-            Self::ScreenCap | Self::PixelCheck => None,
+            Self::ScreenCap | Self::MatchCheck => None,
         }
     }
 }
@@ -254,7 +254,7 @@ pub struct DataEditor {
     program_open: bool,
     /// Left-list scope for entity tabs (flat selected program vs all programs).
     search_scope: SearchScope,
-    /// Draft for the Items / Pixel Check tag-priority chip editor (ephemeral).
+    /// Draft for the Items / Match Check tag-priority chip editor (ephemeral).
     items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     left_width: f32,
@@ -375,16 +375,16 @@ pub struct DataEditor {
     collection_capture_pending: Option<CollectionCapturePending>,
     /// Cached program/entity name lists keyed by catalog generation.
     list_cache: ListCache,
-    /// PixelCheck match settings (session-local).
+    /// MatchCheck match settings (session-local).
     #[cfg(feature = "native-runtime")]
-    pixel_check: pixel_check::PixelCheckSettings,
-    /// Background PixelCheck match job.
+    match_check: match_check::MatchCheckSettings,
+    /// Background MatchCheck match job.
     #[cfg(feature = "native-runtime")]
-    pixel_check_pending:
-        Option<std::sync::mpsc::Receiver<Result<pixel_check::PixelCheckResult, String>>>,
+    match_check_pending:
+        Option<std::sync::mpsc::Receiver<Result<match_check::MatchCheckResult, String>>>,
     /// Cached heatmap + MatchMap for the current inputs.
     #[cfg(feature = "native-runtime")]
-    pixel_check_cache: Option<pixel_check::PixelCheckCache>,
+    match_check_cache: Option<match_check::MatchCheckCache>,
     /// Background open-window fetch for Programs "Add running".
     #[cfg(feature = "native-runtime")]
     running_programs_pending: Option<running_programs::RunningProgramsRx>,
@@ -490,11 +490,11 @@ impl Default for DataEditor {
             collection_capture_pending: None,
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
-            pixel_check: pixel_check::PixelCheckSettings::default(),
+            match_check: match_check::MatchCheckSettings::default(),
             #[cfg(feature = "native-runtime")]
-            pixel_check_pending: None,
+            match_check_pending: None,
             #[cfg(feature = "native-runtime")]
-            pixel_check_cache: None,
+            match_check_cache: None,
             #[cfg(feature = "native-runtime")]
             running_programs_pending: None,
         }
@@ -733,8 +733,8 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = default_editor_program(catalog) {
-                self.select_program(&name, catalog, settings);
+            if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
+                self.select_program(&name, CatalogView::from(catalog), settings);
             }
         }
     }
@@ -748,8 +748,8 @@ impl DataEditor {
         self.open = true;
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = default_editor_program(catalog) {
-                self.select_program(&name, catalog, settings);
+            if let Some(name) = default_editor_program(CatalogView::from(catalog)) {
+                self.select_program(&name, CatalogView::from(catalog), settings);
             }
         }
     }
@@ -777,7 +777,7 @@ impl DataEditor {
         if self.selected_program.as_deref() == Some(name.as_str()) {
             return;
         }
-        self.select_program(&name, catalog, settings);
+        self.select_program(&name, CatalogView::from(catalog), settings);
     }
 
     /// Open on `tab`, ensure a program is selected, then create a new entity.
@@ -797,7 +797,7 @@ impl DataEditor {
     ) {
         self.request_open(ctx);
         self.switch_tab(EditorTab::Programs, catalog, settings);
-        self.select_program(name, catalog, settings);
+        self.select_program(name, CatalogView::from(catalog), settings);
     }
 
     pub(crate) fn open_entity(
@@ -811,7 +811,7 @@ impl DataEditor {
     ) {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
-        self.select_entity(program, entity, catalog, settings);
+        self.select_entity(program, entity, CatalogView::from(catalog), settings);
     }
 
     pub fn show(
@@ -875,7 +875,7 @@ impl DataEditor {
         }
         self.poll_collection_capture(ctx, env.catalog, env.icons);
         #[cfg(feature = "native-runtime")]
-        self.poll_pixel_check(ctx, env.catalog, previews);
+        self.poll_match_check(ctx, env.catalog, previews);
         #[cfg(feature = "native-runtime")]
         self.poll_running_programs(env);
     }
@@ -897,7 +897,7 @@ impl DataEditor {
             env.ctx,
             &mut self.window_picker,
             &mut CatalogPaint {
-                catalog: env.catalog,
+                catalog: sqyre_persist::CatalogView::new(env.catalog),
                 icons: env.icons,
                 previews,
             },
@@ -941,13 +941,13 @@ impl DataEditor {
             PickerResult::SearchArea(coord)
                 if matches!(
                     self.tab,
-                    EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay
+                    EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay
                 ) =>
             {
                 if matches!(self.tab, EditorTab::Overlay) {
                     self.form_overlay_gate_search_area = coord.0;
                 } else {
-                    self.apply_screen_cap_reference(env.catalog, coord);
+                    self.apply_screen_cap_reference(CatalogView::new(env.catalog), coord);
                 }
             }
             PickerResult::Items {
@@ -1013,12 +1013,12 @@ impl DataEditor {
     fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         ui.horizontal(|ui| {
             let just_opened = self.ui_search_toggle(ui);
-            self.program_toggle(ui, env.catalog, env.icons, env.settings);
+            self.program_toggle(ui, CatalogView::new(env.catalog), env.icons, env.settings);
             if self.search_open {
                 self.ui_search_controls(ui, env.catalog, env.icons, env.settings, just_opened);
             }
             if self.program_open {
-                self.ui_program_combo(ui, env.catalog, env.icons, env.settings);
+                self.ui_program_combo(ui, CatalogView::new(env.catalog), env.icons, env.settings);
             }
             crate::widgets::section_separator(ui);
             crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
@@ -1112,8 +1112,8 @@ impl DataEditor {
                 self.scroll_left_list_to_selection = self.selected_program.is_some();
             }
         }
-        // Items / Pixel Check sort, next to the scope filter.
-        if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
+        // Items / Match Check sort, next to the scope filter.
+        if matches!(self.tab, EditorTab::Items | EditorTab::MatchCheck) {
             use sqyre_domain::CatalogItemSort as Sort;
             let sort_btn = ui.add(crate::widgets::IconButton::new(
                 egui_phosphor::regular::SORT_ASCENDING,
@@ -1160,8 +1160,10 @@ impl DataEditor {
                     if settings.ui.data_editor_items_sort == Sort::Tags {
                         ui.separator();
                         ui.label(egui::RichText::new("Tag priority").strong().small());
-                        let suggestions = helpers::collect_all_item_tags(catalog);
-                        let program_icons = icons.program_name_icons(ui.ctx(), catalog);
+                        let suggestions =
+                            helpers::collect_all_item_tags(CatalogView::from(catalog));
+                        let program_icons =
+                            icons.program_name_icons(ui.ctx(), CatalogView::from(catalog));
                         let edit = crate::widgets::tag_chip_editor(
                             ui,
                             &mut settings.ui.data_editor_items_tag_priority,
@@ -1203,7 +1205,7 @@ impl DataEditor {
             }
         }
         // Right end of the search row — same slot pickers use for expand/collapse.
-        self.paint_search_expand_collapse(ui, catalog);
+        self.paint_search_expand_collapse(ui, CatalogView::from(catalog));
     }
 
     /// Every section's subtab buttons in one row — the subsection buttons are
@@ -1311,7 +1313,13 @@ impl DataEditor {
 
         let mut tag_submit = false;
 
-        self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
+        self.draw_left_list(
+            &mut left_ui,
+            CatalogView::new(env.catalog),
+            env.icons,
+            previews,
+            env.settings,
+        );
 
         let split_resp = ui.interact(
             split_rect,
@@ -1423,7 +1431,7 @@ impl DataEditor {
                 tag_submit = self.draw_form(
                     ui,
                     &mut CatalogPaint {
-                        catalog: env.catalog,
+                        catalog: sqyre_persist::CatalogView::new(env.catalog),
                         icons: env.icons,
                         previews,
                     },
@@ -1445,9 +1453,9 @@ impl DataEditor {
         }
 
         // Footer chrome floats over the form's bottom-right instead of
-        // reserving a full-width strip. Tools tabs (ScreenCap / PixelCheck)
+        // reserving a full-width strip. Tools tabs (ScreenCap / MatchCheck)
         // draw their own action row inside the form — no floating chip.
-        if !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck) {
+        if !matches!(self.tab, EditorTab::ScreenCap | EditorTab::MatchCheck) {
             let right_pane = egui::Rect::from_min_max(
                 egui::pos2(split_rect.right(), body_rect.top()),
                 body_rect.max,
@@ -1570,7 +1578,12 @@ impl DataEditor {
                 PendingConfirm::Delete { label } => {
                     ui.horizontal(|ui| {
                         if let Some(prog) = self.selected_program.as_deref() {
-                            crate::icon_cache::paint_program_icon(ui, env.catalog, env.icons, prog);
+                            crate::icon_cache::paint_program_icon(
+                                ui,
+                                CatalogView::new(env.catalog),
+                                env.icons,
+                                prog,
+                            );
                         }
                         ui.label(format!("Delete {label}? This cannot be undone."));
                     });
@@ -1614,15 +1627,25 @@ impl DataEditor {
                     }
                     PendingConfirm::DeleteVariant { variant } => {
                         self.confirm = None;
-                        self.delete_icon_variant(env.catalog, env.icons, env.settings, &variant);
+                        self.delete_icon_variant(
+                            CatalogView::new(env.catalog),
+                            env.icons,
+                            env.settings,
+                            &variant,
+                        );
                     }
                     PendingConfirm::OverwriteVariant { variant, source } => {
                         self.confirm = None;
-                        self.overwrite_icon_variant(env.catalog, env.icons, &variant, &source);
+                        self.overwrite_icon_variant(
+                            CatalogView::new(env.catalog),
+                            env.icons,
+                            &variant,
+                            &source,
+                        );
                     }
                     PendingConfirm::DeleteMaskImage => {
                         self.confirm = None;
-                        self.remove_mask_image(env.catalog, env.icons);
+                        self.remove_mask_image(CatalogView::new(env.catalog), env.icons);
                     }
                 },
                 crate::widgets::ConfirmCancel::None => {}
@@ -1665,7 +1688,7 @@ impl DataEditor {
             let name = self.variant_name_draft.trim().to_string();
             self.variant_prompt = None;
             self.variant_name_draft.clear();
-            self.add_icon_variant(catalog, icons, settings, &name, &source);
+            self.add_icon_variant(CatalogView::from(catalog), icons, settings, &name, &source);
         }
     }
 
@@ -1691,36 +1714,36 @@ impl DataEditor {
     }
 
     #[cfg(feature = "native-runtime")]
-    fn invalidate_pixel_check(&mut self) {
-        self.pixel_check_cache = None;
-        self.pixel_check_pending = None;
-        self.pixel_check.show_many_match_boxes = false;
+    fn invalidate_match_check(&mut self) {
+        self.match_check_cache = None;
+        self.match_check_pending = None;
+        self.match_check.show_many_match_boxes = false;
     }
 
     #[cfg(feature = "native-runtime")]
-    pub(crate) fn stop_pixel_check_compute(&mut self) {
-        self.pixel_check_pending = None;
-        self.pixel_check_cache = None;
-        self.pixel_check.last_inputs.clear();
-        self.pixel_check.paused = true;
+    pub(crate) fn stop_match_check_compute(&mut self) {
+        self.match_check_pending = None;
+        self.match_check_cache = None;
+        self.match_check.last_inputs.clear();
+        self.match_check.paused = true;
     }
 
     #[cfg(feature = "native-runtime")]
-    fn poll_pixel_check(
+    fn poll_match_check(
         &mut self,
         ctx: &egui::Context,
         catalog: &ProgramCatalog,
         previews: &mut PreviewTooltipCache,
     ) {
-        if !matches!(self.tab, EditorTab::PixelCheck) {
-            if self.pixel_check_pending.is_some() {
-                self.stop_pixel_check_compute();
+        if !matches!(self.tab, EditorTab::MatchCheck) {
+            if self.match_check_pending.is_some() {
+                self.stop_match_check_compute();
             }
             return;
         }
         use helpers::form_desktop_area;
         let (lx, ty, rx, by) = form_desktop_area(
-            catalog,
+            CatalogView::from(catalog),
             self.form_monitor,
             &self.form_left,
             &self.form_top,
@@ -1731,11 +1754,11 @@ impl DataEditor {
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
         ) {
-            (Some(prog), Some(item)) => pixel_check::can_compute_pixel_check(
-                catalog,
+            (Some(prog), Some(item)) => match_check::can_compute_match_check(
+                CatalogView::from(catalog),
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 lx,
                 ty,
                 rx,
@@ -1743,28 +1766,28 @@ impl DataEditor {
             ),
             _ => false,
         };
-        if !coords_ok && self.pixel_check_pending.is_some() {
-            self.stop_pixel_check_compute();
+        if !coords_ok && self.match_check_pending.is_some() {
+            self.stop_match_check_compute();
         }
-        if let Some(rx) = self.pixel_check_pending.as_ref() {
+        if let Some(rx) = self.match_check_pending.as_ref() {
             match rx.try_recv() {
                 Ok(Ok(result)) => {
-                    self.pixel_check_pending = None;
-                    if result.data.fingerprint == self.pixel_check.last_inputs {
+                    self.match_check_pending = None;
+                    if result.data.fingerprint == self.match_check.last_inputs {
                         if result.data.tolerance_matches.len()
-                            > pixel_check::MANY_MATCH_BOX_THRESHOLD
+                            > match_check::MANY_MATCH_BOX_THRESHOLD
                         {
-                            self.pixel_check.show_many_match_boxes = false;
+                            self.match_check.show_many_match_boxes = false;
                         }
-                        self.pixel_check_cache = Some(pixel_check::finish_cache(ctx, result));
+                        self.match_check_cache = Some(match_check::finish_cache(ctx, result));
                     }
                 }
                 Ok(Err(e)) => {
-                    self.pixel_check_pending = None;
-                    self.pixel_check.paused = true;
+                    self.match_check_pending = None;
+                    self.match_check.paused = true;
                     self.set_err(format!(
                         "{}: {}",
-                        EditorTab::PixelCheck.label(),
+                        EditorTab::MatchCheck.label(),
                         crate::status_banner::user_error_detail(&e)
                     ));
                 }
@@ -1772,9 +1795,9 @@ impl DataEditor {
                     ctx.request_repaint();
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.pixel_check_pending = None;
-                    self.pixel_check.paused = true;
-                    self.set_err(format!("{}: match failed", EditorTab::PixelCheck.label()));
+                    self.match_check_pending = None;
+                    self.match_check.paused = true;
+                    self.set_err(format!("{}: match failed", EditorTab::MatchCheck.label()));
                 }
             }
         }
@@ -1790,15 +1813,15 @@ mod tests {
     #[test]
     fn editor_tab_labels_are_human_titles() {
         assert_eq!(EditorTab::ScreenCap.label(), "Screen Cap");
-        assert_eq!(EditorTab::PixelCheck.label(), "Pixel Check");
+        assert_eq!(EditorTab::MatchCheck.label(), "Match Check");
         assert_eq!(EditorTab::SearchAreas.label(), "Search Areas");
         assert_eq!(EditorTab::Programs.label(), "Programs");
     }
 
     #[test]
-    fn screen_cap_and_pixel_check_are_desktop_only() {
+    fn screen_cap_and_match_check_are_desktop_only() {
         assert!(EditorTab::ScreenCap.is_desktop_only());
-        assert!(EditorTab::PixelCheck.is_desktop_only());
+        assert!(EditorTab::MatchCheck.is_desktop_only());
         assert!(!EditorTab::Items.is_desktop_only());
         assert!(!EditorTab::Overlay.is_desktop_only());
     }

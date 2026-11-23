@@ -126,7 +126,7 @@ fn load_frame(fresh: bool) -> Result<(u64, Frame), CaptureError> {
 /// One accessibility screenshot. A recent cached frame satisfies a non-fresh read.
 /// Failure is a real error: it must not look like consent is still pending.
 fn screenshot_frame(fresh: bool) -> Result<(u64, Frame), CaptureError> {
-    crate::mark_site(if fresh {
+    sqyre_ports::mark_site(if fresh {
         "cap:shot:fresh"
     } else {
         "cap:shot:latest"
@@ -146,18 +146,18 @@ fn shot_error(error: AndroidError) -> CaptureError {
 }
 
 fn latest_frame() -> Result<(u64, Frame), CaptureError> {
-    crate::mark_site("cap:latest:req");
+    sqyre_ports::mark_site("cap:latest:req");
     let t = std::time::Instant::now();
     let r = frames()
         .latest(FRAME_WAIT)
         .map_err(start_projection_on_error);
-    crate::mark_site(if r.is_ok() {
+    sqyre_ports::mark_site(if r.is_ok() {
         "cap:latest:ok"
     } else {
         "cap:latest:err"
     });
     if t.elapsed() > Duration::from_millis(400) {
-        crate::note(&format!(
+        sqyre_ports::note(&format!(
             "cap: latest slow elapsed={}ms ok={}",
             t.elapsed().as_millis(),
             r.is_ok()
@@ -167,18 +167,18 @@ fn latest_frame() -> Result<(u64, Frame), CaptureError> {
 }
 
 fn fresh_frame() -> Result<(u64, Frame), CaptureError> {
-    crate::mark_site("cap:fresh:req");
+    sqyre_ports::mark_site("cap:fresh:req");
     let t = std::time::Instant::now();
     let r = frames()
         .fresh(FRAME_WAIT)
         .map_err(start_projection_on_error);
-    crate::mark_site(if r.is_ok() {
+    sqyre_ports::mark_site(if r.is_ok() {
         "cap:fresh:ok"
     } else {
         "cap:fresh:err"
     });
     if t.elapsed() > Duration::from_millis(400) {
-        crate::note(&format!(
+        sqyre_ports::note(&format!(
             "cap: fresh slow elapsed={}ms ok={}",
             t.elapsed().as_millis(),
             r.is_ok()
@@ -293,7 +293,7 @@ pub fn process_icon(process_path: &str) -> Option<ProcessIcon> {
             rgba: i.rgba,
         }),
         Err(e) => {
-            crate::note(&format!("app icon {package}: {e}"));
+            sqyre_ports::note(&format!("app icon {package}: {e}"));
             None
         }
     }

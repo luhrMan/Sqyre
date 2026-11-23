@@ -1,4 +1,4 @@
-//! PixelCheck: live template-match heatmap over a search-area preview.
+//! MatchCheck: live template-match heatmap over a search-area preview.
 //!
 //! Legend / marker colors use app theme viz tokens (`match_pass_fg`,
 //! `match_fail_fg`, `match_within_fg`) — not status `error_fg` / `warn_fg` /
@@ -17,21 +17,18 @@ mod inner {
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
     use sqyre_domain::MatchMethod;
+    use sqyre_match::ImageBuf;
     use sqyre_match::{
         blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
         prepare_template, search_blur_kernel, MatchMap,
     };
-    use sqyre_persist::ProgramCatalog;
-    use sqyre_ports::{DesktopRect, ScreenCapturer};
+    use sqyre_persist::CatalogView;
     use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, rgba_to_rgb_buf};
     use std::path::{Path, PathBuf};
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Arc};
     use std::thread;
     use web_time::{Duration, Instant};
 
-    const PANEL_MAX_DIM: u32 = 1600;
-    const MIN_CAPTURE_SIZE: i32 = 320;
-    const CAPTURE_PADDING: i32 = 48;
     const DEBOUNCE: Duration = Duration::from_millis(200);
     /// Above this count, match boxes are hidden until the user opts in (paint cost).
     pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
@@ -58,7 +55,7 @@ mod inner {
 
     /// Shared match output carried by both the worker result and the
     /// uploaded-texture cache.
-    pub(crate) struct PixelCheckData {
+    pub(crate) struct MatchCheckData {
         pub fingerprint: String,
         pub match_map: MatchMap,
         pub image_w: usize,
@@ -71,17 +68,17 @@ mod inner {
         pub mask_missing: bool,
     }
 
-    pub(crate) struct PixelCheckCache {
-        pub data: PixelCheckData,
+    pub(crate) struct MatchCheckCache {
+        pub data: MatchCheckData,
         pub heatmap: TextureHandle,
     }
 
-    pub(crate) struct PixelCheckResult {
-        pub data: PixelCheckData,
+    pub(crate) struct MatchCheckResult {
+        pub data: MatchCheckData,
         pub heatmap_rgba: Vec<u8>,
     }
 
-    pub(crate) struct PixelCheckHover {
+    pub(crate) struct MatchCheckHover {
         pub x: i32,
         pub y: i32,
         pub score: f32,
@@ -90,8 +87,8 @@ mod inner {
         pub passes: bool,
     }
 
-    /// Session-local match settings for PixelCheck (not persisted).
-    pub(crate) struct PixelCheckSettings {
+    /// Session-local match settings for MatchCheck (not persisted).
+    pub(crate) struct MatchCheckSettings {
         pub tolerance: f64,
         pub blur: i32,
         pub match_method: MatchMethod,
@@ -105,7 +102,7 @@ mod inner {
         pub show_many_match_boxes: bool,
     }
 
-    impl Default for PixelCheckSettings {
+    impl Default for MatchCheckSettings {
         fn default() -> Self {
             Self {
                 tolerance: 0.95,
@@ -138,8 +135,8 @@ mod inner {
         }
     }
 
-    pub(crate) fn can_compute_pixel_check(
-        catalog: &ProgramCatalog,
+    pub(crate) fn can_compute_match_check(
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
         variant: &str,
@@ -175,151 +172,108 @@ mod inner {
         )
     }
 
-    fn preview_bounds_for_search_area(
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
-        vb: DesktopRect,
-    ) -> DesktopRect {
-        let aw = (rx - lx).max(0);
-        let ah = (by - ty).max(0);
-        let pad_x = CAPTURE_PADDING.max(aw / 4);
-        let pad_y = CAPTURE_PADDING.max(ah / 4);
-        let desired = expand_to_min(
-            DesktopRect {
-                x: lx - pad_x,
-                y: ty - pad_y,
-                w: aw + pad_x * 2,
-                h: ah + pad_y * 2,
-            },
-            MIN_CAPTURE_SIZE,
-            MIN_CAPTURE_SIZE,
-        );
-        shift_into_virtual(desired, vb)
-    }
-
-    fn expand_to_min(r: DesktopRect, min_w: i32, min_h: i32) -> DesktopRect {
-        if r.is_empty() {
-            return r;
+    /// Nearest-neighbor scale of an RGB `ImageBuf` to `(nw, nh)`.
+    pub(crate) fn scale_image_buf(img: &ImageBuf, nw: usize, nh: usize) -> ImageBuf {
+        if img.width == nw && img.height == nh {
+            return img.clone();
         }
-        let w = r.w.max(min_w);
-        let h = r.h.max(min_h);
-        let cx = r.x + r.w / 2;
-        let cy = r.y + r.h / 2;
-        DesktopRect {
-            x: cx - w / 2,
-            y: cy - h / 2,
-            w,
-            h,
-        }
-    }
-
-    fn shift_into_virtual(desired: DesktopRect, vb: DesktopRect) -> DesktopRect {
-        if desired.is_empty() || vb.is_empty() {
-            return DesktopRect::from_corners(
-                desired.x.max(vb.x),
-                desired.y.max(vb.y),
-                (desired.x + desired.w).min(vb.x + vb.w),
-                (desired.y + desired.h).min(vb.y + vb.h),
-            );
-        }
-        let mut w = desired.w;
-        let mut h = desired.h;
-        if w <= 0 || h <= 0 {
-            return DesktopRect::default();
-        }
-        if w >= vb.w && h >= vb.h {
-            return vb;
-        }
-        let mut x0 = desired.x;
-        let mut y0 = desired.y;
-        if w > vb.w {
-            x0 = vb.x;
-            w = vb.w;
-        } else {
-            if x0 < vb.x {
-                x0 = vb.x;
-            }
-            if x0 + w > vb.x + vb.w {
-                x0 = vb.x + vb.w - w;
+        let nw = nw.max(1);
+        let nh = nh.max(1);
+        let mut out = ImageBuf::new(nw, nh, img.channels, 0);
+        for y in 0..nh {
+            let sy = y * img.height / nh;
+            for x in 0..nw {
+                let sx = x * img.width / nw;
+                let si = img.pixel_offset(sx, sy);
+                let di = out.pixel_offset(x, y);
+                out.data[di..di + img.channels].copy_from_slice(&img.data[si..si + img.channels]);
             }
         }
-        if h > vb.h {
-            y0 = vb.y;
-            h = vb.h;
-        } else {
-            if y0 < vb.y {
-                y0 = vb.y;
+        out
+    }
+
+    /// Scale a single-channel mask to template size (nearest-neighbor).
+    fn scale_mask(mask: &[u8], src_w: usize, src_h: usize, nw: usize, nh: usize) -> Vec<u8> {
+        if src_w == nw && src_h == nh && mask.len() == nw * nh {
+            return mask.to_vec();
+        }
+        let nw = nw.max(1);
+        let nh = nh.max(1);
+        let mut out = vec![0u8; nw * nh];
+        for y in 0..nh {
+            let sy = y * src_h / nh;
+            for x in 0..nw {
+                let sx = x * src_w / nw;
+                out[y * nw + x] = mask[sy * src_w + sx];
             }
-            if y0 + h > vb.y + vb.h {
-                y0 = vb.y + vb.h - h;
-            }
         }
-        DesktopRect { x: x0, y: y0, w, h }
+        out
     }
 
-    fn downscale_max_dim(img: RgbaImage, max_dim: u32) -> RgbaImage {
-        let (w, h) = img.dimensions();
-        if w <= max_dim && h <= max_dim {
-            return img;
-        }
-        let longest = w.max(h).max(1);
-        let nw = ((w as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-        let nh = ((h as u64 * max_dim as u64) / longest as u64).max(1) as u32;
-        let filter = if max_dim >= PANEL_MAX_DIM {
-            image::imageops::FilterType::CatmullRom
-        } else {
-            image::imageops::FilterType::Triangle
-        };
-        image::imageops::resize(&img, nw, nh, filter)
-    }
-
-    fn capture_search_area(
-        capturer: &mut dyn ScreenCapturer,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
-    ) -> Result<RgbaImage, String> {
-        let vb = capturer.virtual_bounds().map_err(|e| e.to_string())?;
-        let (lx, ty, rx, by) = DesktopRect::normalize_corners(lx, ty, rx, by);
-        if rx <= lx || by <= ty {
-            return Err("invalid search area bounds".into());
-        }
-        let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-        let img = capturer.capture_rect(bounds).map_err(|e| e.to_string())?;
-        Ok(downscale_max_dim(img, PANEL_MAX_DIM))
-    }
-
+    /// Match the template against a shared panel display capture.
+    ///
+    /// When the display was downscaled from `src_w`×`src_h`, the template (and
+    /// mask) are scaled by the same factors so sizes stay consistent.
     fn compute_match(
-        capturer: &mut dyn ScreenCapturer,
+        display: &RgbaImage,
+        src_w: u32,
+        src_h: u32,
         template_path: &Path,
         mask_path: Option<&Path>,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
         blur: i32,
         method: MatchMethod,
     ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
-        let img = capture_search_area(capturer, lx, ty, rx, by)?;
-        let image_w = img.width() as usize;
-        let image_h = img.height() as usize;
-        let search = rgba_to_rgb_buf(&img);
+        let image_w = display.width() as usize;
+        let image_h = display.height() as usize;
+        if image_w == 0 || image_h == 0 {
+            return Err("empty display image".into());
+        }
+        let search = rgba_to_rgb_buf(display);
         let kernel = search_blur_kernel(blur);
         let search_blurred = if kernel > 0 {
             blur_image_owned(search, kernel).map_err(|e| e.to_string())?
         } else {
             search
         };
-        let template_blurred = get_cached_blurred_template(template_path, kernel)
+        let template_full = get_cached_blurred_template(template_path, kernel)
             .map_err(|e| format!("template: {e}"))?;
+        let scale_x = if src_w > 0 {
+            image_w as f32 / src_w as f32
+        } else {
+            1.0
+        };
+        let scale_y = if src_h > 0 {
+            image_h as f32 / src_h as f32
+        } else {
+            1.0
+        };
+        let need_scale =
+            (scale_x - 1.0).abs() > f32::EPSILON || (scale_y - 1.0).abs() > f32::EPSILON;
+        let template_blurred = if need_scale {
+            let nw = ((template_full.width as f32) * scale_x).round().max(1.0) as usize;
+            let nh = ((template_full.height as f32) * scale_y).round().max(1.0) as usize;
+            Arc::new(scale_image_buf(&template_full, nw, nh))
+        } else {
+            Arc::clone(&template_full)
+        };
         let tmpl_w = template_blurred.width;
         let tmpl_h = template_blurred.height;
-        let mask_bytes = mask_path.and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
-        let mask_missing = mask_path.is_some() && mask_bytes.is_none();
-        let mask_ref = mask_bytes.as_deref().map(|m| m.as_slice());
+        let mask_owned = mask_path.and_then(|p| {
+            let full = get_cached_image_mask(p, template_full.height, template_full.width)?;
+            if need_scale {
+                Some(scale_mask(
+                    &full,
+                    template_full.width,
+                    template_full.height,
+                    tmpl_w,
+                    tmpl_h,
+                ))
+            } else {
+                Some(full.as_ref().clone())
+            }
+        });
+        let mask_missing = mask_path.is_some() && mask_owned.is_none();
+        let mask_ref = mask_owned.as_deref();
         let prepared =
             prepare_template(&template_blurred, mask_ref, method).map_err(|e| e.to_string())?;
         let search_prep = prepare_search(&search_blurred);
@@ -506,13 +460,63 @@ mod inner {
         [r, g, b, alpha]
     }
 
-    /// Build RGBA heatmap: template-sized blocks, max-pooled scores, graded colormap.
+    /// Soft disk radius (image pixels) around each match origin in the heatmap.
+    const HEATMAP_PEAK_RADIUS: i32 = 4;
+
+    /// Whether `a` is a better raw match score than `b` for `method`.
+    fn score_better(a: f32, b: f32, method: MatchMethod) -> bool {
+        if method.higher_is_better() {
+            a > b
+        } else {
+            a < b
+        }
+    }
+
+    /// Stamp a compact soft kernel at match origin `(ox, oy)`.
+    /// `pooled` keeps the best raw score; `weight` keeps max radial falloff for that score.
+    fn stamp_peak_kernel(
+        pooled: &mut [f32],
+        weight: &mut [f32],
+        image_w: usize,
+        image_h: usize,
+        ox: i32,
+        oy: i32,
+        score: f32,
+        method: MatchMethod,
+    ) {
+        let r = HEATMAP_PEAK_RADIUS;
+        let r2 = (r * r) as f32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let dist2 = (dx * dx + dy * dy) as f32;
+                if dist2 > r2 {
+                    continue;
+                }
+                let px = ox + dx;
+                let py = oy + dy;
+                if px < 0 || py < 0 || px as usize >= image_w || py as usize >= image_h {
+                    continue;
+                }
+                let falloff = 1.0 - (dist2 / r2).sqrt();
+                let idx = py as usize * image_w + px as usize;
+                let cur = pooled[idx];
+                if !cur.is_finite() || score_better(score, cur, method) {
+                    pooled[idx] = score;
+                    weight[idx] = falloff;
+                } else if (score - cur).abs() <= f32::EPSILON {
+                    weight[idx] = weight[idx].max(falloff);
+                }
+            }
+        }
+    }
+
+    /// Build RGBA heatmap: compact peak kernels at match origins, graded colormap.
     pub(crate) fn scores_to_heatmap_rgba(
         map: &MatchMap,
         image_w: usize,
         image_h: usize,
-        tmpl_w: usize,
-        tmpl_h: usize,
+        _tmpl_w: usize,
+        _tmpl_h: usize,
         method: MatchMethod,
         tolerance: f32,
     ) -> (Vec<u8>, MatchSummary) {
@@ -522,50 +526,46 @@ mod inner {
             return (rgba, summary);
         }
 
-        // Max-pool template footprints so each pixel shows the best overlapping match.
         let init = if method.higher_is_better() {
             f32::NEG_INFINITY
         } else {
             f32::INFINITY
         };
         let mut pooled = vec![init; image_w * image_h];
-        let tw = tmpl_w.min(image_w);
-        let th = tmpl_h.min(image_h);
+        let mut weight = vec![0.0f32; image_w * image_h];
         for y in 0..map.height {
             for x in 0..map.width {
                 let score = map.scores[y * map.width + x];
                 if !score_pools_in_heatmap(score, method, tolerance) {
                     continue;
                 }
-                let x1 = (x + tw).min(image_w);
-                let y1 = (y + th).min(image_h);
-                for py in y..y1 {
-                    for px in x..x1 {
-                        let idx = py * image_w + px;
-                        if method.higher_is_better() {
-                            if score > pooled[idx] {
-                                pooled[idx] = score;
-                            }
-                        } else if score < pooled[idx] {
-                            pooled[idx] = score;
-                        }
-                    }
-                }
+                stamp_peak_kernel(
+                    &mut pooled,
+                    &mut weight,
+                    image_w,
+                    image_h,
+                    x as i32,
+                    y as i32,
+                    score,
+                    method,
+                );
             }
         }
 
         for py in 0..image_h {
             for px in 0..image_w {
-                let score = pooled[py * image_w + px];
+                let idx = py * image_w + px;
+                let score = pooled[idx];
                 if !score.is_finite() {
                     continue;
                 }
                 let norm = score_norm_for_display(score, method, &summary);
-                let px_rgba = pixel_rgba(score, norm, method, tolerance);
+                let mut px_rgba = pixel_rgba(score, norm, method, tolerance);
+                px_rgba[3] = ((px_rgba[3] as f32) * weight[idx].clamp(0.0, 1.0)).round() as u8;
                 if px_rgba[3] == 0 {
                     continue;
                 }
-                let i = (py * image_w + px) * 4;
+                let i = idx * 4;
                 rgba[i..i + 4].copy_from_slice(&px_rgba);
             }
         }
@@ -581,7 +581,8 @@ mod inner {
         score_norm_for_display(score, method, summary) * 100.0
     }
 
-    /// Best template-match score covering image pixel `(px, py)` among strict tolerance hits.
+    /// Best template-match score covering image pixel `(px, py)` among heatmap-pooled hits
+    /// (strict passes and normed near-misses within [`HEATMAP_VIZ_MARGIN`]).
     fn pooled_score_at(
         map: &MatchMap,
         px: usize,
@@ -598,7 +599,7 @@ mod inner {
                     continue;
                 }
                 let score = map.scores[my * map.width + mx];
-                if !score_passes(score, method, tolerance) {
+                if !score_pools_in_heatmap(score, method, tolerance) {
                     continue;
                 }
                 best = Some(match best {
@@ -621,7 +622,7 @@ mod inner {
         tmpl_h: usize,
         method: MatchMethod,
         tolerance: f32,
-    ) -> Option<PixelCheckHover> {
+    ) -> Option<MatchCheckHover> {
         if ix < 0 || iy < 0 {
             return None;
         }
@@ -635,7 +636,7 @@ mod inner {
             tolerance,
         )?;
         let passes = score_passes(score, method, tolerance);
-        Some(PixelCheckHover {
+        Some(MatchCheckHover {
             x: ix,
             y: iy,
             score,
@@ -646,48 +647,35 @@ mod inner {
 
     pub(crate) fn spawn_compute(
         fingerprint: String,
+        display: Arc<RgbaImage>,
+        src_w: u32,
+        src_h: u32,
         template_path: PathBuf,
         mask_path: Option<PathBuf>,
-        lx: i32,
-        ty: i32,
-        rx: i32,
-        by: i32,
         blur: i32,
         method: MatchMethod,
         tolerance: f32,
         close_matches_distance: i32,
-        image_w_hint: usize,
-        image_h_hint: usize,
-    ) -> mpsc::Receiver<Result<PixelCheckResult, String>> {
+    ) -> mpsc::Receiver<Result<MatchCheckResult, String>> {
         let (tx, job_rx) = mpsc::channel();
         thread::spawn(move || {
             let result = (|| {
-                let mut capturer =
-                    crate::native_capture::open_shared_run().map_err(|e| e.to_string())?;
                 let (map, image_w, image_h, tmpl_w, tmpl_h, mask_missing) = compute_match(
-                    &mut capturer,
+                    &display,
+                    src_w,
+                    src_h,
                     &template_path,
                     mask_path.as_deref(),
-                    lx,
-                    ty,
-                    rx,
-                    by,
                     blur,
                     method,
                 )?;
                 let (heatmap_rgba, summary) = scores_to_heatmap_rgba(
-                    &map,
-                    image_w.max(image_w_hint),
-                    image_h.max(image_h_hint),
-                    tmpl_w,
-                    tmpl_h,
-                    method,
-                    tolerance,
+                    &map, image_w, image_h, tmpl_w, tmpl_h, method, tolerance,
                 );
                 let tolerance_matches =
                     collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
-                Ok(PixelCheckResult {
-                    data: PixelCheckData {
+                Ok(MatchCheckResult {
+                    data: MatchCheckData {
                         fingerprint,
                         match_map: map,
                         image_w,
@@ -706,16 +694,16 @@ mod inner {
         job_rx
     }
 
-    pub(crate) fn finish_cache(ctx: &egui::Context, result: PixelCheckResult) -> PixelCheckCache {
+    pub(crate) fn finish_cache(ctx: &egui::Context, result: MatchCheckResult) -> MatchCheckCache {
         let size = [result.data.image_w, result.data.image_h];
         let color = ColorImage::from_rgba_unmultiplied(size, &result.heatmap_rgba);
         let opts = TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
         let heatmap = ctx.load_texture(
-            format!("pixel_check_heatmap_{}", result.data.fingerprint),
+            format!("match_check_heatmap_{}", result.data.fingerprint),
             color,
             opts,
         );
-        PixelCheckCache {
+        MatchCheckCache {
             data: result.data,
             heatmap,
         }
@@ -805,8 +793,8 @@ mod inner {
         viewport: egui::Rect,
         image_size: egui::Vec2,
         view: &ImageViewTransform,
-        cache: &PixelCheckCache,
-        hover: &mut Option<PixelCheckHover>,
+        cache: &MatchCheckCache,
+        hover: &mut Option<MatchCheckHover>,
         method: MatchMethod,
         tolerance: f32,
         show_match_boxes: bool,
@@ -835,7 +823,7 @@ mod inner {
         *hover = None;
         let hover_resp = ui.interact(
             content,
-            ui.id().with("pixel_check_hover"),
+            ui.id().with("match_check_hover"),
             egui::Sense::hover(),
         );
         hover_resp.widget_info(|| {
@@ -878,7 +866,7 @@ mod inner {
         ctx: &egui::Context,
         pointer: egui::Pos2,
         viewport: egui::Rect,
-        h: &PixelCheckHover,
+        h: &MatchCheckHover,
         tol_pct: Option<f32>,
     ) {
         const OFFSET: egui::Vec2 = egui::vec2(20.0, 20.0);
@@ -907,7 +895,7 @@ mod inner {
         };
         let status = if h.passes { "pass" } else { "below tolerance" };
 
-        egui::Area::new(egui::Id::new("pixel_check_mouse_tooltip"))
+        egui::Area::new(egui::Id::new("match_check_mouse_tooltip"))
             .fixed_pos(pos)
             .interactable(false)
             .show(ctx, |ui| {
@@ -943,7 +931,8 @@ mod inner {
         summary: &MatchSummary,
         tolerance_match_count: usize,
         show_many_match_boxes: &mut bool,
-        hover: Option<&PixelCheckHover>,
+        hover: Option<&MatchCheckHover>,
+        method: MatchMethod,
         tolerance: f32,
         tmpl_w: usize,
         tmpl_h: usize,
@@ -970,15 +959,22 @@ mod inner {
         ui.horizontal_wrapped(|ui| {
             if summary.best_score.is_finite() {
                 let label = if summary.best_passes { "pass" } else { "fail" };
-                ui.label(format!(
-                    "Best {:.4} @ ({}, {}) ({label})",
-                    summary.best_score, summary.best_x, summary.best_y
-                ));
-                ui.weak(format!(
-                    "range {:.4}–{:.4}",
-                    summary.score_min, summary.score_max
-                ));
-                ui.weak(format!("tolerance {:.3}", tolerance));
+                let best_pct = closeness_percent(summary.best_score, method, summary);
+                if method.is_normed() {
+                    ui.label(format!(
+                        "Best {best_pct:.1}% @ ({}, {}) ({label})",
+                        summary.best_x, summary.best_y
+                    ));
+                    ui.weak(format!("raw {:.4}", summary.best_score));
+                    ui.weak(format!("tolerance {:.0}%", tolerance * 100.0));
+                } else {
+                    ui.label(format!(
+                        "Best {best_pct:.1}% @ ({}, {}) ({label})",
+                        summary.best_x, summary.best_y
+                    ));
+                    ui.weak(format!("raw {:.4}", summary.best_score));
+                    ui.weak(format!("tolerance {:.3}", tolerance));
+                }
                 if tolerance_match_count > 0 {
                     ui.weak(format!("{tolerance_match_count} match(es)"));
                 } else if summary.peaks_above > 0 {
@@ -1054,7 +1050,7 @@ mod inner {
     }
 
     pub(crate) fn resolve_template(
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
         variant: &str,
@@ -1062,7 +1058,7 @@ mod inner {
         variant_path(catalog, prog, item, variant)
     }
 
-    pub(crate) fn default_variant(catalog: &ProgramCatalog, prog: &str, item: &str) -> String {
+    pub(crate) fn default_variant(catalog: CatalogView<'_>, prog: &str, item: &str) -> String {
         crate::icon_variants::variant_names(catalog, prog, item)
             .into_iter()
             .next()
@@ -1070,7 +1066,7 @@ mod inner {
     }
 
     pub(crate) fn variant_options(
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         prog: &str,
         item: &str,
     ) -> Vec<(String, String)> {
@@ -1084,7 +1080,7 @@ mod inner {
     }
 
     pub(crate) fn should_request(
-        settings: &PixelCheckSettings,
+        settings: &MatchCheckSettings,
         inputs: &str,
         pending: bool,
         now: Instant,
@@ -1101,67 +1097,68 @@ mod inner {
     }
 
     impl crate::data_editor::DataEditor {
-        pub(crate) fn request_pixel_check_match(
+        pub(crate) fn request_match_check(
             &mut self,
-            catalog: &ProgramCatalog,
+            catalog: CatalogView<'_>,
             left: Option<i32>,
             top: Option<i32>,
             right: Option<i32>,
             bottom: Option<i32>,
             force: bool,
             close_matches_distance: i32,
+            display: Option<(Arc<RgbaImage>, u32, u32)>,
         ) {
             if force {
-                self.pixel_check.refresh_gen = self.pixel_check.refresh_gen.wrapping_add(1);
-                self.pixel_check.paused = false;
-                self.invalidate_pixel_check();
+                self.match_check.refresh_gen = self.match_check.refresh_gen.wrapping_add(1);
+                self.match_check.paused = false;
+                self.invalidate_match_check();
             }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
             ) else {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             };
-            if !can_compute_pixel_check(
+            if !can_compute_match_check(
                 catalog,
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 left,
                 top,
                 right,
                 bottom,
             ) {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
             let inputs = inputs_key(
                 prog,
                 item,
-                &self.pixel_check.variant,
+                &self.match_check.variant,
                 left,
                 top,
                 right,
                 bottom,
-                self.pixel_check.blur,
-                self.pixel_check.match_method,
-                self.pixel_check.tolerance,
-                self.pixel_check.refresh_gen,
+                self.match_check.blur,
+                self.match_check.match_method,
+                self.match_check.tolerance,
+                self.match_check.refresh_gen,
                 close_matches_distance,
             );
             if inputs.is_empty() {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
-            if inputs != self.pixel_check.last_inputs {
-                self.pixel_check.paused = false;
+            if inputs != self.match_check.last_inputs {
+                self.match_check.paused = false;
             }
-            if self.pixel_check.paused {
+            if self.match_check.paused {
                 return;
             }
             if self
-                .pixel_check_cache
+                .match_check_cache
                 .as_ref()
                 .is_some_and(|c| c.data.fingerprint == inputs)
             {
@@ -1169,48 +1166,45 @@ mod inner {
             }
             let now = Instant::now();
             if !should_request(
-                &self.pixel_check,
+                &self.match_check,
                 &inputs,
-                self.pixel_check_pending.is_some(),
+                self.match_check_pending.is_some(),
                 now,
             ) {
                 return;
             }
             let Ok(template_path) =
-                resolve_template(catalog, prog, item, &self.pixel_check.variant)
+                resolve_template(catalog, prog, item, &self.match_check.variant)
             else {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             };
             if !template_path.is_file() {
-                self.stop_pixel_check_compute();
+                self.stop_match_check_compute();
                 return;
             }
-            let (lx, ty, rx, by) = match (left, top, right, bottom) {
-                (Some(lx), Some(ty), Some(rx), Some(by)) => (lx, ty, rx, by),
-                _ => return,
+            let Some((display, src_w, src_h)) = display else {
+                // Panel capture not ready yet — retry next frame once underlay lands.
+                return;
             };
             let mask_path =
                 catalog.mask_path(&format!("{prog}{}{item}", sqyre_domain::PROGRAM_DELIMITER));
-            let tolerance = self.pixel_check.tolerance as f32;
+            let tolerance = self.match_check.tolerance as f32;
             let job_rx = spawn_compute(
                 inputs.clone(),
+                display,
+                src_w,
+                src_h,
                 template_path,
                 mask_path,
-                lx,
-                ty,
-                rx,
-                by,
-                self.pixel_check.blur,
-                self.pixel_check.match_method,
+                self.match_check.blur,
+                self.match_check.match_method,
                 tolerance,
                 close_matches_distance,
-                0,
-                0,
             );
-            self.pixel_check.last_inputs = inputs;
-            self.pixel_check.last_request = Some(now);
-            self.pixel_check_pending = Some(job_rx);
+            self.match_check.last_inputs = inputs;
+            self.match_check.last_request = Some(now);
+            self.match_check_pending = Some(job_rx);
         }
     }
 }
@@ -1222,10 +1216,11 @@ pub(crate) use inner::*;
 mod tests {
     use super::inner::{
         closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
-        scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary, MANY_MATCH_BOX_THRESHOLD,
+        scale_image_buf, scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary,
+        MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::MatchMethod;
-    use sqyre_match::MatchMap;
+    use sqyre_match::{ImageBuf, MatchMap};
 
     fn map(w: usize, h: usize, scores: &[f32]) -> MatchMap {
         MatchMap {
@@ -1245,24 +1240,58 @@ mod tests {
 
     #[test]
     fn heatmap_normed_higher_is_better() {
-        let map = map(2, 1, &[0.5, 1.0]);
+        // Wide image so peak kernels at x=0 and x=10 do not overlap.
+        let mut scores = vec![0.0f32; 11];
+        scores[0] = 0.5;
+        scores[10] = 1.0;
+        let map = map(11, 1, &scores);
         let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
-        assert_eq!(rgba.len(), 8);
-        // Higher score → greener (index 1 and 5 are G channels)
-        assert!(rgba[5] > rgba[1]);
+            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::CcoeffNormed, 0.9);
+        assert_eq!(rgba.len(), 11 * 4);
+        // 0.5 is below viz margin — origin stays unpainted; peak at 10 paints.
+        assert_eq!(rgba[3], 0, "weak origin should not paint");
+        assert!(rgba[10 * 4 + 3] > 0, "strong peak should paint");
         assert!(summary.best_score > 0.99);
-        assert!(summary.best_x == 1);
+        assert_eq!(summary.best_x, 10);
     }
 
     #[test]
     fn heatmap_sqdiff_lower_is_better() {
-        let map = map(2, 1, &[0.1, 0.9]);
+        let mut scores = vec![1.0f32; 11];
+        scores[0] = 0.1;
+        scores[10] = 0.9;
+        let map = map(11, 1, &scores);
         let (rgba, summary) =
-            scores_to_heatmap_rgba(&map, 2, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
+            scores_to_heatmap_rgba(&map, 11, 1, 1, 1, MatchMethod::SqdiffNormed, 0.5);
         assert!(summary.best_score < 0.2);
         assert_eq!(summary.best_x, 0);
-        assert!(rgba[3] > rgba[7], "better match should be more opaque");
+        assert!(rgba[3] > 0, "better match peak should paint");
+        assert_eq!(
+            rgba[10 * 4 + 3],
+            0,
+            "worse score outside tolerance should not paint"
+        );
+    }
+
+    #[test]
+    fn scale_image_buf_halves_dims() {
+        let mut img = ImageBuf::new(4, 2, 3, 0);
+        img.data[0] = 10;
+        let corner = img.pixel_offset(3, 1);
+        img.data[corner] = 20;
+        let out = scale_image_buf(&img, 2, 1);
+        assert_eq!(out.width, 2);
+        assert_eq!(out.height, 1);
+        assert_eq!(out.data[0], 10);
+    }
+
+    #[test]
+    fn heatmap_peak_kernel_stays_compact() {
+        let map = map(1, 1, &[1.0]);
+        let (rgba, _) = scores_to_heatmap_rgba(&map, 20, 20, 8, 8, MatchMethod::CcoeffNormed, 0.9);
+        let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
+        // Soft disk radius 4 → at most (2*4+1)^2 = 81 cells, far below an 8×8 footprint.
+        assert!(painted > 0 && painted <= 81, "painted={painted}");
     }
 
     #[test]
@@ -1324,11 +1353,22 @@ mod tests {
     }
 
     #[test]
-    fn hover_strict_skips_below_tolerance() {
+    fn hover_includes_heatmap_near_miss() {
+        // 0.85 is below tolerance 0.95 but within HEATMAP_VIZ_MARGIN (0.12).
+        let map = map(2, 1, &[0.85, 0.95]);
+        let summary = summary(0.85, 0.95);
+        let h = hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95)
+            .expect("near-miss should be hoverable");
+        assert!(!h.passes);
+        assert!((h.closeness_pct - 85.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn hover_skips_far_below_heatmap_margin() {
         let map = map(2, 1, &[0.5, 0.95]);
         let summary = summary(0.5, 0.95);
         assert!(
-            hover_at_image(&map, &summary, 0, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).is_none()
+            hover_at_image(&map, &summary, 0, 0, 1, 1, MatchMethod::CcoeffNormed, 0.95).is_none()
         );
     }
 

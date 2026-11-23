@@ -8,8 +8,9 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::window_types::ProcessIcon;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
-    merge_fs_warning, Database, FsWarn, OverlayButtonConfig, ProgramAtlas, ProgramCatalog,
-    ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings,
+    merge_fs_warning, CatalogView, Database, FsWarn, OverlayButtonConfig, ProgramAtlas,
+    ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
+    UserSettings,
 };
 use sqyre_validate::validate_entity_name;
 
@@ -335,7 +336,7 @@ impl DataEditor {
                 };
                 match catalog.upsert_collection(&prog, col.clone()) {
                     Ok(()) => match self.start_collection_capture(
-                        catalog,
+                        CatalogView::new(catalog),
                         &prog,
                         &col,
                         Some((prog.clone(), name.clone())),
@@ -384,10 +385,10 @@ impl DataEditor {
                 ));
                 return;
             }
-            EditorTab::PixelCheck => {
+            EditorTab::MatchCheck => {
                 self.set_err(format!(
                     "{} is read-only — select an item to probe.",
-                    EditorTab::PixelCheck.label()
+                    EditorTab::MatchCheck.label()
                 ));
                 return;
             }
@@ -546,7 +547,7 @@ impl DataEditor {
                     return Some(("Atlas", new.to_string()));
                 }
             }
-            EditorTab::ScreenCap | EditorTab::PixelCheck => {}
+            EditorTab::ScreenCap | EditorTab::MatchCheck => {}
             EditorTab::Overlay => {}
         }
         None
@@ -675,7 +676,7 @@ impl DataEditor {
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
-            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => Ok(None),
+            EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay => Ok(None),
         };
 
         match result {
@@ -735,8 +736,8 @@ impl DataEditor {
                     }
                 }
                 merge_fs_warning(&mut fs_warn, catalog.rename_item(&prog, &old, new_name)?);
-                icons.invalidate_item(catalog, &prog, &old);
-                icons.invalidate_item(catalog, &prog, new_name);
+                icons.invalidate_item(CatalogView::new(catalog), &prog, &old);
+                icons.invalidate_item(CatalogView::new(catalog), &prog, new_name);
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
@@ -1038,7 +1039,7 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_item(&prog, &name).inspect(|_| {
-                    icons.invalidate_item(catalog, &prog, &name);
+                    icons.invalidate_item(CatalogView::new(catalog), &prog, &name);
                     self.selected_entity = None;
                     self.reset_item_form();
                 })
@@ -1106,7 +1107,7 @@ impl DataEditor {
                     None
                 })
             }
-            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => return,
+            EditorTab::ScreenCap | EditorTab::MatchCheck | EditorTab::Overlay => return,
         };
         match result {
             Ok(fs_warn) => {
@@ -1138,7 +1139,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
         crate::workspace::Workspace::persist_database_for_editor(db, macros, catalog)?;
-        self.rebuild_list_cache(catalog);
+        self.rebuild_list_cache(CatalogView::new(catalog));
         Ok(())
     }
 }
@@ -1315,7 +1316,7 @@ mod tests {
         // Tools / Overlay tabs never overwrite catalog entities.
         for tab in [
             EditorTab::ScreenCap,
-            EditorTab::PixelCheck,
+            EditorTab::MatchCheck,
             EditorTab::Overlay,
         ] {
             let e = editor(tab, "Game", "x", "y");

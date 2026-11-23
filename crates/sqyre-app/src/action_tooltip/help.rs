@@ -258,8 +258,8 @@ pub const DE_SCREENCAP_REF: &str =
 pub const DE_SCREENCAP_NEW_ITEM: &str =
     "Create a catalog item in the selected program using Name, Tags, Cols/Rows/Stack max, and Mask, with the preview screenshot as the Original icon.";
 #[cfg(feature = "native-runtime")]
-pub const DE_PIXELCHECK_BOUNDS: &str =
-    "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
+pub const DE_MATCHCHECK_BOUNDS: &str =
+    "Search-area bounds for the live template match preview; relative to one monitor; integers or ${var}.";
 pub const DE_COLLECTION_AREA: &str =
     "Search area this collection covers. The collection takes the same name.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";

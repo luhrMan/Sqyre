@@ -110,7 +110,7 @@ fn activate_freedesktop_application(app_id: &str) -> Result<bool, AutomationErro
     match proxy.call::<_, _, ()>("Activate", &(platform,)) {
         Ok(()) => Ok(true),
         Err(e) => {
-            crate::note(&format!("wayland clients: Activate {app_id}: {e}"));
+            sqyre_ports::note(&format!("wayland clients: Activate {app_id}: {e}"));
             Ok(false)
         }
     }

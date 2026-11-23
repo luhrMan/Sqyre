@@ -13,7 +13,7 @@ use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
 };
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashMap;
 
@@ -161,7 +161,7 @@ fn overflow_pill_width(ui: &egui::Ui, hidden: usize) -> f32 {
 
 fn target_thumb_size(
     ui: &egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
 ) -> Vec2 {
@@ -267,7 +267,7 @@ pub(crate) fn paint_summary_pill_cell(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     theme: VarTheme<'_>,
     band_h: f32,
@@ -330,7 +330,7 @@ fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
 
 fn paint_target_thumb(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
@@ -363,7 +363,7 @@ fn paint_target_thumb(
 fn paint_image_search_extras(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     is_dark: bool,
     drag_handle: &mut egui::Rect,
@@ -442,7 +442,7 @@ fn paint_image_search_extras(
 pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
 ) {
     let ActionKind::ImageSearch(d) = &action.kind else {
@@ -580,7 +580,7 @@ impl ImageSearchTipTagGroup {
 /// Member order matches the action's Search sorting (`sort_by` / `sort_then` /
 /// `tag_priority`) so the view tip agrees with the edit tip.
 pub(crate) fn image_search_tip_tag_groups(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
     sort_then: sqyre_domain::ItemSortThen,
@@ -626,7 +626,7 @@ pub(crate) fn image_search_tip_tag_groups(
 /// catalogs. Identical inputs share one entry; catalog mutations invalidate it.
 pub(crate) fn cached_sorted_image_search_targets(
     ctx: &egui::Context,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
@@ -667,7 +667,7 @@ pub(crate) fn cached_sorted_image_search_targets(
 
 /// Display / search order for Image Search targets (explicit + tag expansion).
 pub(crate) fn sorted_image_search_targets(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     targets: &[String],
     target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
@@ -691,7 +691,7 @@ pub(crate) fn sorted_image_search_targets(
     sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
 }
 
-fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemRef> {
+fn catalog_item_refs(catalog: CatalogView<'_>) -> Vec<sqyre_domain::CatalogItemRef> {
     use sqyre_domain::{CatalogItemRef, PROGRAM_DELIMITER};
     catalog
         .program_names()
@@ -717,7 +717,7 @@ fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemR
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     known_vars: &KnownVariableNames,
     is_dark: bool,
@@ -966,6 +966,7 @@ mod tests {
     use super::*;
     use crate::image_view;
     use sqyre_domain::{ActionKind, CoordinateRef, PressState, ScalarValue};
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -976,7 +977,7 @@ mod tests {
     #[test]
     fn image_search_tip_tag_groups_lists_names_and_members() {
         use sqyre_domain::{ItemSortBy, ItemSortThen};
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
         let mut cat = ProgramCatalog::default();
@@ -1015,7 +1016,7 @@ mod tests {
         );
 
         let groups = image_search_tip_tag_groups(
-            &cat,
+            CatalogView::from(&cat),
             &["+consumable".into(), "-junk".into()],
             ItemSortBy::Name,
             ItemSortThen::NameAsc,
@@ -1039,7 +1040,7 @@ mod tests {
     #[test]
     fn image_search_view_tip_sort_matches_edit_order() {
         use sqyre_domain::{ItemSortBy, ItemSortThen};
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
 
         let mut cat = ProgramCatalog::default();
@@ -1088,8 +1089,14 @@ mod tests {
         let sort_by = ItemSortBy::Name;
         let sort_then = ItemSortThen::NameDesc;
 
-        let edit_order =
-            sorted_image_search_targets(&cat, &targets, &tags, sort_by, sort_then, &[]);
+        let edit_order = sorted_image_search_targets(
+            CatalogView::from(&cat),
+            &targets,
+            &tags,
+            sort_by,
+            sort_then,
+            &[],
+        );
         assert_eq!(
             edit_order,
             vec![
@@ -1101,22 +1108,43 @@ mod tests {
 
         // Old view tip Items passed `&[]` for tags: tags-only actions showed an
         // empty Items grid. Expansion must match edit/search order.
-        assert!(sorted_image_search_targets(&cat, &[], &[], sort_by, sort_then, &[]).is_empty());
+        assert!(sorted_image_search_targets(
+            CatalogView::from(&cat),
+            &[],
+            &[],
+            sort_by,
+            sort_then,
+            &[]
+        )
+        .is_empty());
         assert_eq!(
-            sorted_image_search_targets(&cat, &[], &tags, sort_by, sort_then, &[]),
+            sorted_image_search_targets(
+                CatalogView::from(&cat),
+                &[],
+                &tags,
+                sort_by,
+                sort_then,
+                &[]
+            ),
             edit_order
         );
 
         // Old tag groups always sorted A→Z; they must follow Search sorting.
-        let groups = image_search_tip_tag_groups(&cat, &tags, sort_by, sort_then, &[]);
+        let groups =
+            image_search_tip_tag_groups(CatalogView::from(&cat), &tags, sort_by, sort_then, &[]);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members, edit_order);
-        let alpha_groups =
-            image_search_tip_tag_groups(&cat, &tags, ItemSortBy::Name, ItemSortThen::NameAsc, &[]);
+        let alpha_groups = image_search_tip_tag_groups(
+            CatalogView::from(&cat),
+            &tags,
+            ItemSortBy::Name,
+            ItemSortThen::NameAsc,
+            &[],
+        );
         assert_ne!(alpha_groups[0].members, edit_order);
 
         let footprint = sorted_image_search_targets(
-            &cat,
+            CatalogView::from(&cat),
             &targets,
             &tags,
             ItemSortBy::Footprint,
@@ -1132,7 +1160,7 @@ mod tests {
             ]
         );
         let fp_groups = image_search_tip_tag_groups(
-            &cat,
+            CatalogView::from(&cat),
             &tags,
             ItemSortBy::Footprint,
             ItemSortThen::FootprintLarge,
@@ -1241,7 +1269,14 @@ mod tests {
                                 is_dark: true,
                             };
                             paint_summary_pill_cell(
-                                ui, &action, pill, &catalog, &mut icons, theme, band_h, false,
+                                ui,
+                                &action,
+                                pill,
+                                CatalogView::from(&catalog),
+                                &mut icons,
+                                theme,
+                                band_h,
+                                false,
                             )
                             .rect
                         })
@@ -1465,10 +1500,11 @@ mod tests {
     }
 
     fn paint_test_row(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> RowInteraction {
+        let catalog = ProgramCatalog::default();
         paint_action_row(
             ui,
             action,
-            &ProgramCatalog::default(),
+            CatalogView::from(&catalog),
             &mut IconCache::new(),
             &KnownVariableNames::default(),
             is_dark,
@@ -1498,10 +1534,11 @@ mod tests {
                 ..Default::default()
             },
         )));
+        let catalog = ProgramCatalog::default();
         paint_action_row(
             ui,
             &search,
-            &ProgramCatalog::default(),
+            CatalogView::from(&catalog),
             &mut IconCache::new(),
             &KnownVariableNames::default(),
             true,
@@ -1535,7 +1572,7 @@ mod tests {
         use egui::os::OperatingSystem;
         use egui_kittest::Harness;
         use image::ImageFormat;
-        use sqyre_persist::{ProgramData, ProgramItem};
+        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
         use std::collections::BTreeMap;
         use std::io::Cursor;
 
@@ -1612,7 +1649,12 @@ mod tests {
                             .small()
                             .strong(),
                     );
-                    paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
+                    paint_image_search_tooltip_thumbs_pub(
+                        ui,
+                        &action,
+                        CatalogView::from(&catalog),
+                        &mut icons,
+                    );
                 });
             });
 

@@ -3,10 +3,10 @@
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::RgbaImage;
-use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
+use sqyre_capture::{shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
-use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
-use sqyre_ports::{clamp_search_rect, CaptureError, DesktopRect};
+use sqyre_persist::{CatalogView, ProgramPoint, ProgramSearchArea};
+use sqyre_ports::{clamp_search_rect, mark_site, CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
@@ -64,6 +64,8 @@ struct CacheEntry {
     marker: PreviewMarker,
     /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
     region: Option<Arc<RgbaImage>>,
+    /// Downscaled panel display pixels (same buffer as the texture); Match Check source.
+    display: Option<Arc<RgbaImage>>,
 }
 
 struct ReadyPreview {
@@ -190,6 +192,27 @@ impl PreviewTooltipCache {
             .and_then(|e| e.region.as_ref().map(Arc::clone))
     }
 
+    /// Panel search-area display pixels plus pre-downscale capture size (`src_w`, `src_h`).
+    ///
+    /// Match Check runs template match on this buffer so the heatmap aligns with the
+    /// underlay the user is looking at (no second capture).
+    pub fn panel_display_image(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> Option<(Arc<RgbaImage>, u32, u32)> {
+        let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
+        let entry = self.entries.get(&key)?;
+        let display = entry.display.as_ref().map(Arc::clone)?;
+        let (src_w, src_h) = match entry.marker {
+            PreviewMarker::Area { src_w, src_h, .. } => (src_w, src_h),
+            PreviewMarker::Point { src_w, src_h, .. } => (src_w, src_h),
+        };
+        Some((display, src_w, src_h))
+    }
+
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
     ///
     /// Consumed by the recording overlay so the gold selection outline is drawn on
@@ -268,7 +291,7 @@ impl PreviewTooltipCache {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         program: &str,
         name: &str,
         kind: PreviewKind,
@@ -314,7 +337,7 @@ impl PreviewTooltipCache {
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         force: bool,
@@ -360,7 +383,7 @@ impl PreviewTooltipCache {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         help: &str,
@@ -666,12 +689,13 @@ impl PreviewTooltipCache {
         captured: CapturedPreview,
         keep_region: bool,
     ) -> Result<ReadyPreview, String> {
-        let img = captured.display;
+        let img = Arc::new(captured.display);
         let size = [img.width() as usize, img.height() as usize];
         mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         // Mipmaps help panel zoom; tooltips stay cheap without them.
-        let opts = if key.starts_with("panel:") {
+        let is_panel = key.starts_with("panel:");
+        let opts = if is_panel {
             TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
         } else {
             TextureOptions::LINEAR
@@ -682,6 +706,7 @@ impl PreviewTooltipCache {
         } else {
             None
         };
+        let display = is_panel.then(|| Arc::clone(&img));
         let marker = captured.marker;
         self.insert(
             key.to_string(),
@@ -691,6 +716,7 @@ impl PreviewTooltipCache {
                 coords,
                 marker,
                 region,
+                display,
             },
         );
         mark_site("preview:finish_texture:done");
@@ -1073,7 +1099,7 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
 }
 
 fn ref_preview_spec(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     macro_: &Macro,
     coord_ref: &CoordinateRef,
     kind: PreviewKind,
@@ -1133,7 +1159,7 @@ enum EntityPreviewError {
 }
 
 fn entity_preview_spec(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     program: &str,
     name: &str,
     kind: PreviewKind,
@@ -1466,7 +1492,7 @@ fn log_hover_outline_transition(
             return;
         }
         *guard = Some((key.clone(), rect));
-        sqyre_capture::event_log(
+        sqyre_ports::event_log(
             "SQYRE_PREVIEW",
             &[
                 ("op", "hover_outline"),
@@ -1795,6 +1821,7 @@ fn marker_scale(content: egui::Rect, marker: PreviewMarker) -> (f32, f32) {
 mod tests {
     use super::*;
     use image::Rgba;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     fn phone_screen() -> egui::Rect {
         egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0))
@@ -1880,6 +1907,59 @@ mod tests {
         assert!(
             shown,
             "hovering the preview error icon did not paint the message on screen"
+        );
+    }
+
+    /// Self-sizing tip Areas must not shrink wrapped text to one-character rows
+    /// across frames (same ratchet class as item-icon tooltips).
+    #[test]
+    fn preview_error_tip_width_does_not_ratchet() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.show_tooltips_only_when_still = false;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let mut first_w = None;
+        let mut last_w = None;
+        for frame in 1..12 {
+            let events = if frame == 1 {
+                vec![egui::Event::PointerMoved(center)]
+            } else {
+                Vec::new()
+            };
+            let out = ctx.run_ui(input(screen, frame as f64 * 0.2, events), |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            });
+            let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.text().contains(LITERAL_COORDS_MSG) => {
+                    Some(t.galley.size().x)
+                }
+                _ => None,
+            });
+            if let Some(w) = tip_w {
+                first_w.get_or_insert(w);
+                last_w = Some(w);
+            }
+            out.drop_without_applying_deltas();
+        }
+        let (first, last) = (
+            first_w.expect("preview tip text never painted"),
+            last_w.expect("preview tip text vanished"),
+        );
+        assert!(
+            last + 1.0 >= first,
+            "preview tip width ratcheted down: first={first:.1} last={last:.1}"
         );
     }
 
@@ -2246,7 +2326,9 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) = entity_preview_spec(&cat, "Game", "Spot", PreviewKind::Point).unwrap();
+        let (_, _, coords) =
+            entity_preview_spec(CatalogView::from(&cat), "Game", "Spot", PreviewKind::Point)
+                .unwrap();
         match coords {
             PreviewCoords::Point { x, y } => assert_eq!((x, y), (1930, 120)),
             _ => panic!("expected point"),
@@ -2268,8 +2350,13 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) =
-            entity_preview_spec(&cat, "Game", "Box", PreviewKind::SearchArea).unwrap();
+        let (_, _, coords) = entity_preview_spec(
+            CatalogView::from(&cat),
+            "Game",
+            "Box",
+            PreviewKind::SearchArea,
+        )
+        .unwrap();
         match coords {
             PreviewCoords::SearchArea {
                 left,
@@ -2309,8 +2396,13 @@ mod tests {
             },
         )
         .unwrap();
-        let (_, _, coords) =
-            entity_preview_spec(&cat, "Game", "Box", PreviewKind::Collection).unwrap();
+        let (_, _, coords) = entity_preview_spec(
+            CatalogView::from(&cat),
+            "Game",
+            "Box",
+            PreviewKind::Collection,
+        )
+        .unwrap();
         match coords {
             PreviewCoords::SearchArea {
                 left,

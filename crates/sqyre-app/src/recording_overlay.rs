@@ -23,9 +23,9 @@
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
-use sqyre_capture::{event_log, mark_site, SelectionGrab, SelectionOutline};
+use sqyre_capture::{SelectionGrab, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
-use sqyre_ports::DesktopRect;
+use sqyre_ports::{event_log, mark_site, DesktopRect};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -133,7 +133,7 @@ impl RecordingOverlay {
                 .peek_search_area_selection()
                 .map(|(px, py, ax, ay, bx, by)| {
                     if self.monitor_rects.is_empty() {
-                        self.monitor_rects = sqyre_capture::preferred_monitor_rects();
+                        self.monitor_rects = sqyre_ports::preferred_monitor_rects();
                     }
                     let rects: Vec<(i32, i32, i32, i32)> = self
                         .monitor_rects
@@ -360,7 +360,7 @@ impl RecordingOverlay {
         }
         if self.monitor_rects.is_empty() {
             // Prefer shared layout (portal/X11) so rubber-band clamp matches save-time slots.
-            let preferred = sqyre_capture::preferred_monitor_rects();
+            let preferred = sqyre_ports::preferred_monitor_rects();
             if !preferred.is_empty() {
                 self.monitor_rects = preferred;
             } else if let Some(snapshot) = self.snapshot.as_ref() {
@@ -412,7 +412,7 @@ impl RecordingOverlay {
         if !screen_click.is_armed() {
             return;
         }
-        let portal_raw = sqyre_capture::portal_cursor_position();
+        let portal_raw = sqyre_ports::portal_cursor_position();
         let wayland = skip_x11_pointer_grab();
         // Create (and pre-map) edge windows on arm — while the user is still in
         // Sqyre — so the first click on an XWayland game only ConfigureWindow.
@@ -551,7 +551,7 @@ impl RecordingOverlay {
             if !sqyre_hotkeys::linux_uses_evdev_grab() {
                 return;
             }
-            let portal = sqyre_capture::portal_cursor_position();
+            let portal = sqyre_ports::portal_cursor_position();
             let x11 = if portal.is_none() {
                 sqyre_capture::x11_root_pointer()
             } else {
@@ -645,7 +645,7 @@ impl RecordingOverlay {
             _ => screen_click.last_pos(),
         };
         if self.monitor_rects.is_empty() {
-            self.monitor_rects = sqyre_capture::preferred_monitor_rects();
+            self.monitor_rects = sqyre_ports::preferred_monitor_rects();
         }
         let monitor = monitor_for_pointer_in(&self.monitor_rects, mx, my);
         let hud_at_top = pick_hud_edge(self.hud_at_top, my, monitor);
@@ -738,7 +738,7 @@ impl Drop for RecordingOverlay {
             stop.store(true, Ordering::Relaxed);
         }
         if let Some(join) = self.join.take() {
-            if sqyre_capture::process_exiting() {
+            if sqyre_ports::process_exiting() {
                 std::mem::forget(join);
             } else {
                 let _ = join.join();

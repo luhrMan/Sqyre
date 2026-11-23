@@ -21,7 +21,7 @@ use crate::ButtonFace;
 use egui::{self};
 use parking_lot::Mutex;
 use sqyre_capture::{
-    get_active_window, note, window_is_our_process, window_is_transient_shell_focus,
+    get_active_window, window_is_our_process, window_is_transient_shell_focus,
     window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::GENERAL_PROGRAM;
@@ -32,6 +32,7 @@ use sqyre_persist::{
 use sqyre_persist::{
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
+use sqyre_ports::note;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -183,6 +184,8 @@ impl Drop for MacroOverlay {
 
 impl MacroOverlay {
     pub fn new() -> Self {
+        // Overlay hosts read monitor/cursor status via ports; install capture hooks.
+        sqyre_capture::wire_ports_capture_status();
         Self {
             focus_slot: Arc::new(Mutex::new(FocusSlot::idle())),
             focus_poller: Mutex::new(None),
@@ -1021,7 +1024,7 @@ fn hide_cached_keep_foreign(g: &mut FocusSlot) -> bool {
     let had = g.cached.take().is_some();
     if had {
         note("overlay: none-focus cleared cached (keep last_foreign for image gate)");
-        sqyre_capture::mark_site("overlay:none-hide-cached");
+        sqyre_ports::mark_site("overlay:none-hide-cached");
     }
     had
 }

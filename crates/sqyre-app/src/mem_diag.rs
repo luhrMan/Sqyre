@@ -8,7 +8,7 @@
 //! For allocation stacks, rebuild with `--features dhat-heap` and quit cleanly
 //! to write `dhat-heap.json` in the working directory.
 
-use sqyre_capture::{event_log, log_dir, note};
+use sqyre_ports::{event_log, log_dir, note};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

@@ -302,12 +302,14 @@ fn var(m: &Macro, name: &str) -> Option<String> {
 }
 
 fn cursor() -> (i32, i32) {
-    sqyre_capture::desktop_cursor_position().expect("cursor position")
+    sqyre_capture::wire_ports_capture_status();
+    sqyre_ports::desktop_cursor_position().expect("cursor position")
 }
 
 #[test]
 #[ignore = "drives the real Windows desktop (mouse, keyboard, focus, screen)"]
 fn every_desktop_action_runs_against_a_real_window() {
+    sqyre_capture::wire_ports_capture_status();
     sqyre_capture::enable_per_monitor_dpi_v2();
     let tmp = tempfile::tempdir().unwrap();
     let fx = Fixture::launch(tmp.path());

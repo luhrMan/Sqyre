@@ -7,7 +7,7 @@ use eframe::egui::{
 };
 use egui::text_selection::CCursorRange;
 use sqyre_domain::{action_type_table, Macro, PROGRAM_DELIMITER};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_serialize::decode_macro_from_yaml;
 
 const WINDOW_ID: &str = "sqyre_macro_prompt_builder";
@@ -81,7 +81,7 @@ impl MacroPromptBuilderUi {
         &mut self,
         ctx: &egui::Context,
         macros: &[Macro],
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> PromptBuilderOutcome {
         if !self.open {
@@ -120,7 +120,7 @@ impl MacroPromptBuilderUi {
         &mut self,
         ui: &mut egui::Ui,
         macros: &[Macro],
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         suggestions: &[Suggestion],
         outcome: &mut PromptBuilderOutcome,
     ) {
@@ -146,7 +146,7 @@ impl MacroPromptBuilderUi {
         &mut self,
         ui: &mut egui::Ui,
         macros: &[Macro],
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         suggestions: &[Suggestion],
         outcome: &mut PromptBuilderOutcome,
     ) {
@@ -516,7 +516,7 @@ pub(crate) fn apply_at_completion(
     start_char + insert.chars().count()
 }
 
-pub(crate) fn collect_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Vec<Suggestion> {
+pub(crate) fn collect_suggestions(macros: &[Macro], catalog: CatalogView<'_>) -> Vec<Suggestion> {
     let mut out = Vec::new();
     out.push(Suggestion {
         kind: SuggestionKind::KindPrefix,
@@ -559,7 +559,7 @@ pub(crate) fn collect_suggestions(macros: &[Macro], catalog: &ProgramCatalog) ->
     out
 }
 
-fn push_catalog_suggestions(out: &mut Vec<Suggestion>, catalog: &ProgramCatalog) {
+fn push_catalog_suggestions(out: &mut Vec<Suggestion>, catalog: CatalogView<'_>) {
     let res = catalog.resolution_key();
     for program in catalog.program_names() {
         if !is_editor_listed_program(program) {
@@ -724,7 +724,7 @@ fn parse_query_filter(q: &str) -> (Option<&str>, &str) {
 // ── Prompt generation ───────────────────────────────────────────────────────
 
 /// Build a schema- and catalog-aware prompt for an external AI tool.
-pub fn build_prompt(user_nl: &str, macros: &[Macro], catalog: &ProgramCatalog) -> String {
+pub fn build_prompt(user_nl: &str, macros: &[Macro], catalog: CatalogView<'_>) -> String {
     let mut out = String::with_capacity(4096);
     out.push_str(SYSTEM_PROMPT_HEADER);
     out.push_str("\n\n## Allowed action types\n");
@@ -756,7 +756,7 @@ pub fn build_prompt(user_nl: &str, macros: &[Macro], catalog: &ProgramCatalog) -
     out
 }
 
-fn append_catalog_inventory(out: &mut String, catalog: &ProgramCatalog) {
+fn append_catalog_inventory(out: &mut String, catalog: CatalogView<'_>) {
     let res = catalog.resolution_key();
     let mut any = false;
     for program in catalog.program_names() {
@@ -966,7 +966,9 @@ mod tests {
     use sqyre_domain::{
         root_loop, Action, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
     };
-    use sqyre_persist::{ensure_general_program, ProgramItem, ProgramPoint, ProgramSearchArea};
+    use sqyre_persist::{
+        ensure_general_program, ProgramCatalog, ProgramItem, ProgramPoint, ProgramSearchArea,
+    };
 
     fn demo_catalog() -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();
@@ -1039,7 +1041,7 @@ mod tests {
     fn filter_by_kind_and_needle() {
         let macros = [sample_macro("Buy Potion")];
         let cat = demo_catalog();
-        let all = collect_suggestions(&macros, &cat);
+        let all = collect_suggestions(&macros, CatalogView::from(&cat));
         let actions = filter_suggestions(&all, "action:image", 20);
         assert!(actions.iter().any(|s| s.insert.contains("imagesearch")));
         assert!(actions.iter().all(|s| s.kind == SuggestionKind::Action));
@@ -1055,7 +1057,11 @@ mod tests {
     fn prompt_includes_all_wire_keys_and_catalog() {
         let macros = [sample_macro("Helper")];
         let cat = demo_catalog();
-        let prompt = build_prompt("Click the OK button on Demo", &macros, &cat);
+        let prompt = build_prompt(
+            "Click the OK button on Demo",
+            &macros,
+            CatalogView::from(&cat),
+        );
         for key in WIRE_TYPE_KEYS {
             assert!(
                 prompt.contains(&format!("`{key}`")),

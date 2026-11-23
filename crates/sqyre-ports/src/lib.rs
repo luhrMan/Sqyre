@@ -1,11 +1,14 @@
-//! OS-facing port traits (capture, automation, focus) and execution telemetry
-//! (action log, highlight, runtime vars) shared by adapters and the macro executor.
+//! OS-facing port traits (capture, automation, focus), diagnostic logging, and
+//! execution telemetry (action log, highlight, runtime vars) shared by adapters
+//! and the macro executor.
 
 mod action_log;
 mod automation_error;
 mod capture_error;
+mod capture_status;
 mod click_fx;
 mod detection_span;
+mod diag;
 mod domain_ports;
 mod highlight;
 mod image_limits;
@@ -20,8 +23,22 @@ pub use action_log::{
 };
 pub use automation_error::AutomationError;
 pub use capture_error::{CaptureError, NotReady};
+pub use capture_status::{
+    desktop_cursor_position, install_capture_status, linux_session_capture_warning,
+    nudge_portal_capture_after_ui_hide, pipewire_stream_waking, portal_cursor_position,
+    portal_input_ready, portal_screencast_granted, preferred_monitor_rects,
+    release_capture_frame_cache, release_idle_capture_frame_cache,
+    request_portal_screencast_picker, revoke_portal_grants, set_overlay_buttons_in_detection,
+    set_pipewire_suspend_on_idle, shared_capturer_dead, shared_capturer_is_opening,
+    shared_capturer_open_may_block, shared_capturer_ready, CaptureStatusHooks,
+};
 pub use click_fx::{ClickFxSink, SharedClickFx};
 pub use detection_span::{overlay_macro_hide_held, set_overlay_macro_hide_hooks, OverlayMacroHide};
+pub use diag::{
+    cap_log, disk_logging_enabled, event_log, log_dir, mark_site, note, process_exiting,
+    read_last_site, set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE,
+    DIAG_LOG_FILE, LAST_SITE_FILE, SITE_HIST_FILE,
+};
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };

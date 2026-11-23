@@ -1,9 +1,9 @@
 //! Portal ScreenCast / Remote Desktop session, restore tokens, and EIS input.
 
-use crate::cap_log;
 use crate::error::CaptureError;
 use crate::linux::wayland::eis::EisInput;
 use parking_lot::Mutex;
+use sqyre_ports::cap_log;
 use sqyre_ports::{AutomationError, DesktopRect, APP_DIR_NAME};
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};

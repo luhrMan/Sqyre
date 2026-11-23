@@ -26,6 +26,7 @@ use sqyre_domain::{blank_action, Action, ActionKind, Macro};
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 #[cfg(feature = "native-runtime")]
 use sqyre_overlay::MacroOverlay;
+use sqyre_persist::CatalogView;
 use sqyre_persist::UserSettings;
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
@@ -35,7 +36,7 @@ const DOCS_EDITOR_TABS: &[(&str, EditorTab)] = &[
     ("items", EditorTab::Items),
     ("masks", EditorTab::Masks),
     ("screencap", EditorTab::ScreenCap),
-    ("pixelcheck", EditorTab::PixelCheck),
+    ("matchcheck", EditorTab::MatchCheck),
     ("points", EditorTab::Points),
     ("searchareas", EditorTab::SearchAreas),
     ("collections", EditorTab::Collections),
@@ -154,11 +155,18 @@ impl SqyreApp {
                 logs_state: LogsWindowState::default(),
             },
             tree,
-            hotkeys,
-            screen_click,
-            macro_record_bridge: MacroRecordBridge::new(),
-            pending_hotkey_macros,
-            hotkey_repaint,
+            hotkey: crate::HotkeyHost {
+                hotkeys,
+                screen_click,
+                macro_record_bridge: MacroRecordBridge::new(),
+                pending_hotkey_macros,
+                hotkey_repaint,
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+                hotkey_chooser: None,
+                panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
+                start_when_idle: None,
+            },
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
             macro_record: MacroRecordUi::default(),
@@ -173,52 +181,51 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            hidden_for_recording: false,
-            #[cfg(feature = "native-runtime")]
-            recording_overlay: RecordingOverlay::new(),
-            #[cfg(feature = "native-runtime")]
-            click_fx_overlay: crate::click_fx::ClickFxOverlay::new(),
-            #[cfg(all(target_os = "android", feature = "native-runtime"))]
-            screen_pick: Default::default(),
-            #[cfg(all(target_os = "android", feature = "native-runtime"))]
-            pending_projection_run: None,
-            #[cfg(feature = "native-runtime")]
-            macro_overlay: MacroOverlay::new(),
-            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
-            overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
-            hotkey_chooser: None,
+            overlay: crate::OverlayShell {
+                #[cfg(not(target_arch = "wasm32"))]
+                hidden_for_recording: false,
+                #[cfg(feature = "native-runtime")]
+                recording_overlay: RecordingOverlay::new(),
+                #[cfg(feature = "native-runtime")]
+                click_fx_overlay: crate::click_fx::ClickFxOverlay::new(),
+                #[cfg(all(target_os = "android", feature = "native-runtime"))]
+                screen_pick: Default::default(),
+                #[cfg(feature = "native-runtime")]
+                macro_overlay: MacroOverlay::new(),
+                #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+                overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
+            },
+            lifecycle: crate::NativeLifecycle {
+                #[cfg(not(target_arch = "wasm32"))]
+                tasks: crate::BackgroundTasks::default(),
+                // Screenshots never run the probe; mark it already finished.
+                #[cfg(all(
+                    not(target_arch = "wasm32"),
+                    feature = "native-runtime",
+                    target_os = "linux"
+                ))]
+                portal_probe: crate::PortalProbe::finished(),
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                permissions_intro: None,
+                #[cfg(not(target_arch = "wasm32"))]
+                instance_lock: None,
+                pending_import: crate::wasm_io::new_pending_import(),
+                #[cfg(all(target_os = "android", feature = "native-runtime"))]
+                pending_projection_run: None,
+                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                hotkeys_deferred: None,
+            },
             quick_access: crate::quick_access::QuickAccessFan::default(),
-            start_when_idle: None,
-            panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,
             pending_viewport_scale: None,
-            pending_import: crate::wasm_io::new_pending_import(),
-            #[cfg(not(target_arch = "wasm32"))]
-            tasks: crate::BackgroundTasks::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
-            // Screenshots never run the probe; mark it already finished.
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            portal_probe: crate::PortalProbe::finished(),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            hotkeys_deferred: None,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            permissions_intro: None,
         };
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         app.settings_ui.suppress_permission_probe_for_docs();
@@ -262,15 +269,18 @@ impl SqyreApp {
     }
     pub fn open_data_editor(&mut self) {
         // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
-        self.data_editor
-            .open_points_for_docs("Demo Program", "center", &self.workspace.catalog);
+        self.data_editor.open_points_for_docs(
+            "Demo Program",
+            "center",
+            CatalogView::from(&self.workspace.catalog),
+        );
     }
 
     /// Open the data editor on the Programs tab (docs / interaction harnesses).
     /// Unlike Points/SearchAreas, New here does not arm screen-click recording.
     pub fn open_data_editor_programs_for_docs(&mut self) {
         self.data_editor
-            .open_programs_for_docs(&self.workspace.catalog);
+            .open_programs_for_docs(CatalogView::from(&self.workspace.catalog));
     }
 
     pub fn select_action(&mut self, id: sqyre_domain::ActionId) {

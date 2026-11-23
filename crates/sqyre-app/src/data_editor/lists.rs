@@ -11,14 +11,16 @@ use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::widgets::searchable_combo;
 use eframe::egui;
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings};
+use sqyre_persist::{
+    CatalogView, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+};
 use std::cell::Cell;
 use std::collections::HashMap;
 
 impl DataEditor {
     /// Expand/collapse-all for All-programs entity lists — trailing control on
     /// the header search row (same placement as item/coord pickers).
-    pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+    pub(crate) fn paint_search_expand_collapse(&self, ui: &mut egui::Ui, catalog: CatalogView<'_>) {
         let grouped = matches!(self.search_scope, SearchScope::AllPrograms)
             && self.tab != EditorTab::Programs;
         if !grouped {
@@ -30,7 +32,7 @@ impl DataEditor {
         }
         let tab = self.tab;
         let ids: Vec<egui::Id> = match tab {
-            EditorTab::Items | EditorTab::PixelCheck => program_names
+            EditorTab::Items | EditorTab::MatchCheck => program_names
                 .iter()
                 .map(|n| pickers::items_icon_grid_collapse_id(n))
                 .collect(),
@@ -40,7 +42,7 @@ impl DataEditor {
                 .collect(),
         };
         pickers::collapse_all_button(ui, ids.iter().copied(), |ctx, open| match tab {
-            EditorTab::Items | EditorTab::PixelCheck => {
+            EditorTab::Items | EditorTab::MatchCheck => {
                 pickers::set_items_icon_grid_openness(
                     ctx,
                     program_names.iter().map(|n| n.as_str()),
@@ -60,14 +62,14 @@ impl DataEditor {
     pub(crate) fn draw_left_list(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         settings: &mut UserSettings,
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
-            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
+            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::MatchCheck => {
                 "data_editor_items"
             }
             EditorTab::Overlay => "data_editor_overlay_list",
@@ -91,7 +93,7 @@ impl DataEditor {
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
         ) {
-            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
+            (EditorTab::Items | EditorTab::MatchCheck, Some(p), Some(e)) => {
                 vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
             }
             _ => Vec::new(),
@@ -124,7 +126,7 @@ impl DataEditor {
             let mut visible = 0usize;
             let entity = match self.tab {
                 EditorTab::Programs => "programs",
-                EditorTab::Items | EditorTab::PixelCheck => "items",
+                EditorTab::Items | EditorTab::MatchCheck => "items",
                 EditorTab::Overlay => "overlay buttons",
                 EditorTab::Points => "points",
                 EditorTab::SearchAreas => "search areas",
@@ -181,7 +183,7 @@ impl DataEditor {
                         }
                     }
                 }
-                EditorTab::Items | EditorTab::PixelCheck => {
+                EditorTab::Items | EditorTab::MatchCheck => {
                     ui.set_max_width(ui.available_width());
                     let mut item_menu = |ui: &mut egui::Ui, target: &str| {
                         if crate::widgets::menu_item_danger(ui, "Delete", true) {
@@ -192,7 +194,7 @@ impl DataEditor {
                             }
                         }
                     };
-                    // Pixel Check reuses the items grid read-only.
+                    // Match Check reuses the items grid read-only.
                     let menu: Option<&mut pickers::IconCellMenu<'_>> =
                         if matches!(self.tab, EditorTab::Items) {
                             Some(&mut item_menu)
@@ -275,7 +277,7 @@ impl DataEditor {
                     let progs = self.grouped_program_list(catalog, grouped);
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -329,7 +331,7 @@ impl DataEditor {
                     let progs = self.grouped_program_list(catalog, grouped);
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -441,7 +443,7 @@ impl DataEditor {
                     };
                     let mut g = GroupCtx {
                         tab,
-                        catalog,
+                        catalog: catalog.inner(),
                         icons: &mut *icons,
                         grouped,
                         compact_headers: settings.ui.compact_program_headers,
@@ -543,7 +545,7 @@ impl DataEditor {
             self.select_entity(&prog, &id, catalog, settings);
         } else if let Some((prog, ent)) = clicked_entity {
             self.select_entity(&prog, &ent, catalog, settings);
-        } else if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
+        } else if matches!(self.tab, EditorTab::Items | EditorTab::MatchCheck) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
                     let changed = self.selected_program.as_deref() != Some(prog)
@@ -559,7 +561,7 @@ impl DataEditor {
     /// Model count for `program` on the current tab (program dropdown badge).
     fn tab_model_count(
         &mut self,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
         program: &str,
     ) -> usize {
@@ -584,7 +586,7 @@ impl DataEditor {
     }
 
     /// Cached entity keys for `program` on the current tab.
-    pub(crate) fn entity_names(&mut self, catalog: &ProgramCatalog, program: &str) -> Vec<String> {
+    pub(crate) fn entity_names(&mut self, catalog: CatalogView<'_>, program: &str) -> Vec<String> {
         self.ensure_list_cache(catalog);
         self.list_cache
             .entities_by_program
@@ -594,7 +596,7 @@ impl DataEditor {
     }
 
     /// Programs to iterate for the current list scope (grouped = all, else selection).
-    fn grouped_program_list(&mut self, catalog: &ProgramCatalog, grouped: bool) -> Vec<String> {
+    fn grouped_program_list(&mut self, catalog: CatalogView<'_>, grouped: bool) -> Vec<String> {
         self.ensure_list_cache(catalog);
         if grouped {
             self.list_cache.program_names.clone()
@@ -603,7 +605,7 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn ensure_list_cache(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn ensure_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key();
         if self.list_cache.catalog_generation == gen
@@ -615,7 +617,7 @@ impl DataEditor {
         self.rebuild_list_cache(catalog);
     }
 
-    pub(crate) fn rebuild_list_cache(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn rebuild_list_cache(&mut self, catalog: CatalogView<'_>) {
         let gen = catalog.generation();
         let res = catalog.resolution_key().to_string();
         let tab = self.tab;
@@ -637,7 +639,7 @@ impl DataEditor {
     pub(crate) fn select_program(
         &mut self,
         name: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
         if !is_editor_listed_program(name) {
@@ -645,7 +647,7 @@ impl DataEditor {
         }
         self.selected_program = Some(name.to_string());
         self.selected_entity = None;
-        self.load_form(catalog, settings);
+        self.load_form(catalog.inner(), settings);
     }
 
     /// Open Coordinates → Points with a filled entity (docs screenshots).
@@ -653,26 +655,26 @@ impl DataEditor {
         &mut self,
         program: &str,
         point: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
     ) {
         let settings = UserSettings::default();
         self.open = true;
-        self.switch_tab(EditorTab::Points, catalog, &settings);
+        self.switch_tab(EditorTab::Points, catalog.inner(), &settings);
         self.select_entity(program, point, catalog, &settings);
     }
 
     /// Open the editor on the Programs tab (docs / interaction harnesses).
-    pub(crate) fn open_programs_for_docs(&mut self, catalog: &ProgramCatalog) {
+    pub(crate) fn open_programs_for_docs(&mut self, catalog: CatalogView<'_>) {
         let settings = UserSettings::default();
         self.open = true;
-        self.switch_tab(EditorTab::Programs, catalog, &settings);
+        self.switch_tab(EditorTab::Programs, catalog.inner(), &settings);
     }
 
     pub(crate) fn select_entity(
         &mut self,
         program: &str,
         entity: &str,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
         if !is_editor_listed_program(program) {
@@ -680,7 +682,7 @@ impl DataEditor {
         }
         self.selected_program = Some(program.to_string());
         self.selected_entity = Some(entity.to_string());
-        self.load_form(catalog, settings);
+        self.load_form(catalog.inner(), settings);
     }
 
     /// Screen Cap collection row: select it and open the cell picker.
@@ -716,7 +718,7 @@ impl DataEditor {
     pub(crate) fn program_toggle(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
@@ -776,7 +778,7 @@ impl DataEditor {
     pub(crate) fn ui_program_combo(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
@@ -848,7 +850,7 @@ fn entity_rows(
     ui: &mut egui::Ui,
     tab: EditorTab,
     kind: Option<PreviewKind>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     prog: &str,
@@ -892,7 +894,7 @@ fn entity_row(
     ui: &mut egui::Ui,
     tab: EditorTab,
     kind: Option<PreviewKind>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     prog: &str,
@@ -940,7 +942,7 @@ fn program_rows_or_group(
         program_group_section(
             ui,
             g.tab,
-            g.catalog,
+            CatalogView::from(g.catalog),
             g.icons,
             g.compact_headers,
             prog,
@@ -968,7 +970,7 @@ fn program_rows_or_group(
 fn program_group_section(
     ui: &mut egui::Ui,
     tab: EditorTab,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     compact_headers: bool,
     prog: &str,
@@ -1107,7 +1109,7 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     match tab {
         EditorTab::Programs => "programs",
         EditorTab::Items => "items",
-        EditorTab::PixelCheck => "pixel_check",
+        EditorTab::MatchCheck => "match_check",
         EditorTab::Points => "points",
         EditorTab::SearchAreas => "search_areas",
         EditorTab::Masks => "masks",
@@ -1118,13 +1120,13 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     }
 }
 
-fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str) -> Vec<String> {
+fn compute_entity_names(catalog: CatalogView<'_>, tab: EditorTab, program: &str) -> Vec<String> {
     let Some(p) = catalog.get(program) else {
         return Vec::new();
     };
     let res = catalog.resolution_key();
     let mut keys: Vec<(String, String)> = match tab {
-        EditorTab::Items | EditorTab::PixelCheck => p
+        EditorTab::Items | EditorTab::MatchCheck => p
             .items
             .iter()
             .map(|(k, it)| {
@@ -1221,7 +1223,7 @@ mod tests {
     use super::*;
     use sqyre_domain::{ScalarValue, TEMPORARY_PROGRAM};
     use sqyre_persist::{
-        ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+        CatalogView, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
     };
 
     fn catalog() -> ProgramCatalog {
@@ -1236,7 +1238,7 @@ mod tests {
         let keys: std::collections::HashSet<&'static str> = [
             EditorTab::Programs,
             EditorTab::Items,
-            EditorTab::PixelCheck,
+            EditorTab::MatchCheck,
             EditorTab::Points,
             EditorTab::SearchAreas,
             EditorTab::Masks,
@@ -1265,17 +1267,21 @@ mod tests {
                 },
             );
         }
-        let names = compute_entity_names(&cat, EditorTab::Items, "Game");
+        let names = compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Game");
         assert_eq!(
             names,
             vec!["zz", "aa"],
             "sorted by display name, keys returned"
         );
         // Unknown program → empty.
-        assert!(compute_entity_names(&cat, EditorTab::Items, "Nope").is_empty());
+        assert!(compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Nope").is_empty());
         // Programs / Overlay tabs list no entities.
-        assert!(compute_entity_names(&cat, EditorTab::Programs, "Game").is_empty());
-        assert!(compute_entity_names(&cat, EditorTab::Overlay, "Game").is_empty());
+        assert!(
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Programs, "Game").is_empty()
+        );
+        assert!(
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Overlay, "Game").is_empty()
+        );
     }
 
     #[test]
@@ -1298,7 +1304,7 @@ mod tests {
             },
         )
         .unwrap();
-        let names = compute_entity_names(&cat, EditorTab::Masks, "Game");
+        let names = compute_entity_names(CatalogView::from(&cat), EditorTab::Masks, "Game");
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"maskkey".to_string()));
         assert!(names.contains(&"named".to_string()));
@@ -1326,17 +1332,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::Points, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Points, "Game"),
             vec!["Spawn"]
         );
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::Collections, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Collections, "Game"),
             vec!["bag"]
         );
-        // PixelCheck shares the items list.
+        // MatchCheck shares the items list.
         assert_eq!(
-            compute_entity_names(&cat, EditorTab::PixelCheck, "Game"),
-            compute_entity_names(&cat, EditorTab::Items, "Game")
+            compute_entity_names(CatalogView::from(&cat), EditorTab::MatchCheck, "Game"),
+            compute_entity_names(CatalogView::from(&cat), EditorTab::Items, "Game")
         );
     }
 
@@ -1356,7 +1362,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(ed.entity_names(&cat, "Game"), vec!["Potion"]);
+        assert_eq!(
+            ed.entity_names(CatalogView::from(&cat), "Game"),
+            vec!["Potion"]
+        );
         let gen0 = ed.list_cache.catalog_generation;
 
         // Mutating the catalog bumps generation → cache rebuild sees the new item.
@@ -1368,13 +1377,13 @@ mod tests {
             },
         )
         .unwrap();
-        let names = ed.entity_names(&cat, "Game");
+        let names = ed.entity_names(CatalogView::from(&cat), "Game");
         assert_eq!(names, vec!["Elixir", "Potion"]);
         assert!(ed.list_cache.catalog_generation > gen0);
 
         // Switching tabs rebuilds the entity view.
         ed.tab = EditorTab::Masks;
-        assert!(ed.entity_names(&cat, "Game").is_empty());
+        assert!(ed.entity_names(CatalogView::from(&cat), "Game").is_empty());
         assert_eq!(ed.list_cache.tab, EditorTab::Masks);
     }
 
@@ -1443,16 +1452,31 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Points;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 1);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            1
+        );
         // Screen Cap counts search areas and collections together.
         ed.tab = EditorTab::ScreenCap;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Overlay;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 2);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            2
+        );
         ed.tab = EditorTab::Programs;
-        assert_eq!(ed.tab_model_count(&cat, &settings, "Game"), 0);
+        assert_eq!(
+            ed.tab_model_count(CatalogView::from(&cat), &settings, "Game"),
+            0
+        );
     }
 
     #[test]
@@ -1462,20 +1486,20 @@ mod tests {
         let settings = UserSettings::default();
         let mut ed = DataEditor::default();
 
-        ed.select_program(TEMPORARY_PROGRAM, &cat, &settings);
+        ed.select_program(TEMPORARY_PROGRAM, CatalogView::from(&cat), &settings);
         assert!(ed.selected_program.is_none());
 
-        ed.select_program("Game", &cat, &settings);
+        ed.select_program("Game", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_program.as_deref(), Some("Game"));
         // Selecting a program clears the entity selection.
         ed.selected_entity = Some("old".into());
-        ed.select_program("Game", &cat, &settings);
+        ed.select_program("Game", CatalogView::from(&cat), &settings);
         assert!(ed.selected_entity.is_none());
 
-        ed.select_entity(TEMPORARY_PROGRAM, "x", &cat, &settings);
+        ed.select_entity(TEMPORARY_PROGRAM, "x", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_program.as_deref(), Some("Game"));
 
-        ed.select_entity("Game", "Spawn", &cat, &settings);
+        ed.select_entity("Game", "Spawn", CatalogView::from(&cat), &settings);
         assert_eq!(ed.selected_entity.as_deref(), Some("Spawn"));
     }
 }

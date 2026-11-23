@@ -12,7 +12,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::{cap_log, event_log, mark_site, note, CaptureError, SelectionOutline};
+use crate::{CaptureError, SelectionOutline};
+use sqyre_ports::{cap_log, event_log, mark_site, note};
 
 /// Hollow square edge length (virtual-desktop pixels).
 const FLASH_PX: i32 = 48;

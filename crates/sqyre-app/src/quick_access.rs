@@ -352,7 +352,7 @@ fn clamp_rect_to_monitor(
 fn primary_monitor_points() -> (f32, f32, f32, f32) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let rects = sqyre_capture::preferred_monitor_rects();
+        let rects = sqyre_ports::preferred_monitor_rects();
         if let Some(r) = rects.first() {
             return (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         }
@@ -370,7 +370,7 @@ fn primary_monitor_points() -> (f32, f32, f32, f32) {
 pub(crate) fn monitor_for_point(x: f32, y: f32) -> (f32, f32, f32, f32) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let rects = sqyre_capture::preferred_monitor_rects();
+        let rects = sqyre_ports::preferred_monitor_rects();
         for r in &rects {
             let rx = r.x as f32;
             let ry = r.y as f32;
@@ -409,6 +409,10 @@ impl SqyreApp {
     }
 
     /// Snap the fan shut without playing the collapse motion (mode switches).
+    #[cfg_attr(
+        not(all(feature = "native-runtime", feature = "overlay-buttons")),
+        expect(dead_code, reason = "only called from overlay sync")
+    )]
     pub(crate) fn snap_quick_access_fan_closed(&mut self) {
         self.quick_access.expanded = false;
         self.quick_access.fan_from = 0.0;
@@ -490,7 +494,7 @@ impl SqyreApp {
                 macros: &mut self.workspace.macros,
                 catalog: &mut self.workspace.catalog,
                 icons: &mut self.assets.icon_cache,
-                screen_click: &self.screen_click,
+                screen_click: &self.hotkey.screen_click,
                 settings: self.settings_ui.settings_mut(),
                 hotkey_tag_filters: &mut self.workspace.hotkey_tag_filters,
                 pending_scale: pending.as_ref(),
@@ -508,8 +512,8 @@ impl SqyreApp {
         );
         self.data_editor
             .prefer_focused_program_for_new(&self.workspace.catalog, self.settings_ui.settings());
-        if !self.screen_click.is_armed() {
-            self.screen_click.arm_search_area();
+        if !self.hotkey.screen_click.is_armed() {
+            self.hotkey.screen_click.arm_search_area();
             self.data_editor
                 .set_ok("Screen Cap: click two corners to capture.");
         }
@@ -519,9 +523,9 @@ impl SqyreApp {
     pub(crate) fn refresh_focused_program_hint(&mut self) {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
-            let hint = self.macro_overlay.last_foreign_focus();
+            let hint = self.overlay.macro_overlay.last_foreign_focus();
             let program = crate::hotkey_focus_tags::focused_editor_program(
-                &self.workspace.catalog,
+                sqyre_persist::CatalogView::from(&self.workspace.catalog),
                 hint.as_ref(),
             );
             self.data_editor.set_focused_program_hint(program);

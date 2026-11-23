@@ -1,6 +1,6 @@
 //! Linux session / desktop environment detection for backend selection and probes.
 
-use crate::event_log;
+use sqyre_ports::event_log;
 
 /// High-level session protocol (from env vars; no live compositor query).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

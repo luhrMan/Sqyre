@@ -44,9 +44,9 @@ impl SqyreApp {
         // Don't take while a chooser is open — overlay clicks share this queue
         // and used to be discarded here. Names from the press that opened it can
         // still be arriving; drop those so the menu does not reopen after a pick.
-        if let Some(open) = &self.hotkey_chooser {
+        if let Some(open) = &self.hotkey.hotkey_chooser {
             let macros = &self.workspace.macros;
-            self.pending_hotkey_macros.lock().retain(|name| {
+            self.hotkey.pending_hotkey_macros.lock().retain(|name| {
                 crate::hotkey_chooser::chord_of(name, macros).as_ref() != Some(&open.chord)
             });
             return;
@@ -54,7 +54,7 @@ impl SqyreApp {
         let pending: Vec<String> = self
             .run_session
             .macro_hotkeys
-            .between_fires(|| std::mem::take(&mut *self.pending_hotkey_macros.lock()));
+            .between_fires(|| std::mem::take(&mut *self.hotkey.pending_hotkey_macros.lock()));
         if pending.is_empty() {
             return;
         }
@@ -64,7 +64,7 @@ impl SqyreApp {
         for name in direct {
             if self.dispatch_quick_access_token(&name, ctx) {
                 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-                sqyre_capture::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
+                sqyre_ports::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
                 // Push hub fan map/unmap to the overlay host in this same drain —
                 // don't wait for the later paint-path sync (lags under game focus).
                 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -72,7 +72,7 @@ impl SqyreApp {
                 continue;
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            sqyre_capture::event_log(
+            sqyre_ports::event_log(
                 "SQYRE_OVERLAY",
                 &[("fire", "direct"), ("name", name.as_str())],
             );
@@ -83,7 +83,7 @@ impl SqyreApp {
             if names.len() <= 1 {
                 if let Some(name) = names.into_iter().next() {
                     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-                    sqyre_capture::event_log(
+                    sqyre_ports::event_log(
                         "SQYRE_HOTKEY",
                         &[("fire", "start"), ("name", name.as_str())],
                     );
@@ -92,7 +92,7 @@ impl SqyreApp {
                 continue;
             }
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            sqyre_capture::event_log(
+            sqyre_ports::event_log(
                 "SQYRE_HOTKEY",
                 &[
                     ("fire", "choose"),
@@ -108,7 +108,7 @@ impl SqyreApp {
 
     pub(crate) fn request_stop(&mut self) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-        sqyre_capture::mark_site("run:stop:requested");
+        sqyre_ports::mark_site("run:stop:requested");
         self.run_session.state.stop.request_stop();
         *self.run_session.state.status.lock() = "Stop requested…".into();
     }
@@ -124,26 +124,27 @@ impl SqyreApp {
             // Android has one window; hiding it leaves a black screen with nothing to pick on.
             let should_hide = !cfg!(target_os = "android")
                 && self.settings_ui.settings().ui.hide_app_during_recording
-                && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
-            if should_hide && !self.hidden_for_recording {
-                self.hidden_for_recording = true;
+                && (self.hotkey.screen_click.is_armed()
+                    || self.hotkey.macro_record_bridge.is_armed());
+            if should_hide && !self.overlay.hidden_for_recording {
+                self.overlay.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
-                sqyre_capture::mark_site("recording:hide_main");
+                sqyre_ports::mark_site("recording:hide_main");
                 // Same unmap path as tray Hide — ViewportCommand alone is not enough
                 // to remap afterward on GNOME/XWayland (recording looks "frozen").
                 self.tray.set_root_visible(ctx, false);
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
-                    sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
-                    sqyre_capture::nudge_portal_capture_after_ui_hide();
+                    sqyre_ports::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
+                    sqyre_ports::nudge_portal_capture_after_ui_hide();
                 }
-            } else if !should_hide && self.hidden_for_recording {
-                self.hidden_for_recording = false;
+            } else if !should_hide && self.overlay.hidden_for_recording {
+                self.overlay.hidden_for_recording = false;
                 #[cfg(feature = "native-runtime")]
-                sqyre_capture::mark_site("recording:show_main");
+                sqyre_ports::mark_site("recording:show_main");
                 self.tray.set_root_visible(ctx, true);
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
-                sqyre_capture::event_log("SQYRE_HUD", &[("show", "remap")]);
+                sqyre_ports::event_log("SQYRE_HUD", &[("show", "remap")]);
             }
         }
     }
@@ -157,21 +158,23 @@ impl SqyreApp {
                 self.settings_ui.settings().ui.preview_desktop_outline,
             );
             let preview_outline = self.assets.preview_tooltips.take_desktop_outline();
-            self.recording_overlay.sync_with_macro_record(
+            self.overlay.recording_overlay.sync_with_macro_record(
                 ctx,
-                &self.screen_click,
-                Some(&self.macro_record_bridge),
+                &self.hotkey.screen_click,
+                Some(&self.hotkey.macro_record_bridge),
                 preview_outline,
-                self.hidden_for_recording,
+                self.overlay.hidden_for_recording,
             );
             let markers = crate::macro_record::desktop_marker_points(
                 &self.macro_record,
-                &self.macro_record_bridge,
+                &self.hotkey.macro_record_bridge,
                 &crate::macro_record::RecordThresholds::from_settings(self.settings_ui.settings()),
             );
-            self.recording_overlay.sync_point_markers(&markers);
+            self.overlay.recording_overlay.sync_point_markers(&markers);
             #[cfg(target_os = "android")]
-            self.screen_pick.sync(ctx, &self.screen_click);
+            self.overlay
+                .screen_pick
+                .sync(ctx, &self.hotkey.screen_click);
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
@@ -232,7 +235,12 @@ mod native_run {
             if self.run_session.state.running.load(Ordering::SeqCst) {
                 // Re-triggering the *running* macro follows the hotkey-while-running
                 // policy; any other start still waits for the run to end.
-                let running_name = self.macro_overlay.running_macro_slot().lock().clone();
+                let running_name = self
+                    .overlay
+                    .macro_overlay
+                    .running_macro_slot()
+                    .lock()
+                    .clone();
                 if running_name
                     .as_deref()
                     .is_some_and(|n| n.eq_ignore_ascii_case(name))
@@ -246,7 +254,7 @@ mod native_run {
                         }
                         sqyre_persist::HotkeyWhileRunning::Restart => {
                             self.request_stop();
-                            self.start_when_idle = Some(name.to_string());
+                            self.hotkey.start_when_idle = Some(name.to_string());
                             *self.run_session.state.status.lock() = "Restarting…".into();
                             ctx.request_repaint();
                             return;
@@ -254,11 +262,11 @@ mod native_run {
                         sqyre_persist::HotkeyWhileRunning::Ignore => {}
                     }
                 }
-                sqyre_capture::mark_site("overlay:start:skip-running");
-                sqyre_capture::note(&format!(
+                sqyre_ports::mark_site("overlay:start:skip-running");
+                sqyre_ports::note(&format!(
                     "overlay: start skipped already-running name={name}"
                 ));
-                sqyre_capture::event_log(
+                sqyre_ports::event_log(
                     "SQYRE_OVERLAY",
                     &[
                         ("start", "skip"),
@@ -277,9 +285,9 @@ mod native_run {
                 .iter()
                 .position(|m| m.name.eq_ignore_ascii_case(name))
             else {
-                sqyre_capture::mark_site("overlay:start:skip-unknown");
-                sqyre_capture::note(&format!("overlay: start skipped unknown-macro name={name}"));
-                sqyre_capture::event_log(
+                sqyre_ports::mark_site("overlay:start:skip-unknown");
+                sqyre_ports::note(&format!("overlay: start skipped unknown-macro name={name}"));
+                sqyre_ports::event_log(
                     "SQYRE_OVERLAY",
                     &[
                         ("start", "skip"),
@@ -293,7 +301,7 @@ mod native_run {
             };
             if let Err(e) = sqyre_validate::validate_macro(&self.workspace.macros[idx]) {
                 *self.run_session.state.status.lock() = format!("Cannot run {name}: {e}");
-                sqyre_capture::note(&format!(
+                sqyre_ports::note(&format!(
                     "overlay: start skipped invalid-macro name={name} err={e}"
                 ));
                 ctx.request_repaint();
@@ -303,11 +311,11 @@ mod native_run {
             // of firing the system dialog mid-run once the first capture asks.
             #[cfg(target_os = "android")]
             if needs_projection_consent(&self.workspace.macros[idx], &self.workspace.macros) {
-                self.pending_projection_run = Some(PendingProjectionRun {
+                self.lifecycle.pending_projection_run = Some(PendingProjectionRun {
                     macro_name: self.workspace.macros[idx].name.clone(),
                     state: ProjectionGate::Ask,
                 });
-                sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
+                sqyre_ports::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
                 ctx.request_repaint();
                 return;
             }
@@ -334,7 +342,7 @@ mod native_run {
                     click_fx: self.run_session.click_fx.clone(),
                     continue_wait: self.run_session.continue_wait.clone(),
                     macro_hotkeys: self.run_session.macro_hotkeys.clone(),
-                    running_macro: self.macro_overlay.running_macro_slot(),
+                    running_macro: self.overlay.macro_overlay.running_macro_slot(),
                     close_matches: settings.runtime.image_search_close_matches_distance,
                     variant_exit_early: settings.runtime.image_search_variant_exit_early,
                     release_held_inputs: settings.runtime.release_held_inputs_on_end,
@@ -437,9 +445,9 @@ mod native_run {
                 *OVERLAY_STARTED.lock() = Some(macro_.name.clone());
             }
             let name = macro_.name.clone();
-            sqyre_capture::mark_site(&format!("overlay:start:ok:{name}"));
-            sqyre_capture::note(&format!("overlay: start ok name={name}"));
-            sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name.as_str())]);
+            sqyre_ports::mark_site(&format!("overlay:start:ok:{name}"));
+            sqyre_ports::note(&format!("overlay: start ok name={name}"));
+            sqyre_ports::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name.as_str())]);
             // Hide overlay buttons for this whole run when they should not appear
             // in detection. Per-grab hiding restores between attempts and flickers.
             let hide_overlay = sqyre_ports::OverlayMacroHide::enter();
@@ -464,7 +472,7 @@ mod native_run {
                     running_macro: running_macro_slot,
                     ctx: ctx.clone(),
                 };
-                sqyre_capture::mark_site("run:worker:begin");
+                sqyre_ports::mark_site("run:worker:begin");
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     #[cfg(target_os = "android")]
                     let _shots = screenshot_guard(&macro_, &macros);
@@ -491,7 +499,7 @@ mod native_run {
                     } else {
                         None
                     };
-                    sqyre_capture::mark_site("run:worker:exec");
+                    sqyre_ports::mark_site("run:worker:exec");
                     let exec_result = execute_macro_with(
                         &mut macro_,
                         ExecDeps {
@@ -525,11 +533,11 @@ mod native_run {
                     }
                     exec_result
                 }));
-                sqyre_capture::mark_site("run:worker:exec-done");
+                sqyre_ports::mark_site("run:worker:exec-done");
 
                 crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
-                sqyre_capture::release_capture_frame_cache();
+                sqyre_ports::release_capture_frame_cache();
                 trim_process_heap();
                 crate::mem_diag::sample_with_action_log("post_run", &action_log);
 
@@ -545,8 +553,8 @@ mod native_run {
                         format!("Error: {}", crate::status_banner::user_error_detail(&e))
                     }
                     Err(_) => {
-                        sqyre_capture::note("overlay: run worker panicked; cleared running");
-                        sqyre_capture::event_log(
+                        sqyre_ports::note("overlay: run worker panicked; cleared running");
+                        sqyre_ports::event_log(
                             "SQYRE_OVERLAY",
                             &[("run", "panic"), ("running", "cleared")],
                         );
@@ -557,7 +565,7 @@ mod native_run {
                 #[cfg(target_os = "android")]
                 mirror_run_status(&msg);
                 let done = status.lock().clone().replace(' ', "_");
-                sqyre_capture::note(&format!("overlay: run done status={done}"));
+                sqyre_ports::note(&format!("overlay: run done status={done}"));
             });
         }
     }
@@ -616,7 +624,7 @@ mod native_run {
             click_fx: app.run_session.click_fx.clone(),
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
-            running_macro: app.macro_overlay.running_macro_slot(),
+            running_macro: app.overlay.macro_overlay.running_macro_slot(),
             close_matches: settings.runtime.image_search_close_matches_distance,
             variant_exit_early: settings.runtime.image_search_variant_exit_early,
             release_held_inputs: settings.runtime.release_held_inputs_on_end,
@@ -651,7 +659,7 @@ mod native_run {
     fn launch_overlay_macro(name: &str) {
         let kit = OVERLAY_KIT.lock().clone();
         let Some(kit) = kit else {
-            sqyre_capture::note("overlay: start skipped no-kit");
+            sqyre_ports::note("overlay: start skipped no-kit");
             return;
         };
         if kit.running.load(Ordering::SeqCst) {
@@ -677,11 +685,11 @@ mod native_run {
             *OVERLAY_PROJECTION.lock() = Some(kit.macros[idx].name.clone());
             if !sqyre_android::frames().shell_visible() {
                 if let Err(e) = sqyre_android::bridge::show_shell() {
-                    sqyre_capture::note(&format!("overlay: show shell for projection gate: {e}"));
+                    sqyre_ports::note(&format!("overlay: show shell for projection gate: {e}"));
                 }
             }
             kit.ctx.request_repaint();
-            sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
+            sqyre_ports::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
             return;
         }
         MacroLaunch {

@@ -6,9 +6,9 @@ use crate::image_view;
 use crate::theme::{picker_drop_stroke, picker_selected_fill, picker_selected_stroke};
 use eframe::egui::{self, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 
-pub(crate) fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (String, Vec<String>) {
+pub(crate) fn item_tooltip_parts(catalog: CatalogView<'_>, target: &str) -> (String, Vec<String>) {
     let Some((program, rest)) = target.split_once(PROGRAM_DELIMITER) else {
         return (target.to_string(), Vec::new());
     };
@@ -30,7 +30,7 @@ pub(crate) fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (Str
 /// Rich hover tooltip: bold name, vertical 12×12 variant rows, then italic tags.
 pub fn attach_item_icon_tooltip(
     response: &egui::Response,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
 ) {
@@ -47,7 +47,7 @@ const VARIANT_TIP_THUMB: f32 = 12.0;
 
 fn paint_item_icon_tooltip(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
     name: &str,
@@ -207,7 +207,7 @@ impl IconCellStyle {
     fn row_height(
         self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
         icons: &mut IconCache,
         row: &[String],
     ) -> f32 {
@@ -261,7 +261,7 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
 )]
 fn icon_grid_cell(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     target: &str,
     selected: bool,
@@ -363,7 +363,7 @@ pub struct IconGridOps<'a> {
 )]
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     targets: &[String],
     is_selected: impl Fn(&str) -> bool,
@@ -505,6 +505,7 @@ pub fn paint_even_icon_grid(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqyre_persist::{CatalogView, ProgramCatalog};
 
     #[test]
     fn after_icon_receives_fitted_icon_rect() {
@@ -519,7 +520,7 @@ mod tests {
         let out = ctx.run_ui(egui::RawInput::default(), |ui| {
             paint_even_icon_grid(
                 ui,
-                &catalog,
+                CatalogView::from(&catalog),
                 &mut icons,
                 &targets,
                 |_| false,
@@ -549,7 +550,7 @@ mod tests {
             let out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 paint_even_icon_grid(
                     ui,
-                    &catalog,
+                    CatalogView::from(&catalog),
                     &mut icons,
                     &targets,
                     |_| true,
@@ -599,7 +600,7 @@ mod tests {
             };
             let out = ctx.run_ui(input, |ui| {
                 let resp = ui.put(cell, egui::Button::new(""));
-                attach_item_icon_tooltip(&resp, &catalog, &mut icons, target);
+                attach_item_icon_tooltip(&resp, CatalogView::from(&catalog), &mut icons, target);
             });
             let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
                 egui::Shape::Text(t) if t.galley.text().contains("a_fairly") => {
@@ -656,7 +657,7 @@ mod tests {
             let out = ctx.run_ui(input, |ui| {
                 paint_even_icon_grid(
                     ui,
-                    &catalog,
+                    CatalogView::from(&catalog),
                     &mut icons,
                     &targets,
                     |_| false,
@@ -713,7 +714,9 @@ mod tests {
             let catalog = ProgramCatalog::default();
             let ctx = egui::Context::default();
             let mut icons = IconCache::new();
-            for path in crate::demo_icons::merged_variant_paths(&catalog, &target) {
+            for path in
+                crate::demo_icons::merged_variant_paths(CatalogView::from(&catalog), &target)
+            {
                 assert!(
                     icons.for_path(&ctx, &path).is_some(),
                     "demo variant failed to load: {}",
@@ -744,7 +747,7 @@ mod tests {
                     let y0 = ui.cursor().min.y;
                     paint_even_icon_grid(
                         ui,
-                        &catalog,
+                        CatalogView::from(&catalog),
                         &mut icons,
                         std::slice::from_ref(&target),
                         |_| false,

@@ -158,26 +158,26 @@ data_editor_overlay|800x600|overlap|Sqyre ↔ Data Editor
 data_editor_overlay|800x600|overlap|Sqyre ↔ Settings
 data_editor_overlay|915x412|overlap|Sqyre ↔ Data Editor
 data_editor_overlay|915x412|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|1024x640|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|1024x640|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|1280x720@1.5|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|1280x720@1.5|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|1280x720@2.0|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|1280x720@2.0|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|1280x720|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|1280x720|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|1920x1080|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|1920x1080|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|412x915|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|412x915|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|480x360|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|480x360|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|640x480|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|640x480|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|800x600|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|800x600|overlap|Sqyre ↔ Settings
-data_editor_pixelcheck|915x412|overlap|Sqyre ↔ Data Editor
-data_editor_pixelcheck|915x412|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|1024x640|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|1024x640|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|1280x720@1.5|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|1280x720@1.5|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|1280x720@2.0|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|1280x720@2.0|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|1280x720|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|1280x720|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|1920x1080|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|1920x1080|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|412x915|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|412x915|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|480x360|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|480x360|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|640x480|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|640x480|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|800x600|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|800x600|overlap|Sqyre ↔ Settings
+data_editor_matchcheck|915x412|overlap|Sqyre ↔ Data Editor
+data_editor_matchcheck|915x412|overlap|Sqyre ↔ Settings
 data_editor_points_form|1024x640|overlap|Sqyre ↔ Data Editor
 data_editor_points_form|1024x640|overlap|Sqyre ↔ Settings
 data_editor_points_form|1280x720@1.5|overlap|Sqyre ↔ Data Editor

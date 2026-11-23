@@ -11,11 +11,9 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
     ) {
+        let catalog = paint.catalog;
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            icons, previews, ..
         } = paint;
         let collection_area = self.selected_program.as_deref().and_then(|prog| {
             let sa = self.form_search_area.trim();
@@ -142,11 +140,9 @@ impl DataEditor {
     }
 
     pub(super) fn draw_atlases_form(&mut self, ui: &mut egui::Ui, paint: &mut CatalogPaint<'_>) {
+        let catalog = paint.catalog;
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            icons, previews, ..
         } = paint;
         paint_name_field(ui, &mut self.form_name);
         let available: Vec<String> = self

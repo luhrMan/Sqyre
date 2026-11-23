@@ -11,7 +11,7 @@ use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action_persist;
 
@@ -402,7 +402,7 @@ fn tip_preferred_width(
     ctx: &egui::Context,
     action: &Action,
     extra: &[&sqyre_ui_model::DisplayParam],
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     max_w: f32,
 ) -> f32 {
     let type_key = action.type_key();
@@ -586,10 +586,9 @@ pub(crate) fn show_action_view_tip(
     paint: &mut CatalogPaint<'_>,
     theme: VarTheme<'_>,
 ) {
+    let catalog = paint.catalog;
     let CatalogPaint {
-        catalog,
-        icons,
-        previews,
+        icons, previews, ..
     } = paint;
     let VarTheme {
         known_vars,
@@ -823,10 +822,9 @@ fn show_edit_window(
         apply_picker_result(&mut edit.draft, result);
     }
 
+    let catalog = paint.catalog;
     let CatalogPaint {
-        catalog,
-        icons,
-        previews,
+        icons, previews, ..
     } = paint;
 
     let mut save = false;
@@ -923,8 +921,8 @@ fn show_edit_window(
                 if refit {
                     edit.auto_fit = true;
                     #[cfg(feature = "native-runtime")]
-                    if sqyre_capture::disk_logging_enabled() {
-                        sqyre_capture::event_log(
+                    if sqyre_ports::disk_logging_enabled() {
+                        sqyre_ports::event_log(
                             "SQYRE_EDIT_TIP",
                             &[
                                 ("refit", "advanced"),
@@ -940,8 +938,8 @@ fn show_edit_window(
                         // Settle only after a frame that applied fit_min_h.
                         edit.auto_fit = false;
                         #[cfg(feature = "native-runtime")]
-                        if sqyre_capture::disk_logging_enabled() {
-                            sqyre_capture::event_log(
+                        if sqyre_ports::disk_logging_enabled() {
+                            sqyre_ports::event_log(
                                 "SQYRE_EDIT_TIP",
                                 &[
                                     ("fit", "settle"),
@@ -1391,7 +1389,7 @@ mod tests {
             let out = ctx.run_ui(input, |ui| {
                 let mut tip = TipUiCtx {
                     paint: CatalogPaint {
-                        catalog: &catalog,
+                        catalog: sqyre_persist::CatalogView::from(&catalog),
                         icons: &mut icons,
                         previews: &mut previews,
                     },
@@ -1562,7 +1560,7 @@ mod tests {
                 }
                 let mut tip = TipUiCtx {
                     paint: CatalogPaint {
-                        catalog: &self.catalog,
+                        catalog: sqyre_persist::CatalogView::from(&self.catalog),
                         icons: &mut self.icons,
                         previews: &mut self.previews,
                     },

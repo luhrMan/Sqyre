@@ -121,7 +121,7 @@ mod linux_pulse {
 
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use cpal::{FromSample, SizedSample, StreamConfig};
-    use sqyre_capture::{cap_log, mark_site};
+    use sqyre_ports::{cap_log, mark_site};
 
     struct Voice {
         samples: Vec<f32>,

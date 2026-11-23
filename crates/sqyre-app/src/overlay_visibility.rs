@@ -8,16 +8,16 @@ use eframe::egui;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use sqyre_capture::{
-    event_log, get_active_window, mark_site, note, shared_capturer, window_is_our_process,
-    window_is_transient_shell_focus, window_matches_binding, window_matches_program, WindowInfo,
+    get_active_window, shared_capturer, window_is_our_process, window_is_transient_shell_focus,
+    window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_domain::{CoordinateRef, Macro, GENERAL_PROGRAM};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel,
 };
-use sqyre_persist::{OverlayButtonConfig, OverlayVisibilityGate, ProgramCatalog};
-use sqyre_ports::clamp_search_rect;
+use sqyre_persist::{CatalogView, OverlayButtonConfig, OverlayVisibilityGate, ProgramCatalog};
+use sqyre_ports::{clamp_search_rect, event_log, mark_site, note};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     rgb_capture_to_image_buf,
@@ -147,7 +147,7 @@ impl GateVisTracker {
         found: &Mutex<HashMap<String, bool>>,
         buttons: &[OverlayButtonConfig],
         focus: Option<&WindowInfo>,
-        catalog: &ProgramCatalog,
+        catalog: CatalogView<'_>,
     ) -> usize {
         let mut map = found.lock();
         let mut n = 0usize;
@@ -402,8 +402,12 @@ fn vis_worker_loop(inner: Arc<Inner>) {
             last_foreign = snap.last_foreign.clone();
         }
         let focus = resolve_poll_focus(&mut last_foreign);
-        let cleared =
-            tracker.clear_ineligible(&inner.found, &snap.buttons, focus.as_ref(), &snap.catalog);
+        let cleared = tracker.clear_ineligible(
+            &inner.found,
+            &snap.buttons,
+            focus.as_ref(),
+            CatalogView::from(&snap.catalog),
+        );
         if cleared > 0 {
             note(&format!(
                 "overlay-vis: clear-ineligible n={cleared} focus={}",
@@ -420,13 +424,15 @@ fn vis_worker_loop(inner: Arc<Inner>) {
             now,
             rr,
             focus.as_ref(),
-            &snap.catalog,
+            CatalogView::from(&snap.catalog),
         ) {
             rr = idx.wrapping_add(1);
             let t0 = Instant::now();
-            let Some((matched, fresh)) =
-                match_once(&snap.catalog, &btn.visibility_gate, snap.close_dist)
-            else {
+            let Some((matched, fresh)) = match_once(
+                CatalogView::from(&snap.catalog),
+                &btn.visibility_gate,
+                snap.close_dist,
+            ) else {
                 last_poll.insert(btn.id.clone(), LastAttempt::Stale(Instant::now()));
                 if tracker.mark_unverified(&inner.found, &btn.id) {
                     note(&format!("overlay-vis: unverified-clear id={}", btn.id));
@@ -480,7 +486,7 @@ fn vis_worker_loop(inner: Arc<Inner>) {
             &last_poll,
             Instant::now(),
             focus.as_ref(),
-            &snap.catalog,
+            CatalogView::from(&snap.catalog),
         );
         sleep_while_running(&inner.stop, wait);
     }
@@ -530,7 +536,7 @@ fn next_due<'a>(
     now: Instant,
     start: usize,
     focus: Option<&WindowInfo>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
 ) -> Option<(usize, &'a OverlayButtonConfig)> {
     let n = buttons.len();
     if n == 0 {
@@ -555,7 +561,7 @@ fn next_wait(
     last_poll: &HashMap<String, LastAttempt>,
     now: Instant,
     focus: Option<&WindowInfo>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
 ) -> Duration {
     let mut soonest: Option<Duration> = None;
     for btn in buttons {
@@ -613,7 +619,7 @@ fn is_due(
 fn poll_eligible(
     btn: &OverlayButtonConfig,
     focus: Option<&WindowInfo>,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
 ) -> bool {
     if !btn.enabled || btn.macro_name.trim().is_empty() || !btn.visibility_gate.is_active() {
         return false;
@@ -631,7 +637,7 @@ fn button_is_focus_gated(btn: &OverlayButtonConfig) -> bool {
     !p.is_empty() && p != GENERAL_PROGRAM
 }
 
-fn program_owns_focus(catalog: &ProgramCatalog, program: &str, focus: Option<&WindowInfo>) -> bool {
+fn program_owns_focus(catalog: CatalogView<'_>, program: &str, focus: Option<&WindowInfo>) -> bool {
     let Some(win) = focus else {
         return false;
     };
@@ -645,7 +651,7 @@ fn program_owns_focus(catalog: &ProgramCatalog, program: &str, focus: Option<&Wi
 }
 
 fn match_once(
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     gate: &OverlayVisibilityGate,
     close_dist: i32,
 ) -> Option<(bool, bool)> {
@@ -807,7 +813,7 @@ mod tests {
             process_path: "/usr/bin/firefox".into(),
             icon: None,
         };
-        let n = tracker.clear_ineligible(&found, &[btn], Some(&other), &catalog);
+        let n = tracker.clear_ineligible(&found, &[btn], Some(&other), CatalogView::from(&catalog));
         assert_eq!(n, 1);
         assert_eq!(found.lock().get("a").copied(), Some(false));
     }
@@ -982,10 +988,12 @@ mod tests {
         let catalog = ProgramCatalog::default();
         let now = Instant::now();
         let last = HashMap::new();
-        let (i, btn) = next_due(&buttons, &last, now, 0, None, &catalog).unwrap();
+        let (i, btn) =
+            next_due(&buttons, &last, now, 0, None, CatalogView::from(&catalog)).unwrap();
         assert_eq!(i, 0);
         assert_eq!(btn.id, "a");
-        let (i, btn) = next_due(&buttons, &last, now, 1, None, &catalog).unwrap();
+        let (i, btn) =
+            next_due(&buttons, &last, now, 1, None, CatalogView::from(&catalog)).unwrap();
         assert_eq!(i, 1);
         assert_eq!(btn.id, "b");
     }
@@ -998,9 +1006,9 @@ mod tests {
         let now = Instant::now();
         let mut last = HashMap::new();
         last.insert("a".into(), LastAttempt::Fresh(now));
-        assert!(next_due(&buttons, &last, now, 0, None, &catalog).is_none());
+        assert!(next_due(&buttons, &last, now, 0, None, CatalogView::from(&catalog)).is_none());
         let later = now + Duration::from_millis(1_000);
-        assert!(next_due(&buttons, &last, later, 0, None, &catalog).is_some());
+        assert!(next_due(&buttons, &last, later, 0, None, CatalogView::from(&catalog)).is_some());
     }
 
     #[test]
@@ -1011,9 +1019,9 @@ mod tests {
         let now = Instant::now();
         let mut last = HashMap::new();
         last.insert("a".into(), LastAttempt::Stale(now));
-        assert!(next_due(&buttons, &last, now, 0, None, &catalog).is_none());
+        assert!(next_due(&buttons, &last, now, 0, None, CatalogView::from(&catalog)).is_none());
         let later = now + STALE_RETRY;
-        assert!(next_due(&buttons, &last, later, 0, None, &catalog).is_some());
+        assert!(next_due(&buttons, &last, later, 0, None, CatalogView::from(&catalog)).is_some());
     }
 
     #[test]
@@ -1023,13 +1031,17 @@ mod tests {
         btn.macro_name = "m".into();
         btn.visibility_gate.mode = OverlayVisibilityMode::ShowWhenFound;
         let catalog = ProgramCatalog::default();
-        assert!(poll_eligible(&btn, None, &catalog));
+        assert!(poll_eligible(&btn, None, CatalogView::from(&catalog)));
         let other = WindowInfo {
             title: "Firefox".into(),
             process_name: "firefox".into(),
             process_path: "/usr/bin/firefox".into(),
             icon: None,
         };
-        assert!(!poll_eligible(&btn, Some(&other), &catalog));
+        assert!(!poll_eligible(
+            &btn,
+            Some(&other),
+            CatalogView::from(&catalog)
+        ));
     }
 }

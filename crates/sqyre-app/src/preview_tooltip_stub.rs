@@ -3,7 +3,7 @@
 use crate::image_view::ImageViewTransform;
 use eframe::egui;
 use sqyre_domain::{Action, ActionKind, CoordinateRef};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{CatalogView, ProgramCatalog};
 
 const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
 
@@ -36,7 +36,7 @@ impl PreviewTooltipCache {
         &mut self,
         _ui: &mut egui::Ui,
         response: &egui::Response,
-        _catalog: &ProgramCatalog,
+        _catalog: CatalogView<'_>,
         program: &str,
         name: &str,
         _kind: PreviewKind,
@@ -53,7 +53,7 @@ impl PreviewTooltipCache {
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
-        _catalog: &ProgramCatalog,
+        _catalog: CatalogView<'_>,
         _coord_ref: &CoordinateRef,
         _kind: PreviewKind,
         _force: bool,
@@ -70,7 +70,7 @@ impl PreviewTooltipCache {
         &mut self,
         _ui: &mut egui::Ui,
         response: &egui::Response,
-        _catalog: &ProgramCatalog,
+        _catalog: CatalogView<'_>,
         coord_ref: &CoordinateRef,
         _kind: PreviewKind,
         help: &str,

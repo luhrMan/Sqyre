@@ -524,12 +524,12 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
         if title.trim() != crate::OVERLAY_WM_TITLE {
             continue;
         }
-        crate::diag::mark_site(&format!("win:overlay_transparency:apply:{key}"));
+        sqyre_ports::mark_site(&format!("win:overlay_transparency:apply:{key}"));
         enable_dwm_per_pixel_alpha(hwnd)?;
         hinted.insert(key);
         newly += 1;
     }
-    crate::diag::mark_site(&format!("win:overlay_transparency:done:new={newly}"));
+    sqyre_ports::mark_site(&format!("win:overlay_transparency:done:new={newly}"));
     Ok(())
 }
 

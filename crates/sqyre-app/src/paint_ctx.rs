@@ -6,12 +6,12 @@ use crate::key_record::KeyRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{ActionId, KnownVariableNames};
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 use sqyre_ports::HighlightSnapshot;
 use std::collections::HashMap;
 
 pub struct CatalogPaint<'a> {
-    pub catalog: &'a ProgramCatalog,
+    pub catalog: CatalogView<'a>,
     pub icons: &'a mut IconCache,
     pub previews: &'a mut PreviewTooltipCache,
 }
@@ -30,7 +30,7 @@ pub struct RecordBridges<'a> {
 }
 
 pub struct TreePaint<'a> {
-    pub catalog: &'a ProgramCatalog,
+    pub catalog: CatalogView<'a>,
     pub icons: &'a mut IconCache,
     pub theme: VarTheme<'a>,
     pub active_macro: &'a sqyre_domain::Macro,

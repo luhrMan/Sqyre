@@ -55,7 +55,7 @@ pub fn set_wm_class(win: u64, app_id: &str) {
         }
     };
     if set {
-        crate::cap_log("PORTAL", "wmclass", &format!("xid={win:#x} class={app_id}"));
+        sqyre_ports::cap_log("PORTAL", "wmclass", &format!("xid={win:#x} class={app_id}"));
     }
 }
 
@@ -108,7 +108,7 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
         unsafe { active_on_display(display) }
     });
     if let Err(ref e) = result {
-        crate::diag::note(&format!("x11:get_active_window err: {e}"));
+        sqyre_ports::note(&format!("x11:get_active_window err: {e}"));
     }
     result
 }
@@ -155,7 +155,7 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
         unsafe { skip_taskbar_on_display(display) }
     });
     if let Err(ref e) = result {
-        crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
+        sqyre_ports::note(&format!("x11:skip_taskbar err: {e}"));
     }
     result
 }
@@ -168,7 +168,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
         unsafe { enable_overlay_transparency_on_display(display) }
     });
     if let Err(ref e) = result {
-        crate::diag::note(&format!("x11:overlay_transparency err: {e}"));
+        sqyre_ports::note(&format!("x11:overlay_transparency err: {e}"));
     }
     result
 }

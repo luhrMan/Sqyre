@@ -26,7 +26,7 @@ pub fn queue_macro_hotkey(
 ) {
     #[cfg(feature = "native-runtime")]
     {
-        sqyre_capture::event_log(
+        sqyre_ports::event_log(
             "SQYRE_HOTKEY",
             &[("fire", "queue"), ("name", name.as_str())],
         );

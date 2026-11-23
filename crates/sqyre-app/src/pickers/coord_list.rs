@@ -45,11 +45,9 @@ pub fn paint_coord_ref_list(
     scroll_to_selection: &mut bool,
     compact_program_headers: bool,
 ) {
+    let catalog = paint.catalog;
     let CatalogPaint {
-        catalog,
-        icons,
-        previews,
-        ..
+        icons, previews, ..
     } = paint;
     let q = search.trim().to_ascii_lowercase();
     let res = catalog.resolution_key().to_string();

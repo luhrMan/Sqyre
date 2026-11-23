@@ -3,7 +3,7 @@
 use super::types::{ActivePicker, CoordKind};
 use crate::icon_cache::IconCache;
 use eframe::egui;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::CatalogView;
 
 /// Display options for [`coord_ref_field`]. Empty copy, color, truncation, and
 /// the clear eraser stay with the caller — those already differ per surface.
@@ -28,7 +28,7 @@ pub struct CoordRefFieldOpts<'a> {
 )]
 pub fn coord_ref_field(
     ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
+    catalog: CatalogView<'_>,
     icons: &mut IconCache,
     picker: &mut ActivePicker,
     kind: CoordKind,
