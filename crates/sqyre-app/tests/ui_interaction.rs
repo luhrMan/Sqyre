@@ -135,6 +135,40 @@ fn add_action_picker_lists_wait() {
 }
 
 #[test]
+fn add_action_picker_focuses_search_on_open() {
+    let mut harness = build_docs_harness([1100.0, 520.0], |app| {
+        app.open_add_action_picker();
+    });
+    harness.run();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("click".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Add Click");
+    assert!(
+        harness.query_all_by_label("Add Wait").next().is_none(),
+        "typed text should land in the Add Action search field"
+    );
+
+    harness.get_by_label("Add Click").click();
+    harness.run_steps(4);
+
+    harness.get_by_label("Add Action (Ctrl+A)").click();
+    harness.run_steps(4);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("wait".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Add Wait");
+    assert!(
+        harness.query_all_by_label("Add Click").next().is_none(),
+        "search focuses again after the picker is reopened"
+    );
+}
+
+#[test]
 fn add_wait_from_picker_increases_tree() {
     let mut harness = build_docs_harness([1100.0, 520.0], |app| {
         app.open_add_action_picker();

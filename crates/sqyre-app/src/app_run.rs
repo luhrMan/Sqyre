@@ -154,6 +154,12 @@ impl SqyreApp {
                 preview_outline,
                 self.hidden_for_recording,
             );
+            let markers = crate::macro_record::desktop_marker_points(
+                &self.macro_record,
+                &self.macro_record_bridge,
+                &crate::macro_record::RecordThresholds::from_settings(self.settings_ui.settings()),
+            );
+            self.recording_overlay.sync_point_markers(&markers);
             #[cfg(target_os = "android")]
             self.screen_pick.sync(ctx, &self.screen_click);
         }

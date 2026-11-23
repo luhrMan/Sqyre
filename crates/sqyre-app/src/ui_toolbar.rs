@@ -600,3 +600,58 @@ pub fn action_toolbar(
     });
     force_openness
 }
+
+#[cfg(test)]
+mod tests {
+    /// The tag field sits in the header gap. On a narrow window that gap cannot
+    /// hold both entries, and the name used to collapse to a sliver.
+    #[test]
+    fn narrow_header_shows_the_macro_name() {
+        let mut app = crate::SqyreApp::for_docs();
+        app.workspace.macros[0].name =
+            "Inventory restock and backup routine for the evening".into();
+        let ctx = eframe::egui::Context::default();
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(400.0, 640.0),
+        );
+        let mut visible = 0.0;
+        let mut name_y = 0.0;
+        let mut tag_y = None;
+        for frame in 0..3 {
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| {
+                    super::top_bar(&mut app, ui);
+                },
+            );
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Text(text) = &clipped.shape {
+                    let label = text.galley.text();
+                    if label.contains("Inventory") {
+                        let galley =
+                            eframe::egui::Rect::from_min_size(text.pos, text.galley.size());
+                        visible = galley.intersect(clipped.clip_rect).width();
+                        name_y = text.pos.y;
+                    } else if label.contains("Add tag") {
+                        tag_y = Some(text.pos.y);
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            visible > 80.0,
+            "macro name text is clipped to {visible}px in the header"
+        );
+        let tag_y = tag_y.expect("tag field");
+        assert!(
+            tag_y > name_y + 8.0,
+            "tag field did not wrap under the name (name_y {name_y}, tag_y {tag_y})"
+        );
+    }
+}

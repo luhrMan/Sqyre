@@ -205,12 +205,8 @@ impl MacroRecordUi {
                         catalog_changed: false,
                     };
                 }
-                // Live crosshairs for move points captured so far.
-                #[cfg(feature = "native-runtime")]
-                {
-                    let live = live_record_points(&bridge.peek_events(), &thresholds);
-                    sync_temp_point_markers(ctx, &live, None, None);
-                }
+                // Point squares are OS windows (see recording overlay). Deferred
+                // egui viewports ignore position on Wayland and pile up mid-screen.
                 // Status lives on the recording HUD (main window may be hidden).
                 ctx.request_repaint_after(Duration::from_millis(16));
                 MacroRecordShowResult {
@@ -293,8 +289,6 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
     let mut row_events: Vec<(ActionId, RowInteraction)> = Vec::new();
     let mut delete_id: Option<ActionId> = None;
     let mut is_dark = false;
-    let mut hovered_point: Option<usize> = None;
-    let mut editing_point: Option<usize> = None;
     // Adopt nearby: (temp index, full CoordinateRef string, display name).
     let mut adopt_nearby: Option<(usize, String, String)> = None;
     let known_vars = collect_known_variable_names(draft);
@@ -335,8 +329,6 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 crate::widgets::show_dialog_scroll_mod(ui, points_w, points_h, |s| s.id_salt("macro_record_points"), |ui| {
                         ui.set_max_width(points_w);
                         for (i, pt) in points.iter_mut().enumerate() {
-                            let mut row_hovered = false;
-                            let mut row_editing = false;
                             let nearby =
                                 nearby_saved_point(catalog, pt, thresholds.snap_point_px);
                             ui.horizontal(|ui| {
@@ -356,21 +348,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                     pt.link_to = None;
                                 }
                                 ui.label("X");
-                                let x_resp = ui
-                                    .add(crate::widgets::num_entry(&mut pt.x).speed(1).suffix(" px"))
+                                ui.add(crate::widgets::num_entry(&mut pt.x).speed(1).suffix(" px"))
                                     .on_hover_text(ht::REC_SCREEN_X);
                                 ui.label("Y");
-                                let y_resp = ui
-                                    .add(crate::widgets::num_entry(&mut pt.y).speed(1).suffix(" px"))
+                                ui.add(crate::widgets::num_entry(&mut pt.y).speed(1).suffix(" px"))
                                     .on_hover_text(ht::REC_SCREEN_Y);
-
-                                row_hovered = enabled.contains_pointer()
-                                    || name.contains_pointer()
-                                    || x_resp.contains_pointer()
-                                    || y_resp.contains_pointer();
-                                row_editing = name.has_focus()
-                                    || x_resp.has_focus()
-                                    || y_resp.has_focus();
                             });
                             if let Some(near) = nearby {
                                 ui.horizontal(|ui| {
@@ -394,12 +376,6 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                             Some((i, near.coord_ref.clone(), near.name.clone()));
                                     }
                                 });
-                            }
-                            if row_editing {
-                                editing_point = Some(i);
-                            }
-                            if row_hovered {
-                                hovered_point = Some(i);
                             }
                         }
                     });
@@ -463,9 +439,6 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 close = true;
             }
         });
-
-    #[cfg(feature = "native-runtime")]
-    sync_temp_point_markers(ctx, points, hovered_point, editing_point);
 
     if let Some((i, coord_ref, name)) = adopt_nearby {
         if let Some(pt) = points.get_mut(i) {
@@ -1051,144 +1024,30 @@ fn live_record_points(events: &[MacroRecordEvent], t: &RecordThresholds) -> Vec<
     out
 }
 
-/// Default / hover / editing colors for on-screen temp-point markers.
-#[cfg(feature = "native-runtime")]
-fn marker_default() -> egui::Color32 {
-    crate::theme::accent()
-}
-#[cfg(feature = "native-runtime")]
-const MARKER_HOVER: egui::Color32 = crate::theme::MACRO_START;
-#[cfg(feature = "native-runtime")]
-const MARKER_EDIT: egui::Color32 = crate::theme::MACRO_STOP;
-
-#[cfg(feature = "native-runtime")]
-fn sync_temp_point_markers(
-    ctx: &egui::Context,
-    points: &[TempPoint],
-    hovered: Option<usize>,
-    editing: Option<usize>,
-) {
-    use sqyre_capture::{enable_overlay_window_transparency, skip_taskbar_for_overlay_windows};
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static LAST_HINTS_MS: AtomicU64 = AtomicU64::new(0);
-
-    let mut any = false;
-    for (i, pt) in points.iter().enumerate() {
-        // Enabled saves and linked (reused) points get markers.
-        if !pt.save && pt.link_to.is_none() {
-            continue;
-        }
-        any = true;
-        let color = if editing == Some(i) {
-            MARKER_EDIT
-        } else if hovered == Some(i) {
-            MARKER_HOVER
-        } else {
-            marker_default()
-        };
-        show_temp_point_marker(ctx, i, pt, color);
+/// Desktop pixels to mark while recording or reviewing.
+///
+/// Drawn by the recording overlay as override-redirect / topmost windows.
+/// egui deferred viewports cannot be positioned on Wayland, so they stacked
+/// in a cascade down the middle of the screen.
+#[cfg(any(test, feature = "native-runtime"))]
+pub(crate) fn desktop_marker_points(
+    ui: &MacroRecordUi,
+    bridge: &MacroRecordBridge,
+    thresholds: &RecordThresholds,
+) -> Vec<(i32, i32)> {
+    match ui {
+        MacroRecordUi::Closed => Vec::new(),
+        MacroRecordUi::Recording => live_record_points(&bridge.peek_events(), thresholds)
+            .into_iter()
+            .map(|p| (p.x, p.y))
+            .collect(),
+        MacroRecordUi::Review(review) => review
+            .points
+            .iter()
+            .filter(|p| p.save || p.link_to.is_some())
+            .map(|p| (p.x, p.y))
+            .collect(),
     }
-
-    if !any {
-        return;
-    }
-
-    let tick = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let prev = LAST_HINTS_MS.load(Ordering::Relaxed);
-    if tick.saturating_sub(prev) >= 250 {
-        LAST_HINTS_MS.store(tick, Ordering::Relaxed);
-        let _ = skip_taskbar_for_overlay_windows();
-        let _ = enable_overlay_window_transparency();
-    }
-}
-
-#[cfg(feature = "native-runtime")]
-fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, color: egui::Color32) {
-    use eframe::egui::{
-        FontId, Frame, Margin, Pos2, Sense, Stroke, Vec2, ViewportBuilder, ViewportId,
-    };
-    use sqyre_capture::OVERLAY_WM_TITLE;
-
-    const DIAMETER: f32 = 12.0;
-    const ARM: f32 = 3.5;
-    const CROSS_STROKE: f32 = 1.25;
-    const RING_STROKE: f32 = 1.25;
-    const LABEL_GAP: f32 = 1.0;
-    const LABEL_H: f32 = 10.0;
-
-    let label = if pt.name.trim().is_empty() {
-        format!("#{index}")
-    } else {
-        pt.name.trim().to_string()
-    };
-    let font = FontId::proportional(9.0);
-    let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.clone(), font.clone(), color));
-    let radius = DIAMETER * 0.5;
-    let content_w = galley.size().x.max(DIAMETER).ceil();
-    let content_h = (LABEL_H + LABEL_GAP + DIAMETER).ceil();
-    // Ring stroke is centered on the circle edge — pad so it stays inside the window.
-    let outer_w = (content_w + RING_STROKE).ceil();
-    let outer_h = (content_h + RING_STROKE).ceil();
-
-    // Recorded coords are physical desktop pixels; egui viewport position is logical
-    // points (`physical / pixels_per_point`). Without this divide, markers land at
-    // `recorded * ppp` and only near-origin points remain on-screen.
-    let ppp = ctx.pixels_per_point().max(0.01);
-    let cx = pt.x as f32 / ppp;
-    let cy = pt.y as f32 / ppp;
-    // Circle center sits on the recorded point (below the label).
-    let cross_y_offset = RING_STROKE * 0.5 + LABEL_H + LABEL_GAP + radius;
-    let pos = Pos2::new(cx - outer_w * 0.5, cy - cross_y_offset);
-
-    let id = ViewportId::from_hash_of(format!("sqyre_temp_point_marker_{index}"));
-    let builder = ViewportBuilder::default()
-        .with_title(OVERLAY_WM_TITLE)
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_always_on_top()
-        .with_taskbar(false)
-        .with_mouse_passthrough(true)
-        .with_window_type(egui::X11WindowType::Notification)
-        .with_transparent(true)
-        .with_inner_size([outer_w, outer_h])
-        .with_min_inner_size([outer_w, outer_h])
-        .with_position(pos);
-
-    ctx.show_viewport_deferred(id, builder, move |ui, _class| {
-        Frame::NONE
-            .fill(egui::Color32::TRANSPARENT)
-            .inner_margin(Margin::ZERO)
-            .show(ui, |ui| {
-                ui.set_min_size(Vec2::new(outer_w, outer_h));
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(outer_w, outer_h), Sense::hover());
-                let painter = ui.painter();
-                let galley = painter.layout_no_wrap(label.clone(), font.clone(), color);
-                let label_pos = Pos2::new(
-                    rect.center().x - galley.size().x * 0.5,
-                    rect.top() + RING_STROKE * 0.5,
-                );
-                painter.galley(label_pos, galley, color);
-                let c = Pos2::new(
-                    rect.center().x,
-                    rect.top() + RING_STROKE * 0.5 + LABEL_H + LABEL_GAP + radius,
-                );
-                painter.circle_filled(c, radius, crate::theme::overlay_panel_fill());
-                painter.circle_stroke(c, radius, Stroke::new(RING_STROKE, color));
-                let stroke = Stroke::new(CROSS_STROKE, color);
-                painter.line_segment(
-                    [Pos2::new(c.x - ARM, c.y), Pos2::new(c.x + ARM, c.y)],
-                    stroke,
-                );
-                painter.line_segment(
-                    [Pos2::new(c.x, c.y - ARM), Pos2::new(c.x, c.y + ARM)],
-                    stroke,
-                );
-            });
-    });
 }
 
 #[cfg(test)]
@@ -1316,5 +1175,59 @@ mod tests {
             })
             .collect();
         assert_eq!(key_states, vec![PressState::Down, PressState::Up]);
+    }
+
+    #[test]
+    fn desktop_markers_follow_recorded_desktop_points() {
+        let bridge = MacroRecordBridge::new();
+        let t = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        assert!(desktop_marker_points(&MacroRecordUi::Closed, &bridge, &t).is_empty());
+
+        bridge.arm();
+        // Same-timestamp samples collapse to the latest desktop point.
+        bridge.record_desktop_pos(10, 20);
+        bridge.record_desktop_pos(400, 500);
+        assert_eq!(
+            desktop_marker_points(&MacroRecordUi::Recording, &bridge, &t),
+            vec![(400, 500)]
+        );
+
+        let review = MacroRecordUi::Review(Box::new(ReviewState {
+            draft: Macro::new("Recorded", 0, Vec::new()),
+            points: vec![
+                TempPoint {
+                    original_name: "a".into(),
+                    name: "a".into(),
+                    x: 1,
+                    y: 2,
+                    save: false,
+                    link_to: None,
+                },
+                TempPoint {
+                    original_name: "b".into(),
+                    name: "b".into(),
+                    x: 9,
+                    y: 8,
+                    save: true,
+                    link_to: None,
+                },
+                TempPoint {
+                    original_name: "c".into(),
+                    name: "c".into(),
+                    x: 3,
+                    y: 4,
+                    save: false,
+                    link_to: Some("Demo~Center".into()),
+                },
+            ],
+            status: StatusBanner::default(),
+            tooltip: TooltipState::default(),
+            pills_cache: HashMap::new(),
+            paint_revision: 0,
+        }));
+        assert_eq!(
+            desktop_marker_points(&review, &bridge, &t),
+            vec![(9, 8), (3, 4)]
+        );
     }
 }

@@ -69,6 +69,8 @@ impl MacroMetaUi {
     }
 
     /// Name entry row. `edit_limit` caps the field; past that the text scrolls.
+    ///
+    /// `name_id` stays put when the row wraps, so keyboard focus survives.
     pub fn paint_name_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -76,6 +78,7 @@ impl MacroMetaUi {
         other_macro_names: &[String],
         enabled: bool,
         edit_limit: f32,
+        name_id: egui::Id,
     ) -> (MetaMutations, egui::Rect) {
         let mut out = MetaMutations::default();
 
@@ -90,6 +93,7 @@ impl MacroMetaUi {
                 let edit = ui.add_enabled(
                     enabled,
                     egui::TextEdit::singleline(&mut self.name_draft)
+                        .id(name_id)
                         .desired_width(name_w)
                         .hint_text("Macro name"),
                 );
@@ -128,6 +132,10 @@ impl MacroMetaUi {
     /// The name hugs its text and pushes the tag field right. When the tag
     /// field reaches the pane edge the name stops growing and the text scrolls
     /// inside the field.
+    ///
+    /// A focused entry, or a row too narrow to show the name, wraps the two
+    /// fields. The focused text then uses the pane width instead of scrolling
+    /// inside a sliver.
     pub(crate) fn paint_name_and_tags(
         &mut self,
         ui: &mut egui::Ui,
@@ -137,39 +145,64 @@ impl MacroMetaUi {
         enabled: bool,
         program_icons: Option<&HashMap<String, TextureHandle>>,
     ) -> NameTagLayout {
+        let name_id = ui.make_persistent_id("macro_name_edit");
+        let tag_id = ui.make_persistent_id("macro_tag_draft");
+        // Focus from the previous frame: a click lands during this paint, so
+        // the wrap shows on the following frame.
+        let editing = ui
+            .ctx()
+            .memory(|mem| mem.has_focus(name_id) || mem.has_focus(tag_id));
         ui.vertical(|ui| {
-            let (mut meta, name_rect, tag_rect, draft_changed) = ui
-                .horizontal(|ui| {
-                    let gap = ui.spacing().item_spacing.x;
-                    let avail = ui.available_width();
-                    let tag_w = tag_input_width(ui);
-                    let chrome = name_chrome(ui, self.name_error.is_some());
-                    // One point of slack so rounding cannot push the tag past the clip.
-                    let budget = (avail - gap - tag_w - 1.0).max(1.0);
-                    let edit_limit = (budget - chrome).max(1.0);
-                    let (meta, name_rect) =
-                        self.paint_name_row(ui, m, other_macro_names, enabled, edit_limit);
-                    let (tag_edit, tag_rect) = crate::widgets::tag_draft_editor(
-                        ui,
-                        &mut m.tags,
-                        &mut self.tag_draft,
-                        all_tags,
-                        crate::widgets::TagChipOptions {
-                            enabled,
-                            show_add_button: true,
-                            label_name: Some("Tags"),
-                            draft_hover: Some(help::META_TAGS),
-                            reorderable: false,
-                            signed_filters: false,
-                            single_row: false,
-                            locked: &[],
-                            locked_hover: None,
-                            program_icons,
-                        },
-                    );
-                    (meta, name_rect, tag_rect, tag_edit.changed)
-                })
-                .inner;
+            let gap = ui.spacing().item_spacing.x;
+            let avail = ui.available_width();
+            let tag_w = tag_input_width(ui);
+            let chrome = name_chrome(ui, self.name_error.is_some());
+            // One point of slack so rounding cannot push the tag past the clip.
+            let budget = (avail - gap - tag_w - 1.0).max(1.0);
+            let edit_limit = (budget - chrome).max(1.0);
+            let relax = editing || edit_limit < crate::widgets::fields::name_edit_floor(ui);
+            let name_limit = if relax {
+                (avail - chrome - 1.0).max(1.0)
+            } else {
+                edit_limit
+            };
+            let draft_width = relax.then(|| relaxed_tag_width(ui, &self.tag_draft, avail));
+            let paint_fields = |ui: &mut egui::Ui| {
+                let (meta, name_rect) =
+                    self.paint_name_row(ui, m, other_macro_names, enabled, name_limit, name_id);
+                let (tag_edit, tag_rect) = crate::widgets::tag_draft_editor(
+                    ui,
+                    &mut m.tags,
+                    &mut self.tag_draft,
+                    all_tags,
+                    crate::widgets::TagChipOptions {
+                        enabled,
+                        show_add_button: true,
+                        label_name: Some("Tags"),
+                        draft_hover: Some(help::META_TAGS),
+                        reorderable: false,
+                        signed_filters: false,
+                        single_row: false,
+                        locked: &[],
+                        locked_hover: None,
+                        program_icons,
+                        draft_width,
+                        draft_id: Some(tag_id),
+                    },
+                );
+                (meta, name_rect, tag_rect, tag_edit.changed)
+            };
+            let (mut meta, name_rect, tag_rect, draft_changed) = if relax {
+                crate::widgets::wrapped_row(ui, paint_fields).inner
+            } else {
+                ui.horizontal(paint_fields).inner
+            };
+            let focused_now = ui
+                .ctx()
+                .memory(|mem| mem.has_focus(name_id) || mem.has_focus(tag_id));
+            if focused_now != editing {
+                ui.ctx().request_repaint();
+            }
             let (chips_changed, chips_rect) = if m.tags.is_empty() {
                 (false, None)
             } else {
@@ -323,6 +356,31 @@ fn tag_input_width(ui: &egui::Ui) -> f32 {
     pair_chrome(ui, egui_phosphor::regular::TAG)
         + crate::widgets::tags::TAG_DRAFT_WIDTH
         + crate::widgets::icon_btn_side(ui)
+}
+
+/// Draft width while the name and tag wrap: at least the resting field, wide
+/// enough for `draft`, and never wider than the pane.
+fn relaxed_tag_width(ui: &egui::Ui, draft: &str, pane: f32) -> f32 {
+    let mut wanted = crate::widgets::tags::TAG_DRAFT_WIDTH;
+    if !draft.trim().is_empty() {
+        let text_w = ui
+            .painter()
+            .layout_no_wrap(
+                draft.to_owned(),
+                egui::TextStyle::Body.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x;
+        wanted = wanted.max(text_w + 18.0);
+    }
+    let max = (pane
+        - pair_chrome(ui, egui_phosphor::regular::TAG)
+        - crate::widgets::icon_btn_side(ui)
+        - ui.spacing().item_spacing.x
+        - 4.0)
+        .max(1.0);
+    wanted.min(max)
 }
 
 fn validate_rename(
@@ -604,5 +662,188 @@ mod tests {
 
         let (bare, _, _) = paint_header(pane_w, "Alpha", &[], "Alpha");
         assert!(bare.chips_rect.is_none(), "empty tags reserved a chip row");
+    }
+
+    #[test]
+    fn narrow_row_wraps_so_the_name_stays_visible() {
+        let (layout, pane_right, galley) = paint_header(240.0, "Alpha", &["demo"], "Alpha");
+        let (text, _) = galley.expect("name galley");
+        assert!(!text.contains('…'), "name was elided: {text}");
+        assert!(
+            layout.name_rect.width() > 40.0,
+            "name collapsed: {:?}",
+            layout.name_rect
+        );
+        assert!(
+            layout.tag_rect.top() + 1.0 >= layout.name_rect.bottom(),
+            "tag stayed beside a crushed name: name {:?} tag {:?}",
+            layout.name_rect,
+            layout.tag_rect
+        );
+        assert!(
+            layout.tag_rect.right() <= pane_right + 1.0,
+            "tag past the pane: {:?} pane_right {pane_right}",
+            layout.tag_rect
+        );
+        let chips = layout.chips_rect.expect("chips");
+        assert!(chips.top() + 1.0 >= layout.tag_rect.bottom());
+    }
+
+    fn run_header(
+        ctx: &egui::Context,
+        width: f32,
+        frame: f64,
+        events: Vec<egui::Event>,
+        meta: &mut MacroMetaUi,
+        macro_: &mut Macro,
+    ) -> (NameTagLayout, egui::FullOutput) {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width + 80.0, 400.0));
+        let mut layout = None;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(frame),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(width, 320.0));
+                let mut mid = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(pane)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                mid.set_clip_rect(pane);
+                layout = Some(meta.paint_name_and_tags(&mut mid, macro_, &[], &[], true, None));
+            },
+        );
+        (layout.expect("header painted"), output)
+    }
+
+    fn click(pos: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    fn visible_text_width(output: &egui::FullOutput, needle: &str) -> f32 {
+        output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.text().contains(needle) => {
+                    let galley = egui::Rect::from_min_size(text.pos, text.galley.size());
+                    Some(galley.intersect(clipped.clip_rect).width())
+                }
+                _ => None,
+            })
+            .unwrap_or(0.0)
+    }
+
+    #[test]
+    fn focused_name_wraps_so_its_text_is_visible() {
+        let ctx = egui::Context::default();
+        let mut meta = MacroMetaUi::default();
+        let long = "Inventory restock and backup ".repeat(6);
+        let mut macro_ = m(&long, &["demo"]);
+        meta.sync_selection(0, &macro_);
+        let width = 480.0;
+        let mut before = None;
+        let mut before_visible = 0.0;
+        for frame in 0..2 {
+            let (laid, out) = run_header(
+                &ctx,
+                width,
+                frame as f64 * 0.1,
+                vec![],
+                &mut meta,
+                &mut macro_,
+            );
+            before_visible = visible_text_width(&out, "Inventory restock");
+            before = Some(laid);
+            out.drop_without_applying_deltas();
+        }
+        let before = before.expect("settled");
+        assert!(
+            (before.name_rect.top() - before.tag_rect.top()).abs() < 1.0,
+            "unfocused fields left the shared row: name {:?} tag {:?}",
+            before.name_rect,
+            before.tag_rect
+        );
+        let pos = egui::pos2(before.name_rect.right() - 12.0, before.name_rect.center().y);
+        let (_, press) = run_header(&ctx, width, 0.3, click(pos, true), &mut meta, &mut macro_);
+        press.drop_without_applying_deltas();
+        let (_, release) = run_header(&ctx, width, 0.4, click(pos, false), &mut meta, &mut macro_);
+        release.drop_without_applying_deltas();
+        let (after, out) = run_header(&ctx, width, 0.5, vec![], &mut meta, &mut macro_);
+        let after_visible = visible_text_width(&out, "Inventory restock");
+        out.drop_without_applying_deltas();
+        assert!(
+            after.tag_rect.top() + 1.0 >= after.name_rect.bottom(),
+            "focused name did not wrap the tag under it: name {:?} tag {:?}",
+            after.name_rect,
+            after.tag_rect
+        );
+        assert!(
+            after_visible > before_visible + 40.0,
+            "focused name still hides its text: before {before_visible} after {after_visible}"
+        );
+    }
+
+    #[test]
+    fn focused_tag_wraps_so_its_draft_is_visible() {
+        let ctx = egui::Context::default();
+        let mut meta = MacroMetaUi::default();
+        let mut macro_ = m("Alpha", &["demo"]);
+        meta.sync_selection(0, &macro_);
+        meta.tag_draft = "evening-backup-route-for-the-northern-camp".into();
+        let width = 480.0;
+        let mut before = None;
+        let mut before_visible = 0.0;
+        for frame in 0..2 {
+            let (laid, out) = run_header(
+                &ctx,
+                width,
+                frame as f64 * 0.1,
+                vec![],
+                &mut meta,
+                &mut macro_,
+            );
+            before_visible = visible_text_width(&out, "evening-backup");
+            before = Some(laid);
+            out.drop_without_applying_deltas();
+        }
+        let before = before.expect("settled");
+        assert!(
+            (before.name_rect.top() - before.tag_rect.top()).abs() < 1.0,
+            "short name should keep the tag beside it until focus: name {:?} tag {:?}",
+            before.name_rect,
+            before.tag_rect
+        );
+        let pos = egui::pos2(before.tag_rect.left() + 48.0, before.tag_rect.center().y);
+        let (_, press) = run_header(&ctx, width, 0.3, click(pos, true), &mut meta, &mut macro_);
+        press.drop_without_applying_deltas();
+        let (_, release) = run_header(&ctx, width, 0.4, click(pos, false), &mut meta, &mut macro_);
+        release.drop_without_applying_deltas();
+        let (after, out) = run_header(&ctx, width, 0.5, vec![], &mut meta, &mut macro_);
+        let after_visible = visible_text_width(&out, "evening-backup");
+        out.drop_without_applying_deltas();
+        assert!(
+            after.tag_rect.top() + 1.0 >= after.name_rect.bottom()
+                || after.tag_rect.width() > before.tag_rect.width() + 40.0,
+            "focused tag neither wrapped nor grew: before {:?} after {:?}",
+            before.tag_rect,
+            after.tag_rect
+        );
+        assert!(
+            after_visible > before_visible + 40.0,
+            "focused tag still hides its draft: before {before_visible} after {after_visible}"
+        );
     }
 }

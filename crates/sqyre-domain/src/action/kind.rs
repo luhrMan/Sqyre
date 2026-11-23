@@ -304,6 +304,7 @@ fn named_branch_label(label: &str, name: &str) -> String {
 mod tests {
     use super::*;
     use crate::blank::blank_kind;
+    use crate::DEFAULT_WAIT_TIME_MS;
 
     fn kind(key: &str) -> ActionKind {
         blank_kind(key).unwrap_or_else(|| panic!("no blank kind for {key}"))
@@ -460,7 +461,10 @@ mod tests {
     fn display_name_leaf_kinds() {
         assert_eq!(
             kind("wait").display_name(),
-            format!("Wait {}", ScalarValue::Int(0).as_display())
+            format!(
+                "Wait {}",
+                ScalarValue::Int(DEFAULT_WAIT_TIME_MS).as_display()
+            )
         );
         let click = kind("click").display_name();
         assert!(click.starts_with("Click "), "{click}");

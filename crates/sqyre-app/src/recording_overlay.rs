@@ -72,6 +72,11 @@ pub struct RecordingOverlay {
     logged_outline_ptr: bool,
     last_x11_ptr: Option<(i32, i32)>,
     last_portal_ptr: Option<(i32, i32)>,
+    logged_macro_ptr: bool,
+    /// Recorded-point squares. OS windows, not egui viewports: Wayland ignores
+    /// deferred viewport positions and cascades them down the screen center.
+    markers: Option<sqyre_capture::PointMarkerOverlay>,
+    markers_failed: bool,
     /// Wayland: translucent input cover over X11/XWayland windows.
     #[cfg(target_os = "linux")]
     snapshot: Option<FrozenSelectionOverlay>,
@@ -160,6 +165,11 @@ impl RecordingOverlay {
             self.apply_outline(rect);
         }
 
+        if let Some(bridge) = macro_record {
+            if bridge.is_armed() {
+                self.sample_macro_desktop_pointer(bridge);
+            }
+        }
         if recording {
             self.ensure_wake_poller(ctx.clone(), screen_click.clone(), macro_record.cloned());
             // Android cannot open a second window; `screen_pick` shows the status.
@@ -171,6 +181,7 @@ impl RecordingOverlay {
             self.hud_window_size = None;
             self.monitor_rects.clear();
             self.logged_outline_ptr = false;
+            self.logged_macro_ptr = false;
             self.last_x11_ptr = None;
             self.last_portal_ptr = None;
             #[cfg(target_os = "linux")]
@@ -499,6 +510,68 @@ impl RecordingOverlay {
                 ],
             );
         }
+    }
+
+    /// Place (or clear) the recorded-point squares. Empty hides them.
+    pub fn sync_point_markers(&mut self, points: &[(i32, i32)]) {
+        if points.is_empty() {
+            if let Some(markers) = self.markers.as_mut() {
+                markers.clear();
+            }
+            return;
+        }
+        if self.markers.is_none() && !self.markers_failed {
+            match sqyre_capture::PointMarkerOverlay::open() {
+                Ok(overlay) => self.markers = Some(overlay),
+                Err(e) => {
+                    self.markers_failed = true;
+                    crate::log::warn(format_args!("record point markers unavailable: {e}"));
+                    return;
+                }
+            }
+        }
+        if let Some(markers) = self.markers.as_mut() {
+            markers.set_points(points);
+        }
+    }
+
+    /// While a macro recording is armed on Wayland, store a desktop-pixel sample.
+    ///
+    /// Evdev only reports relative counts, so hook coordinates are not pixels.
+    /// X11 and Windows hooks already deliver absolute positions and are left
+    /// alone. Portal metadata is compositor-absolute; when it is missing, use
+    /// the X11 root pointer. Do not query X11 while portal is live — that
+    /// round-trip hitches under a fullscreen XWayland game.
+    fn sample_macro_desktop_pointer(&mut self, bridge: &sqyre_hotkeys::MacroRecordBridge) {
+        #[cfg(target_os = "linux")]
+        {
+            // X11 hooks already report root pixels. Sampling here as well would
+            // XQueryPointer every frame. Without hooks there is no other source.
+            #[cfg(feature = "hooks")]
+            if !sqyre_hotkeys::linux_uses_evdev_grab() {
+                return;
+            }
+            let portal = sqyre_capture::portal_cursor_position();
+            let x11 = if portal.is_none() {
+                sqyre_capture::x11_root_pointer()
+            } else {
+                None
+            };
+            let Some((x, y)) = portal.or(x11) else {
+                return;
+            };
+            if !self.logged_macro_ptr {
+                self.logged_macro_ptr = true;
+                let src = if portal.is_some() { "portal" } else { "x11" };
+                event_log(
+                    "SQYRE_RECORD",
+                    &[("ptr", src), ("pos", &format!("{x},{y}"))],
+                );
+            }
+            bridge.record_desktop_pos(x, y);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = bridge;
     }
 
     fn apply_outline(&mut self, rect: Option<OutlineCorners>) {

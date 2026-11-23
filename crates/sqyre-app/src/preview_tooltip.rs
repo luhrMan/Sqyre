@@ -1347,7 +1347,14 @@ fn paint_preview(
     let size = fit_display(ui, tw as f32, th as f32);
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
-    let image = image_view::add_checkered_image(ui, tex, size, egui::Sense::click(), 0.0);
+    let image = image_view::add_checkered_image(
+        ui,
+        tex,
+        size,
+        egui::Sense::click(),
+        0.0,
+        image_view::CheckerboardEdge::Outset,
+    );
     paint_blinking_marker(&ui.painter_at(image.rect), image.rect, marker);
     ui.add(egui::Label::new(caption).wrap());
     if show_image_size {
@@ -1504,7 +1511,12 @@ fn paint_preview_panel_image(
     {
         let painter = ui.painter_at(viewport);
         painter.rect_filled(viewport, 0.0, crate::theme::preview_viewport_fill());
-        image_view::paint_checkerboard(&painter, content, 0.0);
+        image_view::paint_checkerboard(
+            &painter,
+            content,
+            0.0,
+            image_view::CheckerboardEdge::Outset,
+        );
         painter.image(
             tex.id(),
             content,

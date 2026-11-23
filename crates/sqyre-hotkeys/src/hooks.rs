@@ -115,12 +115,15 @@ impl HookCtx {
                     return;
                 }
                 // Wayland evdev REL is raw counts, not pixels, and keeps firing
-                // after the compositor clamps at the screen edge. Recording
-                // position comes from portal cursor metadata / XQueryPointer.
+                // after the compositor clamps at the screen edge. Macro recording
+                // samples portal cursor metadata or the X11 root pointer on the
+                // UI thread. X11 `listen` already delivers root coordinates.
                 if !self.screen_click.grab_owns_input() {
                     self.screen_click.on_mouse_move(*x as i32, *y as i32);
                 }
-                self.macro_record.on_mouse_move(*x as i32, *y as i32);
+                if !linux_uses_evdev_grab() {
+                    self.macro_record.on_mouse_move(*x as i32, *y as i32);
+                }
             }
             EventType::ButtonPress(button) => {
                 if matches!(button, Button::Left) {

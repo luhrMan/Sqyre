@@ -91,6 +91,11 @@ pub fn name_edit_width(ui: &egui::Ui, text: &str, hint: &str) -> f32 {
     name_edit_width_limited(ui, text, hint, f32::INFINITY)
 }
 
+/// Narrowest name entry that still shows a few characters (`interact_size.y * 4`).
+pub(crate) fn name_edit_floor(ui: &egui::Ui) -> f32 {
+    ui.spacing().interact_size.y * 4.0
+}
+
 /// [`name_edit_width`] that also stops at `limit`.
 ///
 /// Below the usual floor the field still shrinks so a neighbor can stay on
@@ -105,7 +110,7 @@ pub(crate) fn name_edit_width_limited(ui: &egui::Ui, text: &str, hint: &str, lim
         .x;
     // TextEdit margin (8) + frame stroke (~2) + caret/selection slop.
     let w = text_w + 18.0;
-    let min = ui.spacing().interact_size.y * 4.0;
+    let min = name_edit_floor(ui);
     let visible = super::visible_width(ui);
     let room = if limit.is_finite() {
         visible.min(limit).max(1.0)
