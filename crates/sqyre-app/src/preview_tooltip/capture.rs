@@ -6,9 +6,11 @@ use super::geometry::{
     PreviewCoords,
 };
 use super::paint::PreviewMarker;
+#[cfg(any(not(target_os = "windows"), test))]
+use super::PendingCapture;
 use super::{
-    CacheEntry, CapturedPreview, FailureEntry, PendingCapture, PreviewRefresh, PreviewTooltipCache,
-    ReadyPreview, CACHE_MAX, CAPTURE_PENDING, FAIL_CACHE_TTL, PANEL_MAX_DIM, RETRY_FAIL_TTL,
+    CacheEntry, CapturedPreview, FailureEntry, PreviewRefresh, PreviewTooltipCache, ReadyPreview,
+    CACHE_MAX, CAPTURE_PENDING, FAIL_CACHE_TTL, PANEL_MAX_DIM, RETRY_FAIL_TTL,
 };
 use eframe::egui::{self, ColorImage, TextureOptions};
 use image::RgbaImage;
