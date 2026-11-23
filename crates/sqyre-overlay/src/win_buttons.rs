@@ -102,10 +102,6 @@ impl Drop for WinButtonHost {
 }
 
 impl WinButtonHost {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "host owns macro, move, and context queues plus stop flags"
-    )]
     pub fn start(
         pending: Arc<Mutex<Vec<String>>>,
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
@@ -510,53 +506,55 @@ fn tick_hub_fan(state: &mut HostState) {
 
 fn update_button(state: &mut HostState, spec: WinButtonSpec) {
     let id = spec.id.clone();
-    let Some(live) = state.buttons.get_mut(&id) else {
-        return;
+    // Scope the `buttons` borrow so `repaint_button` can re-enter the map.
+    let need_repaint = {
+        let Some(live) = state.buttons.get_mut(&id) else {
+            return;
+        };
+        let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
+        let (x, y) = if dragging {
+            (live.spec.face.x, live.spec.face.y)
+        } else {
+            (spec.face.x, spec.face.y)
+        };
+        let size = live.spec.face.w != spec.face.w
+            || live.spec.face.h != spec.face.h
+            || sqyre_domain::f32_changed(live.spec.face.corner_radius, spec.face.corner_radius);
+        let pos = live.spec.face.x != x || live.spec.face.y != y;
+        let style = live.spec.face.bg != spec.face.bg
+            || live.spec.face.border != spec.face.border
+            || live.spec.face.icon != spec.face.icon
+            || live.spec.face.icon_glyph != spec.face.icon_glyph
+            || live.spec.face.brand != spec.face.brand
+            || live.spec.busy != spec.busy;
+        live.spec = spec;
+        live.spec.face.x = x;
+        live.spec.face.y = y;
+        let hwnd = live.hwnd;
+        let (fx, fy, w, h, radius) = (
+            live.spec.face.x,
+            live.spec.face.y,
+            live.spec.face.w.max(1),
+            live.spec.face.h.max(1),
+            live.spec.face.corner_radius,
+        );
+        let has_cached = !live.bgra.is_empty();
+        if size {
+            // Region uses the new size. Recreate it before the next paint.
+            set_round_region(hwnd, w, h, radius);
+        }
+        if size || style {
+            true
+        } else if pos && has_cached {
+            // Layered windows place via UpdateLayeredWindow — reuse cached pixels
+            // so hub fan travel does not re-rasterize every frame.
+            blit_layered(hwnd, fx, fy, w, h, &live.bgra);
+            false
+        } else {
+            pos
+        }
     };
-    let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
-    let (x, y) = if dragging {
-        (live.spec.face.x, live.spec.face.y)
-    } else {
-        (spec.face.x, spec.face.y)
-    };
-    let size = live.spec.face.w != spec.face.w
-        || live.spec.face.h != spec.face.h
-        || sqyre_domain::f32_changed(live.spec.face.corner_radius, spec.face.corner_radius);
-    let pos = live.spec.face.x != x || live.spec.face.y != y;
-    let style = live.spec.face.bg != spec.face.bg
-        || live.spec.face.border != spec.face.border
-        || live.spec.face.icon != spec.face.icon
-        || live.spec.face.icon_glyph != spec.face.icon_glyph
-        || live.spec.face.brand != spec.face.brand
-        || live.spec.busy != spec.busy;
-    live.spec = spec;
-    live.spec.face.x = x;
-    live.spec.face.y = y;
-    let hwnd = live.hwnd;
-    let (fx, fy, w, h, radius) = (
-        live.spec.face.x,
-        live.spec.face.y,
-        live.spec.face.w.max(1),
-        live.spec.face.h.max(1),
-        live.spec.face.corner_radius,
-    );
-    let has_cached = !live.bgra.is_empty();
-    if size {
-        // Region uses the new size. Recreate it before the next paint.
-        set_round_region(hwnd, w, h, radius);
-    }
-    if size || style {
-        let id = id.clone();
-        // `live` must end before re-enter via repaint_button.
-        drop(live);
-        repaint_button(state, &id);
-    } else if pos && has_cached {
-        // Layered windows place via UpdateLayeredWindow — reuse cached pixels
-        // so hub fan travel does not re-rasterize every frame.
-        blit_layered(hwnd, fx, fy, w, h, &live.bgra);
-    } else if pos {
-        let id = id.clone();
-        drop(live);
+    if need_repaint {
         repaint_button(state, &id);
     }
 }
@@ -1026,7 +1024,7 @@ fn on_context_up(state: &mut HostState, client_x: i32, client_y: i32) {
 }
 
 fn poll_context_menu_escape(state: &mut HostState) {
-    if state.context.is_none() {
+    if !state.context.as_ref().is_some_and(|m| m.mapped) {
         state.last_escape_down = false;
         return;
     }

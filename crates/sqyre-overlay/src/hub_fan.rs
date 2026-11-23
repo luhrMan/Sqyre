@@ -12,6 +12,7 @@ use std::time::Instant;
 pub const HUB_FAN_ANIM_SECS: f32 = 0.18;
 
 /// Host poll interval while the fan is traveling.
+#[cfg(any(target_os = "linux", test))]
 pub const HUB_FAN_TICK_MS: u64 = 16;
 
 /// Ease fan progress (`0`…`1`) with a smoothstep.
