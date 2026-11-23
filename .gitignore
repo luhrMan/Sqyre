@@ -7,6 +7,9 @@ notes.md
 .history/
 *.vsix
 
+# Graphify local code graph (regenerated; do not commit)
+/graphify-out/
+
 # Local db.yaml conversion scratch (one-shot; do not commit)
 /db.yaml
 /db.yaml.bak
