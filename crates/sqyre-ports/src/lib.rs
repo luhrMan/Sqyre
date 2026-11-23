@@ -274,6 +274,26 @@ pub trait WindowFocuser: Send + Sync {
     fn focused(&self) -> Result<Option<FocusedWindow>, AutomationError>;
 }
 
+/// Live multi-monitor layout for catalog seeding and UI geometry.
+///
+/// Implemented by the capture crate (`OsMonitorLayout`). App leaf modules take
+/// `&dyn MonitorLayout` instead of calling capture free functions directly.
+pub trait MonitorLayout {
+    /// Usable monitor rects in virtual-desktop coordinates (primary-first when known).
+    fn preferred_rects(&self) -> Vec<DesktopRect>;
+
+    /// Display count for UI builtins; at least 1 when capture is unavailable.
+    fn count(&self) -> usize {
+        self.preferred_rects().len().max(1)
+    }
+
+    /// Slot-1 resolution key (`"{w}x{h}"`), or `None` when no display is ready.
+    fn primary_resolution_key(&self) -> Option<String>;
+
+    /// Primary monitor DPI scale (`dpi / 96`), or `None` when unknown.
+    fn primary_scale(&self) -> Option<f32>;
+}
+
 /// Catalog item metadata (name, stack size, grid dimensions, tags) for icon lookups.
 #[derive(Debug, Clone, Default)]
 pub struct ItemMeta {

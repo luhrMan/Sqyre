@@ -24,7 +24,7 @@ Read the full diff. Ignore lockfile-only noise unless inconsistent with the mani
 
 ## What to check (in the hunks only)
 
-Apply the rules rather than restating them: `rust-style`, `cross-platform`, `no-backwards-compatibility`, `git-identity`, and for UI `ui-usability` / `egui-layout-gotchas`, for search `search-timing-consistency`.
+Apply the rules rather than restating them: `rust-style`, `cross-platform`, `crate-boundaries`, `no-backwards-compatibility`, `git-identity`, and for UI `ui-usability` / `egui-layout-gotchas`, for search `search-timing-consistency`.
 
 Beyond the rules, flag:
 
@@ -32,7 +32,7 @@ Beyond the rules, flag:
 - A function/type that gained a second responsibility
 - Magic values / stringly modes that should be an enum or newtype
 - Dead code, unused params, commented-out remnants, debug prints
-- Logic in the wrong crate layer (domain vs app, capture vs UI)
+- Hub growth you introduced (new field/impl on `SqyreApp` / whole-catalog pass-through / settings mega-struct field) when a narrower type was practical
 - Visibility widened by accident
 - Behavior change without a test when the crate already tests that layer (no display-dependent tests in headless CI; see `testing`)
 - Commit shape: one purpose, no generated junk or secrets, message says *why*
@@ -47,8 +47,8 @@ Skip drive-by refactors of untouched code and naming/format nits that match surr
 
 ## Verdict
 
-- **Block** — correctness, safety, shims, `cfg!` platform APIs, unexplained `unsafe`, swallowed errors, secrets, attribution, weakened test gates (lowered coverage floor, loosened `perf_budget_secs`, new `#[ignore]`/nextest retries, deleted assertions without replacement).
-- **Should** — smell or missed local refactor you introduced.
+- **Block** — correctness, safety, shims, `cfg!` platform APIs, unexplained `unsafe`, swallowed errors, secrets, attribution, weakened test gates (lowered coverage floor, loosened `perf_budget_secs`, new `#[ignore]`/nextest retries, deleted assertions without replacement), **and new wrong-layer edges** from `crate-boundaries` (e.g. app importing platform capture modules for frames; new non-capture `use sqyre_capture::{note,…}` / capture dep for diag alone; domain/ports importing app/executor/capture).
+- **Should** — smell or missed local refactor you introduced (including avoidable hub growth on `SqyreApp` / catalog / settings / dual mega platform files).
 - **Note** — optional / pre-existing / follow-up.
 
 ```

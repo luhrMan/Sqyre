@@ -11,6 +11,7 @@ Regressions hide inside megacommits: a single 60-file `+1880` commit that mixed 
 
 - **Commit during the change, without a separate request.** Finishing a unit includes committing it. Do not hold a correct diff until the user says "commit".
 - **Commit after each independently-correct unit** — one bullet of a batch request, one surface, one concern. If the subject line needs "and", split it.
+- **Hub splits are one concern even across many files** — extracting a shared host loop, catalog view, or settings partition may touch dozens of call sites; that is still a single-purpose commit (and required by `no-backwards-compatibility`). Do not split into broken intermediates or grow the hub with a “small local fix” when the task is structural (`crate-boundaries`).
 - **Never accumulate a multi-topic uncommitted tree** across items of a list request, and never carry uncommitted work between items — commit or stop. The tree at `HEAD` should always be reviewable as a sequence of single-purpose diffs.
 - **Per commit:** `make fmt` plus a compile of what you touched (`cargo check -p <crate>` or the relevant `make` target). The full `make check && make test` gate still applies before declaring the batch done (verify-new-code) — but do not batch ten items to save one gate run.
 - **Message style:** match `git log` — `<crate-or-area>: <lowercase what it does>` (e.g. `app: keep parent popups open over nested menus`). One concern per message; no AI attribution or trailers (see AGENTS.md).

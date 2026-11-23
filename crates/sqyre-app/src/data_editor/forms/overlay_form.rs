@@ -166,7 +166,7 @@ impl DataEditor {
             loc.point = self.form_overlay_point.clone();
             loc.x = self.form_overlay_x;
             loc.y = self.form_overlay_y;
-            let (rx, ry) = loc.resolved_position(catalog);
+            let (rx, ry) = catalog.resolve_overlay_xy(&loc.point, (loc.x, loc.y));
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
         }
         if hub {

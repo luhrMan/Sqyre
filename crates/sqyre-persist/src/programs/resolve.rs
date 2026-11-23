@@ -116,6 +116,22 @@ impl ProgramCatalog {
         )))
     }
 
+    /// Desktop top-left for an overlay button.
+    ///
+    /// When `point` is set, resolves that catalog point (literal scalars /
+    /// arithmetic without macro variables). Falls back to `fallback` when the
+    /// point is empty or cannot be resolved.
+    pub fn resolve_overlay_xy(&self, point: &str, fallback: (f32, f32)) -> (f32, f32) {
+        let point = point.trim();
+        if !point.is_empty() {
+            let m = Macro::new("", 0, vec![]);
+            if let Ok((x, y)) = self.resolve_point(&CoordinateRef(point.to_string()), &m) {
+                return (x as f32, y as f32);
+            }
+        }
+        fallback
+    }
+
     pub fn resolve_point(
         &self,
         r: &CoordinateRef,

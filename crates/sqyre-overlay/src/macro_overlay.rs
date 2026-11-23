@@ -576,7 +576,7 @@ impl MacroOverlay {
                 busy_shown += 1;
             }
             let mut drawn = btn.clone();
-            let (x, y) = btn.resolved_position(catalog);
+            let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
             drawn.x = x;
             drawn.y = y;
             specs.push(ButtonDraw { cfg: drawn, busy });
@@ -589,7 +589,7 @@ impl MacroOverlay {
                 busy_shown += 1;
             }
             let mut drawn = btn.clone();
-            let (x, y) = btn.resolved_position(catalog);
+            let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
             drawn.x = x;
             drawn.y = y;
             specs.push(ButtonDraw { cfg: drawn, busy });
@@ -1202,6 +1202,7 @@ fn win_spec_from_config(
         macro_name: btn.macro_name.clone(),
         face,
         tip: overlay_button_tip(btn),
+        ui_scale: ppp.max(0.01),
         busy,
         visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
         input_enabled: hub_button_input_enabled(&btn.id, hub_fan_interactive),
@@ -1221,6 +1222,7 @@ fn spec_from_config(
         macro_name: btn.macro_name.clone(),
         face,
         tip: overlay_button_tip(btn),
+        ui_scale: ppp.max(0.01),
         busy,
         visibility_gated: btn.visibility_gate.is_active() && btn.id != QUICK_ACCESS_HUB_ID,
         input_enabled: hub_button_input_enabled(&btn.id, hub_fan_interactive),
@@ -1248,7 +1250,7 @@ fn android_spec(
     ungate: bool,
 ) -> crate::button_visibility::AndroidButtonSpec {
     let mut placed = btn.clone();
-    let (x, y) = btn.resolved_position(catalog);
+    let (x, y) = catalog.resolve_overlay_xy(&btn.point, (btn.x, btn.y));
     placed.x = x;
     placed.y = y;
     let face = button_face(&placed, ppp);

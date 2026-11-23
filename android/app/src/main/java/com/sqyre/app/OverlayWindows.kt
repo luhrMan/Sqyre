@@ -154,6 +154,8 @@ internal object OverlayWindows {
     }
 
     private fun showContextMenu(id: String, view: View) {
+        // Anchored PopupMenu stays on-screen and dismisses on outside tap
+        // (cancel — same as desktop click-away / Cancel row).
         val popup = PopupMenu(view.context, view)
         popup.menu.add(0, MENU_OPEN_SETTINGS, 0, "Open settings")
         popup.menu.add(0, MENU_DISABLE, 1, "Disable")

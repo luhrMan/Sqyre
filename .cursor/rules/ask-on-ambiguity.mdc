@@ -16,6 +16,7 @@ Ask if any of these are unclear and would materially change the work:
 - Approach when multiple valid options have different trade-offs
 - Destructive or hard-to-reverse actions (deletes, renames, schema breaks, force push)
 - Missing inputs that cannot be inferred from the repo or conversation
+- **Blast radius / hub growth** — work that would add fields or call sites to `SqyreApp`, `ProgramCatalog`, `UserSettings`, or multi-thousand-line platform files when extracting a narrower type/module is a plausible alternative (see `crate-boundaries`)
 
 ## When not to ask
 

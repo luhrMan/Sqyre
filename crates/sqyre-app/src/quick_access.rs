@@ -6,9 +6,8 @@ use eframe::egui;
 use sqyre_persist::QUICK_ACCESS_HUB_ID;
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 use sqyre_persist::{
-    hub_position_on_monitor, snap_hub_to_monitor, HubEdge, OverlayButtonConfig,
-    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX,
-    QUICK_ACCESS_HUB_ICON,
+    snap_hub_xy_to_monitor, HubEdge, OverlayButtonConfig, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_ICON_HEX, QUICK_ACCESS_HUB_ICON,
 };
 
 /// Fire tokens for radial satellites (also used as overlay button ids).
@@ -112,8 +111,8 @@ pub(crate) fn hub_overlay_buttons(
         return vec![hub_face(hub, hub.x, hub.y, size_pt)];
     }
     let (mon_x, mon_y, mon_w, mon_h) = monitor_for_point(hub.x, hub.y);
-    let (edge, offset) = snap_hub_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
-    let (hx, hy) = hub_position_on_monitor(edge, offset, mon_x, mon_y, mon_w, mon_h, size_px);
+    // Preserve up to 50% edge overhang from the stored desktop position.
+    let (edge, hx, hy) = snap_hub_xy_to_monitor(hub.x, hub.y, size_px, mon_x, mon_y, mon_w, mon_h);
     let mut out = vec![hub_face(hub, hx, hy, size_pt)];
     // Always emit satellites while the hub is enabled so the overlay host keeps
     // their windows warm. Creating four face+hit windows on first open stalled
@@ -137,17 +136,15 @@ pub(crate) fn hub_overlay_buttons(
         mon_h,
         count: ACTIONS.len(),
     };
-    // Collapsed origin: satellite centered on the hub face.
+    // Collapsed origin: satellite centered on the hub face. Hosts unmap when
+    // closed — do not park at extreme coords (compositors clamp them on-screen).
     let origin_x = hx + (size_px - sat_size_px) * 0.5;
     let origin_y = hy + (size_px - sat_size_px) * 0.5;
     let eased = hub_fan_ease(fan_t);
-    // Park far off every monitor so a closed fan cannot sit under the pointer.
-    let park_x = mon_x - sat_size_px * 8.0 - 64.0;
-    let park_y = mon_y - sat_size_px * 8.0 - 64.0;
     for (i, action) in ACTIONS.iter().enumerate() {
         let (sx, sy) = satellite_top_left(layout, i);
         let (ax, ay) = if eased <= 0.001 {
-            (park_x, park_y)
+            (origin_x, origin_y)
         } else {
             (
                 origin_x + (sx - origin_x) * eased,
@@ -592,7 +589,15 @@ mod tests {
 
     fn test_hub_button() -> OverlayButtonConfig {
         let mut hub = sqyre_persist::default_quick_access_hub_button();
-        let (x, y) = hub_position_on_monitor(HubEdge::Right, 0.5, 0.0, 0.0, 1920.0, 1080.0, 26.0);
+        let (x, y) = sqyre_persist::hub_position_on_monitor(
+            HubEdge::Right,
+            0.5,
+            0.0,
+            0.0,
+            1920.0,
+            1080.0,
+            26.0,
+        );
         hub.x = x;
         hub.y = y;
         hub.size = 26.0;
@@ -655,23 +660,40 @@ mod tests {
 
     #[test]
     fn high_dpi_satellites_do_not_overlap() {
-        let hub = test_hub_button();
-        let ppp = 2.0;
-        let btns = hub_overlay_buttons(&hub, 1.0, ppp, false);
-        assert_eq!(btns.len(), 5);
-        let sats: Vec<_> = btns
-            .iter()
-            .filter(|b| b.id != QUICK_ACCESS_HUB_ID)
+        // Layout-only: do not call hub_overlay_buttons → preferred_monitor_rects.
+        // Windows CI has a real display; a 1920×1080 fixture hub can snap to the
+        // wrong edge on a larger physical desktop and pack the fan until faces
+        // overlap. Sister tests already pin SatelliteLayout to a fixed monitor.
+        let ppp = 2.0_f32;
+        let hub_pt = 26.0_f32;
+        let hub_size = (hub_pt * ppp).round();
+        let sat_size = ((hub_pt * 0.92) * ppp).round();
+        let mon_w = 1920.0_f32;
+        let mon_h = 1080.0_f32;
+        let layout = SatelliteLayout {
+            hub_x: mon_w - hub_size,
+            hub_y: (mon_h - hub_size) * 0.5,
+            hub_size,
+            sat_size,
+            edge: HubEdge::Right,
+            radius: hub_size * 2.15,
+            mon_x: 0.0,
+            mon_y: 0.0,
+            mon_w,
+            mon_h,
+            count: 4,
+        };
+        let sats: Vec<_> = (0..layout.count)
+            .map(|i| satellite_top_left(layout, i))
             .collect();
-        let phys = |b: &OverlayButtonConfig| (b.size * ppp).round();
-        for (i, a) in sats.iter().enumerate() {
-            for b in sats.iter().skip(i + 1) {
-                let ax = a.x + phys(a) * 0.5;
-                let ay = a.y + phys(a) * 0.5;
-                let bx = b.x + phys(b) * 0.5;
-                let by = b.y + phys(b) * 0.5;
-                let dist = ((ax - bx).hypot(ay - by)).max(0.0);
-                let min_sep = (phys(a) + phys(b)) * 0.5;
+        for (i, (ax, ay)) in sats.iter().enumerate() {
+            for (bx, by) in sats.iter().skip(i + 1) {
+                let acx = ax + sat_size * 0.5;
+                let acy = ay + sat_size * 0.5;
+                let bcx = bx + sat_size * 0.5;
+                let bcy = by + sat_size * 0.5;
+                let dist = (acx - bcx).hypot(acy - bcy);
+                let min_sep = sat_size;
                 assert!(
                     dist + 0.5 >= min_sep,
                     "satellites overlap at {ppp}×: dist={dist} min={min_sep}"
@@ -685,13 +707,18 @@ mod tests {
         let hub = test_hub_button();
         let closed = hub_overlay_buttons(&hub, 0.0, 1.0, false);
         assert_eq!(closed.len(), 5, "closed fan keeps warm satellites");
+        let hub_btn = &closed[0];
+        let origin_x = hub_btn.x + (hub_btn.size - closed[1].size) * 0.5;
+        let origin_y = hub_btn.y + (hub_btn.size - closed[1].size) * 0.5;
         for sat in closed.iter().skip(1) {
             assert!(
-                sat.x < 0.0 && sat.y < 0.0,
-                "closed satellite parks off-desktop: {} @ {},{}",
+                (sat.x - origin_x).abs() < 1.0 && (sat.y - origin_y).abs() < 1.0,
+                "closed satellite sits on hub origin: {} @ {},{} origin={},{}",
                 sat.id,
                 sat.x,
-                sat.y
+                sat.y,
+                origin_x,
+                origin_y
             );
             assert_eq!(
                 sat.border_alpha, hub.icon_alpha,

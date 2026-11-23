@@ -6,7 +6,7 @@
 //! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
-use crate::raster::{self, ButtonPaint, TIP_CORNER_PX};
+use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_CORNER_PX};
 use crate::OverlayButtonMove;
 use parking_lot::Mutex;
 use sqyre_capture::{self, event_log, mark_site, note};
@@ -44,7 +44,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 const CLASS_NAME: windows::core::PCWSTR = w!("SqyreOverlayButton");
-const TIP_GAP_PX: i32 = 6;
 const POLL_MS: u64 = 16;
 /// `WM_MOUSELEAVE` is declared under `Win32_UI_Controls` in the windows crate.
 const WM_MOUSELEAVE: u32 = 675;
@@ -72,6 +71,8 @@ pub struct WinButtonSpec {
     pub macro_name: String,
     pub face: crate::ButtonFace,
     pub tip: String,
+    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
+    pub ui_scale: f32,
     pub busy: bool,
     pub visibility_gated: bool,
     /// When false, hit-tests pass through and presses are ignored (hub fan travel).
@@ -200,6 +201,7 @@ struct TipWindow {
     hwnd: HWND,
     for_id: String,
     text: String,
+    ui_scale: f32,
     mapped: bool,
 }
 
@@ -248,6 +250,8 @@ struct HostState {
     hub_fan: crate::hub_fan::HubFanState,
     /// Rising-edge detect for Esc while the context menu is open.
     last_escape_down: bool,
+    /// Previous left-button sample for context-menu outside-click dismiss.
+    last_context_dismiss_btn1: bool,
 }
 
 #[expect(
@@ -303,6 +307,7 @@ fn host_loop(
         last_hub_dismiss_btn1: false,
         hub_fan: crate::hub_fan::HubFanState::default(),
         last_escape_down: false,
+        last_context_dismiss_btn1: false,
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
@@ -354,7 +359,9 @@ fn host_loop(
         tick_hub_fan(&mut state);
         apply_visibility(&mut state);
         poll_context_menu_escape(&mut state);
-        if state.hub_fan_dismiss {
+        if state.context.as_ref().is_some_and(|m| m.mapped) {
+            poll_context_menu_outside_dismiss(&mut state);
+        } else if state.hub_fan_dismiss {
             poll_hub_fan_outside_dismiss(&mut state);
         }
         thread::sleep(Duration::from_millis(POLL_MS));
@@ -382,6 +389,20 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
             state.buttons.insert(id, live);
         }
     }
+    let tip_refresh = state.tip.as_ref().and_then(|tip| {
+        if !tip.mapped {
+            return None;
+        }
+        let btn = state.buttons.get(tip.for_id.as_str())?;
+        let text = btn.spec.tip.trim();
+        if text.is_empty() {
+            return Some((tip.for_id.clone(), false));
+        }
+        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
+            return Some((tip.for_id.clone(), true));
+        }
+        None
+    });
     let stale: Vec<String> = state
         .buttons
         .keys()
@@ -397,6 +418,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<WinButtonSpec>) {
         }
         if let Some(live) = state.buttons.remove(&id) {
             destroy_hwnd(state, live.hwnd);
+        }
+    }
+    if let Some((id, show)) = tip_refresh {
+        if show && state.buttons.contains_key(&id) {
+            show_tip(state, &id);
+        } else {
+            hide_tip(state);
         }
     }
     state.hub_fan.forget_missing(&keep);
@@ -423,8 +451,7 @@ fn place_hub_satellite_spec(state: &HostState, spec: &mut WinButtonSpec) {
     let rest = (spec.face.x, spec.face.y);
     let (hx, hy, hw, hh) = hub_face_geom(state);
     let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let park = crate::hub_fan::hub_park(hx, hy, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
     spec.face.x = x;
     spec.face.y = y;
     spec.input_enabled = state.hub_fan.fully_open();
@@ -439,6 +466,7 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
     if was_open != state.hub_fan.fully_open() {
         rearm_hub_satellite_input(state);
     }
+    apply_visibility(state);
     sync_hub_fan_dismiss_arm(state);
 }
 
@@ -466,8 +494,7 @@ fn place_all_hub_satellites(state: &mut HostState) {
         };
         let (w, h) = (live.spec.face.w.max(1), live.spec.face.h.max(1));
         let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let park = crate::hub_fan::hub_park(hx, hy, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
         if live.spec.face.x == x && live.spec.face.y == y {
             continue;
         }
@@ -493,9 +520,16 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 
 fn tick_hub_fan(state: &mut HostState) {
     let was_open = state.hub_fan.fully_open();
+    let was_traveling = state.hub_fan.open_or_traveling();
     if !state.hub_fan.tick() {
+        if was_traveling && !state.hub_fan.open_or_traveling() {
+            apply_visibility(state);
+        }
         sync_hub_fan_dismiss_arm(state);
         return;
+    }
+    if !was_traveling {
+        apply_visibility(state);
     }
     place_all_hub_satellites(state);
     if was_open != state.hub_fan.fully_open() {
@@ -631,7 +665,10 @@ fn apply_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
+        let fan_show =
+            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
         let show = !sqyre_capture::overlay_capture_omitted()
+            && fan_show
             && (relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false));
         if show == btn.mapped {
             continue;
@@ -670,45 +707,6 @@ fn paint_live(btn: &mut LiveButton) {
     blit_layered(btn.hwnd, btn.spec.face.x, btn.spec.face.y, w, h, &btn.bgra);
 }
 
-fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let rects = sqyre_capture::preferred_monitor_rects();
-    for r in &rects {
-        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
-            return (r.x, r.y, r.w, r.h);
-        }
-    }
-    if let Some(r) = rects.first() {
-        return (r.x, r.y, r.w, r.h);
-    }
-    (0, 0, 1920, 1080)
-}
-
-struct TipPlace {
-    btn_x: i32,
-    btn_y: i32,
-    btn_w: i32,
-    btn_h: i32,
-    tip_w: i32,
-    tip_h: i32,
-    mon: (i32, i32, i32, i32),
-}
-
-fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
-    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
-    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
-    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
-    let mon_right = mon_x.saturating_add(mon_w);
-    let mon_bottom = mon_y.saturating_add(mon_h);
-    if tip_y.saturating_add(p.tip_h) > mon_bottom {
-        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
-    }
-    let max_x = (mon_right - p.tip_w).max(mon_x);
-    let max_y = (mon_bottom - p.tip_h).max(mon_y);
-    tip_x = tip_x.clamp(mon_x, max_x);
-    tip_y = tip_y.clamp(mon_y, max_y);
-    (tip_x, tip_y)
-}
-
 fn show_tip(state: &mut HostState, id: &str) {
     if state.relocate || state.drag.is_some() {
         hide_tip(state);
@@ -726,31 +724,26 @@ fn show_tip(state: &mut HostState, id: &str) {
         hide_tip(state);
         return;
     }
+    let ui_scale = btn.spec.ui_scale.max(0.01);
     let (x, y, h) = (btn.spec.face.x, btn.spec.face.y, btn.spec.face.h);
-    if state
-        .tip
-        .as_ref()
-        .is_some_and(|t| t.mapped && t.for_id == id && t.text == text)
-    {
+    if state.tip.as_ref().is_some_and(|t| {
+        t.mapped
+            && t.for_id == id
+            && t.text == text
+            && (t.ui_scale - ui_scale).abs() <= f32::EPSILON
+    }) {
         return;
     }
-    let (tw, th, rgba) = raster::rasterize_tip(&text);
+    let (tw, th, rgba) = raster::rasterize_tip(&text, ui_scale);
     if tw == 0 || th == 0 || rgba.is_empty() {
         hide_tip(state);
         return;
     }
     let bgra = rgba_to_bgra(&rgba);
     let btn_w = btn.spec.face.w as i32;
-    let mon = monitor_rect_for_point(x + btn_w / 2, y + h as i32 / 2);
-    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
-        btn_x: x,
-        btn_y: y,
-        btn_w,
-        btn_h: h as i32,
-        tip_w: tw as i32,
-        tip_h: th as i32,
-        mon,
-    });
+    let mon = crate::os_popup::monitor_for_point(x + btn_w / 2, y + h as i32 / 2);
+    let (tip_x, tip_y) =
+        crate::os_popup::place_tip_near_button(x, y, btn_w, h as i32, tw as i32, th as i32, mon);
     if state.tip.is_none() {
         // SAFETY: same class and module as the buttons; destroyed in `destroy_all`.
         let hwnd = unsafe {
@@ -776,7 +769,7 @@ fn show_tip(state: &mut HostState, id: &str) {
                 Err(_) => return,
             }
         };
-        set_round_region(hwnd, tw, th, TIP_CORNER_PX);
+        set_round_region(hwnd, tw, th, tip_corner_px(ui_scale));
         if sqyre_capture::overlay_capture_omitted() {
             apply_affinity(&[ShareHwnd(hwnd)], true);
         }
@@ -784,6 +777,7 @@ fn show_tip(state: &mut HostState, id: &str) {
             hwnd,
             for_id: id.to_string(),
             text: text.clone(),
+            ui_scale,
             mapped: false,
         });
         sync_hwnd_list(state);
@@ -793,6 +787,8 @@ fn show_tip(state: &mut HostState, id: &str) {
     };
     tip.for_id = id.to_string();
     tip.text = text;
+    tip.ui_scale = ui_scale;
+    set_round_region(tip.hwnd, tw, th, tip_corner_px(ui_scale));
     blit_layered(tip.hwnd, tip_x, tip_y, tw, th, &bgra);
     if !tip.mapped {
         // SAFETY: tip HWND is live on this thread.
@@ -841,7 +837,7 @@ fn open_overlay_context_menu(state: &mut HostState, id: &str) {
     if unsafe { GetCursorPos(&mut pt) }.is_err() {
         return;
     }
-    let (x, y) = (pt.x, pt.y);
+    let (x, y) = crate::os_popup::place_cursor_popup(pt.x, pt.y, tw as i32, th as i32);
     // SAFETY: same class/module as buttons; destroyed in hide/destroy_all.
     let hwnd = unsafe {
         match CreateWindowExW(
@@ -876,6 +872,8 @@ fn open_overlay_context_menu(state: &mut HostState, id: &str) {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let _ = SetCapture(hwnd);
     }
+    // Arm so the press that opened the menu is not an outside dismiss.
+    state.last_context_dismiss_btn1 = true;
     state.context = Some(ContextMenuWindow {
         hwnd,
         button_id: id.to_string(),
@@ -902,6 +900,7 @@ fn hide_context_menu(state: &mut HostState, action: Option<crate::OverlayButtonC
     let Some(menu) = state.context.take() else {
         return;
     };
+    state.last_context_dismiss_btn1 = false;
     // SAFETY: release capture taken in open_overlay_context_menu.
     unsafe {
         if GetCapture() == menu.hwnd {
@@ -1035,6 +1034,40 @@ fn poll_context_menu_escape(state: &mut HostState) {
     if rising {
         hide_context_menu(state, None);
     }
+}
+
+/// Cancel the context menu on a left-press outside its rect (same as Cancel).
+///
+/// Complements `SetCapture` for cases where the game eats mouse messages.
+fn poll_context_menu_outside_dismiss(state: &mut HostState) {
+    let Some(menu) = state.context.as_ref() else {
+        state.last_context_dismiss_btn1 = false;
+        return;
+    };
+    if !menu.mapped {
+        state.last_context_dismiss_btn1 = false;
+        return;
+    }
+    let btn1 = sqyre_hotkeys::left_button_down();
+    let pressed = btn1 && !state.last_context_dismiss_btn1;
+    state.last_context_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    let mut pt = POINT::default();
+    // SAFETY: `pt` is a valid out-param for the cursor position.
+    if unsafe { GetCursorPos(&mut pt) }.is_err() {
+        return;
+    }
+    if crate::os_popup::point_in_popup(pt.x, pt.y, menu.x, menu.y, menu.w as i32, menu.h as i32) {
+        return;
+    }
+    note(&format!(
+        "overlay-win: context menu dismiss (poll outside) at {},{}",
+        pt.x, pt.y
+    ));
+    mark_site("overlay-win:context-dismiss=poll_outside");
+    hide_context_menu(state, None);
 }
 
 fn poll_hub_fan_outside_dismiss(state: &mut HostState) {

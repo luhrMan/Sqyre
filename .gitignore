@@ -7,6 +7,9 @@ notes.md
 .history/
 *.vsix
 
+# Graphify local code graph (regenerated; do not commit)
+/graphify-out/
+
 # Local db.yaml conversion scratch (one-shot; do not commit)
 /db.yaml
 /db.yaml.bak
@@ -71,3 +74,6 @@ docs/blog
 .cursor/cli.json
 .cursor/rules/git-identity.mdc
 sqyre-timelapse.mp4
+
+# Graphify local knowledge graph (generated; rebuild with `graphify update .`)
+/graphify-out/

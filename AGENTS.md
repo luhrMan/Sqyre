@@ -22,8 +22,9 @@ Sqyre is a Rust Cargo workspace (egui desktop automation app + WASM editor); the
 - Done means `make fmt && make check && make test` pass on the tip (plus `make wasm-check` when touching `sqyre-app` or crates it uses).
 - Commit during the change: when a unit is independently correct, commit it before the next unit starts (`incremental-commits.mdc`). One concern per commit. Do not wait to be asked, and do not batch a list into one uncommitted diff.
 - No backwards compatibility: change APIs and call sites directly; no shims, aliases, or dual code paths.
-- Platform code uses `#[cfg(...)]` modules, never platform APIs inside `if cfg!(...)`. One OS-neutral public surface (`OsCapturer`, `OsWindowFocuser`).
-- Library errors use `thiserror`; logging uses `sqyre_capture` diag / executor logs, not `println!` / `tracing`.
+- Platform code uses `#[cfg(...)]` modules, never platform APIs inside `if cfg!(...)`. One OS-neutral public surface (`OsCapturer`, `OsWindowFocuser`); shared OS-neutral logic lives beside platform files (`cross-platform`).
+- Crate arrows stay downward: UI/executor use ports traits; do not grow `SqyreApp` / catalog / settings hubs when a narrower type works (`crate-boundaries`).
+- Library errors use `thiserror`; diag via ports façade (capture may implement); run logs via executor — not `println!` / `tracing`.
 - Headless CI: tests must not need a display, portal, or `/dev/input`.
 - Git: author/committer is the repo owner; no AI/tool attribution, trailers, or co-authors in commits, branches, or PRs.
 
@@ -35,9 +36,10 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 |-------|------|
 | Ask before consequential guesses | `ask-on-ambiguity.mdc` |
 | No compat shims | `no-backwards-compatibility.mdc` |
+| Crate layering, hubs, capture/diag | `crate-boundaries.mdc` |
 | Commit per bullet/surface — bisectable | `incremental-commits.mdc` |
 | Git identity (local, gitignored) | `git-identity.mdc` |
-| Platforms, `#[cfg]`, features, FFI | `cross-platform.mdc` |
+| Platforms, `#[cfg]`, shared vs FFI modules | `cross-platform.mdc` |
 | Rust style, errors, unsafe, logging | `rust-style.mdc` |
 | Quality gate | `verify-new-code.mdc` |
 | Tests, coverage floors, perf budgets | `testing.mdc` |

@@ -139,24 +139,15 @@ pub fn hub_origin(
     )
 }
 
-/// Park far from the hub so a closed fan cannot sit under the pointer.
-pub fn hub_park(hub_x: i32, hub_y: i32, sat_w: u32, sat_h: u32) -> (i32, i32) {
-    (
-        hub_x - (sat_w as i32) * 8 - 64,
-        hub_y - (sat_h as i32) * 8 - 64,
-    )
-}
-
 /// Visual top-left for a satellite at `fan_t`.
-pub fn satellite_pos(
-    fan_t: f32,
-    rest: (i32, i32),
-    origin: (i32, i32),
-    park: (i32, i32),
-) -> (i32, i32) {
+///
+/// When closed (`fan_t` ≈ 0) the position is the hub origin — hosts must
+/// **unmap/hide** satellites in that state rather than parking them off-desktop
+/// (compositors clamp extreme coords back on-screen and flash during relocate).
+pub fn satellite_pos(fan_t: f32, rest: (i32, i32), origin: (i32, i32)) -> (i32, i32) {
     let eased = hub_fan_ease(fan_t);
     if eased <= 0.001 {
-        return park;
+        return origin;
     }
     (
         origin.0 + ((rest.0 - origin.0) as f32 * eased).round() as i32,
@@ -210,13 +201,22 @@ mod tests {
     }
 
     #[test]
-    fn pos_parks_when_closed() {
+    fn pos_closed_sits_on_hub_origin() {
         let origin = (10, 20);
         let rest = (100, 200);
-        let park = (-50, -50);
-        assert_eq!(satellite_pos(0.0, rest, origin, park), park);
-        assert_eq!(satellite_pos(1.0, rest, origin, park), rest);
-        let mid = satellite_pos(0.5, rest, origin, park);
+        assert_eq!(satellite_pos(0.0, rest, origin), origin);
+        assert_eq!(satellite_pos(1.0, rest, origin), rest);
+        let mid = satellite_pos(0.5, rest, origin);
         assert!(mid.0 > origin.0 && mid.0 < rest.0);
+    }
+
+    #[test]
+    fn closed_fan_is_not_open_or_traveling() {
+        let mut fan = HubFanState::default();
+        assert!(!fan.open_or_traveling());
+        fan.set_expanded(true, false);
+        assert!(fan.open_or_traveling());
+        fan.set_expanded(false, true);
+        assert!(!fan.open_or_traveling());
     }
 }

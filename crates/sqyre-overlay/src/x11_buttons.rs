@@ -9,10 +9,11 @@
 //! compositor delivers enter, hover, and clicks over the desktop and native
 //! Wayland surfaces. `XQueryPointer` freezes once the pointer leaves XWayland,
 //! so an always-empty input region gets no events there. ShapeInput is emptied
-//! while that pointer is on a foreign X11 window near a button — a confined
+//! for the whole time `_NET_ACTIVE_WINDOW` is a foreign X11 client — a confined
 //! game cursor would otherwise stop at the button edge — and those clicks /
 //! hover are polled in X root coordinates. Enter/Leave are ignored during
-//! click-through so emptying the shape cannot flash hover off.
+//! click-through so emptying the shape cannot flash hover off. When focus
+//! returns to native Wayland / Sqyre / unset, rounded ShapeInput is restored.
 //!
 //! # X11 safety (`HostState`)
 //!
@@ -26,7 +27,7 @@
 //! Thin `x_*` helpers carry a single `SAFETY` contract; larger blocks document
 //! the same invariant at the call boundary (see `x11_focus` for the same style).
 
-use crate::raster::{self, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
+use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
 use sqyre_capture::{
@@ -57,11 +58,11 @@ use x11::xlib::{
     XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
     XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
     XDefineCursor, XDestroyImage, XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush,
-    XFreeColormap, XFreeCursor, XFreeGC, XGetSelectionOwner, XGrabPointer, XInternAtom, XMapRaised,
-    XMapWindow, XMatchVisualInfo, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
-    XQueryPointer, XRectangle, XSelectInput, XSetWindowAttributes, XSetWindowBackground,
-    XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XVisualInfo, XWindowChanges,
-    ZPixmap,
+    XFree, XFreeColormap, XFreeCursor, XFreeGC, XGetSelectionOwner, XGetWindowProperty,
+    XGrabPointer, XInternAtom, XMapRaised, XMapWindow, XMatchVisualInfo, XMoveResizeWindow,
+    XNextEvent, XOpenDisplay, XPending, XPutImage, XQueryPointer, XRectangle, XSelectInput,
+    XSetWindowAttributes, XSetWindowBackground, XStoreName, XSync, XUndefineCursor, XUngrabPointer,
+    XUnmapWindow, XVisualInfo, XWindowChanges, ZPixmap, XA_WINDOW,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -73,11 +74,6 @@ const BUSY_TICK_MS: u64 = 50;
 /// Hover this long before a polled (click-through) tip appears, so a game cursor
 /// crossing the button does not flash one.
 const PASSTHROUGH_TIP_DWELL: Duration = Duration::from_millis(300);
-/// Empty the hit this far outside the button, before a confined cursor touches it.
-const CLICK_THROUGH_ENTER_PAD: i32 = 128;
-/// Once click-through, keep it until the pointer is this far outside (no edge flicker).
-const CLICK_THROUGH_EXIT_PAD: i32 = 192;
-const TIP_GAP_PX: i32 = 6;
 /// X11 cursorfont fleur (four-way move arrow).
 const XC_FLEUR: c_uint = 52;
 /// X11 cursorfont left pointer (normal arrow).
@@ -93,6 +89,8 @@ pub struct NativeButtonSpec {
     pub face: crate::ButtonFace,
     /// Hover tip text (label / display name). Empty = no tip.
     pub tip: String,
+    /// egui `pixels_per_point` — tip font/padding track Settings → UI scale.
+    pub ui_scale: f32,
     pub busy: bool,
     /// When true, the host maps this button only while [`HostState`] visibility says found.
     pub visibility_gated: bool,
@@ -338,6 +336,7 @@ struct TipWindow {
     win: Window,
     for_id: String,
     text: String,
+    ui_scale: f32,
     w: u32,
     h: u32,
     mapped: bool,
@@ -348,6 +347,9 @@ struct ChooserWindow {
     /// `InputOnly` hit cover: XWayland gives InputOnly windows no Wayland surface,
     /// so the compositor would only route clicks to it over another X window.
     win: Window,
+    /// Root-space top-left after [`crate::os_popup::place_cursor_popup`].
+    root_x: i32,
+    root_y: i32,
     w: u32,
     h: u32,
     title: String,
@@ -454,9 +456,9 @@ struct HostState {
     /// Wayland session where a foreign X11 window can wall a confined pointer.
     /// Hits stay interactive until [`HostState::click_through`] is set.
     passthrough_hits: bool,
-    /// Hit ShapeInput is empty and clicks are polled. Set while the pointer is
-    /// moving on a foreign X11 window near a button; off over native Wayland,
-    /// where `XQueryPointer` does not track the cursor.
+    /// Hit ShapeInput is empty and clicks are polled. Set for the whole time a
+    /// foreign X11 client owns `_NET_ACTIVE_WINDOW`; off when focus is native
+    /// Wayland / Sqyre / unset so desktop hits stay interactive.
     click_through: bool,
     /// Previous `XQueryPointer` root position. `None` until the first sample,
     /// so the first read is not treated as motion.
@@ -476,6 +478,8 @@ struct HostState {
     hub_fan_dismiss: bool,
     /// Previous left-button sample for [`Self::hub_fan_dismiss`] edge detect.
     last_hub_dismiss_btn1: bool,
+    /// Previous left-button sample for chooser outside-click dismiss (grab may fail).
+    last_chooser_dismiss_btn1: bool,
     /// Satellite travel progress (host-owned; does not wait on egui frames).
     hub_fan: crate::hub_fan::HubFanState,
 }
@@ -589,8 +593,8 @@ fn host_loop(
 
     // Wayland compositors confine an X11 game pointer to the surface under the
     // cursor. A hit window with ShapeInput is a different surface, so the cursor
-    // stops at the button edge. `passthrough_hits` arms that fallback; the hit
-    // stays a real target until the pointer is actually on a foreign X window.
+    // stops at the button edge. `passthrough_hits` arms focus-scoped click-through
+    // while a foreign X11 client is focused.
     let passthrough_hits =
         sqyre_capture::LinuxSessionInfo::detect().has_wayland && xfixes_supported(display);
 
@@ -632,6 +636,7 @@ fn host_loop(
         passthrough_hover: None,
         hub_fan_dismiss: false,
         last_hub_dismiss_btn1: false,
+        last_chooser_dismiss_btn1: false,
         hub_fan: crate::hub_fan::HubFanState::default(),
     };
 
@@ -741,7 +746,7 @@ fn host_loop(
         // Poll-track relocate: portal / quiet X after press (X11 or Wayland poll-hit).
         // Over Wayland surfaces (Cursor, GNOME desktop) OR hit windows often get no
         // ButtonPress — detect rising Button1 over a button rect instead.
-        let ptr = poll_relocate_pointer(&state);
+        let ptr = poll_relocate_pointer(&mut state);
         if state.drag.as_ref().is_some_and(|d| d.poll_track) {
             let mut release = false;
             if let Some((x, y, btn1)) = ptr {
@@ -775,7 +780,9 @@ fn host_loop(
                 last_btn1 = btn1;
                 last_btn3 = sqyre_hotkeys::right_button_down();
             }
-            if state.hub_fan_dismiss && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
+            if state.chooser.as_ref().is_some_and(|c| c.mapped) {
+                poll_chooser_outside_dismiss(&mut state, ptr);
+            } else if state.hub_fan_dismiss {
                 poll_hub_fan_outside_dismiss(&mut state, ptr);
             }
             if state.drag.is_some() {
@@ -1102,10 +1109,25 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                     // Do not XMapRaised here — restacking after busy/style updates
                     // broke hit-testing until windows were remapped (focus cycle).
                 }
-                // Tips disabled (see EnterNotify); never re-show from apply_specs.
+                // Tips disabled (see EnterNotify); never re-show from apply_specs
+                // except when tip text / UI scale changed on the hovered button.
             }
         }
     }
+    let tip_refresh = state.tip.as_ref().and_then(|tip| {
+        if !tip.mapped {
+            return None;
+        }
+        let btn = state.buttons.get(tip.for_id.as_str())?;
+        let text = btn.spec.tip.trim();
+        if text.is_empty() {
+            return Some((tip.for_id.clone(), false));
+        }
+        if tip.text != text || (tip.ui_scale - btn.spec.ui_scale).abs() > f32::EPSILON {
+            return Some((tip.for_id.clone(), true));
+        }
+        None
+    });
     let drop_ids: Vec<String> = state
         .buttons
         .keys()
@@ -1124,6 +1146,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             unsafe {
                 destroy_live_button(state.display, &live);
             }
+        }
+    }
+    if let Some((id, show)) = tip_refresh {
+        if show && state.buttons.contains_key(&id) {
+            show_tip_for(state, &id);
+        } else {
+            hide_tip(state);
         }
     }
     state.hub_fan.forget_missing(&keep);
@@ -1154,8 +1183,7 @@ fn place_hub_satellite_spec(state: &HostState, spec: &mut NativeButtonSpec) {
     let rest = (spec.face.x, spec.face.y);
     let (hx, hy, hw, hh) = hub_face_geom(state);
     let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
-    let park = crate::hub_fan::hub_park(hx, hy, spec.face.w, spec.face.h);
-    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
     spec.face.x = x;
     spec.face.y = y;
     spec.input_enabled = state.hub_fan.fully_open();
@@ -1171,6 +1199,8 @@ fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
     if was_open != now_open {
         rearm_hub_satellite_input(state);
     }
+    // Map while traveling/open; unmap when fully closed (no off-desktop park).
+    apply_gate_visibility(state);
     sync_hub_fan_dismiss_arm(state);
     // SAFETY: HostState display invariant.
     unsafe {
@@ -1202,8 +1232,7 @@ fn place_all_hub_satellites(state: &mut HostState) {
         };
         let (w, h) = (live.spec.face.w, live.spec.face.h);
         let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
-        let park = crate::hub_fan::hub_park(hx, hy, w, h);
-        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin);
         if live.spec.face.x == x && live.spec.face.y == y {
             continue;
         }
@@ -1248,9 +1277,18 @@ fn rearm_hub_satellite_input(state: &mut HostState) {
 /// Advance hub fan travel on the host clock (independent of egui focus).
 fn tick_hub_fan(state: &mut HostState) -> bool {
     let was_open = state.hub_fan.fully_open();
+    let was_traveling = state.hub_fan.open_or_traveling();
     if !state.hub_fan.tick() {
+        // Collapse finished: unmap satellites so they cannot paint or steal hits.
+        if was_traveling && !state.hub_fan.open_or_traveling() {
+            apply_gate_visibility(state);
+        }
         sync_hub_fan_dismiss_arm(state);
         return false;
+    }
+    // Opening from closed: map before the first MoveResize so travel is visible.
+    if !was_traveling {
+        apply_gate_visibility(state);
     }
     place_all_hub_satellites(state);
     if was_open != state.hub_fan.fully_open() {
@@ -1520,30 +1558,72 @@ fn flush_relocate_visual(state: &mut HostState) {
     sync_relocate_shield(state);
 }
 
-/// Portal cursor + physical button state for relocate.
+/// Portal / desktop / X11 cursor + physical button state for relocate.
 ///
-/// Position: portal metadata (works over Wayland) → desktop cursor → X11.
+/// Position follows the same Cosmic-safe seat rules as click-through: portal
+/// desktop coords are used only after [`HostState::portal_aligned`] is learned.
+/// Prefer live X11 while it moves; when X is frozen, aligned portal (then
+/// compositor desktop cursor) tracks the visual pointer over native Wayland.
 /// Button1: X11 QueryPointer **or** evdev/rdev global left-button (X11 alone
 /// stays false while a native Wayland surface owns the click).
-fn poll_relocate_pointer(state: &HostState) -> Option<(i32, i32, bool)> {
-    let (qx, qy, x_btn1) = {
-        let dpy = if !state.ptr_display.is_null() {
-            state.ptr_display
-        } else {
-            state.display
-        };
-        // SAFETY: quiet or host display still open for this thread.
-        let p = unsafe { query_pointer_root(dpy)? };
-        (p.x, p.y, p.button1)
+fn poll_relocate_pointer(state: &mut HostState) -> Option<(i32, i32, bool)> {
+    let dpy = if !state.ptr_display.is_null() {
+        state.ptr_display
+    } else {
+        state.display
     };
-    let btn1 = x_btn1 || sqyre_hotkeys::left_button_down();
-    if let Some((x, y)) = sqyre_capture::portal_cursor_position() {
-        return Some((x, y, btn1));
+    // SAFETY: quiet or host display still open for this thread.
+    let p = unsafe { query_pointer_root(dpy)? };
+    let x11_pos = (p.x, p.y);
+    let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
+    let portal = sqyre_capture::portal_cursor_position();
+    let x11_moved = pointer_moved(state.last_x11_pos, Some(x11_pos));
+    let portal_moved = pointer_moved(state.last_portal_pos, portal);
+    update_portal_alignment(state, Some(x11_pos), portal, x11_moved, portal_moved);
+    if portal.is_some() && !state.portal_aligned {
+        note_relocate_portal_skip_once();
     }
-    if let Some((x, y)) = sqyre_capture::desktop_cursor_position() {
-        return Some((x, y, btn1));
+    let (x, y) = relocate_pointer_xy(
+        x11_pos,
+        portal,
+        x11_moved,
+        portal_moved,
+        state.portal_aligned,
+    );
+    state.last_x11_pos = Some(x11_pos);
+    if portal.is_some() {
+        state.last_portal_pos = portal;
     }
-    Some((qx, qy, btn1))
+    Some((x, y, btn1))
+}
+
+/// Choose relocate drag coordinates in **X root** placement space.
+///
+/// Aligned portal is used only when X is frozen while the portal seat still
+/// moves (cursor over native Wayland). A stopped cursor, or an unaligned Cosmic
+/// portal, must keep X — `desktop_cursor_position` prefers portal first, so
+/// falling back to it reintroduces the same corner jump.
+fn relocate_pointer_xy(
+    x11: (i32, i32),
+    portal: Option<(i32, i32)>,
+    x11_moved: bool,
+    portal_moved: bool,
+    portal_aligned: bool,
+) -> (i32, i32) {
+    if !x11_moved && portal_moved && portal_aligned {
+        if let Some(p) = portal {
+            return p;
+        }
+    }
+    x11
+}
+
+fn note_relocate_portal_skip_once() {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if LOGGED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    note("overlay-x11: relocate-portal-skip (unaligned; prefer X11/desktop)");
 }
 
 /// Mapped button whose viewport contains root `(x, y)` (for poll-hit relocate).
@@ -2138,7 +2218,11 @@ fn create_button(
     // the mapped flag ever drifted).
     // Mapping during capture-omit, then unmapping in apply_gate_visibility,
     // flashes the button while a macro is hiding it.
+    // Closed hub satellites stay created-but-unmapped (warm for the next open).
+    let fan_show =
+        !crate::hub_fan::is_hub_satellite_id(&spec.id) || state.hub_fan.open_or_traveling();
     let map_now = !state.capture_omit
+        && fan_show
         && (state.relocate_mode
             || !spec.visibility_gated
             || state
@@ -2309,7 +2393,11 @@ fn apply_gate_visibility(state: &mut HostState) {
         // Relocate (Overlay editor open): keep hosted buttons mapped so the user
         // can drag them; do not let the found-map hide them mid-edit. Callers only
         // host the selected program's buttons in this mode.
+        // Closed hub satellites stay unmapped (warm windows, no paint/hit).
+        let fan_show =
+            !crate::hub_fan::is_hub_satellite_id(&id) || state.hub_fan.open_or_traveling();
         let show = !state.capture_omit
+            && fan_show
             && (state.relocate_mode
                 || !btn.spec.visibility_gated
                 || found.get(&id).copied().unwrap_or(false));
@@ -2463,6 +2551,10 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
         // union is still applied to order blit-then-shrink correctly.
         btn.armed = false;
         flipped = true;
+        // Keep mid-drag hit empty (parked at grab start) until commit/cancel.
+        if state.drag.as_ref().is_some_and(|d| d.id == id) {
+            continue;
+        }
         let (hit, w, h, radius, press_stops, input_enabled) = (
             btn.hit,
             btn.spec.face.w,
@@ -2504,47 +2596,6 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
     }
 }
 
-/// Monitor containing `(x, y)`, or the primary / virtual desktop fallback.
-fn monitor_rect_for_point(x: i32, y: i32) -> (i32, i32, i32, i32) {
-    let rects = sqyre_capture::preferred_monitor_rects();
-    for r in &rects {
-        if x >= r.x && x < r.x.saturating_add(r.w) && y >= r.y && y < r.y.saturating_add(r.h) {
-            return (r.x, r.y, r.w, r.h);
-        }
-    }
-    if let Some(r) = rects.first() {
-        return (r.x, r.y, r.w, r.h);
-    }
-    (0, 0, 1920, 1080)
-}
-
-struct TipPlace {
-    btn_x: i32,
-    btn_y: i32,
-    btn_w: i32,
-    btn_h: i32,
-    tip_w: i32,
-    tip_h: i32,
-    mon: (i32, i32, i32, i32),
-}
-
-/// Center under the button; flip above and clamp into the monitor.
-fn place_overlay_tip(p: TipPlace) -> (i32, i32) {
-    let (mon_x, mon_y, mon_w, mon_h) = p.mon;
-    let mut tip_x = p.btn_x + (p.btn_w - p.tip_w) / 2;
-    let mut tip_y = p.btn_y + p.btn_h + TIP_GAP_PX;
-    let mon_right = mon_x.saturating_add(mon_w);
-    let mon_bottom = mon_y.saturating_add(mon_h);
-    if tip_y.saturating_add(p.tip_h) > mon_bottom {
-        tip_y = p.btn_y - TIP_GAP_PX - p.tip_h;
-    }
-    let max_x = (mon_right - p.tip_w).max(mon_x);
-    let max_y = (mon_bottom - p.tip_h).max(mon_y);
-    tip_x = tip_x.clamp(mon_x, max_x);
-    tip_y = tip_y.clamp(mon_y, max_y);
-    (tip_x, tip_y)
-}
-
 fn show_tip_for(state: &mut HostState, button_id: &str) {
     let Some(btn) = state.buttons.get(button_id) else {
         return;
@@ -2554,27 +2605,22 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         hide_tip(state);
         return;
     }
+    let ui_scale = btn.spec.ui_scale.max(0.01);
     let btn_x = btn.spec.face.x;
     let btn_y = btn.spec.face.y;
     let btn_w = btn.spec.face.w as i32;
     let btn_h = btn.spec.face.h as i32;
-    let (tw, th, rgba) = raster::rasterize_tip(&tip_text);
+    let (tw, th, rgba) = raster::rasterize_tip(&tip_text, ui_scale);
     if tw == 0 || th == 0 || rgba.is_empty() {
         hide_tip(state);
         return;
     }
     // Prefer centered under the button; flip above and clamp so the tip stays
     // on the button's monitor (edge-docked hub satellites especially).
-    let mon = monitor_rect_for_point(btn_x + btn_w / 2, btn_y + btn_h / 2);
-    let (tip_x, tip_y) = place_overlay_tip(TipPlace {
-        btn_x,
-        btn_y,
-        btn_w,
-        btn_h,
-        tip_w: tw as i32,
-        tip_h: th as i32,
-        mon,
-    });
+    let mon = crate::os_popup::monitor_for_point(btn_x + btn_w / 2, btn_y + btn_h / 2);
+    let (tip_x, tip_y) = crate::os_popup::place_tip_near_button(
+        btn_x, btn_y, btn_w, btn_h, tw as i32, th as i32, mon,
+    );
 
     let need_new = state
         .tip
@@ -2588,12 +2634,13 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
                 x_destroy_window(state.display, old.win);
             }
         }
-        match create_tip_window(state, tip_x, tip_y, tw, th) {
+        match create_tip_window(state, tip_x, tip_y, tw, th, ui_scale) {
             Ok(win) => {
                 state.tip = Some(TipWindow {
                     win,
                     for_id: button_id.to_string(),
                     text: tip_text.clone(),
+                    ui_scale,
                     w: tw,
                     h: th,
                     mapped: true,
@@ -2607,6 +2654,7 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
     } else if let Some(tip) = state.tip.as_mut() {
         tip.for_id = button_id.to_string();
         tip.text = tip_text.clone();
+        tip.ui_scale = ui_scale;
         // SAFETY: HostState display invariant; tip.win is live on this display.
         unsafe {
             x_move_resize(state.display, tip.win, tip_x, tip_y, tw, th);
@@ -2615,7 +2663,7 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         tip.mapped = true;
     }
     if let Some(tip) = state.tip.as_ref() {
-        apply_tip_shape(state.display, tip.win, tip.w, tip.h);
+        apply_tip_shape(state.display, tip.win, tip.w, tip.h, tip.ui_scale);
         blit_rgba(state, tip.win, tip.w, tip.h, &rgba, false);
         // Keep tip under button hits. ConfigureWindow can synthesize Leave/Enter —
         // suppress crossing and discard those events before re-enabling tip logic.
@@ -2796,7 +2844,9 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
         note("overlay-x11: chooser raster empty");
         return;
     }
-    let Ok(win) = create_chooser_window(state, spec.x, spec.y, tw, th) else {
+    let (place_x, place_y) =
+        crate::os_popup::place_cursor_popup(spec.x, spec.y, tw as i32, th as i32);
+    let Ok(win) = create_chooser_window(state, place_x, place_y, tw, th) else {
         note("overlay-x11: chooser create failed");
         return;
     };
@@ -2817,8 +2867,9 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
     } else {
         0
     };
-    // Grab on the hit cover so outside clicks dismiss under fullscreen games.
-    // SAFETY: HostState display invariant; `hit` was just created and mapped on it.
+    // Grab so outside clicks dismiss under fullscreen games. On Wayland the grab
+    // often fails — [`poll_chooser_outside_dismiss`] covers that path.
+    // SAFETY: HostState display invariant; `win` was just created and mapped on it.
     let grab_status = unsafe {
         XGrabPointer(
             state.display,
@@ -2834,8 +2885,13 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
     };
     let grab_ok = grab_status == Success as c_int;
     let row_n = rows.len();
+    // Arm so the press that opened the menu (or a still-held button) is not
+    // treated as an outside dismiss on the next poll.
+    state.last_chooser_dismiss_btn1 = true;
     state.chooser = Some(ChooserWindow {
         win,
+        root_x: place_x,
+        root_y: place_y,
         w: tw,
         h: th,
         title: spec.title,
@@ -2853,8 +2909,10 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_i
         x_flush(state.display);
     }
     note(&format!(
-        "overlay-x11: chooser shown names={} at {},{} grab_status={} grab_ok={}",
+        "overlay-x11: chooser shown names={} at {},{} (wanted {},{}) grab_status={} grab_ok={}",
         row_n.saturating_sub(1),
+        place_x,
+        place_y,
         spec.x,
         spec.y,
         grab_status,
@@ -2879,6 +2937,7 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
         }
         return;
     };
+    state.last_chooser_dismiss_btn1 = false;
     let context_id = ch.context_button_id.take();
     if ch.grab_active {
         // SAFETY: matching XGrabPointer from show_chooser.
@@ -2980,6 +3039,7 @@ fn create_tip_window(
     y: i32,
     w: u32,
     h: u32,
+    ui_scale: f32,
 ) -> Result<Window, OverlayError> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
     // SAFETY: HostState display invariant — tip window lifecycle matches buttons.
@@ -3009,7 +3069,7 @@ fn create_tip_window(
             return Err(OverlayError::CreateWindow("tip"));
         }
         register_overlay_window(state.display, state.root, win, OVERLAY_TIP_WM_TITLE);
-        apply_tip_shape(state.display, win, w, h);
+        apply_tip_shape(state.display, win, w, h, ui_scale);
         // Map without raising — show_tip stacks tip below button hits.
         XMapWindow(state.display, win);
         XFlush(state.display);
@@ -3018,8 +3078,8 @@ fn create_tip_window(
 }
 
 /// Rounded bounding + empty input so the tip never steals hover from the button.
-fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
-    apply_rounded_shape(display, win, w, h, TIP_CORNER_PX);
+fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32, ui_scale: f32) {
+    apply_rounded_shape(display, win, w, h, tip_corner_px(ui_scale));
 }
 
 fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8], argb: bool) {
@@ -3154,7 +3214,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
             }
             if state.tip.as_ref().is_some_and(|t| t.win == win && t.mapped) {
                 if let Some(tip) = state.tip.as_ref() {
-                    let (tw, th, rgba) = raster::rasterize_tip(&tip.text);
+                    let (tw, th, rgba) = raster::rasterize_tip(&tip.text, tip.ui_scale);
                     if tw > 0 && th > 0 && !rgba.is_empty() {
                         blit_rgba(state, tip.win, tw, th, &rgba, false);
                     }
@@ -3824,8 +3884,14 @@ fn set_click_through(state: &mut HostState, click_through: bool) {
             apply_button_cursor(state, btn.hit, false);
         }
     }
+    // Mid-relocate drag keeps an empty hit at the grab start; never re-arm it
+    // here (transparent hub faces used to regain a disk and freeze the drag).
+    let drag_id = state.drag.as_ref().map(|d| d.id.clone());
     let ids: Vec<String> = state.buttons.keys().cloned().collect();
     for id in ids {
+        if drag_id.as_deref() == Some(id.as_str()) {
+            continue;
+        }
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
@@ -3919,8 +3985,8 @@ fn seed_passthrough_hover_from_x_hover(state: &mut HostState) {
     });
 }
 
-/// Keep ShapeInput over native Wayland; empty it while the X pointer is on a
-/// foreign window near a button, and poll hover/clicks from that sample.
+/// Focus-scoped click-through: empty ShapeInput while a foreign X11 client is
+/// focused; poll hover/clicks from the seat sample while empty.
 ///
 /// Portal desktop coords match X root on GNOME, but not always on Cosmic — we
 /// only use portal for hit tests after seeing them agree. Returns `(btn1, btn3)`.
@@ -3930,9 +3996,6 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
     let x11_pos = x11.map(|p| (p.x, p.y));
     let x11_moved = pointer_moved(state.last_x11_pos, x11_pos);
     let portal_moved = pointer_moved(state.last_portal_pos, portal);
-    // Capture before updating — first seat sample has no prior pos, so
-    // pointer_moved is false, but we still want to empty ShapeInput early.
-    let first_x11_sample = state.last_x11_pos.is_none() && x11_pos.is_some();
     update_portal_alignment(state, x11_pos, portal, x11_moved, portal_moved);
     if x11_pos.is_some() {
         state.last_x11_pos = x11_pos;
@@ -3940,38 +4003,25 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -
     if portal.is_some() {
         state.last_portal_pos = portal;
     }
+    let next = next_click_through(state.passthrough_hits, foreign_x11_client_focused(state));
+    set_click_through(state, next);
     if let Some(p) = x11 {
-        let foreign = over_foreign_x11(state, p.child);
-        let pad = if state.click_through {
-            CLICK_THROUGH_EXIT_PAD
-        } else {
-            CLICK_THROUGH_ENTER_PAD
-        };
         // Relative-mouse XWayland games freeze X while the visual cursor still
-        // moves — prefer aligned portal coords for near/hover in that case.
-        let (hx, hy) = passthrough_hit_xy(p.x, p.y, portal, x11_moved, state.portal_aligned);
-        let using_portal_hit = !x11_moved && state.portal_aligned && portal.is_some();
-        let near = foreign && button_near(state, hx, hy, pad);
-        let next = next_click_through(
-            state.click_through,
+        // moves — prefer aligned portal coords for hover in that case.
+        let (hx, hy) = passthrough_hit_xy(
+            p.x,
+            p.y,
+            portal,
             x11_moved,
             portal_moved,
-            foreign,
-            near,
-            first_x11_sample,
-            using_portal_hit,
+            state.portal_aligned,
         );
-        set_click_through(state, next);
         let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
         let btn3 = p.button3 || sqyre_hotkeys::right_button_down();
         if state.click_through {
             poll_passthrough_pointer(state, hx, hy, btn1, last_btn1, btn3, last_btn3);
         }
         return (btn1, btn3);
-    }
-    // No X sample at all (rare): portal motion alone means we left XWayland.
-    if portal_moved {
-        set_click_through(state, false);
     }
     (last_btn1, last_btn3)
 }
@@ -4010,9 +4060,11 @@ fn passthrough_hit_xy(
     x11_y: i32,
     portal: Option<(i32, i32)>,
     x11_moved: bool,
+    portal_moved: bool,
     portal_aligned: bool,
 ) -> (i32, i32) {
-    if !x11_moved && portal_aligned {
+    // Same seat rule as relocate: portal only while X is frozen and portal moves.
+    if !x11_moved && portal_moved && portal_aligned {
         if let Some(p) = portal {
             return p;
         }
@@ -4066,9 +4118,65 @@ fn pointer_moved(prev: Option<(i32, i32)>, next: Option<(i32, i32)>) -> bool {
     }
 }
 
-/// `child` is another client's X window, not the root and not one of ours.
-fn over_foreign_x11(state: &HostState, child: Window) -> bool {
-    child != 0 && child != state.root && !overlay_owns_window(state, child)
+/// True when `_NET_ACTIVE_WINDOW` is another client's X11/XWayland window.
+///
+/// Drives focus-scoped click-through: empty hit ShapeInput for the whole focus
+/// period so a confined game cursor never meets a rounded disk. Native Wayland
+/// focus usually leaves this unset — hits stay interactive for desktop use.
+fn foreign_x11_client_focused(state: &HostState) -> bool {
+    let Some(active) = net_active_window(state.display, state.root) else {
+        return false;
+    };
+    active != 0 && active != state.root && !overlay_owns_window(state, active)
+}
+
+/// `_NET_ACTIVE_WINDOW` on `root`, if the property is present and non-zero.
+fn net_active_window(display: *mut Display, root: Window) -> Option<Window> {
+    if display.is_null() || root == 0 {
+        return None;
+    }
+    // SAFETY: host-thread display; root from that display; prop freed on every path.
+    unsafe {
+        let Ok(name) = std::ffi::CString::new("_NET_ACTIVE_WINDOW") else {
+            return None;
+        };
+        let atom = XInternAtom(display, name.as_ptr(), False);
+        if atom == 0 {
+            return None;
+        }
+        let mut actual_type = 0;
+        let mut actual_format: c_int = 0;
+        let mut nitems: c_ulong = 0;
+        let mut bytes_after: c_ulong = 0;
+        let mut prop: *mut u8 = std::ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            root,
+            atom,
+            0,
+            1,
+            False,
+            XA_WINDOW,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as c_int || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop.cast());
+            }
+            return None;
+        }
+        let win = *(prop as *const Window);
+        XFree(prop.cast());
+        if win == 0 {
+            None
+        } else {
+            Some(win)
+        }
+    }
 }
 
 fn overlay_owns_window(state: &HostState, win: Window) -> bool {
@@ -4083,25 +4191,6 @@ fn overlay_owns_window(state: &HostState, win: Window) -> bool {
         || state.shield.as_ref().is_some_and(|s| s.win == win)
 }
 
-fn button_near(state: &HostState, x: i32, y: i32, pad: i32) -> bool {
-    state
-        .buttons
-        .values()
-        .filter(|b| b.mapped)
-        .any(|b| spec_near(&b.spec, x, y, pad))
-}
-
-/// Point within `pad` pixels of the spec rect (the rect itself counts).
-fn spec_near(spec: &NativeButtonSpec, x: i32, y: i32, pad: i32) -> bool {
-    let pad = pad.max(0);
-    let w = spec.face.w.max(1) as i32;
-    let h = spec.face.h.max(1) as i32;
-    x >= spec.face.x.saturating_sub(pad)
-        && y >= spec.face.y.saturating_sub(pad)
-        && x < spec.face.x.saturating_add(w).saturating_add(pad)
-        && y < spec.face.y.saturating_add(h).saturating_add(pad)
-}
-
 /// True when button Enter/Leave must not update hover (poll or drag owns it).
 fn button_crossing_deferred(
     click_through: bool,
@@ -4111,40 +4200,9 @@ fn button_crossing_deferred(
     click_through || drag_active || suppress_crossing
 }
 
-/// Whether hits should be click-through for this sample.
-///
-/// Engage when the X pointer moves onto a foreign window near a button, on the
-/// first seat sample already there, or when an aligned portal hit is driving
-/// the sample while X is frozen (relative-mouse games).
-///
-/// Portal motion with a frozen X sample means "left XWayland" only when the
-/// pointer is *not* still over a foreign X11 window.
-fn next_click_through(
-    click_through: bool,
-    x11_moved: bool,
-    portal_moved: bool,
-    over_foreign_x11: bool,
-    near_button: bool,
-    first_x11_sample: bool,
-    portal_hit: bool,
-) -> bool {
-    if portal_moved && !x11_moved && !over_foreign_x11 {
-        return false;
-    }
-    if !over_foreign_x11 {
-        return false;
-    }
-    if near_button && (x11_moved || first_x11_sample || portal_hit) {
-        return true;
-    }
-    if !x11_moved {
-        // Aligned portal is tracking the visual cursor — honor leave even when X is frozen.
-        if portal_hit {
-            return near_button;
-        }
-        return click_through;
-    }
-    near_button
+/// Whether hits should be click-through: Wayland session + foreign X11 focus.
+fn next_click_through(passthrough_hits: bool, foreign_x11_focused: bool) -> bool {
+    passthrough_hits && foreign_x11_focused
 }
 
 /// Sample hover and left/right button edges while hit windows are click-through.
@@ -4295,6 +4353,51 @@ fn on_overlay_press(state: &mut HostState, id: &str) {
             }
         }
     }
+}
+
+/// Dismiss the chooser / context menu on a left-press outside its rect.
+///
+/// Same cancel path as the Cancel row / Esc. Needed when `XGrabPointer` fails
+/// (common under Wayland) so click-away still works over games.
+fn poll_chooser_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bool)>) {
+    let Some(ch) = state.chooser.as_ref() else {
+        state.last_chooser_dismiss_btn1 = false;
+        return;
+    };
+    if !ch.mapped {
+        state.last_chooser_dismiss_btn1 = false;
+        return;
+    }
+    let (x, y, btn1) = match ptr {
+        Some(p) => p,
+        None => {
+            let btn1 = sqyre_hotkeys::left_button_down();
+            let dpy = if !state.ptr_display.is_null() {
+                state.ptr_display
+            } else {
+                state.display
+            };
+            // SAFETY: quiet or host display is open on this thread.
+            let Some(p) = (unsafe { query_pointer_root(dpy) }) else {
+                state.last_chooser_dismiss_btn1 = btn1;
+                return;
+            };
+            (p.x, p.y, btn1 || p.button1)
+        }
+    };
+    let pressed = btn1 && !state.last_chooser_dismiss_btn1;
+    state.last_chooser_dismiss_btn1 = btn1;
+    if !pressed {
+        return;
+    }
+    if crate::os_popup::point_in_popup(x, y, ch.root_x, ch.root_y, ch.w as i32, ch.h as i32) {
+        return;
+    }
+    note(&format!(
+        "overlay-x11: chooser dismiss (poll outside) at {x},{y}"
+    ));
+    mark_site("overlay:chooser:dismiss=poll_outside");
+    hide_chooser(state, Some(HotkeyChooserResult::Dismissed));
 }
 
 /// Collapse the hub fan when a global left-press misses every hub chrome button.
@@ -4501,6 +4604,7 @@ mod tests {
                 brand: false,
             },
             tip: "run m".into(),
+            ui_scale: 1.0,
             busy: false,
             visibility_gated: false,
             input_enabled: true,
@@ -4683,95 +4787,82 @@ mod tests {
 
     #[test]
     fn tip_flips_above_and_clamps_to_monitor() {
-        let (x, y) = place_overlay_tip(TipPlace {
-            btn_x: 100,
-            btn_y: 1000,
-            btn_w: 40,
-            btn_h: 40,
-            tip_w: 120,
-            tip_h: 28,
-            mon: (0, 0, 1920, 1080),
-        });
+        let mon = crate::os_popup::MonitorRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let (x, y) = crate::os_popup::place_tip_near_button(100, 1000, 40, 40, 120, 28, mon);
         assert!(y + 28 <= 1080, "below would clip → flip/clamp y={y}");
         assert!(x >= 0 && x + 120 <= 1920);
-        let (x2, _) = place_overlay_tip(TipPlace {
-            btn_x: 1900,
-            btn_y: 100,
-            btn_w: 40,
-            btn_h: 40,
-            tip_w: 120,
-            tip_h: 28,
-            mon: (0, 0, 1920, 1080),
-        });
+        let (x2, _) = crate::os_popup::place_tip_near_button(1900, 100, 40, 40, 120, 28, mon);
         assert!(x2 + 120 <= 1920, "right-edge tip clamped x={x2}");
     }
 
     #[test]
-    fn click_through_follows_foreign_x11_motion() {
-        // At rest (not the first sample), keep the hit so Wayland can deliver events.
-        assert!(!next_click_through(
-            false, false, false, true, true, false, false
-        ));
-        // First seat sample already foreign+near: empty before Enter can fire.
-        assert!(next_click_through(
-            false, false, false, true, true, true, false
-        ));
-        // Pointer moving on a foreign X window near a button: yield so confine can cross.
-        assert!(next_click_through(
-            false, true, false, true, true, false, false
-        ));
-        // Moving on X but far from buttons: keep the shape.
-        assert!(!next_click_through(
-            false, true, false, true, false, false, false
-        ));
-        // Our window or the root: real events, including while the pointer moves.
-        assert!(!next_click_through(
-            false, true, false, false, true, false, false
-        ));
-        // Hold click-through while the game cursor rests on the button.
-        assert!(next_click_through(
-            true, false, false, true, true, false, false
-        ));
-        // Relative-mouse game: portal moves, X frozen, still over foreign X11.
-        assert!(next_click_through(
-            true, false, true, true, true, false, false
-        ));
-        // Aligned portal hit while X frozen: engage/keep near the button.
-        assert!(next_click_through(
-            false, false, true, true, true, false, true
-        ));
-        // Left XWayland for native Wayland: portal moves, X frozen, not foreign.
-        assert!(!next_click_through(
-            true, false, true, false, true, false, false
-        ));
-        // Both move (portal mirrors the game cursor): still the game.
-        assert!(next_click_through(
-            true, true, true, true, true, false, false
-        ));
-        // Child is no longer a foreign window: restore input.
-        assert!(!next_click_through(
-            true, false, false, false, true, false, false
-        ));
-        // Moved away from the pad on foreign X11: restore input.
-        assert!(!next_click_through(
-            true, true, false, true, false, false, false
-        ));
+    fn click_through_follows_foreign_x11_focus() {
+        assert!(
+            !next_click_through(false, true),
+            "pure X11 never forces click-through"
+        );
+        assert!(!next_click_through(false, false));
+        assert!(
+            !next_click_through(true, false),
+            "desktop / Wayland focus → interactive hits"
+        );
+        assert!(
+            next_click_through(true, true),
+            "foreign X11 focus → empty hits for the whole period"
+        );
     }
 
     #[test]
     fn passthrough_hit_prefers_aligned_portal_when_x_frozen() {
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), false, true),
-            (100, 200)
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, true, true),
+            (100, 200),
+            "X frozen + portal moving + aligned"
         );
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), false, false),
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, false, true),
+            (10, 20),
+            "stopped cursor keeps X even when portal aligned"
+        );
+        assert_eq!(
+            passthrough_hit_xy(10, 20, Some((100, 200)), false, true, false),
             (10, 20),
             "unaligned Cosmic portal must not drive hits"
         );
         assert_eq!(
-            passthrough_hit_xy(10, 20, Some((100, 200)), true, true),
+            passthrough_hit_xy(10, 20, Some((100, 200)), true, true, true),
             (10, 20),
+            "moving X wins over portal"
+        );
+    }
+
+    #[test]
+    fn relocate_pointer_stays_in_x_root_space() {
+        let x11 = (10, 20);
+        let portal = Some((100, 200));
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, false, true, true),
+            (100, 200),
+            "aligned portal while X frozen and portal moving"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, false, false, true),
+            x11,
+            "stopped cursor must not jump to portal"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, false, true, false),
+            x11,
+            "unaligned Cosmic portal must not drive relocate"
+        );
+        assert_eq!(
+            relocate_pointer_xy(x11, portal, true, true, true),
+            x11,
             "moving X wins over portal"
         );
     }
@@ -4782,16 +4873,6 @@ mod tests {
         assert!(!pointer_moved(Some((1, 2)), Some((1, 2))));
         assert!(pointer_moved(Some((1, 2)), Some((2, 2))));
         assert!(!pointer_moved(Some((1, 2)), None));
-    }
-
-    #[test]
-    fn spec_near_includes_pad_and_rect() {
-        let s = spec();
-        assert!(spec_near(&s, 100, 200, 0), "top-left of the rect");
-        assert!(!spec_near(&s, 99, 200, 0));
-        assert!(spec_near(&s, 99, 200, 1), "one pixel of pad");
-        assert!(spec_near(&s, 100 - 128, 200, 128));
-        assert!(!spec_near(&s, 100 - 129, 200, 128));
     }
 
     #[test]
