@@ -43,6 +43,9 @@ pub const LOGS_FIT_VIEW: &str = "Fit image in viewport (0)";
 
 /// Mask upload button on the coordinate form.
 pub const ED_UPLOAD_IMAGE: &str = "Replace this mask with a PNG from disk.";
+/// Mask remove-image icon on the Masks form.
+pub const ED_REMOVE_MASK_IMAGE: &str =
+    "Delete the PNG and use shape geometry instead. Image mask mode hides shape fields while a PNG is on disk.";
 /// Window pick control on the program form.
 pub const ED_PICK_WINDOW: &str = "Pick window…";
 /// Context menu on a disabled list row.
@@ -88,9 +91,6 @@ pub const YAML_IMPORT_REPLACE: &str = "Replace the selected macro with this YAML
 
 // --- Permissions ---
 
-/// "Show prompts" button in the intro panel.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-pub const PERM_SHOW_PROMPTS: &str = "Show the system permission prompts now.";
 /// Refresh button in the desktop panel.
 #[cfg(all(
     not(target_arch = "wasm32"),
@@ -267,6 +267,9 @@ pub const SET_KEEP_HEADERS: &str =
     "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).";
 /// Main-window outline.
 pub const SET_WIN_OUTLINE: &str = "Show a thin gold outline around the edge of the main window.";
+/// OS title bar / decorations.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_WIN_DECORATIONS: &str = "Show the system title bar around the main window. When off, drag the top bar to move, double-click it to maximize, and grab the window edges to resize.";
 /// Run button glow.
 pub const SET_RUN_GLOW: &str =
     "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.";

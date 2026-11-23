@@ -62,8 +62,9 @@ fn pane(ui: &mut egui::Ui, content: Rect, span: Rangef) -> egui::Ui {
 /// ancestor (panel, window, card, popup) through its inner margin, or a
 /// [`split_view`] pane up to the splitter line.
 ///
-/// The line sits centered in a [`section_gap`] margin on each side — never add
-/// `add_space` around it; the gap already matches the inter-section gap.
+/// Total vertical band (including egui `item_spacing` before/after) equals one
+/// [`section_gap`] — never add `add_space` around it. Older geometry reserved
+/// ~two half-gaps and left headers/footers looking padded by empty rules.
 ///
 /// In horizontal layouts this is a compact vertical [`egui::Separator`].
 pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
@@ -74,10 +75,13 @@ pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     let Some(span) = section_span(ui) else {
         return ui.separator();
     };
-    // `item_spacing` is applied around the allocated slot, so the slot only
-    // needs the remainder to land the line `section_gap` from each neighbour.
-    let side = (crate::theme::section_gap(ui) - ui.spacing().item_spacing.y).max(0.0);
-    let slot = side * 2.0 + 1.0;
+    // Layout inserts `item_spacing` before this widget and again before the
+    // next. Cancel the leading spacing and size the slot so
+    // `slot + trailing item_spacing == section_gap`.
+    let gap = crate::theme::section_gap(ui);
+    let auto = ui.spacing().item_spacing.y;
+    ui.add_space(-auto);
+    let slot = (gap - auto).max(1.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(0.0, slot), Sense::hover());
     // Test the full line, not the zero-width slot: a horizontally scrolled
     // viewport clips the slot's x even while most of the line is on screen.
@@ -128,13 +132,19 @@ pub fn advanced_section<R>(
     collapsible_section(ui, "Advanced", id_salt, add_contents)
 }
 
+/// Inset from the pane edge for [`float_bottom_right`] chips.
+const FLOAT_FOOTER_INSET: f32 = SPACE_4;
+
 /// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
 /// a reserved footer row without consuming layout height. `add_contents` paints
 /// right-to-left inside a window-frame chip (first widget at the right edge).
 /// No shadow: the chip already floats inside a shadow-casting window.
+///
+/// Lists under a floating Save should fill remaining height (`footer_reserve: 0`)
+/// rather than reserving a dead band — the chip overlays the scroll edge.
 pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOnce(&mut egui::Ui)) {
     // Clear the floating-scrollbar rail so the chip never sits on the bars.
-    let inset = SPACE_4 + 10.0;
+    let inset = FLOAT_FOOTER_INSET;
     let strip_h = ui.spacing().interact_size.y + SPACE_4;
     let strip = Rect::from_min_max(
         egui::pos2(rect.left(), rect.bottom() - strip_h - inset),

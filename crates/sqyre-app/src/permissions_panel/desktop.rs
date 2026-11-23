@@ -245,7 +245,7 @@ impl PermissionsPanel {
                 ui,
                 "No permission data yet",
                 Some("Refresh runs checks for screen capture, portals, and input access."),
-                Some("Refresh"),
+                Some(crate::widgets::EmptyCta::Refresh("Refresh")),
                 None,
             );
             if action == crate::widgets::EmptyStateAction::Primary {

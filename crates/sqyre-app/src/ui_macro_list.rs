@@ -691,7 +691,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                             ui,
                             "No macros yet",
                             Some("Create a macro to get started."),
-                            Some("New macro"),
+                            Some(crate::widgets::EmptyCta::Add("New macro")),
                             None,
                         );
                         if clicked == crate::widgets::EmptyStateAction::Primary {

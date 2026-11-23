@@ -2397,6 +2397,21 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
+        if setting_visible(q, section_hit, SETTING_WINDOW_DECORATIONS)
+            && ui
+                .checkbox(&mut self.settings.window_decorations, "OS title bar")
+                .on_hover_text(ht::SET_WIN_DECORATIONS)
+                .changed()
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(
+                self.settings.window_decorations,
+            ));
+            // Keep resize grips even after OS chrome is removed.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
@@ -3003,6 +3018,15 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
 const SETTING_EMPTY_HEADERS: &[&str] = &["empty", "program headers", "headers", "hide"];
 const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_WINDOW_DECORATIONS: &[&str] = &[
+    "os title bar",
+    "title bar",
+    "decorations",
+    "borderless",
+    "frameless",
+    "window chrome",
+];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_PREVIEW_OUTLINE: &[&str] = &[
     "preview",
@@ -3096,6 +3120,8 @@ const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
     SETTING_EMPTY_HEADERS,
     SETTING_WINDOW_BORDER,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_WINDOW_DECORATIONS,
     SETTING_RUN_GLOW,
     SETTING_PREVIEW_OUTLINE,
     SETTING_ACCENT,
@@ -3234,6 +3260,22 @@ mod tests {
         assert!(appearance_section_visible("detection"));
         assert!(setting_visible("detection", false, &["Detection"]));
         assert!(!setting_visible("detection", false, SETTING_FONT_SIZE));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn borderless_matches_os_title_bar_setting() {
+        assert!(appearance_section_visible("borderless"));
+        assert!(setting_visible(
+            "borderless",
+            false,
+            SETTING_WINDOW_DECORATIONS
+        ));
+        assert!(setting_visible(
+            "title bar",
+            false,
+            SETTING_WINDOW_DECORATIONS
+        ));
     }
 
     #[test]

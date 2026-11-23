@@ -26,12 +26,21 @@ fn toolbar_icon_colored(
 }
 
 /// Full-width window header above the macro list and central panel:
-/// Sqyre command palette and run status on the left; Data Editor / Settings / list toggle on the right.
+/// Sqyre brand with Data Editor / Settings stacked under it (tag-row plane),
+/// name/tags in the mid gap, macro-list toggle on that same plane at the right.
 /// Must be shown before the side panel so it spans the whole window width.
 pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::top("app_top_bar")
         .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
+            #[cfg(not(target_arch = "wasm32"))]
+            let undecorated = !app.settings_ui.settings().window_decorations;
+            #[cfg(not(target_arch = "wasm32"))]
+            if undecorated {
+                // Interact first so later chrome keeps click priority; empty
+                // gaps still drag/double-click the native window.
+                crate::window_frame::top_bar_window_drag(ui, ui.max_rect());
+            }
             crate::widgets::show_overflow(ui, "app_top_bar", 1.0, |ui| {
                 brand_header(app, ui);
             });
@@ -39,154 +48,36 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        // Brand / command palette (primary affordance), top-left of the window.
-        // While a macro runs the shield is replaced by the animated S trace —
-        // the same busy spinner the overlay buttons and loading slots show.
-        let running = app.run_session.state.running.load(Ordering::SeqCst);
-        #[cfg(feature = "native-runtime")]
-        let waking = sqyre_capture::pipewire_stream_waking();
-        #[cfg(not(feature = "native-runtime"))]
-        let waking = false;
-        let busy = running || waking;
-        let brand_tip = if waking {
-            ht::CAPTURE_WAKE
-        } else {
-            ht::TB_PALETTE
-        };
-        let size = egui::vec2(28.0, 28.0);
-        // Pad the hit rect so the hover frame doesn't hug the icon edge.
-        let (hit_rect, icon_resp) = ui.allocate_exact_size(
-            size + egui::Vec2::splat(theme::SPACE_4 * 2.0),
-            egui::Sense::click(),
-        );
-        let icon_rect = egui::Rect::from_center_size(hit_rect.center(), size);
-        let icon_resp = icon_resp
-            .on_hover_text(brand_tip)
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        // Same hover/press frame a `frame_when_inactive(false)` button draws.
-        let state = icon_resp.widget_state();
-        if !matches!(
-            state,
-            egui::widget_style::WidgetState::Inactive
-                | egui::widget_style::WidgetState::Noninteractive
-        ) {
-            let visuals = ui.visuals().widgets.state(state);
-            ui.painter().rect(
-                hit_rect.expand(visuals.expansion),
-                visuals.corner_radius,
-                visuals.weak_bg_fill,
-                visuals.bg_stroke,
-                egui::StrokeKind::Inside,
-            );
-        }
-        icon_resp.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
-                ui.is_enabled(),
-                if waking {
-                    ht::CAPTURE_WAKE
-                } else {
-                    sqyre_ports::APP_NAME
-                },
-            )
-        });
-        if busy {
-            // The shield stays; the S inside it becomes the trace spinner —
-            // drawn into a hollow cut by `sqyre_shell` at the S's exact
-            // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).
-            let shell = app.icon_cache.sqyre_shell(ui.ctx());
-            ui.painter().image(
-                shell.id(),
-                icon_rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-            let s_rect = egui::Rect::from_min_max(
-                icon_rect.min
-                    + egui::vec2(
-                        icon_rect.width() * (40.5 / 128.0),
-                        icon_rect.height() * (20.25 / 128.0),
-                    ),
-                icon_rect.min
-                    + egui::vec2(
-                        icon_rect.width() * (87.25 / 128.0),
-                        icon_rect.height() * (104.25 / 128.0),
-                    ),
-            );
-            sqyre_overlay::icons::paint_trace_spinner(ui, s_rect, sqyre_ui_theme::accent());
-            // Pace like the run-glow pulse — a bare request_repaint can be
-            // dropped on an idle window (see hotkey_wake), freezing the icon.
-            ui.ctx()
-                .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
-        } else {
-            let tex = app.icon_cache.sqyre_fallback(ui.ctx());
-            ui.painter().image(
-                tex.id(),
-                icon_rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-        }
-        if icon_resp.clicked() {
-            app.command_palette.open_palette();
-        }
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    // Top-align brand with the name row. Data Editor / Settings / list toggle
+    // float onto the tag-chip plane afterward so they do not stack a third row
+    // under a tall brand column.
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+        let brand_rect = paint_brand_button(app, ui);
 
-        // Right-to-left: first added is rightmost. Painted before the middle
-        // zone so its left edge bounds where the name/tag editor may reach.
-        let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let (list_glyph, list_tip) = if app.macro_list_open {
-                ("▷", "Hide macro list")
-            } else {
-                ("☰", "Show macro list")
-            };
-            if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
-                app.macro_list_open = !app.macro_list_open;
-            }
-            crate::widgets::section_separator(ui);
-            let permissions_missing = app.settings_ui.permissions_missing();
-            let settings_tip = if permissions_missing {
-                "Settings: a permission is missing"
-            } else {
-                "Settings"
-            };
-            let settings_btn = toolbar_icon(ui, "⚙", settings_tip, true);
-            if permissions_missing {
-                crate::widgets::warn_badge(ui, settings_btn.rect);
-            }
-            if settings_btn.clicked() {
-                app.settings_ui.request_open(ui.ctx());
-            }
-            if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-                app.data_editor.request_open(ui.ctx());
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true)
-                    .clicked()
-                {
-                    app.export_db_yaml();
-                }
-                if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true)
-                    .clicked()
-                {
-                    app.request_db_import();
-                }
-            }
-            // Leftmost of the group: the update banner extends leftward into
-            // the mid gap when an update is pending.
-            #[cfg(not(target_arch = "wasm32"))]
-            show_update_banner(app, ui);
-        });
-
-        // Selected macro name + tag field fill the gap between the brand icon
-        // and the right-side buttons; an explicit child rect keeps them clear
-        // of both (the rtl block's bounding box is its widget span). Created
-        // tags wrap under that row, so the region is at least two rows tall
-        // when the macro has tags — reserve the *painted* height (remembered
-        // like `show_overflow` does): a fixed estimate under-reserves the
-        // TextEdit's frame margin and the tag row's bottom pixels clip.
         let gap = ui.spacing().item_spacing.x;
+        let list_side = crate::widgets::icon_btn_side(ui);
+        let list_reserve = list_side + gap;
+
+        // Top-right window chrome / update banner (native only).
+        #[cfg(not(target_arch = "wasm32"))]
+        let mid_right = {
+            let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                if !app.settings_ui.settings().window_decorations {
+                    crate::window_frame::window_control_buttons(ui);
+                }
+                show_update_banner(app, ui);
+            });
+            let chrome_left = if right.response.rect.width() > 0.0 {
+                right.response.rect.left() - gap
+            } else {
+                ui.max_rect().right()
+            };
+            chrome_left.min(ui.max_rect().right() - list_reserve)
+        };
+        #[cfg(target_arch = "wasm32")]
+        let mid_right = ui.max_rect().right() - list_reserve;
+
         let stack_id = ui.make_persistent_id("name_tag_stack_h");
         let estimate = ui.spacing().interact_size.y * 2.0
             + ui.spacing().item_spacing.y
@@ -195,35 +86,213 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             .ctx()
             .data(|d| d.get_temp::<f32>(stack_id))
             .unwrap_or(estimate);
+        let top = ui.max_rect().top();
+        // Mid paints into last frame's stack height; final allocate comes after
+        // chrome Y is known so a lone under-brand row still fits.
         let mid_rect = egui::Rect::from_min_max(
-            egui::pos2(hit_rect.right() + gap, ui.max_rect().top()),
-            egui::pos2(
-                right.response.rect.left() - gap,
-                ui.max_rect().top() + stack_h,
-            ),
+            egui::pos2(brand_rect.right() + gap, top),
+            egui::pos2(mid_right, top + brand_rect.height().max(stack_h)),
         );
+
+        let chrome_h = list_side + ui.spacing().item_spacing.y;
+        let mut painted_h = brand_rect.height();
         if mid_rect.width() > 40.0 {
-            if !app.workspace.macros.is_empty() {
-                // Reserve the stacked rows' height in this header row so the
-                // bar grows instead of clipping the second row.
-                ui.allocate_space(egui::vec2(0.0, stack_h));
-            }
             let mut mid = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(mid_rect)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    .layout(egui::Layout::left_to_right(egui::Align::Min)),
             );
             mid.set_clip_rect(mid_rect);
             if let Some(idx) = app.workspace.selected_macro_index() {
                 paint_name_and_tags(app, &mut mid, idx, !running);
-                let painted = mid.min_rect().height().max(1.0);
-                if (painted - stack_h).abs() > 0.5 {
-                    ui.ctx().data_mut(|d| d.insert_temp(stack_id, painted));
+                painted_h = mid.min_rect().height().max(1.0);
+                if (painted_h - stack_h).abs() > 0.5 {
+                    ui.ctx().data_mut(|d| d.insert_temp(stack_id, painted_h));
                     ui.ctx().request_repaint();
                 }
             }
         }
+
+        // Two-band name/tag stack → sit chrome on the lower band; otherwise
+        // park it under the brand (adds at most one compact row).
+        let tag_plane_y = if painted_h > brand_rect.height() + ui.spacing().item_spacing.y {
+            top + painted_h - chrome_h
+        } else {
+            brand_rect.bottom()
+        };
+        let header_h = brand_rect
+            .height()
+            .max(painted_h)
+            .max((tag_plane_y - top) + chrome_h);
+        if !app.workspace.macros.is_empty() || header_h > brand_rect.height() {
+            ui.allocate_space(egui::vec2(0.0, header_h));
+        }
+
+        // Data Editor / Settings under the brand, on the tag plane.
+        let chrome_w = brand_rect
+            .width()
+            .max(list_side * 2.0 + ui.spacing().item_spacing.x);
+        let chrome_rect = egui::Rect::from_min_size(
+            egui::pos2(brand_rect.left(), tag_plane_y),
+            egui::vec2(chrome_w, chrome_h),
+        );
+        let mut chrome_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(chrome_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        paint_left_chrome(app, &mut chrome_ui);
+
+        // List toggle on the same plane at the right edge.
+        let list_rect = egui::Rect::from_min_size(
+            egui::pos2(ui.max_rect().right() - list_side, tag_plane_y),
+            egui::Vec2::splat(list_side),
+        );
+        let mut list_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(list_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        paint_list_toggle(app, &mut list_ui);
     });
+}
+
+/// Data Editor / Settings (and wasm import/export) under the brand icon.
+fn paint_left_chrome(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+            app.data_editor.request_open(ui.ctx());
+        }
+        let permissions_missing = app.settings_ui.permissions_missing();
+        let settings_tip = if permissions_missing {
+            "Settings: a permission is missing"
+        } else {
+            "Settings"
+        };
+        let settings_btn = toolbar_icon(ui, "⚙", settings_tip, true);
+        if permissions_missing {
+            crate::widgets::warn_badge(ui, settings_btn.rect);
+        }
+        if settings_btn.clicked() {
+            app.settings_ui.request_open(ui.ctx());
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true).clicked()
+            {
+                app.export_db_yaml();
+            }
+            if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true).clicked()
+            {
+                app.request_db_import();
+            }
+        }
+    });
+}
+
+fn paint_list_toggle(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let (list_glyph, list_tip) = if app.macro_list_open {
+        ("▷", "Hide macro list")
+    } else {
+        ("☰", "Show macro list")
+    };
+    if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
+        app.macro_list_open = !app.macro_list_open;
+    }
+}
+
+/// Brand / command palette hit target at the top-left of the window.
+/// While a macro runs the shield keeps its outline and the S becomes the
+/// animated trace spinner shared with overlay buttons and loading slots.
+fn paint_brand_button(app: &mut SqyreApp, ui: &mut egui::Ui) -> egui::Rect {
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    #[cfg(feature = "native-runtime")]
+    let waking = sqyre_capture::pipewire_stream_waking();
+    #[cfg(not(feature = "native-runtime"))]
+    let waking = false;
+    let busy = running || waking;
+    let brand_tip = if waking {
+        ht::CAPTURE_WAKE
+    } else {
+        ht::TB_PALETTE
+    };
+    let size = egui::vec2(28.0, 28.0);
+    // Pad the hit rect so the hover frame doesn't hug the icon edge.
+    let (hit_rect, icon_resp) = ui.allocate_exact_size(
+        size + egui::Vec2::splat(theme::SPACE_4 * 2.0),
+        egui::Sense::click(),
+    );
+    let icon_rect = egui::Rect::from_center_size(hit_rect.center(), size);
+    let icon_resp = icon_resp
+        .on_hover_text(brand_tip)
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    // Same hover/press frame a `frame_when_inactive(false)` button draws.
+    let state = icon_resp.widget_state();
+    if !matches!(
+        state,
+        egui::widget_style::WidgetState::Inactive | egui::widget_style::WidgetState::Noninteractive
+    ) {
+        let visuals = ui.visuals().widgets.state(state);
+        ui.painter().rect(
+            hit_rect.expand(visuals.expansion),
+            visuals.corner_radius,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    icon_resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            if waking {
+                ht::CAPTURE_WAKE
+            } else {
+                sqyre_ports::APP_NAME
+            },
+        )
+    });
+    if busy {
+        // The shield stays; the S inside it becomes the trace spinner —
+        // drawn into a hollow cut by `sqyre_shell` at the S's exact
+        // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).
+        let shell = app.icon_cache.sqyre_shell(ui.ctx());
+        ui.painter().image(
+            shell.id(),
+            icon_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+        let s_rect = egui::Rect::from_min_max(
+            icon_rect.min
+                + egui::vec2(
+                    icon_rect.width() * (40.5 / 128.0),
+                    icon_rect.height() * (20.25 / 128.0),
+                ),
+            icon_rect.min
+                + egui::vec2(
+                    icon_rect.width() * (87.25 / 128.0),
+                    icon_rect.height() * (104.25 / 128.0),
+                ),
+        );
+        sqyre_overlay::icons::paint_trace_spinner(ui, s_rect, sqyre_ui_theme::accent());
+        // Pace like the run-glow pulse — a bare request_repaint can be
+        // dropped on an idle window (see hotkey_wake), freezing the icon.
+        ui.ctx()
+            .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
+    } else {
+        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+        ui.painter().image(
+            tex.id(),
+            icon_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+    if icon_resp.clicked() {
+        app.command_palette.open_palette();
+    }
+    hit_rect
 }
 
 /// Selected macro's name entry, tag field to its right, created tags below.
@@ -374,8 +443,8 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 /// Browser editor note at the top of the central panel.
-/// Chrome controls (list toggle, Data Editor, Settings) live in [`top_bar`];
-/// run/stop sits in [`action_toolbar`].
+/// Chrome controls (Data Editor / Settings under the brand, list toggle right)
+/// live in [`top_bar`]; run/stop sits in [`action_toolbar`].
 #[cfg(target_arch = "wasm32")]
 pub fn wasm_editor_note(ui: &mut egui::Ui) {
     ui.small(
@@ -493,7 +562,7 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         // key toggle, delay — the same left-to-right order the footer strip had.
         paint_builder_menu(app, ui);
         if app.workspace.macro_meta.hotkey_open {
-            theme::section_frame(ui.style())
+            theme::section_frame(ui)
                 .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
@@ -612,9 +681,11 @@ mod tests {
         app.workspace.macros[0].name =
             "Inventory restock and backup routine for the evening".into();
         let ctx = eframe::egui::Context::default();
+        // Chrome icons moved off this row, so the name/tag gap is wider than
+        // before — keep the window tight enough that the tag field still wraps.
         let screen = eframe::egui::Rect::from_min_size(
             eframe::egui::Pos2::ZERO,
-            eframe::egui::vec2(400.0, 640.0),
+            eframe::egui::vec2(320.0, 640.0),
         );
         let mut visible = 0.0;
         let mut name_y = 0.0;

@@ -2,9 +2,14 @@
 //!
 //! Split out of `draw_form`; see `forms.rs` for the tab dispatch.
 
+use super::super::mask_preview::{
+    ensure_mask_scrim, mask_percent, paint_mask_scrim_over, MaskItemsFilter, MaskShapeParams,
+};
 use super::super::{DataEditor, PendingConfirm};
 use super::*;
 use crate::help_text as ht;
+use crate::image_view;
+use sqyre_domain::PROGRAM_DELIMITER;
 
 impl DataEditor {
     /// The four area-edge chips (`form_top/bottom/left/right`) shared by the
@@ -155,41 +160,93 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        paint_name_field(ui, &mut self.form_name);
         let has_image = self
             .selected_program
             .as_deref()
             .zip(self.selected_entity.as_deref())
             .map(|(p, m)| catalog.mask_image_path(p, m).is_file())
             .unwrap_or(false);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.selected_program.is_some() && self.selected_entity.is_some(),
-                    egui::Button::new("Upload Image").small(),
-                )
-                .on_hover_text(ht::ED_UPLOAD_IMAGE)
-                .clicked()
-            {
-                self.request_mask_image_pick();
-            }
-            if ui
-                .add_enabled(
-                    has_image,
-                    egui::Button::new(
-                        egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
+        let can_upload = self.selected_program.is_some() && self.selected_entity.is_some();
+        let mask_path = self
+            .selected_program
+            .as_deref()
+            .zip(self.selected_entity.as_deref())
+            .map(|(p, m)| catalog.mask_image_path(p, m));
+
+        // fill_row trailing is right-to-left: first widget is rightmost.
+        let mut upload_clicked = false;
+        let mut remove_clicked = false;
+        crate::widgets::fill_row(
+            ui,
+            |ui| {
+                remove_clicked = ui
+                    .add_enabled(
+                        has_image,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::ERASER,
+                            ht::ED_REMOVE_MASK_IMAGE,
+                            Some(crate::theme::MACRO_STOP),
+                        ),
                     )
-                    .small(),
-                )
-                .on_hover_text(format!(
-                    "Delete the PNG and use shape geometry instead. {}",
-                    help::DE_MASK_IMAGE_MODE
-                ))
-                .clicked()
-            {
-                self.confirm = Some(PendingConfirm::DeleteMaskImage);
-            }
-        });
+                    .clicked();
+                upload_clicked = ui
+                    .add_enabled(
+                        can_upload,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::UPLOAD_SIMPLE,
+                            ht::ED_UPLOAD_IMAGE,
+                            None,
+                        ),
+                    )
+                    .clicked();
+                let thumb = crate::widgets::controls::icon_btn_side(ui);
+                let (thumb_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(thumb, thumb), egui::Sense::hover());
+                image_view::paint_checkerboard(
+                    ui.painter(),
+                    thumb_rect,
+                    2.0,
+                    image_view::CheckerboardEdge::Flush,
+                );
+                if let Some(path) = mask_path.as_ref().filter(|p| p.is_file()) {
+                    if let Some(tex) = icons.for_path(ui.ctx(), path) {
+                        let [tw, th] = tex.size();
+                        let size = image_view::fit_icon_thumb(
+                            tw as f32,
+                            th as f32,
+                            thumb_rect.width(),
+                            thumb_rect.height(),
+                        );
+                        let img_rect = egui::Rect::from_center_size(thumb_rect.center(), size);
+                        ui.painter().image(
+                            tex.id(),
+                            img_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    }
+                }
+                help::tip(
+                    ui.interact(
+                        thumb_rect,
+                        ui.id().with("mask_image_thumb"),
+                        egui::Sense::hover(),
+                    ),
+                    help::DE_MASK_IMAGE_MODE,
+                );
+            },
+            |ui| {
+                name_field_body(ui, &mut self.form_name);
+            },
+        );
+        paint_fs_name_hint(ui, &self.form_name);
+        if upload_clicked {
+            self.request_mask_image_pick();
+        }
+        if remove_clicked {
+            self.confirm = Some(PendingConfirm::DeleteMaskImage);
+        }
+
         if !has_image {
             crate::widgets::pair_labeled(ui, egui_phosphor::regular::SHAPES, "Shape", |ui| {
                 help::tip(
@@ -271,21 +328,85 @@ impl DataEditor {
                 }
             });
         }
-        if let (Some(prog), Some(mask)) = (
-            self.selected_program.as_deref(),
-            self.selected_entity.as_deref(),
-        ) {
-            let path = catalog.mask_image_path(prog, mask);
-            paint_disk_preview(
-                ui,
-                icons,
-                Some(path.as_path()),
-                None,
-                "Mask image",
-                None,
-                None,
-            );
+
+        crate::widgets::section_separator(ui);
+        crate::widgets::combo_enum(
+            ui,
+            crate::model_icons::ITEM,
+            "Items",
+            help::DE_MASK_ITEMS_FILTER,
+            &mut self.mask_items_filter,
+            &MaskItemsFilter::ALL,
+            MaskItemsFilter::label,
+        );
+        help::tip(
+            ui.label(egui::RichText::new("Live mask preview").weak()),
+            help::DE_MASK_ITEMS,
+        );
+
+        let Some(prog) = self.selected_program.as_deref() else {
+            crate::widgets::list_vacancy(ui, "", 0, "items");
+            return;
+        };
+        let mask_name = self.selected_entity.as_deref().unwrap_or("");
+        let filter = self.mask_items_filter;
+        let targets: Vec<String> = catalog
+            .get(prog)
+            .map(|p| {
+                p.items
+                    .iter()
+                    .filter(|(_, item)| match filter {
+                        MaskItemsFilter::AllItems => true,
+                        MaskItemsFilter::UsingThisMask => {
+                            !mask_name.is_empty() && item.mask == mask_name
+                        }
+                    })
+                    .map(|(name, _)| format!("{prog}{PROGRAM_DELIMITER}{name}"))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if targets.is_empty() {
+            let entity = match filter {
+                MaskItemsFilter::AllItems => "items",
+                MaskItemsFilter::UsingThisMask => "items using this mask",
+            };
+            crate::widgets::list_vacancy(ui, "", 0, entity);
+            return;
         }
+
+        let shape = MaskShapeParams {
+            circle: self.form_shape == "circle",
+            inverse: self.form_inverse,
+            center_x: mask_percent(&self.form_center_x, 50.0),
+            center_y: mask_percent(&self.form_center_y, 50.0),
+            base: mask_percent(&self.form_base, 50.0),
+            height: mask_percent(&self.form_height, 50.0),
+            radius: mask_percent(&self.form_radius, 50.0),
+        };
+        let png = mask_path
+            .as_ref()
+            .filter(|p| p.is_file())
+            .map(|p| p.as_path());
+        let overlay = ensure_mask_scrim(ui.ctx(), &mut self.mask_scrim_cache, 64, png, shape);
+        let mut after_icon = |painter: &egui::Painter, icon_rect: egui::Rect, _target: &str| {
+            if let Some(tex) = overlay.as_ref() {
+                paint_mask_scrim_over(painter, icon_rect, tex);
+            }
+        };
+        pickers::paint_even_icon_grid(
+            ui,
+            catalog,
+            icons,
+            &targets,
+            |_| false,
+            pickers::IconGridKind::Picker,
+            pickers::IconGridOps {
+                after_icon: Some(&mut after_icon),
+                ..Default::default()
+            },
+            None,
+        );
     }
 
     pub(super) fn draw_screen_cap_form(

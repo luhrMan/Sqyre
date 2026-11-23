@@ -1,7 +1,8 @@
 //! Shared scaffold for the detection actions (Image Search, OCR, Find Pixel).
 //!
-//! Primary fields stay visible; output coords / wait+order (and Image Search
-//! Method, OCR preprocess flags) live under a collapsed Advanced section.
+//! Primary fields stay visible, including output coords and wait/order (common
+//! path). Image Search match method and OCR preprocess flags stay under a
+//! collapsed Advanced section.
 
 use super::var_ref_field;
 use super::{coords_editor, detection_branch_editor, search_area_section, targets_editor};
@@ -37,8 +38,8 @@ fn detection_primary_header(
     search_area_section(ui, paint, search_area, picker);
 }
 
-/// Output coords + wait/order — shared Advanced contents for detection actions.
-fn detection_advanced_fields(
+/// Output coords + wait/order — common path for detection actions (always visible).
+fn detection_common_fields(
     ui: &mut egui::Ui,
     theme: VarTheme<'_>,
     detection: &mut DetectionBranch,
@@ -92,8 +93,8 @@ pub(super) fn paint_image_search_fields(
     tip_wrapped_section(ui, |ui| {
         match_settings::paint_match_settings(ui, tolerance, blur, match_method, false);
     });
+    detection_common_fields(ui, theme, detection);
     tip_advanced(ui, |ui| {
-        detection_advanced_fields(ui, theme, detection);
         tip_wrapped_section(ui, |ui| {
             match_method_editor(ui, match_method);
         });
@@ -179,8 +180,8 @@ pub(super) fn paint_ocr_fields(
             |d| d.speed(1).range(MIN_OCR_THRESHOLD..=MAX_OCR_THRESHOLD),
         );
     });
+    detection_common_fields(ui, theme, detection);
     tip_advanced(ui, |ui| {
-        detection_advanced_fields(ui, theme, detection);
         tip_wrapped_section(ui, |ui| {
             *resize = clamp_ocr_resize(*resize);
             drag_field(
@@ -264,7 +265,5 @@ pub(super) fn paint_find_pixel_fields(
             |d| d.speed(1).range(MIN_COLOR_TOLERANCE..=MAX_COLOR_TOLERANCE),
         );
     });
-    tip_advanced(ui, |ui| {
-        detection_advanced_fields(ui, theme, detection);
-    });
+    detection_common_fields(ui, theme, detection);
 }

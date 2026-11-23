@@ -1,8 +1,10 @@
 //! Shared empty / filter-miss chrome for lists and panels.
 //!
-//! Layout: strong title, optional weak sentence, optional primary then secondary CTA.
+//! Layout: strong title, optional weak sentence, optional icon CTAs (tip-named).
 
 use eframe::egui;
+
+use super::{add_button, icon_button};
 
 /// Which optional action button was clicked, if any.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -11,6 +13,20 @@ pub enum EmptyStateAction {
     None,
     Primary,
     Secondary,
+}
+
+/// Icon chrome for an empty-state CTA — tip is the AccessKit / hover name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmptyCta {
+    /// Green `+` ([`add_button`]).
+    Add(&'static str),
+    /// Import / download glyph.
+    Import(&'static str),
+    /// Refresh / arrows-clockwise glyph.
+    ///
+    /// Constructed from the native permissions panel (gated out of wasm builds).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Refresh(&'static str),
 }
 
 /// Title + optional body for a list vacancy (zero rows or filter miss).
@@ -35,7 +51,19 @@ pub fn list_vacancy_copy(query: &str, entity_plural: &str) -> ListVacancyCopy {
     }
 }
 
-/// Paint a titled empty state: strong title, optional weak body, optional CTAs.
+fn paint_empty_cta(ui: &mut egui::Ui, cta: EmptyCta) -> bool {
+    match cta {
+        EmptyCta::Add(tip) => add_button(ui, tip, true).clicked(),
+        EmptyCta::Import(tip) => {
+            icon_button(ui, egui_phosphor::regular::DOWNLOAD_SIMPLE, tip).clicked()
+        }
+        EmptyCta::Refresh(tip) => {
+            icon_button(ui, egui_phosphor::regular::ARROW_CLOCKWISE, tip).clicked()
+        }
+    }
+}
+
+/// Paint a titled empty state: strong title, optional weak body, optional icon CTAs.
 ///
 /// Primary is painted before secondary. Does not claim full available height
 /// (avoids side-panel / dialog size ratchet).
@@ -43,8 +71,8 @@ pub fn empty_state(
     ui: &mut egui::Ui,
     title: &str,
     body: Option<&str>,
-    primary: Option<&str>,
-    secondary: Option<&str>,
+    primary: Option<EmptyCta>,
+    secondary: Option<EmptyCta>,
 ) -> EmptyStateAction {
     // A single word wider than the pane (extreme user-dragged splits) wraps
     // mid-word ("collection/s yet"); truncating reads cleaner there.
@@ -69,13 +97,13 @@ pub fn empty_state(
     let mut clicked = EmptyStateAction::None;
     if primary.is_some() || secondary.is_some() {
         ui.horizontal(|ui| {
-            if let Some(label) = primary {
-                if ui.button(label).clicked() {
+            if let Some(cta) = primary {
+                if paint_empty_cta(ui, cta) {
                     clicked = EmptyStateAction::Primary;
                 }
             }
-            if let Some(label) = secondary {
-                if ui.button(label).clicked() {
+            if let Some(cta) = secondary {
+                if paint_empty_cta(ui, cta) {
                     clicked = EmptyStateAction::Secondary;
                 }
             }
@@ -117,5 +145,14 @@ mod tests {
     #[test]
     fn empty_state_action_default_is_none() {
         assert_eq!(EmptyStateAction::default(), EmptyStateAction::None);
+    }
+
+    #[test]
+    fn empty_cta_variants_are_constructible() {
+        let _ = [
+            EmptyCta::Add("New"),
+            EmptyCta::Import("Import"),
+            EmptyCta::Refresh("Refresh"),
+        ];
     }
 }

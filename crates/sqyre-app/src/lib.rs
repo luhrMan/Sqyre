@@ -112,6 +112,8 @@ mod wasm_io;
 mod widgets;
 #[cfg(target_os = "windows")]
 mod win_focused_keys;
+#[cfg(not(target_arch = "wasm32"))]
+mod window_frame;
 mod window_types;
 mod workspace;
 
@@ -190,7 +192,9 @@ fn native_options() -> eframe::NativeOptions {
                 .with_min_inner_size([100.0, 100.0])
                 .with_title(sqyre_ports::APP_NAME)
                 .with_app_id(assets::APP_ID)
-                .with_icon(assets::app_icon());
+                .with_icon(assets::app_icon())
+                .with_decorations(saved_window.window_decorations)
+                .with_resizable(true);
             builder = if saved_window.window_width > 0.0 && saved_window.window_height > 0.0 {
                 builder.with_inner_size([saved_window.window_width, saved_window.window_height])
             } else {
@@ -1137,6 +1141,11 @@ impl eframe::App for SqyreApp {
             paint_window_border(ui.ctx());
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.settings_ui.settings().window_decorations {
+            window_frame::handle_borderless_resize(ui.ctx());
+        }
+
         // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
         if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
             return;
@@ -1175,7 +1184,10 @@ impl SqyreApp {
 
         egui::CentralPanel::default()
             .frame(
-                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)),
+                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(
+                    crate::theme::SPACE_8 as i8,
+                    crate::theme::SPACE_4 as i8,
+                )),
             )
             .show(ui, |ui| {
                 #[cfg(target_arch = "wasm32")]
@@ -1188,8 +1200,8 @@ impl SqyreApp {
                             ui,
                             "No macros yet",
                             Some("Create a macro or import a backup to get started."),
-                            Some("New macro"),
-                            Some("Import backup"),
+                            Some(crate::widgets::EmptyCta::Add("New macro")),
+                            Some(crate::widgets::EmptyCta::Import("Import backup")),
                         )
                     });
                     match clicked {

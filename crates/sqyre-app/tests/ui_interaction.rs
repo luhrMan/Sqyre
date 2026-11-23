@@ -64,6 +64,36 @@ fn settings_checkbox_toggles_highlight_active_action() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn settings_checkbox_toggles_os_title_bar() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_settings_appearance_for_docs();
+    });
+    harness.run();
+
+    assert!(
+        harness.state().docs_settings().window_decorations,
+        "docs fixture should start with OS title bar on"
+    );
+
+    harness.get_by_label("OS title bar").click();
+    harness.run();
+
+    assert!(
+        !harness.state().docs_settings().window_decorations,
+        "clicking OS title bar should hide decorations"
+    );
+
+    harness.get_by_label("OS title bar").click();
+    harness.run();
+
+    assert!(
+        harness.state().docs_settings().window_decorations,
+        "second click should restore decorations"
+    );
+}
+
 #[test]
 fn new_macro_button_adds_macro() {
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
@@ -90,6 +120,78 @@ fn new_macro_button_adds_macro() {
         name.starts_with("new macro"),
         "created macro should be selected, got {name:?}"
     );
+}
+
+/// Top-bar chrome floats onto the lower name/tag band under the brand (list
+/// toggle on the right) — not a third strip below the chips.
+#[test]
+fn top_bar_chrome_row_under_brand() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    // Settle stack-height memory so the chip band exists before we measure.
+    harness.run_steps(4);
+
+    let brand = harness.get_by_label("Sqyre").rect();
+    let data_editor = harness.get_by_label("Data Editor").rect();
+    let settings = harness.get_by_label("Settings").rect();
+    let list_toggle = harness.get_by_label("Hide macro list").rect();
+    let bar_rect =
+        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+            .map(|s| s.outer_rect)
+            .unwrap_or(egui::Rect::NOTHING);
+    let bar_h = bar_rect.height();
+
+    assert!(
+        data_editor.top() > brand.center().y,
+        "Data Editor should sit under the brand (brand={brand:?}, data={data_editor:?})"
+    );
+    let chrome_mid_y = (data_editor.center().y + settings.center().y) * 0.5;
+    assert!(
+        (list_toggle.center().y - chrome_mid_y).abs() < data_editor.height(),
+        "macro-list toggle should share the tag-row plane (list={list_toggle:?}, chrome_y={chrome_mid_y})"
+    );
+    assert!(
+        list_toggle.left() > settings.right(),
+        "macro-list toggle should be on the right of the chrome row"
+    );
+    // Chrome must sit inside the bar's lower half (chip band), not hang below
+    // the bar as a third strip.
+    assert!(
+        data_editor.bottom() <= bar_rect.bottom() + 1.0,
+        "chrome should stay inside the top bar (data={data_editor:?}, bar={bar_rect:?})"
+    );
+    assert!(
+        chrome_mid_y > bar_rect.top() + bar_h * 0.35,
+        "chrome should sit on the lower tag band (chrome_y={chrome_mid_y}, bar={bar_rect:?})"
+    );
+    assert!(
+        bar_h < brand.height() + data_editor.height() * 2.4,
+        "chrome should not add a third strip (bar_h={bar_h}, brand={brand:?}, data={data_editor:?})"
+    );
+
+    // Click each chrome control from a clean top bar (open dialogs steal
+    // labels / hit targets for later clicks).
+    harness.get_by_label("Data Editor").click();
+    harness.run();
+    assert!(harness.state().docs_data_editor_open());
+
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    harness.get_by_label("Settings").click();
+    harness.run();
+    assert!(harness.state().docs_settings_open());
+
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    assert!(harness.state().docs_macro_list_open());
+    harness.get_by_label("Hide macro list").click();
+    harness.run();
+    assert!(!harness.state().docs_macro_list_open());
 }
 
 fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
@@ -132,6 +234,28 @@ fn add_action_picker_lists_wait() {
     });
     harness.run();
     harness.get_by_label("Add Wait");
+}
+
+#[test]
+fn add_action_edit_defaults_affordance_is_visible() {
+    let mut harness = build_docs_harness([1100.0, 520.0], |app| {
+        app.open_add_action_picker();
+    });
+    harness.run();
+    // Defaults edit must not be right-click-only (icon chrome + tip).
+    harness.get_by_label("Edit the selected action's default fields (also right-click a tile)");
+}
+
+#[test]
+fn image_search_edit_shows_output_and_wait_without_advanced() {
+    let mut harness = build_docs_harness([1100.0, 720.0], |app| {
+        app.open_action_editor_for_docs("imagesearch");
+    });
+    harness.run_steps(6);
+    // Common-path detection fields stay outside collapsed Advanced.
+    harness.get_by_label("Output X");
+    harness.get_by_label("Output Y");
+    harness.get_by_label("Repeat mode");
 }
 
 #[test]
@@ -1074,5 +1198,56 @@ fn delete_key_in_model_name_field_does_not_remove_model() {
     assert!(
         harness.state().docs_catalog().get("Demo Program").is_some(),
         "unsaved name edit must not delete the program"
+    );
+}
+
+#[test]
+fn masks_tab_opens_for_selected_program() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+
+    assert_ne!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Masks tab should start inactive on Programs"
+    );
+
+    harness.get_by_label("Masks").click();
+    harness.run();
+
+    assert_eq!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Masks should switch the Data Editor tab for the selected program"
+    );
+}
+
+#[test]
+fn open_masks_from_command_palette() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs();
+        app.open_command_palette_for_docs();
+    });
+    harness.run();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("masks".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Open Masks").click();
+    harness.run_steps(4);
+
+    assert!(
+        harness.state().docs_data_editor_open(),
+        "Open Masks should keep/open the Data Editor"
+    );
+    assert_eq!(
+        harness.state().docs_data_editor_tab(),
+        "Masks",
+        "Open Masks should land on the Masks tab"
     );
 }

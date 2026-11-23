@@ -41,7 +41,7 @@ pub use dialogs::{
     FLOATER_MIN_MODAL, FLOATER_MIN_PALETTE, FLOATER_MIN_PANEL, FLOATER_MIN_PICKER,
     FOOTER_RESERVE_ACTION,
 };
-pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyStateAction};
+pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyCta, EmptyStateAction};
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
     drag_field_enabled, fill_row, name_edit_width, num_text_edit, num_text_field_opts,

@@ -905,33 +905,30 @@ mod inner {
             .fixed_pos(pos)
             .interactable(false)
             .show(ctx, |ui| {
-                egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::symmetric(10, 8))
-                    .show(ui, |ui| {
+                crate::theme::popup_frame(ui).show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:.1}% match", h.closeness_pct))
+                            .size(24.0)
+                            .strong()
+                            .color(pct_color),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("@ ({}, {}) — {status}", h.x, h.y)).size(15.0),
+                    );
+                    if let Some(tol) = tol_pct {
                         ui.label(
-                            egui::RichText::new(format!("{:.1}% match", h.closeness_pct))
-                                .size(24.0)
-                                .strong()
-                                .color(pct_color),
+                            egui::RichText::new(format!("tolerance {:.0}%", tol))
+                                .size(14.0)
+                                .weak(),
                         );
+                    } else {
                         ui.label(
-                            egui::RichText::new(format!("@ ({}, {}) — {status}", h.x, h.y))
-                                .size(15.0),
+                            egui::RichText::new(format!("raw score {:.4}", h.score))
+                                .size(14.0)
+                                .weak(),
                         );
-                        if let Some(tol) = tol_pct {
-                            ui.label(
-                                egui::RichText::new(format!("tolerance {:.0}%", tol))
-                                    .size(14.0)
-                                    .weak(),
-                            );
-                        } else {
-                            ui.label(
-                                egui::RichText::new(format!("raw score {:.4}", h.score))
-                                    .size(14.0)
-                                    .weak(),
-                            );
-                        }
-                    });
+                    }
+                });
             });
     }
 

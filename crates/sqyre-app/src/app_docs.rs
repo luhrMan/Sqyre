@@ -233,6 +233,11 @@ impl SqyreApp {
         self.data_editor.open
     }
 
+    /// Active Data Editor tab label (docs / interaction harnesses).
+    pub fn docs_data_editor_tab(&self) -> &'static str {
+        self.data_editor.tab.label()
+    }
+
     /// Program catalog (docs / interaction harnesses).
     pub fn docs_catalog(&self) -> &sqyre_persist::ProgramCatalog {
         &self.workspace.catalog
@@ -481,6 +486,11 @@ impl SqyreApp {
 
     pub fn set_macro_list_open_for_docs(&mut self, open: bool) {
         self.macro_list_open = open;
+    }
+
+    /// Whether the macro list side panel is open (docs / interaction harnesses).
+    pub fn docs_macro_list_open(&self) -> bool {
+        self.macro_list_open
     }
 
     /// Number of macros currently loaded (docs / interaction harnesses).

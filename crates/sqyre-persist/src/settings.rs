@@ -29,6 +29,8 @@ pub const MIN_UI_SCALE: f32 = 0.5;
 pub const MAX_UI_SCALE: f32 = 2.5;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
 pub const DEFAULT_WINDOW_BORDER: bool = true;
+/// OS title bar / resize chrome around the main window (Settings → Appearance).
+pub const DEFAULT_WINDOW_DECORATIONS: bool = true;
 pub const DEFAULT_RUN_BUTTON_GLOW: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
 pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
@@ -662,6 +664,10 @@ pub struct UserSettings {
     /// Gold border just inside the main window edge.
     #[serde(default = "default_window_border")]
     pub window_border: bool,
+    /// OS title bar and system resize borders on the main window.
+    /// When false the app draws its own edge grips and top-bar drag.
+    #[serde(default = "default_window_decorations")]
+    pub window_decorations: bool,
     /// Pulsing green halo behind the Run button while it is enabled.
     #[serde(default = "default_run_button_glow")]
     pub run_button_glow: bool,
@@ -997,6 +1003,9 @@ fn default_compact_program_headers() -> bool {
 fn default_window_border() -> bool {
     DEFAULT_WINDOW_BORDER
 }
+fn default_window_decorations() -> bool {
+    DEFAULT_WINDOW_DECORATIONS
+}
 fn default_suspend_screen_capture() -> bool {
     true
 }
@@ -1050,6 +1059,7 @@ impl Default for UserSettings {
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
+            window_decorations: DEFAULT_WINDOW_DECORATIONS,
             run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
@@ -1753,6 +1763,7 @@ mod tests {
             accent_color: "#336699".into(),
             mono_font_size: 15,
             ui_font_family: UiFontFamily::Monospace,
+            window_decorations: false,
             window_width: 1100.0,
             window_height: 750.0,
             window_pos_x: Some(10.0),
@@ -1762,6 +1773,7 @@ mod tests {
         };
         let back: UserSettings = serde_yaml::from_str(&serde_yaml::to_string(&s).unwrap()).unwrap();
         assert!(back.diagnostic_logging);
+        assert!(!back.window_decorations);
         assert!(back.suspend_screen_capture_when_idle);
         assert!(back.memory_logging);
         assert_eq!(back.memory_logging_interval_ms, 2_000);
@@ -1791,6 +1803,19 @@ mod tests {
         assert!((back.window_width - 1100.0).abs() < f32::EPSILON);
         assert_eq!(back.window_pos_x, Some(10.0));
         assert!(back.window_maximized);
+    }
+
+    #[test]
+    fn window_decorations_defaults_on_and_roundtrips_off() {
+        let missing: UserSettings = serde_yaml::from_str("{}\n").unwrap();
+        assert!(missing.window_decorations);
+        let off = UserSettings {
+            window_decorations: false,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.window_decorations);
     }
 
     #[test]
