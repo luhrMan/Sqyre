@@ -27,8 +27,16 @@ impl DataEditor {
             .as_deref()
             .is_some_and(sqyre_persist::is_quick_access_hub_id);
         let icon = overlay_icons::resolve(&self.form_overlay_icon);
-        crate::widgets::pair_labeled(ui, egui_phosphor::regular::SMILEY, icon.label, |ui| {
-            let mut preview_cfg = OverlayButtonConfig::new("preview", "");
+        let field_name = if hub { "Brand" } else { icon.label };
+        crate::widgets::pair_labeled(ui, egui_phosphor::regular::SMILEY, field_name, |ui| {
+            let mut preview_cfg = OverlayButtonConfig::new(
+                if hub {
+                    sqyre_persist::QUICK_ACCESS_HUB_ID
+                } else {
+                    "preview"
+                },
+                "",
+            );
             self.apply_overlay_style_to_config(&mut preview_cfg);
             if hub {
                 preview_cfg.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
@@ -166,16 +174,35 @@ impl DataEditor {
                 ui,
                 egui_phosphor::regular::RULER,
                 "Size",
-                help::DE_OVERLAY_SIZE,
+                help::DE_OVERLAY_HUB_SIZE,
                 &mut self.form_overlay_size,
                 |d| {
                     d.speed(1)
                         .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE)
                 },
             );
-            ui.horizontal(|ui| {
-                color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
-            });
+            // Full-color logo: only alpha is applied on the face.
+            {
+                let mut opacity = i32::from(self.form_overlay_icon_color.a());
+                let before = opacity;
+                crate::widgets::drag_field(
+                    ui,
+                    egui_phosphor::regular::DROP,
+                    "Opacity",
+                    help::DE_OVERLAY_HUB_OPACITY,
+                    &mut opacity,
+                    |d| d.range(0..=255).speed(1),
+                );
+                if opacity != before {
+                    let c = self.form_overlay_icon_color;
+                    self.form_overlay_icon_color = egui::Color32::from_rgba_unmultiplied(
+                        c.r(),
+                        c.g(),
+                        c.b(),
+                        opacity.clamp(0, 255) as u8,
+                    );
+                }
+            }
             return false;
         }
         crate::widgets::collapsible_section(

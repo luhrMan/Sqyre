@@ -35,6 +35,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     apply_overlay_and_hub_moves(app, moves, ppp);
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
         app.snap_quick_access_fan_closed();
+        app.macro_overlay.set_hub_fan(false, true);
         app.macro_overlay.set_hub_fan_interactive(false);
         app.macro_overlay.set_hub_fan_dismiss(false);
         // Comment above: hidden while recording — clear native buttons (do not leave last sync).
@@ -56,57 +57,64 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         .data_editor
         .overlay_relocate_program()
         .map(str::to_owned);
-    let hub_cfg = app
-        .settings_ui
-        .settings()
-        .overlay_buttons
-        .iter()
-        .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
-        .cloned();
-    let hub_btns = match (&hub_cfg, relocate_program.as_deref()) {
-        (Some(hub), Some(prog)) if relocate => {
-            app.snap_quick_access_fan_closed();
-            app.macro_overlay.set_hub_fan_interactive(false);
-            app.macro_overlay.set_hub_fan_dismiss(false);
-            // Hub is a General overlay button — relocatable with that program only.
-            if prog == sqyre_domain::GENERAL_PROGRAM {
-                crate::quick_access::hub_overlay_buttons(hub, 0.0, ppp)
-            } else {
-                Vec::new()
+    // Overlay editor open: hub is a normal General button (same drag + live
+    // preview path as every other overlay button). Fan satellites stay down.
+    // Outside the editor: hub_btns owns the face + fan; hub is excluded from
+    // the macro button list so it is not drawn twice.
+    let hub_cfg = resolve_hub_overlay_config(app);
+    let (hub_btns, buttons) = if relocate {
+        app.snap_quick_access_fan_closed();
+        app.macro_overlay.set_hub_fan(false, true);
+        app.macro_overlay.set_hub_fan_interactive(false);
+        app.macro_overlay.set_hub_fan_dismiss(false);
+        let mut buttons: Vec<_> = {
+            let all = app
+                .settings_ui
+                .settings()
+                .overlay_buttons
+                .iter()
+                .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id));
+            match relocate_program.as_deref() {
+                Some(prog) => all.filter(|b| b.program == prog).cloned().collect(),
+                None => Vec::new(),
+            }
+        };
+        // Include the hub in the normal list when editing General so drag and
+        // overlay_edit_preview behave like other buttons (snap only on drop).
+        if relocate_program.as_deref() == Some(sqyre_domain::GENERAL_PROGRAM) {
+            if let Some(hub) = hub_cfg {
+                buttons.insert(0, hub);
             }
         }
-        (Some(_), _) if relocate => {
-            app.snap_quick_access_fan_closed();
-            app.macro_overlay.set_hub_fan_interactive(false);
-            app.macro_overlay.set_hub_fan_dismiss(false);
-            Vec::new()
-        }
-        (Some(hub), _) => {
-            app.tick_quick_access_fan(ctx);
-            let fan_open = app.quick_access_expanded || app.quick_access_fan_t > 0.001;
-            let fan_interactive =
-                app.quick_access_expanded && (app.quick_access_fan_t - 1.0).abs() <= 0.001;
-            app.macro_overlay.set_hub_fan_interactive(fan_interactive);
-            app.macro_overlay.set_hub_fan_dismiss(fan_open);
-            crate::quick_access::hub_overlay_buttons(hub, app.quick_access_fan_t, ppp)
-        }
-        (None, _) => Vec::new(),
-    };
-
-    // Overlay editor: only host buttons for the selected program (drag-relocate).
-    // Hub face is hosted via `hub_btns` so it is excluded from the macro list.
-    let buttons: Vec<_> = {
-        let all = app
+        (Vec::new(), buttons)
+    } else {
+        let hub_btns = match &hub_cfg {
+            Some(hub) => {
+                // Host owns satellite travel on its poll clock so the fan stays
+                // smooth while Sqyre is unfocused (egui ROOT starves on Wayland).
+                // Specs always carry rested slots; host lerps from park → rest.
+                app.macro_overlay
+                    .set_hub_fan(app.quick_access_expanded, false);
+                let fan_t = app.quick_access_fan_t();
+                let fan_open = app.quick_access_expanded || fan_t > 0.001;
+                // Host gates satellite hits until fully open; pass expanded so a
+                // late egui frame is not required to arm ShapeInput.
+                app.macro_overlay
+                    .set_hub_fan_interactive(app.quick_access_expanded);
+                app.macro_overlay.set_hub_fan_dismiss(fan_open);
+                crate::quick_access::hub_overlay_buttons(hub, 1.0, ppp, false)
+            }
+            None => Vec::new(),
+        };
+        let buttons: Vec<_> = app
             .settings_ui
             .settings()
             .overlay_buttons
             .iter()
-            .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id));
-        match relocate_program.as_deref() {
-            Some(prog) => all.filter(|b| b.program == prog).cloned().collect(),
-            None if relocate => Vec::new(),
-            None => all.cloned().collect(),
-        }
+            .filter(|b| !sqyre_persist::is_quick_access_hub_id(&b.id))
+            .cloned()
+            .collect();
+        (hub_btns, buttons)
     };
     let close_dist = app
         .settings_ui
@@ -121,7 +129,12 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         close_dist,
         app.macro_overlay.last_foreign_focus(),
     );
-    let preview = app.data_editor.overlay_edit_preview();
+    // While relocating, hub live-edits go through the normal overlay preview.
+    // At runtime the hub is only in hub_btns — drop a hub preview there.
+    let preview = app
+        .data_editor
+        .overlay_edit_preview()
+        .filter(|btn| relocate || !sqyre_persist::is_quick_access_hub_id(&btn.id));
     let running_macro = app
         .run_session
         .state
@@ -145,6 +158,32 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     );
     #[cfg(target_os = "android")]
     crate::app_run::refresh_android_overlay_kit(app, ctx);
+}
+
+/// Saved hub button with locked chrome (brand icon, clear face).
+///
+/// Live form size/position/opacity while the hub is selected is applied via
+/// [`DataEditor::overlay_edit_preview`] during Overlay relocate — same as other
+/// buttons — so this helper only supplies the settings-backed face for the
+/// runtime fan path and the relocate button list seed.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+fn resolve_hub_overlay_config(app: &SqyreApp) -> Option<sqyre_persist::OverlayButtonConfig> {
+    let mut hub = app
+        .settings_ui
+        .settings()
+        .overlay_buttons
+        .iter()
+        .find(|b| sqyre_persist::is_quick_access_hub_id(&b.id))
+        .cloned()?;
+    hub.program = sqyre_domain::GENERAL_PROGRAM.into();
+    hub.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
+    hub.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+    hub.point.clear();
+    hub.border_width = 0.0;
+    hub.border_alpha = 0;
+    hub.bg_alpha = 0;
+    hub.visibility_gate = Default::default();
+    Some(hub)
 }
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]

@@ -48,10 +48,10 @@ use x11::xfixes::{
     XFixesSetWindowShapeRegion,
 };
 use x11::xlib::{
-    AllocNone, Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
-    CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect,
-    CWSibling, CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask, Expose,
-    ExposureMask, False, GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify,
+    AllocNone, Below, Button1Mask, Button3Mask, ButtonPress, ButtonPressMask, ButtonRelease,
+    ButtonReleaseMask, CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask,
+    CWOverrideRedirect, CWSibling, CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask,
+    Expose, ExposureMask, False, GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify,
     LeaveWindowMask, MotionNotify, PointerMotionMask, StructureNotifyMask, Success, True,
     TrueColor, WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow,
     XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
@@ -83,6 +83,7 @@ const XC_FLEUR: c_uint = 52;
 /// X11 cursorfont left pointer (normal arrow).
 const XC_LEFT_PTR: c_uint = 68;
 const BUTTON_LEFT: c_uint = 1;
+const BUTTON_RIGHT: c_uint = 3;
 
 /// Desired on-screen button (physical pixels, root coordinates).
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +122,11 @@ enum HostCmd {
     SetWake(EguiContext),
     /// Listen for a global left-press outside hub chrome and enqueue dismiss.
     SetHubFanDismiss(bool),
+    /// Expand/collapse the hub fan on the host clock (`snap` skips travel).
+    SetHubFan {
+        expanded: bool,
+        snap: bool,
+    },
     ShowChooser(HotkeyChooserSpec),
     HideChooser,
     /// Unmap every button for a detection grab, then ack. `false` maps them again.
@@ -162,11 +168,16 @@ pub enum OverlayError {
 }
 
 impl X11ButtonHost {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "host owns macro, move, chooser, and context queues plus stop flags"
+    )]
     pub fn start(
         pending: Arc<Mutex<Vec<String>>>,
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
         running_macro: Arc<Mutex<Option<String>>>,
         pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+        pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
         visibility: Arc<Mutex<HashMap<String, bool>>>,
         run_stop: Arc<Mutex<sqyre_hotkeys::StopFlag>>,
         press_stops: Arc<AtomicBool>,
@@ -183,6 +194,7 @@ impl X11ButtonHost {
                     pending_moves,
                     running_macro,
                     pending_chooser,
+                    pending_context,
                     visibility,
                     stop_t,
                     run_stop,
@@ -227,6 +239,10 @@ impl X11ButtonHost {
 
     pub fn set_hub_fan_dismiss(&self, enabled: bool) {
         let _ = self.cmd_tx.send(HostCmd::SetHubFanDismiss(enabled));
+    }
+
+    pub fn set_hub_fan(&self, expanded: bool, snap: bool) {
+        let _ = self.cmd_tx.send(HostCmd::SetHubFan { expanded, snap });
     }
 
     pub fn show_chooser(&self, spec: HotkeyChooserSpec) -> bool {
@@ -345,6 +361,9 @@ struct ChooserWindow {
     pressed_row: Option<usize>,
     mapped: bool,
     grab_active: bool,
+    /// When set, picks enqueue [`crate::OverlayButtonContextAction`] instead of
+    /// [`HotkeyChooserResult`].
+    context_button_id: Option<String>,
 }
 
 struct DragState {
@@ -401,6 +420,7 @@ struct HostState {
     pending: Arc<Mutex<Vec<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+    pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
     /// Image-gate found map (id → show). Empty / missing → hide gated buttons.
     visibility: Arc<Mutex<HashMap<String, bool>>>,
     wake: Option<EguiContext>,
@@ -456,6 +476,8 @@ struct HostState {
     hub_fan_dismiss: bool,
     /// Previous left-button sample for [`Self::hub_fan_dismiss`] edge detect.
     last_hub_dismiss_btn1: bool,
+    /// Satellite travel progress (host-owned; does not wait on egui frames).
+    hub_fan: crate::hub_fan::HubFanState,
 }
 
 struct PassthroughHover {
@@ -484,6 +506,7 @@ fn host_loop(
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     running_macro: Arc<Mutex<Option<String>>>,
     pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+    pending_context: Arc<Mutex<Vec<crate::OverlayButtonContextAction>>>,
     visibility: Arc<Mutex<HashMap<String, bool>>>,
     stop: Arc<AtomicBool>,
     run_stop: Arc<Mutex<sqyre_hotkeys::StopFlag>>,
@@ -585,6 +608,7 @@ fn host_loop(
         pending,
         pending_moves,
         pending_chooser,
+        pending_context,
         visibility,
         wake: None,
         relocate_mode: false,
@@ -608,6 +632,7 @@ fn host_loop(
         passthrough_hover: None,
         hub_fan_dismiss: false,
         last_hub_dismiss_btn1: false,
+        hub_fan: crate::hub_fan::HubFanState::default(),
     };
 
     note(&format!(
@@ -631,6 +656,7 @@ fn host_loop(
     let mut stall_raised = false;
     let mut last_relocate_raise = Instant::now();
     let mut last_btn1 = false;
+    let mut last_btn3 = false;
     let mut last_running: Option<String> = None;
 
     while !stop.load(Ordering::Relaxed) {
@@ -666,11 +692,17 @@ fn host_loop(
                 Ok(HostCmd::SetHubFanDismiss(enabled)) => {
                     if state.hub_fan_dismiss != enabled {
                         state.hub_fan_dismiss = enabled;
-                        state.last_hub_dismiss_btn1 = false;
+                        // When arming, ignore a held press (the hub-open click).
+                        // Focused egui wakes fast enough that SetHubFan lands
+                        // mid-click; a rising-edge reset would instant-dismiss.
+                        state.last_hub_dismiss_btn1 = enabled;
                         note(&format!("overlay-x11: hub_fan_dismiss={enabled}"));
                     }
                 }
-                Ok(HostCmd::ShowChooser(spec)) => show_chooser(&mut state, spec),
+                Ok(HostCmd::SetHubFan { expanded, snap }) => {
+                    apply_hub_fan_cmd(&mut state, expanded, snap);
+                }
+                Ok(HostCmd::ShowChooser(spec)) => show_chooser(&mut state, spec, None),
                 Ok(HostCmd::HideChooser) => hide_chooser(&mut state, None),
                 Ok(HostCmd::SetCaptureOmit(omit, ack)) => {
                     state.capture_omit = omit;
@@ -736,9 +768,12 @@ fn host_loop(
                     last_btn1 = btn1;
                 }
             } else if state.passthrough_hits && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
-                last_btn1 = poll_click_through(&mut state, last_btn1);
+                let (b1, b3) = poll_click_through(&mut state, last_btn1, last_btn3);
+                last_btn1 = b1;
+                last_btn3 = b3;
             } else if let Some((_, _, btn1)) = ptr {
                 last_btn1 = btn1;
+                last_btn3 = sqyre_hotkeys::right_button_down();
             }
             if state.hub_fan_dismiss && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
                 poll_hub_fan_outside_dismiss(&mut state, ptr);
@@ -836,10 +871,17 @@ fn host_loop(
             unsafe { x_flush(state.display) };
         }
 
+        // Hub fan travel must not wait on egui — ROOT starves when unfocused.
+        let fan_animating = tick_hub_fan(&mut state);
+
         wait_x_or_timeout(
             state.xfd,
-            if busy_now && !state.relocate_mode && state.drag.is_none() {
-                BUSY_TICK_MS
+            if (busy_now || fan_animating) && !state.relocate_mode && state.drag.is_none() {
+                if fan_animating {
+                    crate::hub_fan::HUB_FAN_TICK_MS
+                } else {
+                    BUSY_TICK_MS
+                }
             } else {
                 // Relocate needs a steady poll for Wayland poll-hit press + release.
                 POLL_IDLE_MS
@@ -871,8 +913,10 @@ fn host_loop(
 /// What a spec update changed, for the minimal repaint/reshape path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SpecDelta {
-    /// Position or size changed.
-    geom: bool,
+    /// Desktop position changed (`x`/`y`).
+    pos: bool,
+    /// Face pixel size changed (`w`/`h`).
+    size: bool,
     /// Corner radius changed (input shape needs rebuild even without geometry).
     radius: bool,
     /// Any paint-affecting field changed (radius counts — it shapes ink).
@@ -881,13 +925,18 @@ struct SpecDelta {
     input: bool,
 }
 
+impl SpecDelta {
+    /// Position and/or size changed — needs a MoveResize.
+    fn geom(self) -> bool {
+        self.pos || self.size
+    }
+}
+
 fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
     let radius = sqyre_domain::f32_changed(old.face.corner_radius, new.face.corner_radius);
     SpecDelta {
-        geom: old.face.x != new.face.x
-            || old.face.y != new.face.y
-            || old.face.w != new.face.w
-            || old.face.h != new.face.h,
+        pos: old.face.x != new.face.x || old.face.y != new.face.y,
+        size: old.face.w != new.face.w || old.face.h != new.face.h,
         radius,
         style: old.face.bg != new.face.bg
             || old.face.border != new.face.border
@@ -917,13 +966,22 @@ fn spec_contains(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
 
 fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     let mut keep = std::collections::HashSet::new();
-    for spec in specs {
+    for mut spec in specs {
+        // App always sends rested satellite slots; host owns travel placement so
+        // egui frames (throttled when unfocused) are not on the critical path.
+        if crate::hub_fan::is_hub_satellite_id(&spec.id) {
+            state
+                .hub_fan
+                .remember_rest(&spec.id, spec.face.x, spec.face.y);
+            place_hub_satellite_spec(state, &mut spec);
+        }
         let id = spec.id.clone();
         keep.insert(id.clone());
         let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
         let updated = if let Some(live) = state.buttons.get_mut(&id) {
             let delta = spec_delta(&live.spec, &spec);
-            let geom_changed = delta.geom;
+            let geom_changed = delta.geom();
+            let size_changed = delta.size;
             let radius_changed = delta.radius;
             let style_changed = delta.style;
             let input_changed = delta.input;
@@ -950,6 +1008,14 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                         spec.face.h,
                     );
                 }
+            } else if geom_changed && dragging {
+                // Size/radius edits during drag: resize the face in place. Hit
+                // stays empty + parked at the grab start until commit_drag.
+                let (keep_x, keep_y) = (live.spec.face.x, live.spec.face.y);
+                // SAFETY: HostState display invariant; face created on this display.
+                unsafe {
+                    x_move_resize(state.display, win, keep_x, keep_y, spec.face.w, spec.face.h);
+                }
             }
             let (keep_x, keep_y) = (live.spec.face.x, live.spec.face.y);
             live.spec = spec;
@@ -957,7 +1023,9 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 live.spec.face.x = keep_x;
                 live.spec.face.y = keep_y;
             }
-            if geom_changed || style_changed {
+            // Position-only moves (hub fan travel) keep the same pixel buffer —
+            // only size/style invalidate the busy-union bounding.
+            if size_changed || style_changed {
                 // The applied union no longer matches the new style/size —
                 // keep the flag so the idle repaint still orders blit-then-
                 // shrink correctly, just marked stale for recompute.
@@ -965,13 +1033,18 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                     live.face_bounding.set(FaceBounding::BusyUnionStale);
                 }
             }
-            let geom_applied = geom_changed && !dragging;
+            // Hub fan animation MoveResizes four satellites every frame. Paint +
+            // Shape* on position-only updates stalled XWayland (Bazzite etc.).
+            let size_applied = size_changed && !dragging;
             Some((
-                // Hit input tracks geometry + arming. Paint re-derives the face
-                // Bounding from painted alpha, so style/fill flips need no
-                // separate shape pass.
-                geom_applied || radius_changed || input_changed,
-                style_changed || geom_applied,
+                // Hit input tracks size + arming — not desktop position. Paint
+                // re-derives the face Bounding from painted alpha, so style/fill
+                // flips need no separate shape pass. Never re-arm hit while this
+                // id is mid drag — begin_relocate_drag emptied it; transparent
+                // faces (hub) used to restore a disk at the grab-start and freeze
+                // the drag (face mid-screen, clicks hitting the old spot).
+                !dragging && (size_applied || radius_changed || input_changed),
+                style_changed || size_applied || (dragging && size_changed),
                 live.spec.face.w,
                 live.spec.face.h,
                 live.spec.face.corner_radius,
@@ -1013,7 +1086,10 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live, true);
-                    if live.spec.face.bg[3] == 0 {
+                    // Transparent faces re-derive hit after paint — but not while
+                    // this id is mid-relocate drag (hit must stay empty until commit).
+                    let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
+                    if live.spec.face.bg[3] == 0 && !dragging {
                         sync_hit_input(
                             state,
                             live.hit,
@@ -1050,12 +1126,142 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
         }
     }
+    state.hub_fan.forget_missing(&keep);
     apply_gate_visibility(state);
     sync_relocate_shield(state);
     // SAFETY: HostState display invariant.
     unsafe {
         x_flush(state.display);
     }
+}
+
+fn hub_face_geom(state: &HostState) -> (i32, i32, u32, u32) {
+    state
+        .buttons
+        .get(sqyre_persist::QUICK_ACCESS_HUB_ID)
+        .map(|hub| {
+            (
+                hub.spec.face.x,
+                hub.spec.face.y,
+                hub.spec.face.w,
+                hub.spec.face.h,
+            )
+        })
+        .unwrap_or((0, 0, 48, 48))
+}
+
+fn place_hub_satellite_spec(state: &HostState, spec: &mut NativeButtonSpec) {
+    let rest = (spec.face.x, spec.face.y);
+    let (hx, hy, hw, hh) = hub_face_geom(state);
+    let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, spec.face.w, spec.face.h);
+    let park = crate::hub_fan::hub_park(hx, hy, spec.face.w, spec.face.h);
+    let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+    spec.face.x = x;
+    spec.face.y = y;
+    spec.input_enabled = state.hub_fan.fully_open();
+}
+
+fn apply_hub_fan_cmd(state: &mut HostState, expanded: bool, snap: bool) {
+    let was_open = state.hub_fan.fully_open();
+    state.hub_fan.set_expanded(expanded, snap);
+    if snap || !state.hub_fan.animating() {
+        place_all_hub_satellites(state);
+    }
+    let now_open = state.hub_fan.fully_open();
+    if was_open != now_open {
+        rearm_hub_satellite_input(state);
+    }
+    sync_hub_fan_dismiss_arm(state);
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
+}
+
+fn sync_hub_fan_dismiss_arm(state: &mut HostState) {
+    let want = state.hub_fan.open_or_traveling();
+    if state.hub_fan_dismiss == want {
+        return;
+    }
+    state.hub_fan_dismiss = want;
+    // Require a full release+repress after arming so the open click cannot
+    // count as an outside dismiss (host arms on the same poll as SetHubFan).
+    state.last_hub_dismiss_btn1 = want;
+    note(&format!("overlay-x11: hub_fan_dismiss={want} (fan)"));
+}
+
+fn place_all_hub_satellites(state: &mut HostState) {
+    let (hx, hy, hw, hh) = hub_face_geom(state);
+    let ids = state.hub_fan.satellite_ids();
+    for id in ids {
+        let Some(rest) = state.hub_fan.rest_of(&id) else {
+            continue;
+        };
+        let Some(live) = state.buttons.get(&id) else {
+            continue;
+        };
+        let (w, h) = (live.spec.face.w, live.spec.face.h);
+        let origin = crate::hub_fan::hub_origin(hx, hy, hw, hh, w, h);
+        let park = crate::hub_fan::hub_park(hx, hy, w, h);
+        let (x, y) = crate::hub_fan::satellite_pos(state.hub_fan.t, rest, origin, park);
+        if live.spec.face.x == x && live.spec.face.y == y {
+            continue;
+        }
+        let win = live.win;
+        let hit = live.hit;
+        // SAFETY: HostState display invariant; face+hit created on this display.
+        unsafe {
+            x_move_resize(state.display, hit, x, y, w, h);
+            x_move_resize(state.display, win, x, y, w, h);
+        }
+        if let Some(live) = state.buttons.get_mut(&id) {
+            live.spec.face.x = x;
+            live.spec.face.y = y;
+        }
+    }
+}
+
+fn rearm_hub_satellite_input(state: &mut HostState) {
+    let enabled = state.hub_fan.fully_open();
+    let ids = state.hub_fan.satellite_ids();
+    let mut rearm: Vec<(Window, u32, u32, f32)> = Vec::new();
+    for id in ids {
+        let Some(live) = state.buttons.get_mut(&id) else {
+            continue;
+        };
+        if live.spec.input_enabled == enabled {
+            continue;
+        }
+        live.spec.input_enabled = enabled;
+        rearm.push((
+            live.hit,
+            live.spec.face.w,
+            live.spec.face.h,
+            live.spec.face.corner_radius,
+        ));
+    }
+    for (hit, w, h, radius) in rearm {
+        sync_hit_input(state, hit, w, h, radius, enabled);
+    }
+}
+
+/// Advance hub fan travel on the host clock (independent of egui focus).
+fn tick_hub_fan(state: &mut HostState) -> bool {
+    let was_open = state.hub_fan.fully_open();
+    if !state.hub_fan.tick() {
+        sync_hub_fan_dismiss_arm(state);
+        return false;
+    }
+    place_all_hub_satellites(state);
+    if was_open != state.hub_fan.fully_open() {
+        rearm_hub_satellite_input(state);
+    }
+    sync_hub_fan_dismiss_arm(state);
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
+    true
 }
 
 fn set_relocate_mode(state: &mut HostState, enabled: bool) {
@@ -1651,17 +1857,18 @@ fn sync_relocate_shield(state: &mut HostState) {
     }
 }
 
-/// `XQueryPointer` on the root: position, Button1, and the child under the pointer.
+/// `XQueryPointer` on the root: position, Button1/3, and the child under the pointer.
 #[derive(Clone, Copy)]
 struct RootPointer {
     x: i32,
     y: i32,
     button1: bool,
+    button3: bool,
     /// Direct child of the root that contains the pointer, or 0 when none does.
     child: Window,
 }
 
-/// Root pointer + Button1 on `display`. Round-trip — prefer quiet connection.
+/// Root pointer + Button1/3 on `display`. Round-trip — prefer quiet connection.
 ///
 /// # Safety
 /// `display` is null or an open Display used only on the calling thread.
@@ -1698,6 +1905,7 @@ unsafe fn query_pointer_root(display: *mut Display) -> Option<RootPointer> {
             x: root_x,
             y: root_y,
             button1: mask & Button1Mask != 0,
+            button3: mask & Button3Mask != 0,
             child,
         })
     }
@@ -2552,7 +2760,34 @@ fn define_chooser_cursor(state: &HostState, win: Window) {
     }
 }
 
-fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
+fn open_overlay_context_menu(state: &mut HostState, id: &str, root_x: i32, root_y: i32) {
+    let title = state
+        .buttons
+        .get(id)
+        .map(|b| {
+            if b.spec.tip.trim().is_empty() {
+                id.to_string()
+            } else {
+                b.spec.tip.clone()
+            }
+        })
+        .unwrap_or_else(|| id.to_string());
+    note(&format!(
+        "overlay-x11: context menu id={id} at {root_x},{root_y}"
+    ));
+    show_chooser(
+        state,
+        HotkeyChooserSpec {
+            title,
+            names: crate::context_menu_row_names(),
+            x: root_x,
+            y: root_y,
+        },
+        Some(id.to_string()),
+    );
+}
+
+fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec, context_button_id: Option<String>) {
     hide_chooser(state, None);
     hide_tip(state);
     let names = spec.names.clone();
@@ -2610,6 +2845,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
         pressed_row: None,
         mapped: true,
         grab_active: grab_ok,
+        context_button_id,
     });
     // SAFETY: re-assert stacking after grab.
     unsafe {
@@ -2643,6 +2879,7 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
         }
         return;
     };
+    let context_id = ch.context_button_id.take();
     if ch.grab_active {
         // SAFETY: matching XGrabPointer from show_chooser.
         unsafe {
@@ -2658,7 +2895,13 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
         x_destroy_window(state.display, ch.win);
         x_flush(state.display);
     }
-    if let Some(r) = result {
+    if let Some(id) = context_id {
+        if let Some(HotkeyChooserResult::Picked(name)) = result {
+            if let Some(action) = crate::action_from_context_pick(&id, &name) {
+                state.pending_context.lock().push(action);
+            }
+        }
+    } else if let Some(r) = result {
         *state.pending_chooser.lock() = Some(r);
     }
     if let Some(ctx) = &state.wake {
@@ -3026,6 +3269,27 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 let b = &*(&event as *const XEvent as *const x11::xlib::XButtonEvent);
                 (b.window, b.button, b.x, b.y, b.x_root, b.y_root)
             };
+            if button == BUTTON_RIGHT {
+                if state.chooser.as_ref().is_some_and(|c| c.mapped) {
+                    hide_chooser(state, Some(HotkeyChooserResult::Dismissed));
+                    continue;
+                }
+                hide_tip(state);
+                let id = button_id_for_event_win(state, win)
+                    .or_else(|| button_id_at_root(state, root_x, root_y));
+                if let Some(id) = id {
+                    note(&format!(
+                        "overlay-x11: ButtonPress-context id={id} at {root_x},{root_y}"
+                    ));
+                    mark_site(&format!("overlay:btn3-context:{id}"));
+                    open_overlay_context_menu(state, &id, root_x, root_y);
+                } else {
+                    note(&format!(
+                        "overlay-x11: ButtonPress-context miss win={win} at {root_x},{root_y}"
+                    ));
+                }
+                continue;
+            }
             if button != BUTTON_LEFT {
                 continue;
             }
@@ -3659,9 +3923,8 @@ fn seed_passthrough_hover_from_x_hover(state: &mut HostState) {
 /// foreign window near a button, and poll hover/clicks from that sample.
 ///
 /// Portal desktop coords match X root on GNOME, but not always on Cosmic — we
-/// only use portal for hit tests after seeing them agree. Returns the latest
-/// left-button state.
-fn poll_click_through(state: &mut HostState, last_btn1: bool) -> bool {
+/// only use portal for hit tests after seeing them agree. Returns `(btn1, btn3)`.
+fn poll_click_through(state: &mut HostState, last_btn1: bool, last_btn3: bool) -> (bool, bool) {
     let (x11, portal) = sample_pointer_seat(state);
     note_passthrough_sample_once(x11, portal);
     let x11_pos = x11.map(|p| (p.x, p.y));
@@ -3700,16 +3963,17 @@ fn poll_click_through(state: &mut HostState, last_btn1: bool) -> bool {
         );
         set_click_through(state, next);
         let btn1 = p.button1 || sqyre_hotkeys::left_button_down();
+        let btn3 = p.button3 || sqyre_hotkeys::right_button_down();
         if state.click_through {
-            poll_passthrough_pointer(state, hx, hy, btn1, last_btn1);
+            poll_passthrough_pointer(state, hx, hy, btn1, last_btn1, btn3, last_btn3);
         }
-        return btn1;
+        return (btn1, btn3);
     }
     // No X sample at all (rare): portal motion alone means we left XWayland.
     if portal_moved {
         set_click_through(state, false);
     }
-    last_btn1
+    (last_btn1, last_btn3)
 }
 
 /// When both seats move, learn whether portal desktop space matches X root.
@@ -3883,8 +4147,19 @@ fn next_click_through(
     near_button
 }
 
-/// Sample hover and the left-button edge while hit windows are click-through.
-fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, was_btn1: bool) {
+/// Sample hover and left/right button edges while hit windows are click-through.
+///
+/// Wayland empties ShapeInput in click-through mode, so OR windows get no
+/// `ButtonPress` — left-click fire and right-click context menus both rise here.
+fn poll_passthrough_pointer(
+    state: &mut HostState,
+    x: i32,
+    y: i32,
+    btn1: bool,
+    was_btn1: bool,
+    btn3: bool,
+    was_btn3: bool,
+) {
     let id = state
         .buttons
         .values()
@@ -3904,6 +4179,19 @@ fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, w
         }
     }
     sync_passthrough_hover(state, id.as_deref());
+    // Right-click before left so a chorded press opens the menu instead of firing.
+    if btn3 && !was_btn3 {
+        if let Some(id) = id.as_ref() {
+            note(&format!(
+                "overlay-x11: passthrough-context id={id} at {x},{y}"
+            ));
+            mark_site(&format!("overlay:passthrough-context:{id}"));
+            open_overlay_context_menu(state, id, x, y);
+        } else {
+            note(&format!("overlay-x11: passthrough-context miss at {x},{y}"));
+        }
+        return;
+    }
     if btn1 && !was_btn1 {
         if let Some(id) = id {
             on_overlay_press(state, &id);
@@ -4051,10 +4339,11 @@ fn poll_hub_fan_outside_dismiss(state: &mut HostState, ptr: Option<(i32, i32, bo
 }
 
 fn hub_chrome_contains(state: &HostState, x: i32, y: i32) -> bool {
+    // Include traveling satellites (input_enabled is false mid-fan) so an
+    // outside-dismiss does not fire when the pointer is still over chrome.
     state.buttons.values().any(|btn| {
         btn.mapped
-            && btn.spec.input_enabled
-            && btn.spec.id.starts_with("__sqyre_hub")
+            && crate::hub_fan::is_hub_chrome_id(&btn.spec.id)
             && spec_contains_rounded(&btn.spec, x, y)
     })
 }
@@ -4224,14 +4513,15 @@ mod tests {
         assert_eq!(
             spec_delta(&base, &base),
             SpecDelta {
-                geom: false,
+                pos: false,
+                size: false,
                 radius: false,
                 style: false,
                 input: false,
             }
         );
 
-        // Geometry-only move/resize.
+        // Position-only (hub fan travel): MoveResize, no paint/reshape.
         let moved = NativeButtonSpec {
             face: crate::ButtonFace {
                 x: base.face.x + 10,
@@ -4240,7 +4530,19 @@ mod tests {
             ..base.clone()
         };
         let d = spec_delta(&base, &moved);
-        assert!(d.geom && !d.radius && !d.style);
+        assert!(d.pos && !d.size && d.geom() && !d.radius && !d.style);
+
+        // Size-only needs paint + hit reshape.
+        let resized = NativeButtonSpec {
+            face: crate::ButtonFace {
+                w: base.face.w + 8,
+                h: base.face.h + 8,
+                ..base.face
+            },
+            ..base.clone()
+        };
+        let d = spec_delta(&base, &resized);
+        assert!(d.size && !d.pos && d.geom() && !d.radius && !d.style);
 
         // Radius is style + radius (input shape depends on it), not geom.
         let rounded = NativeButtonSpec {
@@ -4251,7 +4553,7 @@ mod tests {
             ..base.clone()
         };
         let d = spec_delta(&base, &rounded);
-        assert!(d.radius && d.style && !d.geom);
+        assert!(d.radius && d.style && !d.geom());
 
         // Sub-epsilon radius changes do not churn repaints.
         let near = NativeButtonSpec {
@@ -4287,7 +4589,7 @@ mod tests {
             ..base.clone()
         };
         let d = spec_delta(&base, &painted);
-        assert!(d.style && !d.geom && !d.radius && !d.input);
+        assert!(d.style && !d.geom() && !d.radius && !d.input);
 
         let tinted = NativeButtonSpec {
             face: crate::ButtonFace {
@@ -4303,7 +4605,7 @@ mod tests {
             ..base.clone()
         };
         let d = spec_delta(&base, &muted);
-        assert!(d.input && !d.geom && !d.radius && !d.style);
+        assert!(d.input && !d.geom() && !d.radius && !d.style);
     }
 
     #[test]

@@ -10,8 +10,10 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.ImageView
+import android.widget.PopupMenu
 import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -22,10 +24,14 @@ import kotlin.math.roundToInt
  * Touches outside a button pass through (`FLAG_NOT_TOUCH_MODAL`). The windows do not take
  * focus, so the app underneath stays the foreground package. Must be added from the
  * accessibility service; that window type is trusted and can stay fully opaque.
+ *
+ * Long-press opens a PopupMenu (Open settings / Disable), matching desktop right-click.
  */
 internal object OverlayWindows {
     private const val TAG = "SqyreOverlay"
     private const val TAP_SLOP = 24f
+    private const val MENU_OPEN_SETTINGS = 1
+    private const val MENU_DISABLE = 2
 
     private class Slot(
         val view: ImageView,
@@ -33,12 +39,20 @@ internal object OverlayWindows {
         var clickable: Boolean,
     )
 
-    private class Drag(val downX: Float, val downY: Float, val originX: Int, val originY: Int)
+    private class Drag(
+        val downX: Float,
+        val downY: Float,
+        val originX: Int,
+        val originY: Int,
+        var longPressFired: Boolean = false,
+        var longPress: Runnable? = null,
+    )
 
     private val slots = LinkedHashMap<String, Slot>()
     private val drags = HashMap<String, Drag>()
     private val main = Handler(Looper.getMainLooper())
     private var windowManager: WindowManager? = null
+    private val longPressMs = ViewConfiguration.getLongPressTimeout().toLong()
 
     fun upsert(
         service: AccessibilityService,
@@ -84,6 +98,7 @@ internal object OverlayWindows {
     }
 
     fun remove(id: String): Boolean = onMain {
+        cancelLongPress(id)
         val slot = slots.remove(id) ?: return@onMain
         drags.remove(id)
         removeView(slot)
@@ -92,6 +107,7 @@ internal object OverlayWindows {
     fun clear(service: AccessibilityService?) {
         onMain {
             if (service != null) windowManager = service.getSystemService(WindowManager::class.java)
+            for (id in slots.keys.toList()) cancelLongPress(id)
             val leaving = slots.values.toList()
             slots.clear()
             drags.clear()
@@ -131,16 +147,60 @@ internal object OverlayWindows {
         this.y = y
     }
 
-    private fun touch(id: String) = View.OnTouchListener { _, event ->
+    private fun cancelLongPress(id: String) {
+        val drag = drags[id] ?: return
+        drag.longPress?.let { main.removeCallbacks(it) }
+        drag.longPress = null
+    }
+
+    private fun showContextMenu(id: String, view: View) {
+        val popup = PopupMenu(view.context, view)
+        popup.menu.add(0, MENU_OPEN_SETTINGS, 0, "Open settings")
+        popup.menu.add(0, MENU_DISABLE, 1, "Disable")
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                MENU_OPEN_SETTINGS ->
+                    SqyreBridge.nativeOnOverlayContextAction(id, "open_settings")
+                MENU_DISABLE ->
+                    SqyreBridge.nativeOnOverlayContextAction(id, "disable")
+            }
+            true
+        }
+        try {
+            popup.show()
+        } catch (e: Exception) {
+            Log.w(TAG, "overlay context menu failed", e)
+        }
+    }
+
+    private fun touch(id: String) = View.OnTouchListener { view, event ->
         val slot = slots[id] ?: return@OnTouchListener false
         val lp = slot.view.layoutParams as WindowManager.LayoutParams
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                drags[id] = Drag(event.rawX, event.rawY, lp.x, lp.y)
+                cancelLongPress(id)
+                val drag = Drag(event.rawX, event.rawY, lp.x, lp.y)
+                if (!slot.relocate && slot.clickable) {
+                    val pending = Runnable {
+                        val current = drags[id] ?: return@Runnable
+                        current.longPressFired = true
+                        current.longPress = null
+                        showContextMenu(id, view)
+                    }
+                    drag.longPress = pending
+                    main.postDelayed(pending, longPressMs)
+                }
+                drags[id] = drag
                 true
             }
             MotionEvent.ACTION_MOVE -> {
                 val drag = drags[id]
+                if (drag != null &&
+                    (abs(event.rawX - drag.downX) >= TAP_SLOP ||
+                        abs(event.rawY - drag.downY) >= TAP_SLOP)
+                ) {
+                    cancelLongPress(id)
+                }
                 if (slot.relocate && drag != null) {
                     lp.x = drag.originX + (event.rawX - drag.downX).roundToInt()
                     lp.y = drag.originY + (event.rawY - drag.downY).roundToInt()
@@ -150,12 +210,14 @@ internal object OverlayWindows {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 val drag = drags.remove(id)
+                drag?.longPress?.let { main.removeCallbacks(it) }
                 if (slot.relocate) {
                     SqyreBridge.nativeOnOverlayMoved(id, lp.x, lp.y)
                 } else if (
                     event.actionMasked == MotionEvent.ACTION_UP &&
                     slot.clickable &&
                     drag != null &&
+                    !drag.longPressFired &&
                     abs(event.rawX - drag.downX) < TAP_SLOP &&
                     abs(event.rawY - drag.downY) < TAP_SLOP
                 ) {

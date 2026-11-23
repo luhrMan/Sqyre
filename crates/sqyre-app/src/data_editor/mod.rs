@@ -547,6 +547,20 @@ impl DataEditor {
         btn.size = self.form_overlay_size;
         btn.visibility_gate = self.overlay_gate_from_form();
         self.apply_overlay_style_to_config(&mut btn);
+        if sqyre_persist::is_quick_access_hub_id(id) {
+            btn.program = sqyre_domain::GENERAL_PROGRAM.into();
+            btn.macro_name = sqyre_persist::QUICK_ACCESS_HUB_ID.into();
+            btn.icon = sqyre_persist::QUICK_ACCESS_HUB_ICON.into();
+            btn.point.clear();
+            btn.border_width = 0.0;
+            btn.border_alpha = 0;
+            btn.bg_alpha = 0;
+            btn.visibility_gate = Default::default();
+            btn.corner_radius = (btn.size * 0.5).clamp(
+                sqyre_persist::MIN_OVERLAY_CORNER_RADIUS,
+                sqyre_persist::MAX_OVERLAY_CORNER_RADIUS,
+            );
+        }
         Some(btn)
     }
 

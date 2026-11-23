@@ -557,6 +557,7 @@ impl DataEditor {
         overwrite: bool,
         previews: &mut PreviewTooltipCache,
     ) {
+        let overlay_ppp = env.ctx.pixels_per_point();
         let DataEditorCtx {
             db,
             macros,
@@ -568,7 +569,7 @@ impl DataEditor {
         } = env;
         self.clear_status();
         if matches!(self.tab, EditorTab::Overlay) {
-            self.apply_overlay_update(settings);
+            self.apply_overlay_update(settings, overlay_ppp);
             return;
         }
         // Collections take the search-area name; other tabs use the Name field.
