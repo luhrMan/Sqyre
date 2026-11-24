@@ -4,6 +4,7 @@
 
 use crate::error::Result;
 use parking_lot::{Mutex, RwLock};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::PathBuf;
 
