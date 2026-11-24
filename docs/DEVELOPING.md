@@ -16,6 +16,8 @@ On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the
 
 After pulling these changes, **Rebuild Container** (not just reopen). If `target/` or `.cache/` were created as root on another machine, delete them on the host or let `post-start.sh` chown them once they are unwritable.
 
+[lefthook](https://lefthook.dev) is installed in the image; `post-start.sh` runs `lefthook install` so pre-push hooks (`make check-fmt` / `clippy` / `deny` / `machete`, `make wasm-check`, flatpak cargo-sources sync) are wired in both Desktop and Android containers. Rebuild once after pulling this change so the binary is present.
+
 From the repo root:
 
 ```bash

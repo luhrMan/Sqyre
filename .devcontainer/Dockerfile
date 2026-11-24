@@ -84,6 +84,14 @@ RUN set -eux \
  && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
  && sccache --version
 
+# Pre-push hooks (lefthook.yml): installed into .git/hooks on attach via post-start.sh.
+ARG LEFTHOOK_VERSION=2.2.3
+RUN set -eux \
+ && curl -fsSL "https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_Linux_x86_64.gz" \
+    | gunzip > /usr/local/bin/lefthook \
+ && chmod 755 /usr/local/bin/lefthook \
+ && lefthook version
+
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000

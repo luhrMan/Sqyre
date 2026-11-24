@@ -71,9 +71,9 @@ cargo nextest run --workspace
 cargo run -p sqyre-app
 ```
 
-Optional host tools (also installed in the `.devcontainer` image): `cargo-nextest`, `cargo-deny`, `cargo-llvm-cov`, `cargo-machete`.
+Optional host tools (also installed in the `.devcontainer` image): `cargo-nextest`, `cargo-deny`, `cargo-llvm-cov`, `cargo-machete`, `lefthook`.
 
-Optional local pre-push hooks: install [lefthook](https://lefthook.dev), then `lefthook install` (runs `make check-fmt` + `make clippy`).
+Pre-push hooks: the image runs `lefthook install` on attach (`make check-fmt` / `clippy` / `deny` / `machete`, `make wasm-check`, and flatpak cargo-sources sync). On the host, install [lefthook](https://lefthook.dev) then `lefthook install`.
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 

@@ -1,8 +1,9 @@
-# Optional local hooks. Install: https://lefthook.dev
-#   go install github.com/evilmartians/lefthook@latest
-#   lefthook install
+# Pre-push: local mirror of the CI check job's fast gates (not full tests).
+# Devcontainer: binary is in the image; `lefthook install` runs on every attach
+# (see .devcontainer/post-start.sh). Host: https://lefthook.dev then `lefthook install`.
 #
-# CI still enforces `make check`; these hooks are for faster local feedback.
+# CI still runs `make check` + wasm-check + doctest + smoke + cargo-sources;
+# `make test` / coverage stay CI-only.
 
 pre-push:
   parallel: true
@@ -11,3 +12,11 @@ pre-push:
       run: make check-fmt
     clippy:
       run: make clippy
+    deny:
+      run: make deny
+    machete:
+      run: make machete
+    wasm-check:
+      run: make wasm-check
+    cargo-sources:
+      run: scripts/linux/packaging/flatpak/check-cargo-sources.sh

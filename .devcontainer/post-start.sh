@@ -23,3 +23,10 @@ fix_writable /workspace/target
 fix_writable /workspace/.cache
 fix_writable /workspace/bin
 fix_writable /workspace/.cargo-home
+
+# Wire lefthook.yml into .git/hooks (idempotent). Binary comes from the image.
+if command -v lefthook >/dev/null 2>&1 \
+  && [ -f /workspace/lefthook.yml ] \
+  && { [ -d /workspace/.git ] || [ -f /workspace/.git ]; }; then
+  (cd /workspace && lefthook install -f)
+fi

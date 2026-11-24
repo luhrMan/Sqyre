@@ -282,7 +282,7 @@ Helpful docs:
 - [Rust workspace](docs/RUST.md) — crate map
 - [Documentation index](docs/README.md)
 
-Optional local pre-push hooks: install [lefthook](https://lefthook.dev), then `lefthook install` (runs `make check-fmt` + `make clippy`).
+Pre-push hooks ([lefthook](https://lefthook.dev)): the devcontainer image includes the binary and runs `lefthook install` on attach (`make check` pieces + `make wasm-check` + flatpak cargo-sources sync). On the host, install lefthook then `lefthook install`.
 
 ---
 
