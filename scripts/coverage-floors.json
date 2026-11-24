@@ -77,6 +77,36 @@
       "path": "chooser_hit.rs",
       "floor": 90.0,
       "note": "overlay chooser row hit-test (OS-neutral)"
+    },
+    {
+      "name": "diag",
+      "path": "sqyre-ports/src/diag.rs",
+      "floor": 82.5,
+      "note": "ports diag façade only (OS-neutral); not app diag.rs / mem_diag.rs"
+    },
+    {
+      "name": "search_cache",
+      "path": "search_cache.rs",
+      "floor": 56.7,
+      "note": "vision search cache (OS-neutral); measured−2pp 2026-11-20"
+    },
+    {
+      "name": "icon_fs_cache",
+      "path": "icon_fs_cache.rs",
+      "floor": 93.5,
+      "note": "persist icon FS cache (OS-neutral); measured−2pp 2026-11-20"
+    },
+    {
+      "name": "held",
+      "path": "held.rs",
+      "floor": 92.8,
+      "note": "input HeldInputs / release sink (OS-neutral headless); measured−2pp 2026-11-20"
+    },
+    {
+      "name": "overlay_omit_gate",
+      "path": "overlay_omit_gate.rs",
+      "floor": 90.2,
+      "note": "capture omit pure transitions (OS-neutral); not win_*/portal; measured−2pp 2026-11-20"
     }
   ]
 }

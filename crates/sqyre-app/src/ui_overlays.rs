@@ -293,7 +293,7 @@ pub fn show_logs_window(
 /// Data editor, settings, variables, add-action picker, logs.
 pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     // Copy so later `&mut app` borrows do not conflict with a pending ref.
-    let pending = app.pending_viewport_scale;
+    let pending = app.viewport_scale.pending;
     let pending_scale = pending.as_ref();
     show_logs_window(app, ctx, pending_scale);
     app.refresh_focused_program_hint();
@@ -744,11 +744,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.settings_ui.tick_permissions(ctx);
     }
 
-    crate::widgets::sync_viewport_window_scale(
-        ctx,
-        &mut app.last_viewport_content,
-        &mut app.pending_viewport_scale,
-    );
+    app.viewport_scale.sync(ctx);
 
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().runtime.highlight_active_action;
@@ -780,13 +776,13 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.add_action_picker = AddActionPicker::default();
         app.add_action_picker
             .load_from_settings(app.settings_ui.settings());
-        let editor_open = app.data_editor.open;
+        let editor_open = app.data_editor.nav.open;
         app.data_editor = DataEditor::default();
-        app.data_editor.open = editor_open;
+        app.data_editor.nav.open = editor_open;
         let vars_open = app.variables_panel.open;
         app.variables_panel = variables_panel::VariablesPanelUi::default();
         app.variables_panel.open = vars_open;
-        app.pending_delete_macro = None;
+        app.macro_list.pending_delete = None;
         app.assets.icon_cache = IconCache::new();
         app.assets.preview_tooltips = PreviewTooltipCache::new();
         app.refresh_macro_hotkey_bindings();
@@ -872,7 +868,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if let Some(chord) = app.hotkey_record.show(
         ctx,
         &app.run_session.macro_hotkeys,
-        app.pending_viewport_scale.as_ref(),
+        app.viewport_scale.pending_ref(),
     ) {
         if !app.tree.tooltip.apply_recorded_chord(chord.clone())
             && !app.add_action_picker.apply_recorded_chord(chord.clone())
@@ -883,13 +879,13 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if let Some(key) = app.key_record.show(
         ctx,
         &app.run_session.macro_hotkeys,
-        app.pending_viewport_scale.as_ref(),
+        app.viewport_scale.pending_ref(),
     ) {
         app.tree.tooltip.apply_recorded_key(key.clone());
         app.add_action_picker.apply_recorded_key(key);
     }
     if let Some(copied) = {
-        let pending = app.pending_viewport_scale;
+        let pending = app.viewport_scale.pending;
         let macros: Vec<(String, Vec<String>)> = app
             .workspace
             .macros
@@ -1171,7 +1167,7 @@ pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
             overlay_buttons: &app.settings_ui.settings().overlay.overlay_buttons,
             running,
         });
-    let pending = app.pending_viewport_scale;
+    let pending = app.viewport_scale.pending;
     if let Some(kind) = app.command_palette.show(ctx, &commands, pending.as_ref()) {
         app.run_palette_command(ctx, kind);
     }

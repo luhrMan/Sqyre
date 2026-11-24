@@ -192,13 +192,13 @@ fn paint_left_chrome(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 fn paint_list_toggle(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    let (list_glyph, list_tip) = if app.macro_list_open {
+    let (list_glyph, list_tip) = if app.macro_list.open {
         ("▷", "Hide macro list")
     } else {
         ("☰", "Show macro list")
     };
     if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
-        app.macro_list_open = !app.macro_list_open;
+        app.macro_list.open = !app.macro_list.open;
     }
 }
 
@@ -470,7 +470,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     let meta_enabled = !running;
     let idx = app.workspace.selected_macro;
     {
-        let pending = app.pending_viewport_scale;
+        let pending = app.viewport_scale.pending;
         let m = &mut app.workspace.macros[idx];
         let delay_out =
             app.workspace

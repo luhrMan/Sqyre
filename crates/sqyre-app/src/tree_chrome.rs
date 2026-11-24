@@ -2,6 +2,7 @@
 
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::VarTheme;
+use crate::paint_metrics;
 use crate::theme::{
     highlight_cursor_fill, highlight_invalid_fill, highlight_owner_fill, highlight_progress_fill,
     paint_galley_centered,
@@ -23,8 +24,7 @@ pub(crate) use image_search::{
     paint_image_search_tooltip_thumbs_pub,
 };
 
-/// Icon badge edge length.
-const ICON_SIZE: f32 = 18.0;
+use paint_metrics::ICON_SIZE;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = crate::theme::SPACE_4 as i8;
 const PILL_MARGIN_Y: i8 = crate::theme::SPACE_2 as i8;
@@ -36,27 +36,13 @@ const TARGET_THUMB_MAX_W: f32 = 30.0;
 /// Tight gap between image-search thumbs (default item_spacing leaves them sparse).
 const TARGET_THUMB_GAP: f32 = 2.0;
 
-/// Default tree-row height (icon column + chrome).
-pub fn default_row_height(interact_y: f32) -> f32 {
-    interact_y.max(ICON_SIZE)
-}
-
-/// Row height including type-badge, summary pills, and icon-button glyphs that track Font size.
-pub fn row_height(ui: &egui::Ui) -> f32 {
-    let btn_h = crate::widgets::icon_btn_side(ui);
-    default_row_height(ui.spacing().interact_size.y)
-        .max(type_badge_side(ui))
-        .max(btn_h)
-        .max(var_pills::summary_pill_height(ui))
+/// Row height for a painted tree label (item thumbs fit in the standard band).
+pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
+    paint_metrics::default_row_height(interact_y)
 }
 
 fn type_badge_side(ui: &egui::Ui) -> f32 {
     ui.text_style_height(&egui::TextStyle::Small).max(ICON_SIZE)
-}
-
-/// Row height for a painted tree label (item thumbs fit in the standard band).
-pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
-    default_row_height(interact_y)
 }
 
 /// Entry picked from a tree row's right-click menu.
@@ -125,10 +111,6 @@ fn extend_drag_handle(acc: &mut egui::Rect, part: egui::Rect) {
     } else {
         acc.union(part)
     };
-}
-
-pub(crate) fn rgba_pub(c: [u8; 4]) -> Color32 {
-    crate::theme::rgba(c)
 }
 
 fn rgba(c: [u8; 4]) -> Color32 {
@@ -311,7 +293,7 @@ pub fn paint_action_row(
 ) -> RowInteraction {
     let mut tip_hovered = false;
     // Match TreeView node height.
-    let interact_y = row_height(ui);
+    let interact_y = paint_metrics::row_height(ui);
     let row_h = action_row_height(action, interact_y);
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
@@ -567,7 +549,7 @@ mod tests {
     #[test]
     fn row_height_stays_uniform_with_image_search_targets() {
         let interact = 18.0;
-        assert_eq!(default_row_height(interact), ICON_SIZE);
+        assert_eq!(paint_metrics::default_row_height(interact), ICON_SIZE);
 
         let wait = Action::new(ActionKind::Wait {
             time: ScalarValue::Int(100),
@@ -632,7 +614,7 @@ mod tests {
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.set_max_width(400.0);
                 ui.horizontal_wrapped(|ui| {
-                    let band_h = var_pills::summary_pill_height(ui);
+                    let band_h = paint_metrics::summary_pill_height(ui);
                     cells = action
                         .tree_summary_pills()
                         .iter()
@@ -932,154 +914,5 @@ mod tests {
             });
             paint_action_icon(ui, &action, false);
         });
-    }
-
-    /// Evidence PNGs for enlarged Image Search view tips (Tags + Items).
-    ///
-    /// `SQYRE_VIEW_TIP_SHOT=1 cargo test -p sqyre-app --lib capture_image_search_view_tip_shot -- --nocapture`
-    #[test]
-    fn capture_image_search_view_tip_shot() {
-        if std::env::var_os("SQYRE_VIEW_TIP_SHOT").is_none() {
-            return;
-        }
-        use egui::os::OperatingSystem;
-        use egui_kittest::Harness;
-        use image::ImageFormat;
-        use sqyre_persist::{CatalogView, ProgramCatalog, ProgramData, ProgramItem};
-        use std::collections::BTreeMap;
-        use std::io::Cursor;
-
-        let mut catalog = ProgramCatalog::default();
-        catalog.programs_mut().insert(
-            "Demo".into(),
-            ProgramData {
-                name: "Demo".into(),
-                items: BTreeMap::from([
-                    (
-                        "Ok".into(),
-                        ProgramItem {
-                            name: "OK button".into(),
-                            tags: vec!["button".into(), "ui".into()],
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Cancel".into(),
-                        ProgramItem {
-                            name: "Cancel button".into(),
-                            tags: vec!["button".into()],
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Trash".into(),
-                        ProgramItem {
-                            name: "Trash".into(),
-                            tags: vec!["button".into(), "junk".into()],
-                            ..Default::default()
-                        },
-                    ),
-                ]),
-                ..Default::default()
-            },
-        );
-
-        let action = Action::new(ActionKind::ImageSearch(Box::new(
-            sqyre_domain::ImageSearchData {
-                name: "Find buttons".into(),
-                targets: vec!["Demo~Ok".into()],
-                target_tags: vec!["+button".into(), "-junk".into()],
-                search_area: CoordinateRef(String::new()),
-                tolerance: 0.95,
-                ..Default::default()
-            },
-        )));
-
-        let mut icons = IconCache::new();
-        let mut harness = Harness::builder()
-            .with_size([1200.0, 720.0])
-            .with_os(OperatingSystem::Nix)
-            .wgpu()
-            .build_ui(|ui| {
-                // Match `tip_max_width` preferred fraction against the harness size,
-                // not the slightly smaller first-frame ui max_rect.
-                let tip_w = 1200.0 * 0.50;
-                ui.label(
-                    egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
-                );
-                crate::theme::popup_frame(ui).show(ui, |ui| {
-                    ui.set_width(tip_w);
-                    paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
-                    ui.label(
-                        egui::RichText::new(
-                            "Search the screen for catalog Images (optional tag filters).",
-                        )
-                        .small()
-                        .weak(),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("tip width ≈ {tip_w:.0}pt (was fixed 340pt)"))
-                            .small()
-                            .strong(),
-                    );
-                    paint_image_search_tooltip_thumbs_pub(
-                        ui,
-                        &action,
-                        CatalogView::from(&catalog),
-                        &mut icons,
-                    );
-                });
-            });
-
-        let _ = harness.run_ok();
-        harness.run_steps(2);
-        let img = harness.render().expect("wgpu render tip shot");
-
-        let mut encoded = Vec::new();
-        img.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
-            .expect("encode png");
-        let dirs = [
-            "/cursor/stores/bc-95124ca5-2159-4d32-ad9d-061cdb60b9a6/media/view-tip-size-image-search-tags",
-            "/opt/cursor/artifacts/view-tip-screenshots",
-        ];
-        for dir in dirs {
-            std::fs::create_dir_all(dir).expect("mkdir");
-            let path = format!("{dir}/01-image-search-tip-tags-items.png");
-            std::fs::write(&path, &encoded).expect("write tip shot");
-            eprintln!("wrote {path} ({} bytes)", encoded.len());
-        }
-
-        // Size comparison panel: old 340 vs new 600.
-        let mut harness2 = Harness::builder()
-            .with_size([1200.0, 720.0])
-            .with_os(OperatingSystem::Nix)
-            .wgpu()
-            .build_ui(|ui| {
-                ui.label(egui::RichText::new("View tip width: before vs after").heading());
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
-                    for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
-                        crate::theme::popup_frame(ui).show(ui, |ui| {
-                                ui.set_width(w);
-                                ui.label(egui::RichText::new(label).strong());
-                                ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());
-                                ui.label(
-                                    "Tags and Items stay readable when the tip can grow with the window.",
-                                );
-                            });
-                    }
-                });
-            });
-        let _ = harness2.run_ok();
-        harness2.run_steps(2);
-        let img2 = harness2.render().expect("wgpu render size compare");
-        let mut encoded2 = Vec::new();
-        img2.write_to(&mut Cursor::new(&mut encoded2), ImageFormat::Png)
-            .expect("encode compare png");
-        for dir in dirs {
-            let path = format!("{dir}/02-view-tip-larger-size.png");
-            std::fs::write(&path, &encoded2).expect("write size compare");
-            eprintln!("wrote {path} ({} bytes)", encoded2.len());
-        }
     }
 }

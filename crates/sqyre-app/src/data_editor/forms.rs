@@ -33,7 +33,7 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    screen_cap_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
+    screen_cap_path, CatalogView, OverlayButtonConfig, ProgramCollection, UserSettings,
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
     MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS, MIN_OVERLAY_BORDER_WIDTH,
     MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_GATE_INTERVAL_MS,
@@ -128,9 +128,9 @@ fn paint_coord_chips(
 impl DataEditor {
     fn sync_coord_preview_view(&mut self) {
         let key = (
-            self.tab,
-            self.selected_program.clone().unwrap_or_default(),
-            self.selected_entity.clone().unwrap_or_default(),
+            self.nav.tab,
+            self.nav.selected_program.clone().unwrap_or_default(),
+            self.nav.selected_entity.clone().unwrap_or_default(),
         );
         self.previews.coord.sync_key(key);
     }
@@ -241,13 +241,13 @@ impl DataEditor {
             active_macro,
             &mut [
                 (
-                    &mut self.form_point.x,
+                    &mut self.drafts.point.x,
                     CardinalEdge::Left,
                     "X",
                     help::DE_POINT_X,
                 ),
                 (
-                    &mut self.form_point.y,
+                    &mut self.drafts.point.y,
                     CardinalEdge::Bottom,
                     "Y",
                     help::DE_POINT_Y,
@@ -293,18 +293,18 @@ impl DataEditor {
             egui_phosphor::regular::MONITOR,
             "Monitor",
             help::DE_MONITOR,
-            &mut self.form_monitor,
+            &mut self.drafts.monitor,
             |d| d.speed(1).range(1..=8),
         );
     }
 
-    pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
+    pub(crate) fn load_form(&mut self, catalog: CatalogView<'_>, settings: &UserSettings) {
         self.clear_status();
-        form_state::load_tab(self.tab, self, catalog, settings);
+        form_state::load_tab(self.nav.tab, self, catalog, settings);
     }
 
     pub(crate) fn load_overlay_form(&mut self, settings: &UserSettings) {
-        let Some(id) = self.selected_entity.as_deref() else {
+        let Some(id) = self.nav.selected_entity.as_deref() else {
             self.reset_overlay_form();
             return;
         };
@@ -312,66 +312,66 @@ impl DataEditor {
             self.reset_overlay_form();
             return;
         };
-        self.form_overlay.point = btn.point.clone();
-        self.form_overlay.x = btn.x;
-        self.form_overlay.y = btn.y;
-        self.form_overlay.macro_name = btn.macro_name.clone();
-        self.form_overlay.enabled = btn.enabled;
-        self.form_overlay.icon = if btn.icon.trim().is_empty() {
+        self.drafts.overlay.point = btn.point.clone();
+        self.drafts.overlay.x = btn.x;
+        self.drafts.overlay.y = btn.y;
+        self.drafts.overlay.macro_name = btn.macro_name.clone();
+        self.drafts.overlay.enabled = btn.enabled;
+        self.drafts.overlay.icon = if btn.icon.trim().is_empty() {
             overlay_icons::DEFAULT_ICON_ID.into()
         } else {
             btn.icon.clone()
         };
-        self.form_overlay.size = if btn.size > 0.0 {
+        self.drafts.overlay.size = if btn.size > 0.0 {
             btn.size
         } else {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
-        self.form_overlay.load_style_from_config(btn);
-        self.form_overlay.gate =
+        self.drafts.overlay.load_style_from_config(btn);
+        self.drafts.overlay.gate =
             super::form_fields::OverlayGateFields::from_config(&btn.visibility_gate);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
-        self.form_overlay = super::form_fields::OverlayFields::default();
+        self.drafts.overlay = super::form_fields::OverlayFields::default();
     }
 
     pub(crate) fn reset_item_form(&mut self) {
-        self.form_name.clear();
+        self.drafts.name.clear();
         self.reset_item_param_fields();
     }
 
     /// Tags / grid / mask buffers used by Items and ScreenCap New Item (keeps Name).
     pub(crate) fn reset_item_param_fields(&mut self) {
-        self.form_cols = "1".into();
-        self.form_rows = "1".into();
-        self.form_item.stack_max = "0".into();
-        self.form_item.mask.clear();
-        self.form_tags.clear();
-        self.tag_draft.clear();
+        self.drafts.cols = "1".into();
+        self.drafts.rows = "1".into();
+        self.drafts.item.stack_max = "0".into();
+        self.drafts.item.mask.clear();
+        self.drafts.tags.clear();
+        self.drafts.tag_draft.clear();
     }
 
     pub(crate) fn reset_mask_form(&mut self) {
-        self.form_name.clear();
-        self.form_mask.shape = "rectangle".into();
-        self.form_mask.center_x = "50".into();
-        self.form_mask.center_y = "50".into();
-        self.form_mask.base.clear();
-        self.form_mask.height.clear();
-        self.form_mask.radius.clear();
-        self.form_mask.inverse = false;
+        self.drafts.name.clear();
+        self.drafts.mask.shape = "rectangle".into();
+        self.drafts.mask.center_x = "50".into();
+        self.drafts.mask.center_y = "50".into();
+        self.drafts.mask.base.clear();
+        self.drafts.mask.height.clear();
+        self.drafts.mask.radius.clear();
+        self.drafts.mask.inverse = false;
     }
 
     pub(crate) fn reset_collection_form(&mut self) {
-        self.form_search_area.clear();
-        self.form_rows = "1".into();
-        self.form_cols = "1".into();
+        self.drafts.search_area.clear();
+        self.drafts.rows = "1".into();
+        self.drafts.cols = "1".into();
     }
 
     pub(crate) fn reset_atlas_form(&mut self) {
-        self.form_name.clear();
-        self.form_atlas.members.clear();
-        self.form_atlas.add.clear();
+        self.drafts.name.clear();
+        self.drafts.atlas.members.clear();
+        self.drafts.atlas.add.clear();
     }
 
     /// Returns true when a tag was committed this frame (auto-Update).
@@ -394,7 +394,7 @@ impl DataEditor {
             known: &known,
             is_dark: ui.visuals().dark_mode,
         };
-        match self.tab {
+        match self.nav.tab {
             EditorTab::Programs => self.draw_programs_form(ui, paint, ctx),
             EditorTab::Items => self.draw_items_form(ui, paint),
             EditorTab::Points => {
@@ -474,12 +474,12 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            if self.selected_entity.is_none() {
+            if self.nav.selected_entity.is_none() {
                 self.match_check.stop_compute();
                 return;
             }
-            paint_name_field(ui, &mut self.form_name);
-            let ref_val = self.form_search_area.clone();
+            paint_name_field(ui, &mut self.drafts.name);
+            let ref_val = self.drafts.search_area.clone();
             let reference = CoordinateRef(ref_val.clone());
             pickers::coord_ref_field(
                 ui,
@@ -518,8 +518,8 @@ impl DataEditor {
                 },
             );
             if let (Some(prog), Some(item)) = (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) {
                 let variants = super::match_check::variant_options(catalog, prog, item);
                 if !variants.is_empty() {
@@ -562,15 +562,15 @@ impl DataEditor {
             );
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
-                self.form_monitor,
-                &self.form_rect.left,
-                &self.form_rect.top,
-                &self.form_rect.right,
-                &self.form_rect.bottom,
+                self.drafts.monitor,
+                &self.drafts.rect.left,
+                &self.drafts.rect.top,
+                &self.drafts.rect.right,
+                &self.drafts.rect.bottom,
             );
             let (Some(prog), Some(item)) = (
-                self.selected_program.as_deref(),
-                self.selected_entity.as_deref(),
+                self.nav.selected_program.as_deref(),
+                self.nav.selected_entity.as_deref(),
             ) else {
                 self.match_check.stop_compute();
                 return;
@@ -695,8 +695,8 @@ impl DataEditor {
                     );
                     if let Some(cache) = &self.match_check.cache {
                         let inputs = super::match_check::inputs_key(
-                            self.selected_program.as_deref().unwrap_or(""),
-                            self.selected_entity.as_deref().unwrap_or(""),
+                            self.nav.selected_program.as_deref().unwrap_or(""),
+                            self.nav.selected_entity.as_deref().unwrap_or(""),
                             &self.match_check.settings.variant,
                             lx,
                             ty,
@@ -820,11 +820,11 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn is_dirty(&self, catalog: &ProgramCatalog, settings: &UserSettings) -> bool {
-        form_state::dirty_tab(self.tab, self, catalog, settings)
+    pub(crate) fn is_dirty(&self, catalog: CatalogView<'_>, settings: &UserSettings) -> bool {
+        form_state::dirty_tab(self.nav.tab, self, catalog, settings)
     }
 
     pub(crate) fn form_valid(&self, active_macro: Option<&Macro>) -> bool {
-        form_state::valid_tab(self.tab, self, active_macro)
+        form_state::valid_tab(self.nav.tab, self, active_macro)
     }
 }

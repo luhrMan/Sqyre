@@ -655,6 +655,30 @@ Game:
     }
 
     #[test]
+    fn upsert_point_creates_fresh_resolution_bucket() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Demo").unwrap();
+        assert!(cat.get("Demo").unwrap().points.contains_key("1920x1080"));
+        cat.set_resolution_key("3440x1440");
+        cat.upsert_point(
+            "Demo",
+            ProgramPoint {
+                name: "Ultra".into(),
+                monitor: 1,
+                x: ScalarValue::Int(10),
+                y: ScalarValue::Int(20),
+            },
+        )
+        .unwrap();
+        let p = cat.get("Demo").unwrap();
+        assert!(p.points.contains_key("3440x1440"));
+        assert!(p.points["3440x1440"].contains_key("Ultra"));
+        assert!(p.search_areas.contains_key("3440x1440"));
+        assert!(p.coord_scales.contains_key("3440x1440"));
+    }
+
+    #[test]
     fn create_rename_delete_program() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("2560x1440");

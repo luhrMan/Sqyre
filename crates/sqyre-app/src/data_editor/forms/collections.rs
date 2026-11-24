@@ -15,20 +15,21 @@ impl DataEditor {
         let CatalogPaint {
             icons, previews, ..
         } = paint;
-        let collection_area = self.selected_program.as_deref().and_then(|prog| {
-            let sa = self.form_search_area.trim();
+        let collection_area = self.nav.selected_program.as_deref().and_then(|prog| {
+            let sa = self.drafts.search_area.trim();
             if sa.is_empty() {
                 return None;
             }
             catalog_search_area_pixel_size(catalog, prog, sa)
         });
-        let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
-        let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
+        let rows = parse_i32(&self.drafts.rows).unwrap_or(1).max(1);
+        let cols = parse_i32(&self.drafts.cols).unwrap_or(1).max(1);
         {
             // Collection name == search-area name; offer areas that are free or
             // the currently selected collection (so retarget/rename still works).
-            let selected = self.selected_entity.clone();
+            let selected = self.nav.selected_entity.clone();
             let areas: Vec<String> = self
+                .nav
                 .selected_program
                 .as_deref()
                 .map(|p| {
@@ -50,7 +51,7 @@ impl DataEditor {
                         .collect()
                 })
                 .unwrap_or_default();
-            let prog = self.selected_program.clone();
+            let prog = self.nav.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
                     return;
@@ -66,7 +67,7 @@ impl DataEditor {
                 "Search area",
                 help::DE_COLLECTION_AREA,
                 "collection_sa",
-                &mut self.form_search_area,
+                &mut self.drafts.search_area,
                 SearchableComboOpts {
                     options: &areas,
                     empty_text: sqyre_domain::EMPTY_NONE,
@@ -86,7 +87,7 @@ impl DataEditor {
                 egui_phosphor::regular::ROWS,
                 "Rows",
                 help::DE_COLLECTION_ROWS,
-                &mut self.form_rows,
+                &mut self.drafts.rows,
                 crate::widgets::NumFieldOpts {
                     width: 80.0,
                     range: 1..=i32::MAX,
@@ -97,16 +98,17 @@ impl DataEditor {
                 egui_phosphor::regular::COLUMNS,
                 "Cols",
                 help::DE_COLLECTION_COLS,
-                &mut self.form_cols,
+                &mut self.drafts.cols,
                 crate::widgets::NumFieldOpts {
                     width: 80.0,
                     range: 1..=i32::MAX,
                 },
             );
         });
-        if let (Some(prog), Some(col_name)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        {
+        if let (Some(prog), Some(col_name)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) {
             let path = catalog.collection_image_path(&prog, &col_name);
             let key = (prog.clone(), col_name.clone());
             self.previews.collection.sync_key(key);
@@ -141,21 +143,22 @@ impl DataEditor {
         let CatalogPaint {
             icons, previews, ..
         } = paint;
-        paint_name_field(ui, &mut self.form_name);
+        paint_name_field(ui, &mut self.drafts.name);
         let available: Vec<String> = self
+            .nav
             .selected_program
             .as_deref()
             .and_then(|p| catalog.get(p))
             .map(|prog| {
                 prog.collections
                     .keys()
-                    .filter(|k| !self.form_atlas.members.iter().any(|m| m == *k))
+                    .filter(|k| !self.drafts.atlas.members.iter().any(|m| m == *k))
                     .cloned()
                     .collect()
             })
             .unwrap_or_default();
         {
-            let prog = self.selected_program.clone();
+            let prog = self.nav.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
                     return;
@@ -165,7 +168,7 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
-            let can_add = !self.form_atlas.add.trim().is_empty();
+            let can_add = !self.drafts.atlas.add.trim().is_empty();
             let mut add_clicked = false;
             let mut trailing = |ui: &mut egui::Ui| {
                 if crate::widgets::add_button(ui, "Add collection", can_add).clicked() {
@@ -178,7 +181,7 @@ impl DataEditor {
                 "Collections",
                 help::DE_ATLAS_MEMBERS,
                 "atlas_add_member",
-                &mut self.form_atlas.add,
+                &mut self.drafts.atlas.add,
                 SearchableComboOpts {
                     options: &available,
                     empty_text: "(add collection)",
@@ -192,17 +195,17 @@ impl DataEditor {
                 Some(&mut trailing),
             );
             if add_clicked {
-                let name = self.form_atlas.add.trim().to_string();
-                if !name.is_empty() && !self.form_atlas.members.iter().any(|m| m == &name) {
-                    self.form_atlas.members.push(name);
+                let name = self.drafts.atlas.add.trim().to_string();
+                if !name.is_empty() && !self.drafts.atlas.members.iter().any(|m| m == &name) {
+                    self.drafts.atlas.members.push(name);
                 }
-                self.form_atlas.add.clear();
+                self.drafts.atlas.add.clear();
             }
         }
         let mut remove_at: Option<usize> = None;
-        for (i, member) in self.form_atlas.members.iter().enumerate() {
+        for (i, member) in self.drafts.atlas.members.iter().enumerate() {
             let label = ui.label(format!("• {member}"));
-            if let Some(prog) = self.selected_program.as_deref() {
+            if let Some(prog) = self.nav.selected_program.as_deref() {
                 previews.show_for_entity(
                     ui,
                     &label,
@@ -218,11 +221,12 @@ impl DataEditor {
             }
         }
         if let Some(i) = remove_at {
-            self.form_atlas.members.remove(i);
+            self.drafts.atlas.members.remove(i);
         }
-        if let (Some(prog), Some(atlas_name)) =
-            (self.selected_program.clone(), self.selected_entity.clone())
-        {
+        if let (Some(prog), Some(atlas_name)) = (
+            self.nav.selected_program.clone(),
+            self.nav.selected_entity.clone(),
+        ) {
             let key = (prog.clone(), atlas_name.clone());
             self.previews.atlas.sync_key(key);
             paint_zoomable_atlas_preview(
@@ -230,17 +234,17 @@ impl DataEditor {
                 icons,
                 catalog,
                 &prog,
-                &self.form_atlas.members,
+                &self.drafts.atlas.members,
                 &mut self.previews.atlas.transform,
             );
-        } else if !self.form_atlas.members.is_empty() {
-            if let Some(prog) = self.selected_program.clone() {
+        } else if !self.drafts.atlas.members.is_empty() {
+            if let Some(prog) = self.nav.selected_program.clone() {
                 paint_zoomable_atlas_preview(
                     ui,
                     icons,
                     catalog,
                     &prog,
-                    &self.form_atlas.members,
+                    &self.drafts.atlas.members,
                     &mut self.previews.atlas.transform,
                 );
             }

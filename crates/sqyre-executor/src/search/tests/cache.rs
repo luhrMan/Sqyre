@@ -247,3 +247,36 @@ fn run_matches_clears_coords_on_miss() {
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
 }
+
+#[test]
+fn capture_search_buf_returns_none_if_callback_clears_capturer() {
+    let mut backend = RecordingBackend::default();
+    let mut capturer = capturer_next(RgbaImage::from_pixel(4, 4, Rgba([0, 0, 0, 255])));
+    let resolver = SEARCH_FIXED_AREA;
+    let logger = SharedActionLog::new();
+    let action_id = ActionId::new();
+    let mut exec = crate::run::Executor::new(&mut backend);
+    exec.deps.capturer = Some(&mut capturer);
+    exec.deps.resolver = Some(&resolver);
+    exec.deps.logger = Some(&logger);
+    let branch = sqyre_domain::DetectionBranch::default();
+    let area = CoordinateRef::default();
+    let ctx = DetectionCtx::new(
+        action_id,
+        "Image Search",
+        &area,
+        &[],
+        &branch,
+        crate::run::run_children,
+    );
+    let macro_ = Macro::new("t", 0, vec![]);
+    let out = capture_search_buf(&mut exec, &ctx, &macro_, true, |exec, _, _, _, _| {
+        exec.deps.capturer = None;
+    });
+    assert!(out.is_none());
+    let lines = lines_for(&logger.entries_for(action_id));
+    assert!(
+        lines.iter().any(|l| l.contains("missing ScreenCapturer")),
+        "expected missing-capturer log, got {lines:?}"
+    );
+}

@@ -4,6 +4,8 @@
 mod android;
 #[cfg(not(target_os = "android"))]
 mod desktop;
+#[cfg(not(target_os = "android"))]
+mod held;
 
 #[cfg(target_os = "android")]
 pub use android::{prepare_for_automation, release_held_inputs, OsAutomation};

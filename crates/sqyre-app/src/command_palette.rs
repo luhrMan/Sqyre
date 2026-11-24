@@ -887,7 +887,7 @@ impl SqyreApp {
                 self.add_action_picker.open();
             }
             CommandKind::OpenMacro { name } => {
-                self.macro_list_open = true;
+                self.macro_list.open = true;
                 self.select_macro_by_name(&name);
             }
             CommandKind::NewMacro => self.create_macro(),
@@ -917,10 +917,10 @@ impl SqyreApp {
                     self.macro_yaml_builder.open_builder(selected);
                 }
             }
-            CommandKind::ShowMacroList => self.macro_list_open = true,
+            CommandKind::ShowMacroList => self.macro_list.open = true,
             CommandKind::NewCatalogEntity { tab } => {
                 self.refresh_focused_program_hint();
-                let pending = self.pending_viewport_scale;
+                let pending = self.viewport_scale.pending;
                 self.data_editor.open_new(
                     tab,
                     &mut DataEditorCtx {

@@ -9,7 +9,6 @@ use crate::action_tooltip::{
 };
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx};
 use crate::pickers::{self, ActivePicker};
-use crate::tree_chrome;
 use crate::widgets::SaveCancel;
 use eframe::egui::{
     self, Color32, CornerRadius, Key, Modifiers, Sense, Vec2, WidgetInfo, WidgetType,
@@ -548,7 +547,7 @@ impl AddActionPicker {
         };
         let label = action_type_label(&type_key);
         let is_dark = theme.is_dark;
-        let pastel = tree_chrome::rgba_pub(action_pastel_color(&type_key, is_dark));
+        let pastel = crate::theme::rgba(action_pastel_color(&type_key, is_dark));
 
         if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
             let result = pickers::show_active_picker(

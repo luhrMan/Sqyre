@@ -217,13 +217,10 @@ impl SqyreApp {
             },
             quick_access: crate::quick_access::QuickAccessFan::default(),
             // Match product default so main-window goldens include the Macros sidebar.
-            macro_list_open: true,
-            macro_list_filter: String::new(),
+            macro_list: crate::ui_macro_list::MacroListPanel::default(),
             #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
-            pending_delete_macro: None,
-            last_viewport_content: None,
-            pending_viewport_scale: None,
+            viewport_scale: crate::widgets::ViewportScaleState::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
         };
@@ -250,12 +247,12 @@ impl SqyreApp {
 
     /// Whether the data editor window is showing (docs / interaction harnesses).
     pub fn docs_data_editor_open(&self) -> bool {
-        self.data_editor.open
+        self.data_editor.nav.open
     }
 
     /// Active Data Editor tab label (docs / interaction harnesses).
     pub fn docs_data_editor_tab(&self) -> &'static str {
-        self.data_editor.tab.label()
+        self.data_editor.nav.tab.label()
     }
 
     /// Program catalog (docs / interaction harnesses).
@@ -511,16 +508,16 @@ impl SqyreApp {
 
     /// Show the macro list panel (docs / interaction harnesses).
     pub fn open_macro_list_for_docs(&mut self) {
-        self.macro_list_open = true;
+        self.macro_list.open = true;
     }
 
     pub fn set_macro_list_open_for_docs(&mut self, open: bool) {
-        self.macro_list_open = open;
+        self.macro_list.open = open;
     }
 
     /// Whether the macro list side panel is open (docs / interaction harnesses).
     pub fn docs_macro_list_open(&self) -> bool {
-        self.macro_list_open
+        self.macro_list.open
     }
 
     /// Number of macros currently loaded (docs / interaction harnesses).

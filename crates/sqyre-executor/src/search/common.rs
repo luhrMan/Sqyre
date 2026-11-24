@@ -118,14 +118,14 @@ pub(super) fn capture_search_buf(
     };
     on_resolved(exec, lx, ty, rx, by);
 
+    // Re-check after `on_resolved`: the callback takes `&mut Executor` and could
+    // clear the capturer between the early guard above and capture.
+    let Some(capturer) = exec.deps.capturer.as_mut() else {
+        exec.log(action_id, format!("{label}: missing ScreenCapturer"));
+        return None;
+    };
     let capture_started = Instant::now();
-    let (img, origin, frame_token) = match exec
-        .deps
-        .capturer
-        .as_mut()
-        .expect("checked Some above")
-        .capture_search_area_rgb(lx, ty, rx, by, fresh)
-    {
+    let (img, origin, frame_token) = match capturer.capture_search_area_rgb(lx, ty, rx, by, fresh) {
         Ok(v) => v,
         Err(e) => {
             exec.log(action_id, format!("{label}: capture: {e}"));

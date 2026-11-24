@@ -22,7 +22,8 @@ pub use error::{PersistError, Result};
 pub use paths::{
     backup_dir_override, db_path, images_path, initialize_directories, screen_cap_path,
     screen_cap_trash_path, set_backup_dir_override, set_sqyre_dir_override, sqyre_dir,
-    variables_path, with_sqyre_dir_override, DB_FILE, MAX_DB_YAML_BYTES, MAX_MACROS, SETTINGS_FILE,
+    variables_path, with_sqyre_dir_override, with_sqyre_dirs_override, DB_FILE, MAX_DB_YAML_BYTES,
+    MAX_MACROS, SETTINGS_FILE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use paths::{set_home_dir, sqyre_config_dir};

@@ -235,4 +235,115 @@ mod tests {
         assert!(p.overlay_icon_search.is_empty());
         assert_eq!(p.overlay_icon_picker_for.as_deref(), Some("btn"));
     }
+
+    #[test]
+    fn draw_confirm_paints_without_data_editor() {
+        let cat = sqyre_persist::ProgramCatalog::default();
+        let mut icons = IconCache::default();
+        let mut prompts = EditorPrompts {
+            confirm: Some(PendingConfirm::Delete {
+                label: "program “Game”".into(),
+            }),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // First frames are egui's invisible sizing pass.
+        for frame in 0..4 {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.05),
+                    predicted_dt: 0.05,
+                    ..Default::default()
+                },
+                |ui| {
+                    let confirmed = prompts.draw_confirm(
+                        ui.ctx(),
+                        CatalogView::from(&cat),
+                        &mut icons,
+                        ConfirmSubject::default(),
+                        None,
+                    );
+                    assert!(confirmed.is_none(), "no click yet");
+                },
+            );
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            prompts.confirm.is_some(),
+            "confirm stays open until the user chooses"
+        );
+        assert!(prompts.any_open(), "confirm owns keyboard while open");
+        let rect = ctx.memory(|m| m.area_rect(egui::Id::new(("sqyre_confirm", "Delete"))));
+        assert!(
+            rect.is_some_and(|r| r.width() > 1.0 && r.height() > 1.0),
+            "confirm window area should exist after settling"
+        );
+    }
+
+    #[test]
+    fn draw_confirm_escape_dismisses() {
+        let cat = sqyre_persist::ProgramCatalog::default();
+        let mut icons = IconCache::default();
+        let mut prompts = EditorPrompts {
+            confirm: Some(PendingConfirm::Overwrite {
+                kind: "Item",
+                name: "Potion".into(),
+            }),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        // egui's first frames are an invisible sizing pass.
+        for frame in 0..3 {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.05),
+                    predicted_dt: 0.05,
+                    ..Default::default()
+                },
+                |ui| {
+                    let _ = prompts.draw_confirm(
+                        ui.ctx(),
+                        CatalogView::from(&cat),
+                        &mut icons,
+                        ConfirmSubject::default(),
+                        None,
+                    );
+                },
+            );
+            out.drop_without_applying_deltas();
+        }
+        assert!(prompts.confirm.is_some(), "still open after sizing");
+        let mut esc = egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(0.2),
+            predicted_dt: 0.05,
+            ..Default::default()
+        };
+        esc.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let out = ctx.run_ui(esc, |ui| {
+            let _ = prompts.draw_confirm(
+                ui.ctx(),
+                CatalogView::from(&cat),
+                &mut icons,
+                ConfirmSubject::default(),
+                None,
+            );
+        });
+        out.drop_without_applying_deltas();
+        assert!(
+            prompts.confirm.is_none(),
+            "Esc should clear the pending confirm via confirm_cancel_row"
+        );
+        assert!(!prompts.any_open());
+    }
 }

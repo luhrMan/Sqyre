@@ -485,7 +485,7 @@ impl SqyreApp {
 
     fn quick_access_new_entity(&mut self, tab: EditorTab, ctx: &egui::Context) {
         self.refresh_focused_program_hint();
-        let pending = self.pending_viewport_scale;
+        let pending = self.viewport_scale.pending;
         self.data_editor.open_new(
             tab,
             &mut DataEditorCtx {
@@ -510,8 +510,10 @@ impl SqyreApp {
             &self.workspace.catalog,
             self.settings_ui.settings(),
         );
-        self.data_editor
-            .prefer_focused_program_for_new(&self.workspace.catalog, self.settings_ui.settings());
+        self.data_editor.prefer_focused_program_for_new(
+            sqyre_persist::CatalogView::from(&self.workspace.catalog),
+            self.settings_ui.settings(),
+        );
         if !self.hotkey.screen_click.is_armed() {
             self.hotkey.screen_click.arm_search_area();
             self.data_editor

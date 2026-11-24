@@ -137,14 +137,16 @@ fn enum_top_level_windows() -> Result<Vec<HWND>, AutomationError> {
 }
 
 unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    unsafe {
+    sqyre_ports::catch_ffi("win_focus.enum_windows_proc", BOOL(1), || {
         // SAFETY: `lparam` is the `Vec<HWND>` pointer passed from `enum_top_level_windows`.
-        let list = &mut *(lparam.0 as *mut Vec<HWND>);
-        if is_listable_window(hwnd) {
-            list.push(hwnd);
+        unsafe {
+            let list = &mut *(lparam.0 as *mut Vec<HWND>);
+            if is_listable_window(hwnd) {
+                list.push(hwnd);
+            }
+            BOOL(1)
         }
-        BOOL(1)
-    }
+    })
 }
 
 /// Visible top-level app windows (no owner, not tool windows) with a title.
@@ -534,16 +536,18 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 }
 
 unsafe extern "system" fn enum_overlay_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    unsafe {
+    sqyre_ports::catch_ffi("win_focus.enum_overlay_windows_proc", BOOL(1), || {
         // SAFETY: `lparam` is the `Vec<HWND>` pointer from `enable_overlay_window_transparency`.
-        let list = &mut *(lparam.0 as *mut Vec<HWND>);
-        // Include tool windows (`with_taskbar(false)` → WS_EX_TOOLWINDOW); overlays are not
-        // "listable" app windows.
-        if IsWindowVisible(hwnd).as_bool() {
-            list.push(hwnd);
+        unsafe {
+            let list = &mut *(lparam.0 as *mut Vec<HWND>);
+            // Include tool windows (`with_taskbar(false)` → WS_EX_TOOLWINDOW); overlays are not
+            // "listable" app windows.
+            if IsWindowVisible(hwnd).as_bool() {
+                list.push(hwnd);
+            }
+            BOOL(1)
         }
-        BOOL(1)
-    }
+    })
 }
 
 fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), CaptureError> {
