@@ -1,11 +1,12 @@
-//! Shared Image Search match controls (tolerance, blur, method, plane flip).
+//! Shared Image Search match controls (tolerance, blur, scale, method, plane flip).
 
 use crate::action_tooltip::help as h;
 use crate::widgets::{combo_enum, combo_str, drag_field, NumEntry};
 use eframe::egui;
 use sqyre_domain::{
-    clamp_match_blur, clamp_match_tolerance, MatchMethod, PlaneFlip, MAX_MATCH_BLUR,
-    MAX_NORMED_MATCH_TOLERANCE, MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_TOLERANCE,
+    clamp_match_blur, clamp_match_scale_percent, clamp_match_tolerance, MatchMethod, PlaneFlip,
+    MAX_MATCH_BLUR, MAX_MATCH_SCALE_PERCENT, MAX_NORMED_MATCH_TOLERANCE,
+    MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_SCALE_PERCENT, MIN_MATCH_TOLERANCE,
 };
 
 fn tolerance_help(method: MatchMethod) -> &'static str {
@@ -24,6 +25,14 @@ pub fn configure_match_blur_drag<Num: egui::emath::Numeric>(
     d.speed(1).range(MIN_MATCH_BLUR..=MAX_MATCH_BLUR)
 }
 
+pub fn configure_match_scale_drag<Num: egui::emath::Numeric>(
+    d: NumEntry<'_, Num>,
+) -> NumEntry<'_, Num> {
+    d.speed(1)
+        .range(MIN_MATCH_SCALE_PERCENT..=MAX_MATCH_SCALE_PERCENT)
+        .suffix("%")
+}
+
 pub fn configure_match_tolerance_drag<Num: egui::emath::Numeric>(
     d: NumEntry<'_, Num>,
     method: MatchMethod,
@@ -38,15 +47,17 @@ pub fn configure_match_tolerance_drag<Num: egui::emath::Numeric>(
     }
 }
 
-/// Tolerance + blur (+ optional method combo).
+/// Tolerance + blur + match scale (+ optional method combo).
 pub fn paint_match_settings(
     ui: &mut egui::Ui,
     tolerance: &mut f64,
     blur: &mut i32,
+    match_scale_percent: &mut i32,
     match_method: &mut MatchMethod,
     show_method: bool,
 ) {
     *blur = clamp_match_blur(*blur);
+    *match_scale_percent = clamp_match_scale_percent(*match_scale_percent);
     *tolerance = clamp_match_tolerance(*tolerance, *match_method);
 
     let tol_help = tolerance_help(*match_method);
@@ -66,12 +77,20 @@ pub fn paint_match_settings(
         blur,
         configure_match_blur_drag,
     );
+    drag_field(
+        ui,
+        egui_phosphor::regular::ARROWS_IN_SIMPLE,
+        "Match scale",
+        h::IS_MATCH_SCALE,
+        match_scale_percent,
+        configure_match_scale_drag,
+    );
     if show_method {
         paint_match_method(ui, match_method);
     }
 }
 
-/// Tolerance and blur, then `advanced` for the method (and any siblings).
+/// Tolerance, blur, and scale, then `advanced` for the method (and any siblings).
 ///
 /// The caller owns the disclosure: image search uses `tip_advanced`; forms use
 /// `advanced_section`. `advanced` receives `match_method` so it is not borrowed
@@ -80,10 +99,18 @@ pub fn paint_match_settings_advanced(
     ui: &mut egui::Ui,
     tolerance: &mut f64,
     blur: &mut i32,
+    match_scale_percent: &mut i32,
     match_method: &mut MatchMethod,
     advanced: impl FnOnce(&mut egui::Ui, &mut MatchMethod),
 ) {
-    paint_match_settings(ui, tolerance, blur, match_method, false);
+    paint_match_settings(
+        ui,
+        tolerance,
+        blur,
+        match_scale_percent,
+        match_method,
+        false,
+    );
     advanced(ui, match_method);
 }
 

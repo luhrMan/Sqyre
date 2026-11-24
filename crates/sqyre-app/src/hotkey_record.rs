@@ -1,6 +1,7 @@
 //! Macro hotkey record dialog.
 
 use crate::chord_record::{poll_waiting_release, record_modal};
+use crate::recorded_action::ChordRecordTarget;
 use crate::widgets::dismiss_row;
 use eframe::egui;
 use sqyre_hotkeys::{format_hotkey, MacroHotkeyBridge};
@@ -16,13 +17,20 @@ pub(crate) enum HotkeyRecordUi {
     Recording {
         last_chord: Vec<String>,
         stable_since: Option<Instant>,
+        target: ChordRecordTarget,
     },
     /// Saved; wait for release before resuming macro hotkeys.
     WaitingRelease { chord: Vec<String> },
 }
 
 impl HotkeyRecordUi {
+    /// Record for Pause / Navigate Key drafts, or the selected macro hotkey.
     pub fn open(&mut self, macro_hotkeys: &MacroHotkeyBridge) {
+        self.open_for(macro_hotkeys, ChordRecordTarget::Inferred);
+    }
+
+    /// Record for a specific destination (e.g. a Navigate Select chord slot).
+    pub fn open_for(&mut self, macro_hotkeys: &MacroHotkeyBridge, target: ChordRecordTarget) {
         if !matches!(self, Self::Closed) {
             return;
         }
@@ -30,6 +38,7 @@ impl HotkeyRecordUi {
         *self = Self::Recording {
             last_chord: Vec::new(),
             stable_since: None,
+            target,
         };
     }
 
@@ -37,16 +46,16 @@ impl HotkeyRecordUi {
         !matches!(self, Self::Closed)
     }
 
-    /// Draw modal; returns recorded chord once when stable duration elapses.
+    /// Draw modal; returns recorded chord + destination once when stable duration elapses.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
         macro_hotkeys: &MacroHotkeyBridge,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
-    ) -> Option<Vec<String>> {
+    ) -> Option<(Vec<String>, ChordRecordTarget)> {
         match self {
             Self::Closed => None,
-            Self::WaitingRelease { chord } => {
+            Self::WaitingRelease { chord, .. } => {
                 if poll_waiting_release(
                     ctx,
                     macro_hotkeys,
@@ -62,6 +71,7 @@ impl HotkeyRecordUi {
             Self::Recording {
                 last_chord,
                 stable_since,
+                target,
             } => {
                 let pressed = macro_hotkeys.pressed_keys();
                 if pressed != *last_chord {
@@ -113,11 +123,12 @@ impl HotkeyRecordUi {
 
                 if ready {
                     let keys = last_chord.clone();
+                    let target = *target;
                     *self = Self::WaitingRelease {
                         chord: keys.clone(),
                     };
                     ctx.request_repaint();
-                    return Some(keys);
+                    return Some((keys, target));
                 }
 
                 ctx.request_repaint_after(Duration::from_millis(16));

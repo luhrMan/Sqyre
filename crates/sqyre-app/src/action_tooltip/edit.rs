@@ -7,7 +7,7 @@ mod edit_navigate;
 mod edit_pickers;
 
 use self::edit_fields::{
-    assignments_editor, scalar_field, string_list_field, string_list_field_opts, var_ref_field,
+    assignments_editor, chord_hotkey_field, scalar_field, string_list_field_opts, var_ref_field,
 };
 use self::edit_pickers::{
     cells_picker_row, paint_coord_preview, picker_display_row, point_picker_row,
@@ -456,7 +456,14 @@ pub fn paint_edit_fields(
             );
         }
         ActionKind::NavigateSelect(data) => {
-            edit_navigate::paint_navigate_select(ui, &mut *paint, *theme, data);
+            edit_navigate::paint_navigate_select(
+                ui,
+                &mut *paint,
+                *theme,
+                data,
+                hotkey_record,
+                macro_hotkeys,
+            );
         }
         ActionKind::NavigateKey {
             name,
@@ -472,12 +479,17 @@ pub fn paint_edit_fields(
                 );
             });
             tip_section(ui, |ui| {
-                string_list_field(
+                let record_enabled = !hotkey_record.is_open() && !key_record.is_open();
+                chord_hotkey_field(
                     ui,
                     egui_phosphor::regular::KEYBOARD,
                     "Chord",
-                    chord,
                     h::NAV_KEY_CHORD,
+                    chord,
+                    record_enabled,
+                    || {
+                        hotkey_record.open(macro_hotkeys);
+                    },
                 );
             });
         }

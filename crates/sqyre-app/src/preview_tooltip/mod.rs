@@ -49,6 +49,20 @@ pub enum PreviewKind {
     Collection,
 }
 
+/// Full-res Match Check inputs plus the downscaled underlay they paint onto.
+#[derive(Clone)]
+pub struct PanelMatchSource {
+    /// Exclusive search-area crop at capture resolution (Image Search parity).
+    pub region: Arc<RgbaImage>,
+    /// Downscaled panel texture pixels for heatmap alignment.
+    pub display: Arc<RgbaImage>,
+    /// Exclusive area origin inside the pre-downscale capture (`PreviewMarker::Area`).
+    pub area_x0: f32,
+    pub area_y0: f32,
+    pub src_w: u32,
+    pub src_h: u32,
+}
+
 /// How a panel/tooltip capture should refresh.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PreviewRefresh {
@@ -217,25 +231,39 @@ impl PreviewTooltipCache {
             .and_then(|e| e.region.as_ref().map(Arc::clone))
     }
 
-    /// Panel search-area display pixels plus pre-downscale capture size (`src_w`, `src_h`).
+    /// Full-res exclusive search-area crop plus underlay mapping for Match Check.
     ///
-    /// Match Check runs template match on this buffer so the heatmap aligns with the
-    /// underlay the user is looking at (no second capture).
-    pub fn panel_display_image(
+    /// Matching uses [`PanelMatchSource::region`] (same pixels as Image Search).
+    /// Heatmap/boxes map onto the downscaled [`PanelMatchSource::display`] underlay.
+    pub fn panel_match_source(
         &self,
         left: i32,
         top: i32,
         right: i32,
         bottom: i32,
-    ) -> Option<(Arc<RgbaImage>, u32, u32)> {
+    ) -> Option<PanelMatchSource> {
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let entry = self.entries.get(&key)?;
         let display = entry.display.as_ref().map(Arc::clone)?;
-        let (src_w, src_h) = match entry.marker {
-            PreviewMarker::Area { src_w, src_h, .. } => (src_w, src_h),
-            PreviewMarker::Point { src_w, src_h, .. } => (src_w, src_h),
+        let region = entry.region.as_ref().map(Arc::clone)?;
+        let PreviewMarker::Area {
+            x0,
+            y0,
+            src_w,
+            src_h,
+            ..
+        } = entry.marker
+        else {
+            return None;
         };
-        Some((display, src_w, src_h))
+        Some(PanelMatchSource {
+            region,
+            display,
+            area_x0: x0,
+            area_y0: y0,
+            src_w,
+            src_h,
+        })
     }
 
     /// True while a soft/hard panel search-area capture is still in flight.

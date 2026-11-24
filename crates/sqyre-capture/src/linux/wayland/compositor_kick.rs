@@ -333,20 +333,17 @@ impl KickConn {
         if rect.w <= 1 || rect.h <= 1 {
             return;
         }
-        let Some(out_id) = overlapping_output_id(&self.state, rect) else {
+        let Some(o) = overlapping_output(&self.state, rect) else {
             return;
         };
-        let (out_x, out_y, out_w, out_h, scale, output) = {
-            let o = self.state.outputs.get(&out_id).expect("output id");
-            (
-                o.x,
-                o.y,
-                o.width.max(1),
-                o.height.max(1),
-                o.scale.max(1),
-                o.output.clone(),
-            )
-        };
+        let (out_x, out_y, out_w, out_h, scale, output) = (
+            o.x,
+            o.y,
+            o.width.max(1),
+            o.height.max(1),
+            o.scale.max(1),
+            o.output,
+        );
         let cosmic = sqyre_ports::cosmic_desktop_session();
         let desktop = output_desktop_rect(out_x, out_y, out_w, out_h, scale, cosmic);
         let kick = clamp_kick_rect(rect, desktop);
@@ -355,14 +352,18 @@ impl KickConn {
         }
 
         let qh = self.queue.handle();
-        let compositor = self.state.compositor.as_ref().expect("compositor").clone();
-        let shm = self.state.shm.as_ref().expect("shm").clone();
-        let layer_shell = self
-            .state
-            .layer_shell
-            .as_ref()
-            .expect("layer_shell")
-            .clone();
+        let Some(compositor) = self.state.compositor.clone() else {
+            cap_log("PORTAL", "kick", "skip layer pulse: compositor gone");
+            return;
+        };
+        let Some(shm) = self.state.shm.clone() else {
+            cap_log("PORTAL", "kick", "skip layer pulse: shm gone");
+            return;
+        };
+        let Some(layer_shell) = self.state.layer_shell.clone() else {
+            cap_log("PORTAL", "kick", "skip layer pulse: layer_shell gone");
+            return;
+        };
 
         let surface = compositor.create_surface(&qh, ());
         let empty = compositor.create_region(&qh, ());
@@ -394,7 +395,17 @@ impl KickConn {
             let _ = self.conn.flush();
             return;
         }
-        let serial = self.state.configure_serial.take().expect("configure");
+        let Some(serial) = self.state.configure_serial.take() else {
+            cap_log(
+                "PORTAL",
+                "kick",
+                "skip layer pulse: missing configure serial",
+            );
+            layer.destroy();
+            surface.destroy();
+            let _ = self.conn.flush();
+            return;
+        };
         layer.ack_configure(serial);
 
         let mapped = attach_transparent(
@@ -430,13 +441,10 @@ impl KickConn {
         if rect.w <= 1 || rect.h <= 1 {
             return;
         }
-        let Some(out_id) = overlapping_output_id(&self.state, rect) else {
+        let Some(o) = overlapping_output(&self.state, rect) else {
             return;
         };
-        let (out_w, out_h, scale) = {
-            let o = self.state.outputs.get(&out_id).expect("output id");
-            (o.width.max(1), o.height.max(1), o.scale.max(1))
-        };
+        let (out_w, out_h, scale) = (o.width.max(1), o.height.max(1), o.scale.max(1));
         let kick = clamp_kick_rect(
             rect,
             DesktopRect {
@@ -451,14 +459,18 @@ impl KickConn {
         let h = kick.h.clamp(2, XDG_KICK_MAX);
 
         let qh = self.queue.handle();
-        let compositor = self.state.compositor.as_ref().expect("compositor").clone();
-        let shm = self.state.shm.as_ref().expect("shm").clone();
-        let wm = self
-            .state
-            .xdg_wm_base
-            .as_ref()
-            .expect("xdg_wm_base")
-            .clone();
+        let Some(compositor) = self.state.compositor.clone() else {
+            cap_log("PORTAL", "kick", "skip xdg pulse: compositor gone");
+            return;
+        };
+        let Some(shm) = self.state.shm.clone() else {
+            cap_log("PORTAL", "kick", "skip xdg pulse: shm gone");
+            return;
+        };
+        let Some(wm) = self.state.xdg_wm_base.clone() else {
+            cap_log("PORTAL", "kick", "skip xdg pulse: xdg_wm_base gone");
+            return;
+        };
 
         let surface = compositor.create_surface(&qh, ());
         let empty_in = compositor.create_region(&qh, ());
@@ -495,7 +507,17 @@ impl KickConn {
             let _ = self.conn.flush();
             return;
         }
-        let serial = self.state.configure_serial.take().expect("xdg configure");
+        let Some(serial) = self.state.configure_serial.take() else {
+            cap_log("PORTAL", "kick", "skip xdg pulse: missing configure serial");
+            if let Some(d) = decoration {
+                d.destroy();
+            }
+            toplevel.destroy();
+            xdg_surface.destroy();
+            surface.destroy();
+            let _ = self.conn.flush();
+            return;
+        };
         xdg_surface.ack_configure(serial);
         xdg_surface.set_window_geometry(0, 0, w, h);
 
@@ -669,15 +691,28 @@ fn layer_shell_logical(
     }
 }
 
-fn overlapping_output_id(state: &KickState, rect: DesktopRect) -> Option<u32> {
+/// First output whose desktop rect overlaps `rect` (cloned for the pulse path).
+fn overlapping_output(state: &KickState, rect: DesktopRect) -> Option<OutputInfo> {
     let cosmic = sqyre_ports::cosmic_desktop_session();
-    state.outputs.iter().find_map(|(id, o)| {
+    state.outputs.values().find_map(|o| {
         if o.width <= 0 || o.height <= 0 {
             return None;
         }
         let dest = output_desktop_rect(o.x, o.y, o.width, o.height, o.scale, cosmic);
         if rects_overlap(dest, rect) {
-            Some(*id)
+            Some(OutputInfo {
+                output: o.output.clone(),
+                x: o.x,
+                y: o.y,
+                width: o.width,
+                height: o.height,
+                scale: o.scale,
+                pending_x: o.pending_x,
+                pending_y: o.pending_y,
+                pending_w: o.pending_w,
+                pending_h: o.pending_h,
+                pending_scale: o.pending_scale,
+            })
         } else {
             None
         }

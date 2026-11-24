@@ -184,6 +184,11 @@ pub const DEFAULT_WAIT_TIME_MS: i64 = 1000;
 pub const MIN_MATCH_BLUR: i32 = 0;
 pub const MAX_MATCH_BLUR: i32 = 99;
 
+/// Percent of the search crop used for Image Search / Match Check (`100` = full res).
+pub const MIN_MATCH_SCALE_PERCENT: i32 = 10;
+pub const MAX_MATCH_SCALE_PERCENT: i32 = 100;
+pub const DEFAULT_MATCH_SCALE_PERCENT: i32 = 100;
+
 pub const MIN_MATCH_TOLERANCE: f64 = 0.0;
 pub const MAX_NORMED_MATCH_TOLERANCE: f64 = 1.0;
 pub const MAX_UNNORMED_MATCH_TOLERANCE: f64 = 1_000_000.0;
@@ -209,6 +214,11 @@ pub const MAX_DETECTION_INTERVAL_MS: i32 = 3_600_000;
 #[inline]
 pub fn clamp_match_blur(v: i32) -> i32 {
     v.clamp(MIN_MATCH_BLUR, MAX_MATCH_BLUR)
+}
+
+#[inline]
+pub fn clamp_match_scale_percent(v: i32) -> i32 {
+    v.clamp(MIN_MATCH_SCALE_PERCENT, MAX_MATCH_SCALE_PERCENT)
 }
 
 #[inline]
@@ -663,6 +673,14 @@ pub(crate) fn default_image_blur() -> i32 {
     5
 }
 
+pub(crate) fn default_match_scale_percent() -> i32 {
+    DEFAULT_MATCH_SCALE_PERCENT
+}
+
+pub(crate) fn is_default_match_scale_percent(v: &i32) -> bool {
+    *v == DEFAULT_MATCH_SCALE_PERCENT
+}
+
 pub(crate) fn default_ocr_blur() -> i32 {
     1
 }
@@ -922,7 +940,7 @@ pub struct MatchOrder {
 }
 
 /// Boxed payload for [`ActionKind::ImageSearch`].
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ImageSearchData {
     pub name: String,
     pub targets: Vec<String>,
@@ -932,6 +950,8 @@ pub struct ImageSearchData {
     pub search_area: CoordinateRef,
     pub tolerance: f64,
     pub blur: i32,
+    /// Percent of the search crop used for matching (`100` = full resolution).
+    pub match_scale_percent: i32,
     pub match_method: MatchMethod,
     /// Mirror the template before matching (`None` = upright as stored).
     pub plane_flip: crate::PlaneFlip,
@@ -942,6 +962,26 @@ pub struct ImageSearchData {
     /// Tag priority when sort_by is Tags.
     pub tag_priority: Vec<String>,
     pub detection: DetectionBranch,
+}
+
+impl Default for ImageSearchData {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            targets: Vec::new(),
+            target_tags: Vec::new(),
+            search_area: CoordinateRef::default(),
+            tolerance: 0.0,
+            blur: 0,
+            match_scale_percent: DEFAULT_MATCH_SCALE_PERCENT,
+            match_method: MatchMethod::default(),
+            plane_flip: crate::PlaneFlip::default(),
+            sort_by: ItemSortBy::default(),
+            sort_then: ItemSortThen::default(),
+            tag_priority: Vec::new(),
+            detection: DetectionBranch::default(),
+        }
+    }
 }
 
 /// Boxed payload for [`ActionKind::Ocr`].
@@ -1363,6 +1403,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "imagesearch" => ActionKind::ImageSearch(Box::new(ImageSearchData {
             tolerance: 0.95,
             blur: 5,
+            match_scale_percent: DEFAULT_MATCH_SCALE_PERCENT,
             match_method: MatchMethod::CcoeffNormed,
             detection: detection_with_move(),
             ..Default::default()
@@ -2276,6 +2317,12 @@ time: 1
     fn match_field_clamps() {
         assert_eq!(clamp_match_blur(-3), MIN_MATCH_BLUR);
         assert_eq!(clamp_match_blur(500), MAX_MATCH_BLUR);
+        assert_eq!(clamp_match_scale_percent(0), MIN_MATCH_SCALE_PERCENT);
+        assert_eq!(clamp_match_scale_percent(200), MAX_MATCH_SCALE_PERCENT);
+        assert_eq!(
+            clamp_match_scale_percent(DEFAULT_MATCH_SCALE_PERCENT),
+            DEFAULT_MATCH_SCALE_PERCENT
+        );
         assert_eq!(
             clamp_match_tolerance(2.0, MatchMethod::CcoeffNormed),
             MAX_NORMED_MATCH_TOLERANCE

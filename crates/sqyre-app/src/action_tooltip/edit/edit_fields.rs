@@ -162,14 +162,68 @@ pub(super) fn var_ref_field(
     );
 }
 
-pub(super) fn string_list_field(
+/// Compact hotkey row: display + record (+ clear when set). No multiline editor.
+pub(super) fn chord_hotkey_field(
     ui: &mut egui::Ui,
     icon: &str,
     label: &str,
-    values: &mut Vec<String>,
     help_text: &str,
+    chord: &mut Vec<String>,
+    record_enabled: bool,
+    mut on_record: impl FnMut(),
 ) {
-    string_list_field_opts(ui, icon, label, values, help_text, None);
+    use sqyre_hotkeys::format_hotkey;
+
+    let display = if chord.is_empty() {
+        sqyre_domain::EMPTY_NOT_SET.to_string()
+    } else {
+        format_hotkey(chord)
+    };
+    let mut record_clicked = false;
+    let mut clear_clicked = false;
+    let can_clear = !chord.is_empty();
+    let mut record_slot = |ui: &mut egui::Ui| {
+        if crate::widgets::record_icon_button(ui, "Record hotkey", record_enabled).clicked() {
+            record_clicked = true;
+        }
+    };
+    let mut clear_slot = |ui: &mut egui::Ui| {
+        if ui
+            .add_enabled(
+                can_clear,
+                crate::widgets::IconButton::new(
+                    egui_phosphor::regular::ERASER,
+                    "Clear hotkey",
+                    Some(crate::theme::MACRO_STOP),
+                ),
+            )
+            .clicked()
+        {
+            clear_clicked = true;
+        }
+    };
+    crate::widgets::pair_slots(
+        ui,
+        |ui| {
+            help::label(ui, icon, label);
+        },
+        |ui| {
+            help::tip(
+                ui.add(
+                    egui::Label::new(egui::RichText::new(&display).monospace())
+                        .sense(egui::Sense::hover()),
+                ),
+                help_text,
+            );
+        },
+        &mut [&mut record_slot, &mut clear_slot],
+    );
+    if record_clicked {
+        on_record();
+    }
+    if clear_clicked {
+        chord.clear();
+    }
 }
 
 /// Multiline one-per-line string list with an optional trailing control (e.g. record).
@@ -740,6 +794,57 @@ pub(super) fn assignments_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chord_hotkey_field_displays_and_clears() {
+        use egui_kittest::kittest::Queryable;
+
+        struct State {
+            chord: Vec<String>,
+            recorded: bool,
+        }
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([400.0, 80.0])
+            .build_ui_state(
+                |ui, s: &mut State| {
+                    chord_hotkey_field(
+                        ui,
+                        egui_phosphor::regular::KEYBOARD,
+                        "Chord",
+                        "help",
+                        &mut s.chord,
+                        true,
+                        || s.recorded = true,
+                    );
+                },
+                State {
+                    chord: vec!["ctrl".into(), "a".into()],
+                    recorded: false,
+                },
+            );
+        h.run_steps(2);
+        // Compact row: display is a Label, not a TextEdit.
+        assert!(
+            h.query_all_by_role(egui::accesskit::Role::MultilineTextInput)
+                .next()
+                .is_none(),
+            "must not expose a multiline text input"
+        );
+        assert!(
+            h.query_all_by_role(egui::accesskit::Role::TextInput)
+                .next()
+                .is_none(),
+            "must not expose a text input"
+        );
+
+        h.get_by_label("Clear hotkey").click();
+        h.run_steps(2);
+        assert!(h.state().chord.is_empty(), "clear empties the chord");
+
+        h.get_by_label("Record hotkey").click();
+        h.run_steps(2);
+        assert!(h.state().recorded, "record button fires callback");
+    }
 
     #[test]
     fn parse_scalar_int_and_string() {

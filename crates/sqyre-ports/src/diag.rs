@@ -171,16 +171,18 @@ pub fn read_last_site() -> Option<String> {
     }
 }
 
+/// Shared by [`crate::ffi_guard`] tests so a caught panic's [`mark_site`] cannot
+/// race diag assertions on [`LAST_SITE`].
+#[cfg(test)]
+pub(crate) static DIAG_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn mark_and_read_site_memory_only() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = DIAG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("sqyre-diag-mem-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -196,7 +198,7 @@ mod tests {
 
     #[test]
     fn mark_site_always_writes_last_site_file() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = DIAG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("sqyre-diag-site-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -216,7 +218,7 @@ mod tests {
 
     #[test]
     fn mark_and_read_site_disk() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = DIAG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("sqyre-diag-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();

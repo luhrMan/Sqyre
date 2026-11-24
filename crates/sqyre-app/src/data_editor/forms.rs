@@ -546,6 +546,7 @@ impl DataEditor {
                 ui,
                 &mut self.match_check.settings.tolerance,
                 &mut self.match_check.settings.blur,
+                &mut self.match_check.settings.match_scale_percent,
                 &mut self.match_check.settings.match_method,
                 false,
             );
@@ -703,6 +704,7 @@ impl DataEditor {
                             rx,
                             by,
                             self.match_check.settings.blur,
+                            self.match_check.settings.match_scale_percent,
                             self.match_check.settings.match_method,
                             self.match_check.settings.plane_flip,
                             self.match_check.settings.tolerance,
@@ -714,11 +716,6 @@ impl DataEditor {
                             || self.match_check.pending.is_some()
                             || self.match_check.settings.awaiting_panel
                         {
-                            let match_count = cache.data.tolerance_matches.len();
-                            let show_boxes = super::match_check::should_paint_match_boxes(
-                                match_count,
-                                self.match_check.settings.show_many_match_boxes,
-                            );
                             let image_size =
                                 egui::vec2(cache.data.image_w as f32, cache.data.image_h as f32);
                             super::match_check::paint_heatmap_overlay(
@@ -730,7 +727,6 @@ impl DataEditor {
                                 &mut hover,
                                 self.match_check.settings.match_method,
                                 self.match_check.settings.tolerance as f32,
-                                show_boxes,
                             );
                         }
                     }
@@ -751,7 +747,6 @@ impl DataEditor {
                     ui,
                     &cache.data.summary,
                     cache.data.tolerance_matches.len(),
-                    &mut self.match_check.settings.show_many_match_boxes,
                     hover.as_ref(),
                     self.match_check.settings.match_method,
                     self.match_check.settings.tolerance as f32,
@@ -772,16 +767,14 @@ impl DataEditor {
                     }
                     _ => false,
                 };
-                let display = match (lx, ty, rx, by) {
-                    (Some(l), Some(t), Some(r), Some(b)) => {
-                        previews.panel_display_image(l, t, r, b)
-                    }
+                let source = match (lx, ty, rx, by) {
+                    (Some(l), Some(t), Some(r), Some(b)) => previews.panel_match_source(l, t, r, b),
                     _ => None,
                 };
                 // Rematch only after the soft/hard panel capture has a ready frame.
                 if !preview_interacting
                     && self.match_check.settings.awaiting_panel
-                    && display.is_some()
+                    && source.is_some()
                     && !panel_pending
                 {
                     self.match_check.settings.awaiting_panel = false;
@@ -797,7 +790,7 @@ impl DataEditor {
                         by,
                         force_match,
                         settings.runtime.image_search_close_matches_distance,
-                        display,
+                        source,
                     );
                 }
                 if self.match_check.pending.is_some() {

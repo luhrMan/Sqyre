@@ -41,6 +41,10 @@ mod tests {
 
     #[test]
     fn catch_ffi_returns_fallback_on_panic() {
+        // Serialize with diag tests: catch path calls mark_site on LAST_SITE.
+        let _guard = crate::diag::DIAG_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let hit = AtomicBool::new(false);
         let out = catch_ffi("test.panic", 7, || {
             hit.store(true, Ordering::Relaxed);

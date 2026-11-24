@@ -1,15 +1,18 @@
 //! Navigate Select action editor.
 
-use super::edit_fields::string_list_field;
+use super::edit_fields::chord_hotkey_field;
 use crate::action_tooltip::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use crate::action_tooltip::{help, help as h};
+use crate::hotkey_record::HotkeyRecordUi;
 use crate::paint_ctx::{CatalogPaint, VarTheme};
+use crate::recorded_action::{ChordRecordTarget, NavChordSlot};
 use crate::widgets::{
     combo_enum, labeled_searchable_combo, num_or_var_field, text_field, NumOrVarOpts,
     SearchableComboOpts, W_TEXT,
 };
 use eframe::egui;
 use sqyre_domain::{MouseButton, NavPressMode, NavSelectDevice};
+use sqyre_hotkeys::MacroHotkeyBridge;
 use sqyre_validate::EntryValidation;
 
 pub(super) fn paint_navigate_select(
@@ -17,6 +20,8 @@ pub(super) fn paint_navigate_select(
     paint: &mut CatalogPaint<'_>,
     theme: VarTheme<'_>,
     data: &mut sqyre_domain::NavigateSelectData,
+    hotkey_record: &mut HotkeyRecordUi,
+    macro_hotkeys: &MacroHotkeyBridge,
 ) {
     tip_wrapped_section(ui, |ui| {
         {
@@ -75,47 +80,90 @@ pub(super) fn paint_navigate_select(
         }
     });
     tip_section(ui, |ui| {
-        string_list_field(
+        let record_enabled = !hotkey_record.is_open();
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::ARROW_UP,
             "Chord up",
-            &mut data.chords.up,
             h::NAV_CHORD_UP,
+            &mut data.chords.up,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Up),
+                );
+            },
         );
-        string_list_field(
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::ARROW_DOWN,
             "Chord down",
-            &mut data.chords.down,
             h::NAV_CHORD_DOWN,
+            &mut data.chords.down,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Down),
+                );
+            },
         );
-        string_list_field(
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::ARROW_LEFT,
             "Chord left",
-            &mut data.chords.left,
             h::NAV_CHORD_LEFT,
+            &mut data.chords.left,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Left),
+                );
+            },
         );
-        string_list_field(
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::ARROW_RIGHT,
             "Chord right",
-            &mut data.chords.right,
             h::NAV_CHORD_RIGHT,
+            &mut data.chords.right,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Right),
+                );
+            },
         );
-        string_list_field(
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::CHECK,
             "Chord select",
-            &mut data.chords.select,
             h::NAV_CHORD_SELECT,
+            &mut data.chords.select,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Select),
+                );
+            },
         );
-        string_list_field(
+        chord_hotkey_field(
             ui,
             egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
             "Chord back",
-            &mut data.chords.back,
             h::NAV_CHORD_BACK,
+            &mut data.chords.back,
+            record_enabled,
+            || {
+                hotkey_record.open_for(
+                    macro_hotkeys,
+                    ChordRecordTarget::NavSelect(NavChordSlot::Back),
+                );
+            },
         );
     });
     tip_section(ui, |ui| {

@@ -865,13 +865,15 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.start_chosen_macro(name, ctx);
     }
 
-    if let Some(chord) = app.hotkey_record.show(
+    if let Some((chord, target)) = app.hotkey_record.show(
         ctx,
         &app.run_session.macro_hotkeys,
         app.viewport_scale.pending_ref(),
     ) {
-        if !app.tree.tooltip.apply_recorded_chord(chord.clone())
-            && !app.add_action_picker.apply_recorded_chord(chord.clone())
+        if !app.tree.tooltip.apply_recorded_chord(chord.clone(), target)
+            && !app
+                .add_action_picker
+                .apply_recorded_chord(chord.clone(), target)
         {
             app.apply_hotkey_to_selected(chord, None);
         }

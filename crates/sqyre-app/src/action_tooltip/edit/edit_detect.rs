@@ -69,6 +69,7 @@ pub(super) fn paint_image_search_fields(
         search_area,
         tolerance,
         blur,
+        match_scale_percent,
         match_method,
         plane_flip,
         sort_by,
@@ -93,7 +94,14 @@ pub(super) fn paint_image_search_fields(
         );
     });
     tip_wrapped_section(ui, |ui| {
-        match_settings::paint_match_settings(ui, tolerance, blur, match_method, false);
+        match_settings::paint_match_settings(
+            ui,
+            tolerance,
+            blur,
+            match_scale_percent,
+            match_method,
+            false,
+        );
     });
     detection_common_fields(ui, theme, detection);
     tip_advanced(ui, |ui| {

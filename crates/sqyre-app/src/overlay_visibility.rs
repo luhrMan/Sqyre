@@ -13,14 +13,14 @@ use sqyre_capture::{
 };
 use sqyre_domain::{CoordinateRef, Macro, GENERAL_PROGRAM};
 use sqyre_match::{
-    blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
-    search_blur_kernel,
+    blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
+    prepare_template, search_blur_kernel,
 };
 use sqyre_persist::{CatalogView, OverlayButtonConfig, OverlayVisibilityGate, ProgramCatalog};
 use sqyre_ports::{clamp_search_rect, event_log, mark_site, note};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
-    rgb_capture_to_image_buf,
+    rgb_capture_to_image_buf, scale_for_match,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -676,7 +676,9 @@ fn match_once(
     };
     let threshold = gate.tolerance as f32;
     let method = gate.match_method;
-    let search_prep = prepare_search(&search_blurred);
+    let scale_percent = sqyre_domain::clamp_match_scale_percent(gate.match_scale_percent);
+    let full_scale = scale_percent >= sqyre_domain::DEFAULT_MATCH_SCALE_PERCENT;
+    let search_prep = full_scale.then(|| prepare_search(&search_blurred));
 
     for target in &gate.targets {
         let paths = catalog.variant_paths(target);
@@ -686,35 +688,39 @@ fn match_once(
         let mask_path = catalog.mask_path(target);
         // Warm caches on this thread before parallel variant match (same deadlock
         // class as image search: inflight gates + nested FFT rayon).
-        for path in &paths {
-            let Ok(template_blurred) =
-                get_cached_blurred_template(path, kernel, sqyre_domain::PlaneFlip::None)
-            else {
-                continue;
-            };
-            let mask_bytes = mask_path.as_ref().and_then(|p| {
-                get_cached_image_mask(
-                    p,
-                    template_blurred.height,
-                    template_blurred.width,
+        if full_scale {
+            for path in &paths {
+                let Ok(template_blurred) =
+                    get_cached_blurred_template(path, kernel, sqyre_domain::PlaneFlip::None)
+                else {
+                    continue;
+                };
+                let mask_bytes = mask_path.as_ref().and_then(|p| {
+                    get_cached_image_mask(
+                        p,
+                        template_blurred.height,
+                        template_blurred.width,
+                        sqyre_domain::PlaneFlip::None,
+                    )
+                });
+                let _ = get_cached_prepared_template(
+                    path,
+                    kernel,
                     sqyre_domain::PlaneFlip::None,
-                )
-            });
-            let _ = get_cached_prepared_template(
-                path,
-                kernel,
-                sqyre_domain::PlaneFlip::None,
-                template_blurred.as_ref(),
-                mask_path.as_deref(),
-                mask_bytes.as_deref().map(|m| m.as_slice()),
-                method,
-            );
-            if mask_path.is_none() {
-                search_prep.warm_fft_for_template(
-                    &search_blurred,
-                    template_blurred.width,
-                    template_blurred.height,
+                    template_blurred.as_ref(),
+                    mask_path.as_deref(),
+                    mask_bytes.as_ref().map(|m| m.as_slice()),
+                    method,
                 );
+                if mask_path.is_none() {
+                    if let Some(prep) = search_prep.as_ref() {
+                        prep.warm_fft_for_template(
+                            &search_blurred,
+                            template_blurred.width,
+                            template_blurred.height,
+                        );
+                    }
+                }
             }
         }
         let hit = paths.par_iter().any(|path| {
@@ -731,28 +737,50 @@ fn match_once(
             let mask_bytes = mask_path.as_ref().and_then(|p| {
                 get_cached_image_mask(p, tmpl_h, tmpl_w, sqyre_domain::PlaneFlip::None)
             });
-            let Ok(prepared) = get_cached_prepared_template(
-                path,
-                kernel,
-                sqyre_domain::PlaneFlip::None,
-                template_blurred.as_ref(),
-                mask_path.as_deref(),
-                mask_bytes.as_deref().map(|m| m.as_slice()),
-                method,
-            ) else {
-                return false;
-            };
-            find_template_matches_preblurred_with_prepared(
-                &search_blurred,
-                template_blurred.as_ref(),
-                &prepared,
-                threshold,
-                close_dist,
-                method,
-                Some(&search_prep),
-            )
-            .ok()
-            .is_some_and(|hits| !hits.is_empty())
+            if full_scale {
+                let Ok(prepared) = get_cached_prepared_template(
+                    path,
+                    kernel,
+                    sqyre_domain::PlaneFlip::None,
+                    template_blurred.as_ref(),
+                    mask_path.as_deref(),
+                    mask_bytes.as_ref().map(|m| m.as_slice()),
+                    method,
+                ) else {
+                    return false;
+                };
+                match_template_with_prepared(
+                    &search_blurred,
+                    template_blurred.as_ref(),
+                    &prepared,
+                    search_prep.as_ref(),
+                )
+                .ok()
+                .map(|map| find_peaks_for_method(&map, threshold, close_dist, method))
+                .is_some_and(|hits| !hits.is_empty())
+            } else {
+                let scaled = scale_for_match(
+                    &search_blurred,
+                    template_blurred.as_ref(),
+                    mask_bytes.as_ref().map(|m| m.as_slice()),
+                    scale_percent,
+                );
+                let Ok(prepared) =
+                    prepare_template(&scaled.template, scaled.mask.as_deref(), method)
+                else {
+                    return false;
+                };
+                let prep = prepare_search(&scaled.search);
+                match_template_with_prepared(
+                    &scaled.search,
+                    &scaled.template,
+                    &prepared,
+                    Some(&prep),
+                )
+                .ok()
+                .map(|map| find_peaks_for_method(&map, threshold, close_dist, method))
+                .is_some_and(|hits| !hits.is_empty())
+            }
         });
         if hit {
             return Some((true, fresh));

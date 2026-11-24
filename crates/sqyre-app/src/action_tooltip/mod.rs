@@ -203,13 +203,17 @@ impl TooltipState {
         crate::recorded_action::apply_recorded_key(&mut edit.draft.kind, recorded);
     }
 
-    /// Apply a chord from [`HotkeyRecordUi`] onto a Pause continue-key draft.
-    /// Returns true when the draft was a Pause action.
-    pub fn apply_recorded_chord(&mut self, recorded: Vec<String>) -> bool {
+    /// Apply a chord from [`HotkeyRecordUi`] onto the open draft.
+    /// Returns true when the draft consumed it.
+    pub fn apply_recorded_chord(
+        &mut self,
+        recorded: Vec<String>,
+        target: crate::recorded_action::ChordRecordTarget,
+    ) -> bool {
         let Self::Edit(edit) = self else {
             return false;
         };
-        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded)
+        crate::recorded_action::apply_recorded_chord(&mut edit.draft.kind, recorded, target)
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto the draft.
@@ -1220,6 +1224,52 @@ mod tests {
         match &state {
             TooltipState::Edit(edit) => match &edit.draft.kind {
                 ActionKind::Key { key, .. } => assert_eq!(key, "f5"),
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("expected Edit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_recorded_chord_updates_nav_select_slot() {
+        use crate::recorded_action::{ChordRecordTarget, NavChordSlot};
+
+        let child = Action::new(ActionKind::NavigateSelect(Box::default()));
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&child, egui::pos2(0.0, 0.0));
+        assert!(state.apply_recorded_chord(
+            vec!["up".into()],
+            ChordRecordTarget::NavSelect(NavChordSlot::Up),
+        ));
+        match &state {
+            TooltipState::Edit(edit) => match &edit.draft.kind {
+                ActionKind::NavigateSelect(data) => {
+                    assert_eq!(data.chords.up, ["up".to_string()]);
+                }
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("expected Edit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_recorded_chord_updates_nav_key() {
+        use crate::recorded_action::ChordRecordTarget;
+
+        let child = Action::new(ActionKind::NavigateKey {
+            name: "branch".into(),
+            chord: Vec::new(),
+            exit: false,
+            subactions: Vec::new(),
+        });
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&child, egui::pos2(0.0, 0.0));
+        assert!(state.apply_recorded_chord(vec!["f2".into()], ChordRecordTarget::Inferred));
+        match &state {
+            TooltipState::Edit(edit) => match &edit.draft.kind {
+                ActionKind::NavigateKey { chord, .. } => {
+                    assert_eq!(chord, &["f2".to_string()]);
+                }
                 other => panic!("unexpected {other:?}"),
             },
             other => panic!("expected Edit, got {other:?}"),

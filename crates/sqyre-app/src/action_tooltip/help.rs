@@ -162,6 +162,8 @@ pub const IS_TOLERANCE_UNNORMED: &str =
 pub const IS_METHOD: &str =
     "How Sqyre scores a match. Default (recommended) works for most cases. Difference methods treat lower scores as better.";
 pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise).";
+pub const IS_MATCH_SCALE: &str =
+    "Percent of the search area used for matching. 100% is full resolution; lower values shrink the search and template together (can help noisy or large areas).";
 pub const IS_PLANE_FLIP: &str =
     "Mirror the template before searching. Horizontal flips left↔right; Vertical flips top↔bottom; Both does both. Use a second Image Search if you also need the upright template.";
 
@@ -193,12 +195,12 @@ pub const PIXEL_TOLERANCE: &str = "Allowed per-channel color distance from the t
 
 pub const NAV_PROGRAM: &str = "Program whose Atlas this navigator uses.";
 pub const NAV_ATLAS: &str = "Atlas name within the program (group of Collections).";
-pub const NAV_CHORD_UP: &str = "Keys that move selection up (one per line).";
-pub const NAV_CHORD_DOWN: &str = "Keys that move selection down (one per line).";
-pub const NAV_CHORD_LEFT: &str = "Keys that move selection left (one per line).";
-pub const NAV_CHORD_RIGHT: &str = "Keys that move selection right (one per line).";
-pub const NAV_CHORD_SELECT: &str = "Keys that confirm the current cell (one per line).";
-pub const NAV_CHORD_BACK: &str = "Keys that exit navigation (one per line).";
+pub const NAV_CHORD_UP: &str = "Hotkey that moves selection up.";
+pub const NAV_CHORD_DOWN: &str = "Hotkey that moves selection down.";
+pub const NAV_CHORD_LEFT: &str = "Hotkey that moves selection left.";
+pub const NAV_CHORD_RIGHT: &str = "Hotkey that moves selection right.";
+pub const NAV_CHORD_SELECT: &str = "Hotkey that confirms the current cell.";
+pub const NAV_CHORD_BACK: &str = "Hotkey that exits navigation.";
 pub const NAV_WRAP: &str =
     "Wrap to the opposite edge of the current Collection when there is no connected neighbor.";
 pub const NAV_MOVE_CURSOR: &str = "Move the mouse cursor to the selected cell.";
@@ -225,7 +227,7 @@ pub const NAV_KEY_CHILDREN: &str =
 // --- Nav Key ---
 
 pub const NAV_KEY_EXIT: &str = "Leave Navigate Select after this branch finishes.";
-pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
+pub const NAV_KEY_CHORD: &str = "Hotkey that triggers this branch.";
 
 // --- Data editor ---
 
