@@ -6,8 +6,8 @@
 # devcontainer, REPO_ROOT is often /workspace, which does not exist on the host.
 #
 # Prefers LOCAL_WORKSPACE_FOLDER (set from ${localWorkspaceFolder} in
-# .devcontainer/devcontainer.json), then docker inspect of this container's
-# bind mount, then REPO_ROOT (bare-metal / CI).
+# .devcontainer/desktop/devcontainer.json and .devcontainer/android/devcontainer.json),
+# then docker inspect of this container's bind mount, then REPO_ROOT (bare-metal / CI).
 #
 # Requires: REPO_ROOT. Sets/exports DOCKER_HOST_REPO_ROOT.
 

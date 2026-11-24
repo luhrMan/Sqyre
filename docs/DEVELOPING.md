@@ -2,11 +2,11 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.100.0, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in a dev container. **Desktop** (`.devcontainer/desktop/`) is the one to use day to day. It builds the Dockerfile `base` stage: Rust 1.100.0, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. It does not install the Android SDK, NDK, Gradle, or emulator. **Android** (`.devcontainer/android/`) is that image plus JDK 17, the SDK/NDK, Gradle, **cargo-ndk**, and the emulator/scrcpy (`android` stage) for `make android` and `make android-emulator`. Pick it only when you are building the APK — that stage is slow to build. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
-If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`). Prefer `make clean-sweep` to keep `target/` (and `target-dhat/` when present) under ~20 GiB; use `cargo clean` only if you need a full cold rebuild.
+If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/desktop/devcontainer.json`; the Android config matches). Prefer `make clean-sweep` to keep `target/` (and `target-dhat/` when present) under ~20 GiB; use `cargo clean` only if you need a full cold rebuild.
 
 `shutdownAction` is set to `none` so Cursor does not stop the container when an Agents window closes or a secondary attach ends (a known Cursor Dev Containers bug). Stop it yourself when finished: `docker stop <id>` or Docker Desktop. After pulling this change, **Rebuild Container** once so the setting takes effect.
 
@@ -36,8 +36,8 @@ make flatpak    # fmt + check, then bin/com.sqyre.app.flatpak (Linux; Docker fal
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
 make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
-make android-check  # cargo ndk check (editor + runtime) for arm64-v8a (devcontainer)
-make android    # fmt + check, then bin/sqyre-debug.apk (devcontainer; see ANDROID.md)
+make android-check  # cargo ndk check (editor + runtime) for arm64-v8a (Android devcontainer)
+make android    # fmt + check, then bin/sqyre-debug.apk (Android devcontainer; see ANDROID.md)
 make android-emulator  # boot an x86_64 emulator (needs /dev/kvm), install and launch the APK
 make ocr-models # fetch the ocrs ONNX models embedded into the binary at compile time
 make release-bundle  # portable bin/sqyre-bundle/ (dist/LTO shipping; no check gate — see scripts/linux/packaging/PACKAGING.md)
@@ -172,7 +172,7 @@ CI caches (shared where possible):
 | Flatpak runtimes + builder state | `build-flatpak` | Weekly-epoch key on the manifest — bounded staleness instead of a multi-GB re-save every release |
 | OCR models / Trunk tools / AppImage runtime / Gradle / rustup toolchains | Across runs | Keyed on the inputs that pin their versions |
 
-Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>`, `…-android-build:<dockerfile-hash>`, and `…-windows-cross:<scripts-hash>` (also `:latest`). `.devcontainer/Dockerfile` is multi-stage — `docker build` without `--target` produces the full `android` image (what the devcontainer uses); CI builds `--target base` or `--target android` explicitly.
+Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>`, `…-android-build:<dockerfile-hash>`, and `…-windows-cross:<scripts-hash>` (also `:latest`). `.devcontainer/Dockerfile` is multi-stage. The Desktop devcontainer and most CI jobs build `--target base`; the Android devcontainer and the Android CI jobs build `--target android`. `docker build` without `--target` still produces the `android` image because that stage is last.
 
 ---
 
@@ -180,8 +180,9 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Multi-stage: `base` = Rust + AppImage/Flatpak tools + Trunk/wasm32; `android` = base + SDK/NDK/Gradle/emulator/scrcpy (devcontainer image) |
-| [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` / packaging fallbacks |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Multi-stage: `base` = Rust + AppImage/Flatpak tools + Trunk/wasm32; `android` = base + SDK/NDK/Gradle/emulator/scrcpy |
+| [.devcontainer/desktop/devcontainer.json](../.devcontainer/desktop/devcontainer.json) | Desktop devcontainer (`base`) + Docker-outside-of-Docker for `make windows` / packaging fallbacks |
+| [.devcontainer/android/devcontainer.json](../.devcontainer/android/devcontainer.json) | Android devcontainer (`android` stage) for `make android` / the emulator |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
 | [assets/ocr-models/](../assets/ocr-models/) | ocrs ONNX models embedded at compile time (`make ocr-models`, gitignored) |

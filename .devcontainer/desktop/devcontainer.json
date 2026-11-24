@@ -1,0 +1,60 @@
+{
+  "name": "Sqyre (Desktop)",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "../..",
+    "target": "base"
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "mounts": [
+    "source=sqyre-desktop-vscode-home,target=/home/vscode,type=volume",
+    "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
+  ],
+  "runArgs": [
+    "--security-opt=label=disable"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "installDockerBuildx": true
+    }
+  },
+  "containerEnv": {
+    "CARGO_HOME": "/home/vscode/.cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "CARGO_TARGET_DIR": "/workspace/target",
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "HOST_DISPLAY": "${localEnv:DISPLAY}",
+    "HOST_XAUTHORITY": "${localEnv:XAUTHORITY}"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer"
+      ],
+      "settings": {
+        "files.watcherExclude": {
+          "**/target/**": true,
+          "**/.cache/**": true,
+          "**/bin/sqyre-bundle/**": true
+        },
+        "search.exclude": {
+          "**/target": true,
+          "**/.cache": true,
+          "**/bin/sqyre-bundle": true
+        },
+        "rust-analyzer.files.excludeDirs": [
+          "target",
+          ".cache",
+          "bin/sqyre-bundle"
+        ]
+      }
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-start.sh",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "shutdownAction": "none"
+}

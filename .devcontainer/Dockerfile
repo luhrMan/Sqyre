@@ -3,10 +3,12 @@
 # Multi-stage:
 #   base    — everything needed for Linux builds/tests/packaging except the
 #             Android toolchain. This is the slim CI image (sqyre-linux-build)
-#             pulled by the test/build-linux/build-appimage/build-wasm jobs.
+#             pulled by the test/build-linux/build-appimage/build-wasm jobs,
+#             and the Desktop devcontainer (.devcontainer/desktop, build.target
+#             base). Day-to-day work uses this stage so image builds skip the SDK.
 #   android — base + JDK/SDK/NDK/Gradle/cargo-ndk + emulator/scrcpy. This is the
-#             devcontainer image (devcontainer.json builds the last stage) and
-#             the CI image for check-android/build-android (sqyre-android-build).
+#             Android devcontainer (.devcontainer/android, build.target android)
+#             and the CI image for check-android/build-android (sqyre-android-build).
 #
 # Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
@@ -101,8 +103,9 @@ ENV CARGO_HOME=/home/${USERNAME}/.cargo \
 
 # Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle,
 # cargo-ndk, plus the x86_64 emulator and scrcpy for `make android-emulator`.
-# CI pulls this only for check-android / build-android; devcontainers get it
-# automatically as the Dockerfile's last stage.
+# CI pulls this only for check-android / build-android. The Android
+# devcontainer selects it with build.target. Untargeted `docker build` still
+# ends here because this is the last stage.
 FROM base AS android
 
 ARG USERNAME=vscode

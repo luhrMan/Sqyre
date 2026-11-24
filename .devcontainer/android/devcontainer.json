@@ -1,13 +1,14 @@
 {
-  "name": "Sqyre (Rust)",
+  "name": "Sqyre (Android)",
   "build": {
-    "dockerfile": "Dockerfile",
-    "context": ".."
+    "dockerfile": "../Dockerfile",
+    "context": "../..",
+    "target": "android"
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "mounts": [
-    "source=sqyre-vscode-home,target=/home/vscode,type=volume",
+    "source=sqyre-android-vscode-home,target=/home/vscode,type=volume",
     "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
   ],
   "runArgs": [

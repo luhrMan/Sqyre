@@ -120,7 +120,7 @@ Shipped Linux/Windows builds can check GitHub Releases for updates (Ed25519-sign
 
 ### From source
 
-**Recommended:** use the [dev container](.devcontainer/).
+**Recommended:** use the [Desktop dev container](.devcontainer/desktop/). The [Android dev container](.devcontainer/android/) adds the SDK, NDK, and emulator; use it only for APK builds.
 
 ```bash
 make                 # debug → ./bin/sqyre

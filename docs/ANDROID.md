@@ -142,7 +142,7 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 
 - **SDK levels:** min SDK 29, target and compile SDK 35.
 - **Activity:** one `singleTask` `NativeActivity` subclass.
-- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r28c, Gradle 9 and `cargo-ndk` (OCR is pure-Rust ocrs — no C/C++ deps to build).
+- **Toolchain:** the Android devcontainer (`.devcontainer/android/`) carries JDK 17, the SDK, NDK r28c, Gradle 9 and `cargo-ndk` (OCR is pure-Rust ocrs — no C/C++ deps to build). The Desktop devcontainer does not.
 - **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the runtime build.
 - **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
 - **Releases:** CI builds and signs `sqyre-v<version>-android-arm64.apk` on each release (`build-android` in `.github/workflows/main.yml`, arm64-v8a only). It needs the `SQYRE_ANDROID_KEYSTORE` (base64 `.jks` — encode with `base64 -w0 release.keystore`), `SQYRE_ANDROID_KEYSTORE_PASSWORD`, `SQYRE_ANDROID_KEY_ALIAS` and `SQYRE_ANDROID_KEY_PASSWORD` secrets — the release fails without them, like `SQYRE_UPDATE_SIGNING_KEY`. Locally `ANDROID_PROFILE=release make android` signs when `ANDROID_KEYSTORE_FILE` (+ `ANDROID_KEYSTORE_PASSWORD`/`_ALIAS`/`_KEY_PASSWORD`) is set and stays unsigned otherwise. A store listing is out of scope.
@@ -162,8 +162,8 @@ Build the APK first with `make android`; it includes the x86_64 library by defau
 | `scripts/android/emulator.sh screenshot [FILE]` | Saves the screen to `FILE` (default `bin/emulator.png`) |
 | `scripts/android/emulator.sh adb ARGS...` | Runs `adb` against the emulator, e.g. `adb logcat -b crash` |
 
-- **Window:** the emulator always runs with `-no-window`; [scrcpy](https://github.com/Genymobile/scrcpy) (installed in the devcontainer image) shows the screen and forwards input over adb. The emulator's own Qt window drops input for seconds at a time under XWayland, which GNOME reports as "not responding". Closing the scrcpy window leaves the emulator running. The scrcpy log is `target/scrcpy.log`. An image built before scrcpy was added needs `docker rmi sqyre-dev-android` to rebuild.
-- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm` and, for scrcpy, `/dev/dri`, the host X socket and `XAUTHORITY`. From the devcontainer scrcpy uses `HOST_DISPLAY` and `HOST_XAUTHORITY`, which `devcontainer.json` captures when the container is created; rebuild the devcontainer after logging in again, or the auth file path is stale.
+- **Window:** the emulator always runs with `-no-window`; [scrcpy](https://github.com/Genymobile/scrcpy) (installed in the Android devcontainer image) shows the screen and forwards input over adb. The emulator's own Qt window drops input for seconds at a time under XWayland, which GNOME reports as "not responding". Closing the scrcpy window leaves the emulator running. The scrcpy log is `target/scrcpy.log`. An image built before scrcpy was added needs `docker rmi sqyre-dev-android` to rebuild.
+- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the Android image (built on first use), with `--network host`, `/dev/kvm` and, for scrcpy, `/dev/dri`, the host X socket and `XAUTHORITY`. From the Android devcontainer scrcpy uses `HOST_DISPLAY` and `HOST_XAUTHORITY`, which `.devcontainer/android/devcontainer.json` captures when the container is created; rebuild that container after logging in again, or the auth file path is stale.
 - **GPU:** `SQYRE_EMULATOR_GPU` overrides the mode. With an X display and a `/dev/dri` render node it defaults to `host` (scrcpy holds 60 fps at its 1200 px `--max-size`); headless runs and hosts without a render node use `swangle_indirect`, which tops out around 20 fps. `swiftshader_indirect` segfaults during boot on this image.
 - **Failures:** a boot failure prints the end of the emulator log. The container is kept until the next `start` or `stop`, so `docker logs sqyre-android-emulator` still works.
 - **Signing:** each fresh build container makes a new debug key, so `install` uninstalls first when the signature changed. App data is reset when that happens.
@@ -172,7 +172,7 @@ Build the APK first with `make android`; it includes the x86_64 library by defau
 ## Tests
 
 - **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
-- **Android compile:** `make android-check` — in the devcontainer and the CI `test` job — checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It fetches the embedded OCR models on first run.
+- **Android compile:** `make android-check` — in the Android devcontainer and the CI `test` job — checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It fetches the embedded OCR models on first run.
 - **Device or emulator:** by hand, at each phase's exit criteria, with `make android-emulator` or `make android-emulator-headless` plus `scripts/android/emulator.sh screenshot`. Emulators are not in CI yet.
 
 ## Out of scope

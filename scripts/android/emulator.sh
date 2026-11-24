@@ -15,8 +15,8 @@
 # input over adb instead.
 #
 # Runs the SDK emulator directly when `emulator` and a writable /dev/kvm are present.
-# Otherwise (host without the SDK, or the devcontainer, which has no /dev/kvm) it runs
-# inside the devcontainer image via Docker with /dev/kvm and the X11 socket passed in.
+# Otherwise (host without the SDK, or a devcontainer, which has no /dev/kvm) it runs
+# inside the Android image via Docker with /dev/kvm and the X11 socket passed in.
 #
 # Env:
 #   SQYRE_ANDROID_IMAGE   Docker image with the SDK + emulator (default: sqyre-dev-android;
@@ -25,7 +25,7 @@
 #                         render node, else swangle_indirect)
 #   HOST_DISPLAY, HOST_XAUTHORITY
 #                         host X display and auth file for the scrcpy window when started
-#                         from the devcontainer (set by devcontainer.json at container creation)
+#                         from a devcontainer (set by devcontainer.json at container creation)
 set -euo pipefail
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repo-root.sh

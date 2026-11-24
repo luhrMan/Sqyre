@@ -23,7 +23,7 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 ## When you change builds
 
 1. Add any new host packages / tools to [`.devcontainer/Dockerfile`](.devcontainer/Dockerfile) (or document why they only live in a nested build image).
-2. If a target needs Docker (`make windows`, AppImage/Flatpak Docker fallback), keep the **docker-outside-of-docker** feature (or equivalent CLI + `/var/run/docker.sock`) in [`devcontainer.json`](.devcontainer/devcontainer.json).
+2. If a target needs Docker (`make windows`, AppImage/Flatpak Docker fallback), keep the **docker-outside-of-docker** feature (or equivalent CLI + `/var/run/docker.sock`) in [`.devcontainer/desktop/devcontainer.json`](.devcontainer/desktop/devcontainer.json) and [`.devcontainer/android/devcontainer.json`](.devcontainer/android/devcontainer.json). Desktop builds the `base` stage (no Android SDK). Android builds the `android` stage for `make android` / the emulator.
 3. Keep nested images self-contained ([`scripts/windows/Dockerfile`](scripts/windows/Dockerfile), AppImage path, Flatpak builder image) — the outer container only needs the Docker client + enough deps for native Linux builds.
 4. Update [`docs/DEVELOPING.md`](docs/DEVELOPING.md) if the developer workflow changes.
 5. Smoke-check from the container mindset: `make release`, `make appimage`, `make flatpak` (or its Docker path), `make windows`, and `make wasm` must remain reachable.
