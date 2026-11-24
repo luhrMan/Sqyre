@@ -50,6 +50,7 @@ mod host_press;
 mod hub_dismiss;
 #[cfg(feature = "runtime")]
 mod hub_fan;
+#[cfg(feature = "runtime")]
 mod macro_overlay;
 #[cfg(all(
     feature = "runtime",
