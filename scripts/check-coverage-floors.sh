@@ -109,6 +109,22 @@ def test_region_lines(path):
     return marked
 
 
+def path_matches(filename, needle):
+    """Match a coverage path on a boundary.
+
+    A bare filename (`diag.rs`) is the basename only, so it does not also
+    select `mem_diag.rs`. A relative fragment (`settings/paths.rs`) must
+    follow a `/`. Needles that already start with `/` stay substrings
+    (`/sqyre-domain/`).
+    """
+    if "/" not in needle:
+        return filename.rsplit("/", 1)[-1] == needle
+    if needle.startswith("/"):
+        return needle in filename
+    idx = filename.find(needle)
+    return idx > 0 and filename[idx - 1] == "/"
+
+
 def covered_lines(lcov_path):
     """Yield (filename, {line: hits}) per SF: record."""
     current = None
@@ -150,7 +166,7 @@ def main() -> int:
         floor = float(target["floor"])
         covered = total = 0
         for filename, fc, ft in per_file:
-            if path in filename:
+            if path_matches(filename, path):
                 covered += fc
                 total += ft
         if total == 0:

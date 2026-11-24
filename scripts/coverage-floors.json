@@ -80,9 +80,9 @@
     },
     {
       "name": "diag",
-      "path": "diag.rs",
+      "path": "sqyre-ports/src/diag.rs",
       "floor": 82.5,
-      "note": "ports diag façade (OS-neutral); excludes win_*/x11_*/wayland/android"
+      "note": "ports diag façade only (OS-neutral); not app diag.rs / mem_diag.rs"
     },
     {
       "name": "search_cache",
