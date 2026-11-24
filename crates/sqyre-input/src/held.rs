@@ -42,14 +42,6 @@ impl HeldInputs {
         self.keys.extend(keys);
         self.buttons.extend(buttons);
     }
-
-    pub fn keys(&self) -> &HashSet<String> {
-        &self.keys
-    }
-
-    pub fn buttons(&self) -> &HashSet<String> {
-        &self.buttons
-    }
 }
 
 /// Sink used by [`release_held_into`] — production wraps portal / rustautogui;
@@ -179,8 +171,9 @@ mod tests {
         let (keys, buttons) = held.take();
         let (left_k, left_b) = release_held_into(keys, buttons, None);
         held.reinsert(left_k, left_b);
-        assert!(held.keys().contains("escape"));
-        assert!(held.buttons().contains("right"));
+        let (keys, buttons) = held.take();
+        assert!(keys.contains("escape"));
+        assert!(buttons.contains("right"));
     }
 
     #[test]
