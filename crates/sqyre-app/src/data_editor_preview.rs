@@ -5,7 +5,7 @@ use crate::var_pills;
 use crate::widgets::elide::single_line_galley;
 use eframe::egui;
 use sqyre_domain::{KnownVariableNames, ScalarValue};
-use sqyre_persist::{CatalogView, ProgramSearchArea};
+use sqyre_persist::ProgramSearchArea;
 use sqyre_validate::EntryValidation;
 
 /// Screen-record arm drawn in the preview floater row. `enabled=false` while a
@@ -406,21 +406,6 @@ pub(crate) fn search_area_pixel_size(sa: &ProgramSearchArea) -> Option<(i32, i32
     )
 }
 
-pub(crate) fn catalog_search_area_pixel_size(
-    catalog: CatalogView<'_>,
-    program: &str,
-    name: &str,
-) -> Option<(i32, i32)> {
-    let pdata = catalog.get(program)?;
-    let res = catalog.resolution_key();
-    let sa = pdata
-        .search_areas
-        .get(res)
-        .or_else(|| pdata.search_areas.values().next())
-        .and_then(|m| m.get(name))?;
-    search_area_pixel_size(sa)
-}
-
 /// First-cell exclusive size for a `rows`×`cols` split of `area_w`×`area_h`.
 pub(crate) fn collection_cell_pixel_size(
     area_w: i32,
@@ -460,32 +445,6 @@ pub(crate) fn paint_search_area_preview_sizes(
             "Image {}",
             pixel_size_text(image_size.x as i32, image_size.y as i32)
         ));
-    }
-    paint_preview_size_badge(ui, viewport, &lines);
-}
-
-pub(crate) fn paint_collection_preview_sizes(
-    ui: &egui::Ui,
-    viewport: egui::Rect,
-    area: Option<(i32, i32)>,
-    rows: i32,
-    cols: i32,
-    image_size: Option<egui::Vec2>,
-) {
-    let mut lines = Vec::new();
-    if let Some((w, h)) = area {
-        lines.push(format!("Total {}", pixel_size_text(w, h)));
-        if let Some((cw, ch)) = collection_cell_pixel_size(w, h, rows, cols) {
-            lines.push(format!("Cell {}", pixel_size_text(cw, ch)));
-        }
-    }
-    if let Some(image_size) = image_size {
-        if image_size.x > 0.0 && image_size.y > 0.0 {
-            lines.push(format!(
-                "Image {}",
-                pixel_size_text(image_size.x as i32, image_size.y as i32)
-            ));
-        }
     }
     paint_preview_size_badge(ui, viewport, &lines);
 }
@@ -552,129 +511,6 @@ pub(crate) fn attach_preview_error_icon(ui: &mut egui::Ui, rect: egui::Rect, err
     let enabled = ui.is_enabled();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, err));
     crate::widgets::controls::reveal_status_tip(ui, &resp, err);
-}
-
-/// Collection-tab preview with wheel zoom / drag pan.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "zoomable preview: path, grid, view, replace, and size"
-)]
-pub(crate) fn paint_zoomable_collection_preview(
-    ui: &mut egui::Ui,
-    icons: &mut IconCache,
-    path: &std::path::Path,
-    rows: i32,
-    cols: i32,
-    area_size: Option<(i32, i32)>,
-    view: &mut ImageViewTransform,
-    replace_clicked: &mut bool,
-    capturing: bool,
-) {
-    crate::widgets::section_separator(ui);
-    ui.horizontal(|ui| {
-        crate::action_tooltip::help::tip(
-            ui.label(egui::RichText::new("Collection image").strong()),
-            crate::action_tooltip::help::DE_PREVIEW_ZOOM,
-        );
-        if capturing {
-            crate::widgets::brand_spinner(ui);
-        }
-        if ui
-            .add_enabled(
-                !capturing,
-                egui::Button::new(if capturing {
-                    "Capturing…"
-                } else {
-                    "Replace Image"
-                })
-                .small(),
-            )
-            .clicked()
-        {
-            *replace_clicked = true;
-        }
-    });
-
-    let tex = icons.for_path(ui.ctx(), path);
-    let avail_w = ui.available_width();
-    let path_footer_h = if path.is_file() {
-        ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
-    } else {
-        0.0
-    };
-    // Fill remaining height; reserve path label; slack avoids ScrollArea overflow hysteresis.
-    const MIN_H: f32 = 120.0;
-    const FILL_SLACK: f32 = 1.0;
-    let avail_h = ui.available_height() - path_footer_h;
-    let desired_h = if avail_h < MIN_H {
-        MIN_H
-    } else {
-        (avail_h - FILL_SLACK).max(MIN_H)
-    };
-    let image_size = match &tex {
-        Some(t) => {
-            let [tw, th] = t.size();
-            egui::vec2(tw as f32, th as f32)
-        }
-        None => egui::vec2(avail_w, avail_w * 0.75),
-    };
-    let desired = egui::vec2(avail_w.max(160.0), desired_h);
-    let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
-
-    image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
-    let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
-    let body_font = egui::TextStyle::Body.resolve(ui.style());
-
-    {
-        let painter = ui.painter_at(viewport);
-        if let Some(tex) = &tex {
-            image_view::paint_checkerboard(
-                &painter,
-                content,
-                0.0,
-                image_view::CheckerboardEdge::Outset,
-            );
-            painter.image(
-                tex.id(),
-                content,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-        } else {
-            painter.rect_filled(viewport, 0.0, theme::preview_unavailable_fill());
-            painter.text(
-                viewport.center(),
-                egui::Align2::CENTER_CENTER,
-                "No image on disk",
-                body_font,
-                theme::preview_unavailable_fg(),
-            );
-        }
-        paint_grid_overlay_painter(&painter, content, rows, cols);
-        paint_preview_frame(&painter, viewport);
-    }
-    let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
-    if paint_preview_floaters(
-        ui,
-        viewport,
-        true,
-        Some(view),
-        "Fit image in viewport",
-        None,
-    )
-    .refresh
-    {
-        icons.invalidate_path(path);
-    }
-    let tex_size = tex.as_ref().map(|t| {
-        let [tw, th] = t.size();
-        egui::vec2(tw as f32, th as f32)
-    });
-    paint_collection_preview_sizes(ui, viewport, area_size, rows, cols, tex_size);
-
-    if path.is_file() {
-        ui.weak(path.display().to_string());
-    }
 }
 
 pub(crate) fn show_file_hover(
@@ -912,16 +748,24 @@ pub(crate) fn paint_zoomable_atlas_preview(
         })
         .collect();
 
-    let avail_w = ui.available_width();
+    // Match `panel_viewport_size`: slack both axes so a fill-width plane inside
+    // dialog_scroll does not trip a purposeless H-bar (egui ceil compare).
+    const MIN_W: f32 = 160.0;
     const MIN_H: f32 = 160.0;
     const FILL_SLACK: f32 = 1.0;
+    let avail_w = ui.available_width();
+    let desired_w = if avail_w < MIN_W {
+        MIN_W
+    } else {
+        (avail_w - FILL_SLACK).max(MIN_W)
+    };
     let avail_h = ui.available_height();
     let desired_h = if avail_h < MIN_H {
         MIN_H
     } else {
         (avail_h - FILL_SLACK).max(MIN_H)
     };
-    let desired = egui::vec2(avail_w.max(160.0), desired_h);
+    let desired = egui::vec2(desired_w, desired_h);
     let (viewport, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
@@ -1310,5 +1154,63 @@ mod tests {
             }
         }
         shapes.iter().map(|c| walk(&c.shape, color)).sum()
+    }
+
+    /// Collections form: saved capture is an image-icon hover tip (not a panel).
+    #[test]
+    fn collection_image_file_hover_tip_does_not_ratchet() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("bag.png");
+        {
+            let img = image::RgbaImage::from_pixel(32, 24, image::Rgba([10, 20, 30, 255]));
+            img.save(&path).expect("write png");
+        }
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.tooltip_grace_time = 0.0;
+        });
+        let mut icons = IconCache::new();
+        let cell = egui::Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(24.0, 24.0));
+        let needle = "Game~Bag";
+        let mut widths = Vec::new();
+        for frame in 0..10 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                events: if frame == 0 {
+                    vec![egui::Event::PointerMoved(cell.center())]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let resp = ui.put(cell, egui::Button::new(egui_phosphor::regular::IMAGE));
+                show_file_hover(ui, &resp, &mut icons, &path, needle);
+            });
+            let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.text().contains("Game") => Some(t.galley.size().x),
+                _ => None,
+            });
+            if let Some(w) = tip_w {
+                widths.push(w);
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            widths.len() >= 2,
+            "collection image tip never opened ({})",
+            widths.len()
+        );
+        let (first, last) = (widths[0], *widths.last().unwrap());
+        assert!(
+            (last - first).abs() <= 1.0,
+            "collection image tip width ratcheted: {first:.1} -> {last:.1} ({widths:?})"
+        );
     }
 }

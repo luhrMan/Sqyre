@@ -146,7 +146,7 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
     // Sequential BGRA→RGBA: avoid rayon/pulp here. Preview captures can run on the
     // UI thread (glow), and off-thread SIMD pools have hard-crashed some Windows
     // setups without a Rust panic hook.
-    for pixel in bgra.chunks_exact_mut(4) {
+    for pixel in bgra.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
         pixel[3] = 255;
     }

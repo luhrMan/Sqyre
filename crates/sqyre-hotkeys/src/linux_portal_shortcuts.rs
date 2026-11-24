@@ -7,11 +7,13 @@
 
 use crate::macro_hotkeys::{MacroHotkeyBinding, MacroHotkeyBridge, ShortcutEdge};
 use crate::system_shortcuts::SystemShortcutsStatus;
-use ashpd::desktop::global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, NewShortcut};
+use ashpd::desktop::global_shortcuts::{
+    BindShortcutsOptions, ConfigureShortcutsOptions, GlobalShortcuts, NewShortcut,
+};
 use ashpd::desktop::{ResponseError, Session};
 use futures_util::{stream, StreamExt};
 use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -297,12 +299,10 @@ impl Run {
 async fn configure(
     proxy: &GlobalShortcuts,
     session: &Session<GlobalShortcuts>,
-) -> ashpd::zbus::Result<()> {
-    let options: HashMap<&str, ashpd::zvariant::Value<'_>> = HashMap::new();
+) -> Result<(), ashpd::Error> {
     proxy
-        .call_method("ConfigureShortcuts", &(session, "", options))
+        .configure_shortcuts(session, None, ConfigureShortcutsOptions::default())
         .await
-        .map(drop)
 }
 
 /// Sqyre chord → XDG "shortcuts" trigger (`CTRL+SHIFT+a`). `None` when the
@@ -339,7 +339,8 @@ fn xkb_keysym(key: &str) -> Option<&str> {
         "space" => "space",
         "enter" => "Return",
         "tab" => "Tab",
-        "delete" => "BackSpace",
+        "backspace" => "BackSpace",
+        "delete" | "del" => "Delete",
         "up" => "Up",
         "down" => "Down",
         "left" => "Left",
@@ -437,6 +438,14 @@ mod tests {
             xdg_trigger(&chord(&["capslock"])).as_deref(),
             Some("Caps_Lock")
         );
+        assert_eq!(
+            xdg_trigger(&chord(&["backspace"])).as_deref(),
+            Some("BackSpace")
+        );
+        assert_eq!(xdg_trigger(&chord(&["delete"])).as_deref(), Some("Delete"));
+        assert_eq!(xdg_trigger(&chord(&["1"])).as_deref(), Some("1"));
+        assert_eq!(xdg_trigger(&chord(&["num1"])).as_deref(), Some("KP_1"));
+        assert_ne!(xdg_trigger(&chord(&["1"])), xdg_trigger(&chord(&["num1"])));
     }
 
     #[test]

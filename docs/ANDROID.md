@@ -142,7 +142,7 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 
 - **SDK levels:** min SDK 29, target and compile SDK 35.
 - **Activity:** one `singleTask` `NativeActivity` subclass.
-- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle and `cargo-ndk` (OCR is pure-Rust ocrs — no C/C++ deps to build).
+- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r28c, Gradle 9 and `cargo-ndk` (OCR is pure-Rust ocrs — no C/C++ deps to build).
 - **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the runtime build.
 - **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
 - **Releases:** CI builds and signs `sqyre-v<version>-android-arm64.apk` on each release (`build-android` in `.github/workflows/main.yml`, arm64-v8a only). It needs the `SQYRE_ANDROID_KEYSTORE` (base64 `.jks` — encode with `base64 -w0 release.keystore`), `SQYRE_ANDROID_KEYSTORE_PASSWORD`, `SQYRE_ANDROID_KEY_ALIAS` and `SQYRE_ANDROID_KEY_PASSWORD` secrets — the release fails without them, like `SQYRE_UPDATE_SIGNING_KEY`. Locally `ANDROID_PROFILE=release make android` signs when `ANDROID_KEYSTORE_FILE` (+ `ANDROID_KEYSTORE_PASSWORD`/`_ALIAS`/`_KEY_PASSWORD`) is set and stays unsigned otherwise. A store listing is out of scope.

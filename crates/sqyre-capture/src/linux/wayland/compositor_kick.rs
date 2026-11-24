@@ -9,11 +9,13 @@
 //!    Mapping steals activation on GNOME — callers must refocus the prior
 //!    window after `release_stage` before injecting EIS clicks.
 
+use super::layer_surface::{
+    attach_transparent, layer_shell_logical, output_desktop_rect, rects_overlap, AttachedShm,
+};
 use sqyre_ports::{cap_log, mark_site, DesktopRect};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
@@ -423,10 +425,8 @@ impl KickConn {
         surface.commit();
         let _ = self.queue.roundtrip(&mut self.state);
 
-        if let Some((buffer, pool, file)) = mapped {
-            buffer.destroy();
-            pool.destroy();
-            drop(file);
+        if let Some(attached) = mapped {
+            attached.destroy();
         }
         layer.destroy();
         surface.destroy();
@@ -521,8 +521,7 @@ impl KickConn {
         xdg_surface.ack_configure(serial);
         xdg_surface.set_window_geometry(0, 0, w, h);
 
-        let Some((buffer, pool, file)) = attach_transparent(&surface, &shm, &qh, w, h, scale, 0)
-        else {
+        let Some(attached) = attach_transparent(&surface, &shm, &qh, w, h, scale, 0) else {
             if let Some(d) = decoration {
                 d.destroy();
             }
@@ -532,6 +531,13 @@ impl KickConn {
             let _ = self.conn.flush();
             return;
         };
+        let AttachedShm {
+            buffer,
+            pool,
+            file,
+            buf_w,
+            buf_h,
+        } = attached;
         let _ = self.queue.roundtrip(&mut self.state);
         let _ = self.conn.flush();
 
@@ -543,8 +549,8 @@ impl KickConn {
             buffer,
             pool,
             file,
-            buf_w: w.saturating_mul(scale),
-            buf_h: h.saturating_mul(scale),
+            buf_w,
+            buf_h,
             flip: 0,
         });
     }
@@ -608,34 +614,6 @@ impl KickConn {
     }
 }
 
-fn attach_transparent(
-    surface: &wl_surface::WlSurface,
-    shm: &wl_shm::WlShm,
-    qh: &QueueHandle<KickState>,
-    width: i32,
-    height: i32,
-    scale: i32,
-    flip: u8,
-) -> Option<(wl_buffer::WlBuffer, wl_shm_pool::WlShmPool, File)> {
-    let width = width.max(2);
-    let height = height.max(2);
-    let scale = scale.max(1);
-    let buf_w = width.saturating_mul(scale);
-    let buf_h = height.saturating_mul(scale);
-    let stride = buf_w.saturating_mul(4);
-    let bytes = stride.saturating_mul(buf_h) as usize;
-    let mut file = transparent_shm_file(bytes)?;
-    let _ = write_flip_pixel(&mut file, flip);
-    let _ = file.flush();
-    let pool = shm.create_pool(file.as_fd(), bytes as i32, qh, ());
-    let buffer = pool.create_buffer(0, buf_w, buf_h, stride, wl_shm::Format::Argb8888, qh, ());
-    surface.set_buffer_scale(scale);
-    surface.attach(Some(&buffer), 0, 0);
-    surface.damage_buffer(0, 0, buf_w, buf_h);
-    surface.commit();
-    Some((buffer, pool, file))
-}
-
 fn write_flip_pixel(file: &mut File, flip: u8) -> std::io::Result<()> {
     use std::io::{Seek, SeekFrom};
     // ARGB8888 little-endian: A in high byte. Keep A=0 so the pixel stays transparent.
@@ -644,51 +622,6 @@ fn write_flip_pixel(file: &mut File, flip: u8) -> std::io::Result<()> {
     file.write_all(&px)?;
     file.flush()?;
     Ok(())
-}
-
-/// Output rectangle in Sqyre desktop pixels.
-///
-/// COSMIC's portal places a stream at the logical `wl_output` position and
-/// fills a PipeWire frame at the physical mode size. Sqyre's desktop is that
-/// physical pixel space, so the output origin is `logical * scale`. Other
-/// compositors already use one space for both.
-fn output_desktop_rect(x: i32, y: i32, w: i32, h: i32, scale: i32, cosmic: bool) -> DesktopRect {
-    let scale = scale.max(1);
-    if cosmic && scale > 1 {
-        DesktopRect {
-            x: x.saturating_mul(scale),
-            y: y.saturating_mul(scale),
-            w,
-            h,
-        }
-    } else {
-        DesktopRect { x, y, w, h }
-    }
-}
-
-/// Layer-shell size and margins are logical pixels. `kick` is in desktop space.
-/// Returns `(margin_left, margin_top, width, height)`.
-fn layer_shell_logical(
-    kick: DesktopRect,
-    desktop: DesktopRect,
-    scale: i32,
-    cosmic: bool,
-) -> (i32, i32, u32, u32) {
-    let scale = scale.max(1);
-    if cosmic && scale > 1 {
-        let left = (kick.x - desktop.x).max(0) / scale;
-        let top = (kick.y - desktop.y).max(0) / scale;
-        let w = (kick.w / scale).max(1) as u32;
-        let h = (kick.h / scale).max(1) as u32;
-        (left, top, w, h)
-    } else {
-        (
-            (kick.x - desktop.x).max(0),
-            (kick.y - desktop.y).max(0),
-            kick.w.max(1) as u32,
-            kick.h.max(1) as u32,
-        )
-    }
 }
 
 /// First output whose desktop rect overlaps `rect` (cloned for the pulse path).
@@ -769,39 +702,6 @@ fn clamp_kick_rect(rect: DesktopRect, dest: DesktopRect) -> DesktopRect {
             h: bottom - top,
         }
     }
-}
-
-fn rects_overlap(a: DesktopRect, b: DesktopRect) -> bool {
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-}
-
-fn transparent_shm_file(bytes: usize) -> Option<File> {
-    if bytes == 0 {
-        return None;
-    }
-    // SAFETY: `memfd_create` takes a NUL-terminated name; the `c"…"` literal is
-    // 'static and NUL-terminated. The flags are valid `MFD_*` constants.
-    let fd = unsafe {
-        libc::memfd_create(
-            c"sqyre-kick".as_ptr(),
-            libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
-        )
-    };
-    if fd < 0 {
-        return None;
-    }
-    // SAFETY: `memfd_create` returned a fresh, open fd (checked `>= 0` above)
-    // that nothing else owns, so transferring ownership here is sound. `owned`
-    // closes it on every early return below.
-    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
-    // SAFETY: `owned` keeps the fd open for the duration of this call.
-    if unsafe { libc::ftruncate(owned.as_raw_fd(), bytes as libc::off_t) } != 0 {
-        return None;
-    }
-    let raw = owned.into_raw_fd();
-    // SAFETY: `into_raw_fd` released ownership without closing, so `raw` is
-    // still open and unowned; `File` becomes its sole owner.
-    Some(unsafe { File::from_raw_fd(raw) })
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for KickState {

@@ -56,6 +56,12 @@ pub const ED_RESIZE_PANES: &str = "Drag to resize panes — Left/Right arrows wh
 pub const ED_REC_POINT: &str = "Click on screen to capture X/Y";
 /// Record floater on the search-area preview — arm a two-click area capture.
 pub const ED_REC_AREA: &str = "Two clicks: opposite corners of the area";
+/// Collections form: icon that shows the saved capture on hover.
+pub const ED_COLLECTION_IMAGE: &str = "Saved collection image — hover to preview";
+/// Collections form: no PNG on disk yet.
+pub const ED_COLLECTION_IMAGE_MISSING: &str = "No collection image yet — capture with the camera";
+/// Collections form: re-capture from the tied search area.
+pub const ED_REPLACE_COLLECTION_IMAGE: &str = "Replace collection image from the search area";
 /// Record floater on the capture-region preview — arm a two-click capture.
 pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture region";
 /// Record floater on the Match Check preview — arm a two-click area capture.

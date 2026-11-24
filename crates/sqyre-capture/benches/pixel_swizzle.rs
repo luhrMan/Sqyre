@@ -9,7 +9,7 @@ use std::time::Duration;
 
 fn megapixel_bgra(w: usize, h: usize) -> Vec<u8> {
     let mut data = vec![0u8; w * h * 4];
-    for (i, px) in data.chunks_exact_mut(4).enumerate() {
+    for (i, px) in data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         px[0] = (i % 251) as u8;
         px[1] = ((i * 3) % 251) as u8;
         px[2] = ((i * 7) % 251) as u8;

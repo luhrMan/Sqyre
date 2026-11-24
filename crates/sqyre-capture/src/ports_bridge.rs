@@ -37,5 +37,17 @@ fn install() {
         release_idle_frame_cache: Some(Arc::new(crate::release_idle_capture_frame_cache)),
         set_pipewire_suspend: Some(Arc::new(crate::set_pipewire_suspend_on_idle)),
         set_overlay_in_detection: Some(Arc::new(crate::set_overlay_buttons_in_detection)),
+        portal_stream_frames: Some(Arc::new(portal_stream0_frame_count)),
     });
+}
+
+fn portal_stream0_frame_count() -> u64 {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        crate::linux::wayland::stream0_frame_count()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        0
+    }
 }

@@ -44,7 +44,7 @@ fn with_bridge<R>(
 ) -> Result<R, AndroidError> {
     let bridge = BRIDGE.get().ok_or(AndroidError::NotInitialized)?;
     bridge.vm.attach_current_thread(|env| {
-        let class: &JClass = &*bridge.class;
+        let class: &JClass = &bridge.class;
         let result = f(env, class);
         if env.exception_check() {
             // Kotlin already returned a status or threw; a pending exception would poison

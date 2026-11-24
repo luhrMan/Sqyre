@@ -328,10 +328,10 @@ async fn cursor_mode(
     use ashpd::desktop::screencast::CursorMode;
     let available = proxy.available_cursor_modes().await;
     let mode = match &available {
-        Ok(modes) if modes.contains(CursorMode::Metadata) => CursorMode::Metadata,
-        Ok(modes) if modes.contains(CursorMode::Hidden) => CursorMode::Hidden,
-        Ok(modes) if modes.contains(CursorMode::Embedded) => CursorMode::Embedded,
-        _ => CursorMode::Hidden,
+        Ok(modes) if modes.contains(CursorMode::METADATA) => CursorMode::METADATA,
+        Ok(modes) if modes.contains(CursorMode::HIDDEN) => CursorMode::HIDDEN,
+        Ok(modes) if modes.contains(CursorMode::EMBEDDED) => CursorMode::EMBEDDED,
+        _ => CursorMode::HIDDEN,
     };
     cap_log(
         "PORTAL",
@@ -343,13 +343,13 @@ async fn cursor_mode(
 
 async fn source_types(
     proxy: &ashpd::desktop::screencast::Screencast,
-) -> enumflags2::BitFlags<ashpd::desktop::screencast::SourceType> {
+) -> ashpd::desktop::screencast::SourceType {
     use ashpd::desktop::screencast::SourceType;
     match proxy.available_source_types().await {
-        Ok(types) if types.contains(SourceType::Monitor) => SourceType::Monitor.into(),
-        Ok(types) if types.contains(SourceType::Virtual) => SourceType::Virtual.into(),
+        Ok(types) if types.contains(SourceType::MONITOR) => SourceType::MONITOR,
+        Ok(types) if types.contains(SourceType::VIRTUAL) => SourceType::VIRTUAL,
         Ok(types) if !types.is_empty() => types,
-        _ => SourceType::Monitor.into(),
+        _ => SourceType::MONITOR,
     }
 }
 
@@ -414,7 +414,7 @@ async fn open_combined_session_with_token(
         .select_devices(
             &session,
             SelectDevicesOptions::default()
-                .set_devices(DeviceType::Keyboard | DeviceType::Pointer)
+                .set_devices(DeviceType::KEYBOARD | DeviceType::POINTER)
                 .set_restore_token(restore_token)
                 .set_persist_mode(PersistMode::ExplicitlyRevoked),
         )
@@ -438,8 +438,8 @@ async fn open_combined_session_with_token(
         .response()
         .map_err(portal_err("start response"))?;
     tokens::write_restore_token_at(&tokens::restore_token_path(), response.restore_token());
-    let has_input = response.devices().contains(DeviceType::Keyboard)
-        || response.devices().contains(DeviceType::Pointer);
+    let has_input = response.devices().contains(DeviceType::KEYBOARD)
+        || response.devices().contains(DeviceType::POINTER);
     REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
     let streams_meta = response.streams();
     grants::grant_screencast_streams(streams_meta)?;

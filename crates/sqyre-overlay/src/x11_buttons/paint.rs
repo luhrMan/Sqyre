@@ -117,7 +117,7 @@ pub(super) fn pack_truecolor(
     alpha_mask: u64,
 ) -> Vec<u8> {
     let mut out = Vec::with_capacity(rgba.len());
-    for px in rgba.chunks_exact(4) {
+    for px in rgba.as_chunks::<4>().0 {
         let packed = place_channel(px[0], red_mask)
             | place_channel(px[1], green_mask)
             | place_channel(px[2], blue_mask)

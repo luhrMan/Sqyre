@@ -38,11 +38,10 @@ impl<K: PartialEq> KeyedPreview<K> {
 /// Preview view state owned by the Data Editor (session-only, never persisted).
 #[derive(Default)]
 pub(crate) struct PreviewState {
-    /// Zoom/pan for the collections-tab image preview (keyed by program+collection).
-    pub collection: KeyedPreview<(String, String)>,
     /// Zoom/pan for the atlas plane preview (keyed by program+atlas).
     pub atlas: KeyedPreview<(String, String)>,
-    /// Zoom/pan for point / search-area / ScreenCap panels (keyed by tab+program+entity).
+    /// Zoom/pan for point / search-area / ScreenCap / Collections panels
+    /// (keyed by tab+program+entity).
     pub coord: KeyedPreview<(EditorTab, String, String)>,
     /// One-frame `force` armed by the preview's floating refresh button.
     force: bool,
@@ -109,10 +108,10 @@ mod tests {
     fn previews_are_independent() {
         let mut p = PreviewState::default();
         p.coord.transform.zoom = 3.0;
-        p.collection.sync_key(("prog".into(), "col".into()));
+        p.atlas.sync_key(("prog".into(), "atlas".into()));
         assert!((p.coord.transform.zoom - 3.0).abs() < f32::EPSILON);
         p.coord.clear();
         assert!((p.coord.transform.zoom - IMAGE_ZOOM_DEFAULT).abs() < f32::EPSILON);
-        assert!(p.collection.key.is_some());
+        assert!(p.atlas.key.is_some());
     }
 }

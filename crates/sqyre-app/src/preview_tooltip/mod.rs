@@ -540,9 +540,12 @@ impl PreviewTooltipCache {
     /// Embedded form-panel preview for a search area (uses form field coords).
     /// Returns the viewport rect and native image size (for heatmap alignment).
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
+    ///
+    /// `grid` paints blinking rows×cols lines over the area (Collections); it is
+    /// paint-only and does not affect the capture cache key or ScreenCap crop.
     #[expect(
         clippy::too_many_arguments,
-        reason = "search-area panel: optional LTRB literals, refresh mode, and view transform"
+        reason = "search-area panel: optional LTRB literals, grid, refresh, and view transform"
     )]
     pub fn paint_search_area_panel(
         &mut self,
@@ -551,6 +554,7 @@ impl PreviewTooltipCache {
         top: Option<i32>,
         right: Option<i32>,
         bottom: Option<i32>,
+        grid: Option<(i32, i32)>,
         refresh: PreviewRefresh,
         view: &mut ImageViewTransform,
     ) -> (egui::Rect, egui::Vec2) {
@@ -586,7 +590,27 @@ impl PreviewTooltipCache {
         match preview {
             Ok(ready) => {
                 let [tw, th] = ready.texture.size();
-                let rect = paint_preview_panel_image(ui, &ready.texture, view, ready.marker);
+                let marker = match ready.marker {
+                    PreviewMarker::Area {
+                        x0,
+                        y0,
+                        x1,
+                        y1,
+                        src_w,
+                        src_h,
+                        ..
+                    } => PreviewMarker::Area {
+                        x0,
+                        y0,
+                        x1,
+                        y1,
+                        grid,
+                        src_w,
+                        src_h,
+                    },
+                    other => other,
+                };
+                let rect = paint_preview_panel_image(ui, &ready.texture, view, marker);
                 (rect, egui::vec2(tw as f32, th as f32))
             }
             Err(err) if self.failure_is_no_saved_screen(&key) => (

@@ -4,24 +4,26 @@
 
 use super::super::DataEditor;
 use super::*;
+use crate::help_text as ht;
 
 impl DataEditor {
     pub(super) fn draw_collections_form(
         &mut self,
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
+        ctx: FormCtx<'_>,
     ) {
         let catalog = paint.catalog;
         let CatalogPaint {
             icons, previews, ..
         } = paint;
-        let collection_area = self.nav.selected_program.as_deref().and_then(|prog| {
-            let sa = self.drafts.search_area.trim();
-            if sa.is_empty() {
-                return None;
-            }
-            catalog_search_area_pixel_size(catalog, prog, sa)
-        });
+        let FormCtx {
+            screen_click,
+            active_macro,
+            known,
+            is_dark,
+            ..
+        } = ctx;
         let rows = parse_i32(&self.drafts.rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.drafts.cols).unwrap_or(1).max(1);
         {
@@ -61,7 +63,7 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
-            let _ = crate::widgets::labeled_searchable_combo(
+            let changed = crate::widgets::labeled_searchable_combo(
                 ui,
                 crate::model_icons::SEARCH_AREA,
                 "Search area",
@@ -80,6 +82,15 @@ impl DataEditor {
                 },
                 None,
             );
+            if changed {
+                if let Some(prog) = self.nav.selected_program.clone() {
+                    let name = self.drafts.search_area.clone();
+                    self.load_draft_search_area_bounds(catalog, &prog, name.trim());
+                } else {
+                    self.drafts.monitor = 1;
+                    self.drafts.rect = Default::default();
+                }
+            }
         }
         crate::widgets::wrapped_row(ui, |ui| {
             crate::widgets::num_text_field_opts(
@@ -110,21 +121,39 @@ impl DataEditor {
             self.nav.selected_entity.clone(),
         ) {
             let path = catalog.collection_image_path(&prog, &col_name);
-            let key = (prog.clone(), col_name.clone());
-            self.previews.collection.sync_key(key);
-            let mut replace = false;
             let capturing = self.jobs.collection_capture_pending.is_some();
-            paint_zoomable_collection_preview(
-                ui,
-                icons,
-                path.as_path(),
-                rows,
-                cols,
-                collection_area,
-                &mut self.previews.collection.transform,
-                &mut replace,
-                capturing,
-            );
+            let mut replace = false;
+            crate::widgets::wrapped_row(ui, |ui| {
+                let tip = if path.is_file() {
+                    ht::ED_COLLECTION_IMAGE
+                } else {
+                    ht::ED_COLLECTION_IMAGE_MISSING
+                };
+                let img = crate::widgets::icon_button(ui, egui_phosphor::regular::IMAGE, tip);
+                show_file_hover(
+                    ui,
+                    &img,
+                    icons,
+                    path.as_path(),
+                    &format!("{prog}{PROGRAM_DELIMITER}{col_name}"),
+                );
+                if ui
+                    .add_enabled(
+                        !capturing,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::CAMERA,
+                            ht::ED_REPLACE_COLLECTION_IMAGE,
+                            None,
+                        ),
+                    )
+                    .clicked()
+                {
+                    replace = true;
+                }
+                if capturing {
+                    crate::widgets::brand_spinner(ui);
+                }
+            });
             if replace && !capturing {
                 let col = ProgramCollection {
                     name: col_name.clone(),
@@ -136,6 +165,43 @@ impl DataEditor {
                 }
             }
         }
+        self.paint_monitor_slot(ui);
+        let (lx, ty, rx, by) = form_desktop_area(
+            catalog,
+            self.drafts.monitor,
+            &self.drafts.rect.left,
+            &self.drafts.rect.top,
+            &self.drafts.rect.right,
+            &self.drafts.rect.bottom,
+        );
+        self.sync_coord_preview_view();
+        let refresh = if self.previews.take_force() {
+            crate::preview_tooltip::PreviewRefresh::Hard
+        } else {
+            crate::preview_tooltip::PreviewRefresh::None
+        };
+        let (rect, preview_image_size) = previews.paint_search_area_panel(
+            ui,
+            lx,
+            ty,
+            rx,
+            by,
+            Some((rows, cols)),
+            refresh,
+            &mut self.previews.coord.transform,
+        );
+        self.paint_search_area_tail(
+            ui,
+            rect,
+            preview_image_size,
+            (lx, ty, rx, by),
+            screen_click,
+            ht::ED_REC_AREA,
+            "Recording… click two corners.",
+            known,
+            is_dark,
+            active_macro,
+        );
     }
 
     pub(super) fn draw_atlases_form(&mut self, ui: &mut egui::Ui, paint: &mut CatalogPaint<'_>) {

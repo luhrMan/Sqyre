@@ -770,7 +770,6 @@ impl DataEditor {
         match pending.rx.try_recv() {
             Ok(Ok(())) => {
                 icons.invalidate_path(&pending.path);
-                self.previews.collection.transform.reset();
                 self.set_ok("Collection image saved.");
             }
             Ok(Err(e)) => {

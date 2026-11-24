@@ -301,6 +301,7 @@ fn host_loop(
     };
     HOST.with(|slot| slot.set(std::ptr::from_mut(&mut state)));
     note("overlay: using native Win32 button host");
+    crate::fps_diag::note_enabled_once();
     while !stop.load(Ordering::Relaxed) {
         loop {
             match cmd_rx.try_recv() {
@@ -346,7 +347,7 @@ fn host_loop(
         // SAFETY: messages belong to this thread; HOST is set so the wndproc can see `state`.
         unsafe { drain_messages() };
         tick_busy(&mut state);
-        let _ = crate::host_common::tick_hub_fan(&mut state);
+        let fan_animating = crate::host_common::tick_hub_fan(&mut state);
         apply_visibility(&mut state);
         poll_context_menu_escape(&mut state);
         if state.context.as_ref().is_some_and(|m| m.mapped) {
@@ -354,7 +355,19 @@ fn host_loop(
         } else if state.hub_fan_dismiss {
             poll_hub_fan_outside_dismiss(&mut state);
         }
-        thread::sleep(Duration::from_millis(POLL_MS));
+        let poll_ms = if fan_animating {
+            crate::hub_fan::HUB_FAN_TICK_MS
+        } else {
+            POLL_MS
+        };
+        let mapped = state.buttons.values().filter(|b| b.mapped).count() as u32;
+        crate::fps_diag::host_tick(crate::fps_diag::OverlayFpsSnapshot {
+            mapped_faces: mapped,
+            mapped_hits: mapped,
+            click_through: false,
+            poll_ms,
+        });
+        thread::sleep(Duration::from_millis(poll_ms));
     }
     destroy_all(&mut state);
     HOST.with(|slot| slot.set(std::ptr::null_mut()));
@@ -1348,7 +1361,7 @@ fn set_round_region(hwnd: HWND, w: u32, h: u32, radius: f32) {
 
 fn rgba_to_bgra(rgba: &[u8]) -> Vec<u8> {
     let mut out = rgba.to_vec();
-    for px in out.chunks_exact_mut(4) {
+    for px in out.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
     out

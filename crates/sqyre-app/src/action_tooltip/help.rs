@@ -281,7 +281,6 @@ pub const DE_MASK_ITEMS: &str =
     "Program items with this mask applied as a live preview. Excluded pixels are dimmed.";
 pub const DE_MASK_ITEMS_FILTER: &str =
     "Show every item in the program, or only items that already use this mask.";
-pub const DE_PREVIEW_ZOOM: &str = "Scroll to zoom; drag to pan when zoomed.";
 /// Declared Variables section (Variables panel).
 pub const VARS_DECLARED: &str =
     "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.";

@@ -34,6 +34,7 @@ use crate::host_common::{
     place_hub_satellite_face, spec_contains, spec_contains_rounded, spec_delta,
     tip_refresh_decision, HubFanHost, TipButtonView, TipRefreshInput,
 };
+use crate::linux_host::{HotkeyChooserResult, HotkeyChooserSpec};
 use crate::raster::{self, tip_corner_px, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
@@ -120,22 +121,6 @@ enum HostCmd {
     /// Unmap every button for a detection grab, then ack. `false` maps them again.
     SetCaptureOmit(bool, Sender<()>),
     Shutdown,
-}
-
-/// Result of a native hotkey conflict menu.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HotkeyChooserResult {
-    Picked(String),
-    Dismissed,
-}
-
-/// Spec for a near-cursor macro picker (physical root coordinates).
-#[derive(Debug, Clone)]
-pub struct HotkeyChooserSpec {
-    pub title: String,
-    pub names: Vec<String>,
-    pub x: i32,
-    pub y: i32,
 }
 
 /// Owns the X11 thread. Clicks enqueue into `pending` immediately (do not wait for ROOT).

@@ -15,9 +15,8 @@ use super::helpers::{
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    catalog_search_area_pixel_size, paint_preview_coord_chip, paint_preview_floaters,
-    paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
-    paint_zoomable_collection_preview, show_file_hover, CardinalEdge, RecordFloater,
+    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
+    paint_zoomable_atlas_preview, show_file_hover, CardinalEdge, RecordFloater,
 };
 #[cfg(feature = "native-runtime")]
 use crate::help_text as ht;
@@ -366,6 +365,38 @@ impl DataEditor {
         self.drafts.search_area.clear();
         self.drafts.rows = "1".into();
         self.drafts.cols = "1".into();
+        self.drafts.monitor = 1;
+        self.drafts.rect = Default::default();
+    }
+
+    /// Fill `drafts.monitor` + `drafts.rect` from the program search area named `name`.
+    pub(crate) fn load_draft_search_area_bounds(
+        &mut self,
+        catalog: CatalogView<'_>,
+        program: &str,
+        name: &str,
+    ) {
+        let res = catalog.resolution_key();
+        let Some(sa) = catalog
+            .get(program)
+            .and_then(|p| {
+                p.search_areas
+                    .get(res)
+                    .or_else(|| p.search_areas.values().next())
+            })
+            .and_then(|m| m.get(name))
+        else {
+            self.drafts.monitor = 1;
+            self.drafts.rect = Default::default();
+            return;
+        };
+        self.drafts.monitor = sa.monitor.max(1);
+        self.drafts.rect.load_displays(
+            sa.left_x.as_display(),
+            sa.top_y.as_display(),
+            sa.right_x.as_display(),
+            sa.bottom_y.as_display(),
+        );
     }
 
     pub(crate) fn reset_atlas_form(&mut self) {
@@ -410,7 +441,7 @@ impl DataEditor {
                 false
             }
             EditorTab::Collections => {
-                self.draw_collections_form(ui, paint);
+                self.draw_collections_form(ui, paint, ctx);
                 false
             }
             EditorTab::Atlases => {
@@ -670,9 +701,12 @@ impl DataEditor {
             // Freeze underlay swaps for the whole paint so an in-flight soft
             // capture cannot resize the texture under an active drag.
             previews.set_hold_pending_swaps(preview_interacting);
-            let preview_h = ui.available_height().max(120.0);
+            // Slack like `panel_viewport_size` — exact fill of available_* trips a
+            // purposeless H-bar inside dialog_scroll (egui ceil compare).
+            const FILL_SLACK: f32 = 1.0;
+            let preview_h = (ui.available_height() - FILL_SLACK).max(120.0);
             let mut hover: Option<super::match_check::MatchCheckHover> = None;
-            let preview_w = crate::widgets::visible_width(ui);
+            let preview_w = (crate::widgets::visible_width(ui) - FILL_SLACK).max(1.0);
             ui.allocate_ui_with_layout(
                 egui::vec2(preview_w, preview_h),
                 egui::Layout::top_down(egui::Align::Min),
@@ -684,6 +718,7 @@ impl DataEditor {
                         ty,
                         rx,
                         by,
+                        None,
                         refresh,
                         &mut self.previews.coord.transform,
                     );

@@ -55,7 +55,7 @@ pub fn app_icon() -> egui::IconData {
 
 /// tiny-skia stores premultiplied RGBA; OS tray / egui IconData expect straight alpha.
 fn unpremultiply_rgba(rgba: &mut [u8]) {
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3];
         if a == 0 {
             px[0] = 0;
@@ -86,7 +86,7 @@ mod tests {
         assert_eq!((w, h), (64, 64));
         assert_eq!(rgba.len(), 64 * 64 * 4);
         // Brand yellow / dark fills should produce some opaque pixels.
-        assert!(rgba.chunks_exact(4).any(|p| p[3] > 0));
+        assert!(rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 0));
     }
 
     #[test]

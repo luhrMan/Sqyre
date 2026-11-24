@@ -6,7 +6,8 @@ pub(crate) fn egui_key_name(key: Key) -> Option<&'static str> {
     Some(match key {
         Key::Escape => "esc",
         Key::Tab => "tab",
-        Key::Backspace | Key::Delete => "delete",
+        Key::Backspace => "backspace",
+        Key::Delete => "delete",
         Key::Enter => "enter",
         Key::Space => "space",
         Key::Insert => "insert",
@@ -80,8 +81,17 @@ pub(crate) fn egui_key_name(key: Key) -> Option<&'static str> {
         Key::Period => "period",
         Key::Slash | Key::Questionmark => "slash",
         Key::IntlBackslash => "intlbackslash",
+        // Physical modifiers (egui 0.36+). Left/right Ctrl share one chord name;
+        // Shift/Alt keep the side so chords can require the right-hand key.
+        Key::ShiftLeft => "shift",
+        Key::ShiftRight => "rshift",
+        Key::ControlLeft | Key::ControlRight => "ctrl",
+        Key::AltLeft => "alt",
+        Key::AltRight => "ralt",
         Key::SuperLeft => "cmd",
         Key::SuperRight => "rcmd",
+        // egui collapses DigitN and NumpadN into Key::NumN — numpad digits are
+        // only distinct on the hook/evdev/Win32 path (`num0`…`num9`).
         _ => return None,
     })
 }
@@ -97,6 +107,13 @@ mod tests {
         assert_eq!(egui_key_name(Key::A), Some("a"));
         assert_eq!(egui_key_name(Key::F5), Some("f5"));
         assert_eq!(egui_key_name(Key::Enter), Some("enter"));
+        assert_eq!(egui_key_name(Key::Backspace), Some("backspace"));
+        assert_eq!(egui_key_name(Key::Delete), Some("delete"));
+        assert_ne!(egui_key_name(Key::Backspace), egui_key_name(Key::Delete));
+        assert_eq!(egui_key_name(Key::ShiftLeft), Some("shift"));
+        assert_eq!(egui_key_name(Key::ShiftRight), Some("rshift"));
+        assert_eq!(egui_key_name(Key::ControlLeft), Some("ctrl"));
+        assert_eq!(egui_key_name(Key::AltRight), Some("ralt"));
         assert_eq!(egui_key_name(Key::SuperLeft), Some("cmd"));
         assert_eq!(egui_key_name(Key::SuperRight), Some("rcmd"));
     }
@@ -112,5 +129,46 @@ mod tests {
         assert_eq!(egui_key_name(Key::Backtick), Some("grave"));
         assert_eq!(egui_key_name(Key::Semicolon), Some("semicolon"));
         assert_eq!(egui_key_name(Key::Slash), Some("slash"));
+    }
+
+    #[test]
+    fn mapped_names_unique_aside_from_shift_glyphs_and_ctrl() {
+        use std::collections::HashMap;
+        let mut by_name: HashMap<&str, Vec<Key>> = HashMap::new();
+        for key in Key::ALL {
+            if let Some(name) = egui_key_name(*key) {
+                by_name.entry(name).or_default().push(*key);
+            }
+        }
+        // Intentional folds: shift-glyph variants share a physical key name; L/R Ctrl share "ctrl".
+        let allowed_multi = [
+            "equal",
+            "leftbracket",
+            "rightbracket",
+            "semicolon",
+            "backslash",
+            "slash",
+            "ctrl",
+        ];
+        for (name, keys) in &by_name {
+            if allowed_multi.contains(name) {
+                assert!(
+                    keys.len() >= 2,
+                    "{name} expected to fold multiple egui keys, got {keys:?}"
+                );
+                continue;
+            }
+            assert_eq!(
+                keys.len(),
+                1,
+                "name {name:?} shared by multiple egui keys: {keys:?}"
+            );
+        }
+        // Digits stay distinct from each other. egui has no separate numpad Key
+        // (DigitN and NumpadN both become Key::NumN) — numpad distinction lives
+        // on the hook/evdev/VK path as `num0`…`num9`.
+        assert_eq!(egui_key_name(Key::Num0), Some("0"));
+        assert_eq!(egui_key_name(Key::Num1), Some("1"));
+        assert_ne!(egui_key_name(Key::Num0), egui_key_name(Key::Num1));
     }
 }

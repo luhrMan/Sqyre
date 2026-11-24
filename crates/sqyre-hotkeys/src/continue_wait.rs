@@ -282,8 +282,7 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
         Key::Space => "space",
         Key::Return => "enter",
         Key::Tab => "tab",
-        // XK_BackSpace → "delete".
-        Key::Backspace => "delete",
+        Key::Backspace => "backspace",
         Key::Delete => "delete",
         Key::UpArrow => "up",
         Key::DownArrow => "down",
@@ -385,7 +384,7 @@ pub fn rdev_key_name(key: rdev::Key) -> Option<&'static str> {
 /// Map a Win32 virtual-key code to a Sqyre hotkey name (same strings as [`rdev_key_name`]).
 ///
 /// `extended` is the LLKHF_EXTENDED bit from `KBDLLHOOKSTRUCT::flags` (numpad Enter, etc.).
-#[cfg(all(feature = "hooks", target_os = "windows"))]
+/// Pure lookup — available on every target so Linux CI can assert the map.
 pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
     // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
     let name = match vk {
@@ -401,7 +400,7 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
         0x0D if extended => "num_enter", // VK_RETURN + extended
         0x0D => "enter",                 // VK_RETURN
         0x09 => "tab",                   // VK_TAB
-        0x08 => "delete",                // VK_BACK
+        0x08 => "backspace",             // VK_BACK
         0x2E => "delete",                // VK_DELETE
         0x26 => "up",                    // VK_UP
         0x28 => "down",                  // VK_DOWN
@@ -501,6 +500,7 @@ pub fn vk_key_name(vk: u32, extended: bool) -> Option<&'static str> {
 mod rdev_key_name_tests {
     use super::rdev_key_name;
     use rdev::Key;
+    use std::collections::HashMap;
 
     #[test]
     fn maps_operator_and_lock_keys() {
@@ -512,7 +512,238 @@ mod rdev_key_name_tests {
         assert_eq!(rdev_key_name(Key::CapsLock), Some("capslock"));
         assert_eq!(rdev_key_name(Key::NumLock), Some("numlock"));
         assert_eq!(rdev_key_name(Key::KpPlus), Some("num_plus"));
+        assert_eq!(rdev_key_name(Key::Backspace), Some("backspace"));
+        assert_eq!(rdev_key_name(Key::Delete), Some("delete"));
         assert_eq!(rdev_key_name(Key::Unknown(42)), None);
+    }
+
+    /// Every physical key we care about for recording (Unknown excluded).
+    fn recordable_keys() -> &'static [Key] {
+        &[
+            Key::Escape,
+            Key::ControlLeft,
+            Key::ControlRight,
+            Key::ShiftLeft,
+            Key::ShiftRight,
+            Key::Alt,
+            Key::AltGr,
+            Key::MetaLeft,
+            Key::MetaRight,
+            Key::Space,
+            Key::Return,
+            Key::Tab,
+            Key::Backspace,
+            Key::Delete,
+            Key::UpArrow,
+            Key::DownArrow,
+            Key::LeftArrow,
+            Key::RightArrow,
+            Key::Home,
+            Key::End,
+            Key::PageUp,
+            Key::PageDown,
+            Key::Insert,
+            Key::CapsLock,
+            Key::NumLock,
+            Key::ScrollLock,
+            Key::PrintScreen,
+            Key::Pause,
+            Key::Function,
+            Key::F1,
+            Key::F2,
+            Key::F3,
+            Key::F4,
+            Key::F5,
+            Key::F6,
+            Key::F7,
+            Key::F8,
+            Key::F9,
+            Key::F10,
+            Key::F11,
+            Key::F12,
+            Key::KeyA,
+            Key::KeyB,
+            Key::KeyC,
+            Key::KeyD,
+            Key::KeyE,
+            Key::KeyF,
+            Key::KeyG,
+            Key::KeyH,
+            Key::KeyI,
+            Key::KeyJ,
+            Key::KeyK,
+            Key::KeyL,
+            Key::KeyM,
+            Key::KeyN,
+            Key::KeyO,
+            Key::KeyP,
+            Key::KeyQ,
+            Key::KeyR,
+            Key::KeyS,
+            Key::KeyT,
+            Key::KeyU,
+            Key::KeyV,
+            Key::KeyW,
+            Key::KeyX,
+            Key::KeyY,
+            Key::KeyZ,
+            Key::Num0,
+            Key::Num1,
+            Key::Num2,
+            Key::Num3,
+            Key::Num4,
+            Key::Num5,
+            Key::Num6,
+            Key::Num7,
+            Key::Num8,
+            Key::Num9,
+            Key::Minus,
+            Key::Equal,
+            Key::LeftBracket,
+            Key::RightBracket,
+            Key::SemiColon,
+            Key::Quote,
+            Key::BackQuote,
+            Key::BackSlash,
+            Key::IntlBackslash,
+            Key::Comma,
+            Key::Dot,
+            Key::Slash,
+            Key::Kp0,
+            Key::Kp1,
+            Key::Kp2,
+            Key::Kp3,
+            Key::Kp4,
+            Key::Kp5,
+            Key::Kp6,
+            Key::Kp7,
+            Key::Kp8,
+            Key::Kp9,
+            Key::KpReturn,
+            Key::KpPlus,
+            Key::KpMinus,
+            Key::KpMultiply,
+            Key::KpDivide,
+            Key::KpDelete,
+        ]
+    }
+
+    #[test]
+    fn every_recordable_key_has_a_name() {
+        for key in recordable_keys() {
+            assert!(
+                rdev_key_name(*key).is_some(),
+                "missing rdev name for {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mapped_names_unique_except_ctrl_sides() {
+        let mut by_name: HashMap<&str, Vec<Key>> = HashMap::new();
+        for key in recordable_keys() {
+            let name = rdev_key_name(*key).expect("mapped");
+            by_name.entry(name).or_default().push(*key);
+        }
+        for (name, keys) in &by_name {
+            if *name == "ctrl" {
+                assert_eq!(
+                    keys.len(),
+                    2,
+                    "ctrl should fold only left+right Control: {keys:?}"
+                );
+                continue;
+            }
+            assert_eq!(
+                keys.len(),
+                1,
+                "name {name:?} shared by multiple keys: {keys:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn top_row_digits_distinct_from_numpad() {
+        let pairs = [
+            (Key::Num0, Key::Kp0, "0", "num0"),
+            (Key::Num1, Key::Kp1, "1", "num1"),
+            (Key::Num2, Key::Kp2, "2", "num2"),
+            (Key::Num3, Key::Kp3, "3", "num3"),
+            (Key::Num4, Key::Kp4, "4", "num4"),
+            (Key::Num5, Key::Kp5, "5", "num5"),
+            (Key::Num6, Key::Kp6, "6", "num6"),
+            (Key::Num7, Key::Kp7, "7", "num7"),
+            (Key::Num8, Key::Kp8, "8", "num8"),
+            (Key::Num9, Key::Kp9, "9", "num9"),
+        ];
+        for (row, pad, want_row, want_pad) in pairs {
+            assert_eq!(rdev_key_name(row), Some(want_row));
+            assert_eq!(rdev_key_name(pad), Some(want_pad));
+            assert_ne!(want_row, want_pad);
+        }
+        assert_eq!(rdev_key_name(Key::Return), Some("enter"));
+        assert_eq!(rdev_key_name(Key::KpReturn), Some("num_enter"));
+        assert_ne!(rdev_key_name(Key::Backspace), rdev_key_name(Key::Delete));
+        assert_ne!(rdev_key_name(Key::Minus), rdev_key_name(Key::KpMinus));
+        assert_ne!(rdev_key_name(Key::Dot), rdev_key_name(Key::KpDelete));
+    }
+}
+
+#[cfg(test)]
+mod vk_key_name_tests {
+    use super::vk_key_name;
+    use std::collections::HashMap;
+
+    #[test]
+    fn top_row_digits_distinct_from_numpad() {
+        for i in 0u32..10 {
+            let row = vk_key_name(0x30 + i, false).unwrap_or_else(|| panic!("digit {i}"));
+            let pad = vk_key_name(0x60 + i, false).unwrap_or_else(|| panic!("num{i}"));
+            let want_row = format!("{i}");
+            let want_pad = format!("num{i}");
+            assert_eq!(row, want_row.as_str());
+            assert_eq!(pad, want_pad.as_str());
+            assert_ne!(row, pad);
+        }
+        assert_eq!(vk_key_name(0x0D, false), Some("enter"));
+        assert_eq!(vk_key_name(0x0D, true), Some("num_enter"));
+        assert_eq!(vk_key_name(0x08, false), Some("backspace"));
+        assert_eq!(vk_key_name(0x2E, false), Some("delete"));
+        assert_ne!(vk_key_name(0x08, false), vk_key_name(0x2E, false));
+    }
+
+    #[test]
+    fn non_extended_vk_names_are_unique() {
+        let vks: &[u32] = &[
+            0x1B, 0xA2, 0xA3, 0xA0, 0xA1, 0xA4, 0xA5, 0x5B, 0x5C, 0x20, 0x0D, 0x09, 0x08, 0x2E,
+            0x26, 0x28, 0x25, 0x27, 0x24, 0x23, 0x21, 0x22, 0x2D, 0x14, 0x90, 0x91, 0x2C, 0x13,
+            0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x41, 0x42,
+            0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
+            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x30, 0x31, 0x32, 0x33,
+            0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xBD, 0xBB, 0xDB, 0xDD, 0xBA, 0xDE, 0xC0, 0xDC,
+            0xE2, 0xBC, 0xBE, 0xBF, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+            0x6B, 0x6D, 0x6A, 0x6F, 0x6E,
+        ];
+        let mut by_name: HashMap<&str, Vec<u32>> = HashMap::new();
+        for &vk in vks {
+            let name = vk_key_name(vk, false).unwrap_or_else(|| panic!("unmapped VK 0x{vk:02X}"));
+            by_name.entry(name).or_default().push(vk);
+        }
+        for (name, codes) in &by_name {
+            if *name == "ctrl" {
+                assert_eq!(
+                    codes.len(),
+                    2,
+                    "ctrl should fold L/R control only: {codes:?}"
+                );
+                continue;
+            }
+            assert_eq!(
+                codes.len(),
+                1,
+                "name {name:?} shared by multiple VKs: {codes:?}"
+            );
+        }
     }
 }
 

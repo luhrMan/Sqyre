@@ -682,7 +682,10 @@ impl DataEditor {
 
         match result {
             Ok(fs_warn) => {
-                if matches!(self.nav.tab, EditorTab::Points | EditorTab::SearchAreas) {
+                if matches!(
+                    self.nav.tab,
+                    EditorTab::Points | EditorTab::SearchAreas | EditorTab::Collections
+                ) {
                     if let Some(old) = old_entity.as_deref() {
                         previews.invalidate_entity(old);
                     }
@@ -925,6 +928,16 @@ impl DataEditor {
             catalog.upsert_collection(&prog, col)?;
             self.nav.selected_entity = Some(new_name.to_string());
         }
+        // Collection Save also writes the tied search-area bounds (edited in-form).
+        let sa = ProgramSearchArea {
+            name: new_name.to_string(),
+            monitor: self.drafts.monitor.max(1),
+            left_x: ScalarValue::parse_edit(&self.drafts.rect.left),
+            top_y: ScalarValue::parse_edit(&self.drafts.rect.top),
+            right_x: ScalarValue::parse_edit(&self.drafts.rect.right),
+            bottom_y: ScalarValue::parse_edit(&self.drafts.rect.bottom),
+        };
+        catalog.upsert_search_area(&prog, sa)?;
         Ok(fs_warn)
     }
 
@@ -1179,6 +1192,7 @@ mod tests {
     use crate::data_editor::nav::EditorNav;
     use sqyre_persist::{
         ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+        ProgramSearchArea,
     };
 
     fn catalog_with_program() -> ProgramCatalog {
@@ -1330,6 +1344,62 @@ mod tests {
         assert_eq!(e.would_overwrite(&cat), Some(("Collection", "bag".into())));
         let e = editor(EditorTab::Atlases, "Game", "other", "inv");
         assert_eq!(e.would_overwrite(&cat), Some(("Atlas", "inv".into())));
+    }
+
+    #[test]
+    fn update_collection_writes_tied_search_area_bounds() {
+        let mut cat = catalog_with_program();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Bag".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(0),
+                top_y: ScalarValue::Int(0),
+                right_x: ScalarValue::Int(50),
+                bottom_y: ScalarValue::Int(50),
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Game",
+            ProgramCollection {
+                name: "Bag".into(),
+                rows: 2,
+                cols: 2,
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor(EditorTab::Collections, "Game", "Bag", "");
+        ed.drafts.search_area = "Bag".into();
+        ed.drafts.rows = "3".into();
+        ed.drafts.cols = "4".into();
+        ed.drafts.monitor = 2;
+        ed.drafts.rect.load_displays("5", "6", "105", "206");
+
+        let mut macros: Vec<Macro> = Vec::new();
+        ed.update_collection(&mut cat, &mut macros, "Bag", false)
+            .unwrap();
+
+        let col = cat.get("Game").unwrap().collections.get("Bag").unwrap();
+        assert_eq!(col.rows, 3);
+        assert_eq!(col.cols, 4);
+
+        let res = cat.resolution_key().to_string();
+        let sa = cat
+            .get("Game")
+            .unwrap()
+            .search_areas
+            .get(&res)
+            .unwrap()
+            .get("Bag")
+            .unwrap();
+        assert_eq!(sa.monitor, 2);
+        assert_eq!(sa.left_x, ScalarValue::Int(5));
+        assert_eq!(sa.top_y, ScalarValue::Int(6));
+        assert_eq!(sa.right_x, ScalarValue::Int(105));
+        assert_eq!(sa.bottom_y, ScalarValue::Int(206));
     }
 
     #[test]

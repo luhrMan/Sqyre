@@ -4,7 +4,10 @@ mod app_resolve;
 mod atspi_windows;
 mod foreign_toplevel;
 mod layer_shell;
+pub mod layer_surface;
 mod wayland_clients;
+pub(crate) mod wayland_grab;
+pub(crate) mod wayland_outline;
 mod windows;
 
 #[cfg(feature = "portal-capture")]
@@ -23,7 +26,9 @@ mod portal_session;
 #[cfg(feature = "portal-capture")]
 pub use portal_pipewire::PortalCapturer;
 #[cfg(feature = "portal-capture")]
-pub(crate) use portal_pipewire::{pipewire_stream_waking, set_pipewire_suspend_on_idle};
+pub(crate) use portal_pipewire::{
+    pipewire_stream_waking, set_pipewire_suspend_on_idle, stream0_frame_count,
+};
 #[cfg(feature = "portal-capture")]
 pub use portal_remote::PortalEisInput;
 #[cfg(feature = "portal-capture")]
@@ -35,6 +40,7 @@ pub use portal_session::{
 };
 
 pub use layer_shell::{layer_shell_available, prefers_layer_shell_overlay_session};
+pub use layer_surface::layer_shell_surface_works;
 pub use windows::OsWindowFocuser;
 pub(crate) use windows::{get_active_window, list_open_windows};
 
@@ -65,12 +71,17 @@ pub fn toplevel_focus_available() -> Result<(), CaptureError> {
     windows::toplevel_focus_available()
 }
 
-/// Probe: wlr-layer-shell is available for native Wayland overlays.
+/// Probe: wlr-layer-shell can open a real overlay surface (outline/grab/buttons).
 pub fn layer_outline_available() -> Result<(), CaptureError> {
-    layer_shell::layer_shell_available()
+    layer_surface::layer_shell_surface_works()
 }
 
-/// Probe: compositor pointer grab can use layer-shell (same global as outline).
+/// Probe: compositor pointer grab can use layer-shell (same surface open path).
 pub fn layer_grab_available() -> Result<(), CaptureError> {
-    layer_shell::layer_shell_available()
+    layer_surface::layer_shell_surface_works()
+}
+
+/// Probe: overlay buttons can use a layer-shell surface.
+pub fn layer_overlay_available() -> Result<(), CaptureError> {
+    layer_surface::layer_shell_surface_works()
 }

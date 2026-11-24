@@ -730,6 +730,12 @@ impl DataEditor {
                 // lane insets it past `max_rect`); dialog_scroll (both axes)
                 // still H-scrolls when a hard min-width exceeds the viewport.
                 crate::widgets::clamp_row_right_to_clip(ui);
+                // Fill widgets (preview panel, TextEdit∞) that claim exact
+                // `available_width` can land a sub-pixel past the scroll
+                // limit after content_max_rect pixel-rounding — egui then
+                // paints a purposeless H-bar on image-preview tabs.
+                let form_w = (ui.available_width() - 1.0).max(1.0);
+                ui.set_max_width(form_w);
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
                     ui,

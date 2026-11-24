@@ -20,6 +20,10 @@ mod pixel_convert;
 mod selection_grab;
 #[macro_use]
 mod shared_run;
+#[cfg(target_os = "linux")]
+mod linux_grab;
+#[cfg(target_os = "linux")]
+mod linux_outline;
 mod stub;
 #[cfg(target_os = "windows")]
 mod win_capture;
@@ -88,7 +92,15 @@ pub use android_capture::{
 pub use linux::wayland::PortalEisInput;
 
 #[cfg(target_os = "linux")]
-pub use linux::wayland::OsWindowFocuser;
+pub use linux::wayland::layer_surface::{
+    attach_argb_pixels, layer_shell_logical, layer_shell_surface_works, output_desktop_rect,
+    rects_overlap, AttachedShm, GrabAccum, LayerShellConn, OutputGeom,
+};
+#[cfg(target_os = "linux")]
+pub use linux::wayland::{
+    layer_overlay_available, layer_shell_available, prefers_layer_shell_overlay_session,
+    OsWindowFocuser,
+};
 
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
@@ -97,7 +109,9 @@ pub use win_focus::OsWindowFocuser;
 pub use click_fx_host::ClickFxHost;
 
 #[cfg(target_os = "linux")]
-pub use x11_outline::{x11_root_pointer, SelectionOutline};
+pub use linux_outline::SelectionOutline;
+#[cfg(target_os = "linux")]
+pub use x11_outline::x11_root_pointer;
 #[cfg(target_os = "linux")]
 pub use x11_point_markers::PointMarkerOverlay;
 
@@ -107,7 +121,7 @@ pub use win_outline::SelectionOutline;
 pub use win_point_markers::PointMarkerOverlay;
 
 #[cfg(target_os = "linux")]
-pub use x11_grab::SelectionGrab;
+pub use linux_grab::SelectionGrab;
 
 #[cfg(target_os = "linux")]
 pub use x11_snapshot_overlay::{FrozenFrame, FrozenSelectionOverlay};

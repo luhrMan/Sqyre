@@ -18,9 +18,9 @@
 FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.96.1
-# Trunk 0.22.1 sets rust-version 1.96.1, matching RUST_VERSION.
-ARG TRUNK_VERSION=0.22.1
+ARG RUST_VERSION=1.100.0
+# Trunk 0.22.2 MSRV is 1.96.1; image pins RUST_VERSION (repo toolchain).
+ARG TRUNK_VERSION=0.22.2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
@@ -68,7 +68,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
 
 # Host-mounted SCCACHE_DIR reuses rustc outputs across clean target/ trees and CI runners.
 # Wrapper unsets CARGO_INCREMENTAL*: sccache rejects those vars when present at all.
-ARG SCCACHE_VERSION=0.16.0
+ARG SCCACHE_VERSION=0.19.0
 RUN set -eux \
  && curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1 \
@@ -115,10 +115,10 @@ ENV CARGO_HOME=/usr/local/cargo
 
 ARG ANDROID_CMDLINE_TOOLS=11076708
 ARG ANDROID_PLATFORM=35
-# AGP 8.7 builds with build-tools 34 unless the Gradle file pins another.
-ARG ANDROID_BUILD_TOOLS=34.0.0
-ARG ANDROID_NDK_VERSION=27.2.12479018
-ARG GRADLE_VERSION=8.10.2
+# AGP 9.5 defaults to build-tools 36 and NDK r28c.
+ARG ANDROID_BUILD_TOOLS=36.0.0
+ARG ANDROID_NDK_VERSION=28.2.13676358
+ARG GRADLE_VERSION=9.9.2
 ENV ANDROID_HOME=/opt/android-sdk \
     ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION} \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \

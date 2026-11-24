@@ -173,6 +173,35 @@ root:
     }
 
     #[test]
+    fn rejects_non_mapping_macro_and_typeless_root() {
+        let err = decode_macro_from_map(&Value::Sequence(vec![]))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected mapping for macro"), "{err}");
+
+        let mut m = Mapping::new();
+        m.insert(Value::String("name".into()), Value::String("x".into()));
+        m.insert(
+            Value::String("root".into()),
+            Value::String("not-a-mapping".into()),
+        );
+        let err = decode_macro_from_map(&Value::Mapping(m))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("expected mapping for action"), "{err}");
+
+        let mut root = Mapping::new();
+        root.insert(Value::String("name".into()), Value::String("root".into()));
+        let mut m = Mapping::new();
+        m.insert(Value::String("name".into()), Value::String("x".into()));
+        m.insert(Value::String("root".into()), Value::Mapping(root));
+        let err = decode_macro_from_map(&Value::Mapping(m))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("action missing type"), "{err}");
+    }
+
+    #[test]
     fn rejects_deeply_nested_subactions_in_macro() {
         use crate::MAX_YAML_NESTING_DEPTH;
 

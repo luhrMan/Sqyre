@@ -111,6 +111,7 @@ impl DataEditor {
             ty,
             rx,
             by,
+            None,
             refresh,
             &mut self.previews.coord.transform,
         );
@@ -447,7 +448,10 @@ impl DataEditor {
         // the `Saves to …` path lives on the Save button's tooltip.
         let path_hint = format!("Saves to {}", screen_cap_path().display());
         let spacing = ui.spacing().item_spacing.y;
-        let wrap_w = crate::widgets::visible_width(ui);
+        // Slack width like `panel_viewport_size` so dialog_scroll does not show
+        // a purposeless H-bar from fill-available content.
+        const FILL_SLACK: f32 = 1.0;
+        let wrap_w = (crate::widgets::visible_width(ui) - FILL_SLACK).max(1.0);
         // spacing + 8px gap + spacing + button (+ 1px slack).
         let footer_h = spacing * 2.0 + 8.0 + ui.spacing().interact_size.y + 1.0;
         let preview_h = (ui.available_height() - footer_h).max(120.0);
@@ -462,6 +466,7 @@ impl DataEditor {
                     ty,
                     rx,
                     by,
+                    None,
                     refresh,
                     &mut self.previews.coord.transform,
                 );

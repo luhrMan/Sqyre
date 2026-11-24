@@ -35,7 +35,7 @@ const SHAPE_INPUT: c_int = 2;
 static LOGGED_SLOW_SET_RECT: AtomicBool = AtomicBool::new(false);
 
 /// Four edge windows forming a hollow rectangle on the virtual desktop.
-pub struct SelectionOutline {
+pub struct X11SelectionOutline {
     display: *mut _XDisplay,
     /// Quiet connection used only for `XQueryPointer` / layout. ConfigureWindow on
     /// `display` must not share this round-trip (that froze the rubber-band).
@@ -52,9 +52,9 @@ pub struct SelectionOutline {
 // SAFETY: the raw display pointer is owned exclusively by this struct — only
 // `&mut self` methods and `Drop` touch it, so it is never used from two threads
 // at once even after the value is moved to another thread.
-unsafe impl Send for SelectionOutline {}
+unsafe impl Send for X11SelectionOutline {}
 
-impl SelectionOutline {
+impl X11SelectionOutline {
     pub fn open() -> Result<Self, CaptureError> {
         // SAFETY: `XOpenDisplay(null)` connects to the default display and its
         // result is null-checked before any other Xlib call; every early return
@@ -310,7 +310,7 @@ impl SelectionOutline {
     }
 }
 
-impl Drop for SelectionOutline {
+impl Drop for X11SelectionOutline {
     fn drop(&mut self) {
         sqyre_ports::mark_site("outline:drop:start");
         let t0 = std::time::Instant::now();
@@ -595,10 +595,10 @@ pub fn x11_root_pointer() -> Option<(i32, i32)> {
 
 #[cfg(test)]
 mod tests {
-    use super::SelectionOutline;
+    use super::X11SelectionOutline;
 
     #[test]
     fn open_or_skip() {
-        let _ = SelectionOutline::open();
+        let _ = X11SelectionOutline::open();
     }
 }

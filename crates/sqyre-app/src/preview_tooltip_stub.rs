@@ -132,6 +132,7 @@ impl PreviewTooltipCache {
         _top: Option<i32>,
         _right: Option<i32>,
         _bottom: Option<i32>,
+        _grid: Option<(i32, i32)>,
         _refresh: PreviewRefresh,
         view: &mut ImageViewTransform,
     ) -> (egui::Rect, egui::Vec2) {

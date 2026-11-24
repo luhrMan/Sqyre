@@ -163,6 +163,7 @@ pub(super) fn host_loop(
             ("click_through", "off"),
         ],
     );
+    crate::fps_diag::note_enabled_once();
     let mut last_busy_tick = Instant::now();
     let mut last_x_growth = Instant::now();
     let mut stall_raised = false;
@@ -390,19 +391,28 @@ pub(super) fn host_loop(
         // Hub fan travel must not wait on egui — ROOT starves when unfocused.
         let fan_animating = crate::host_common::tick_hub_fan(&mut state);
 
-        wait_x_or_timeout(
-            state.xfd,
-            if (busy_now || fan_animating) && !state.relocate_mode && state.drag.is_none() {
-                if fan_animating {
-                    crate::hub_fan::HUB_FAN_TICK_MS
-                } else {
-                    BUSY_TICK_MS
-                }
+        let poll_ms = if (busy_now || fan_animating) && !state.relocate_mode && state.drag.is_none()
+        {
+            if fan_animating {
+                crate::hub_fan::HUB_FAN_TICK_MS
             } else {
-                // Relocate needs a steady poll for Wayland poll-hit press + release.
-                POLL_IDLE_MS
-            },
-        );
+                BUSY_TICK_MS
+            }
+        } else {
+            // Relocate needs a steady poll for Wayland poll-hit press + release.
+            POLL_IDLE_MS
+        };
+        // Each mapped button owns a face + hit window (both stay mapped today,
+        // including during click-through empty ShapeInput).
+        let mapped = state.buttons.values().filter(|b| b.mapped).count() as u32;
+        crate::fps_diag::host_tick(crate::fps_diag::OverlayFpsSnapshot {
+            mapped_faces: mapped,
+            mapped_hits: mapped,
+            click_through: state.click_through,
+            poll_ms,
+        });
+
+        wait_x_or_timeout(state.xfd, poll_ms);
     }
 
     destroy_all(&mut state);

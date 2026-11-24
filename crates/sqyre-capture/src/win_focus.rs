@@ -408,7 +408,7 @@ unsafe fn hicon_to_rgba(hicon: HICON, destroy: bool) -> Option<ProcessIcon> {
             let src = std::slice::from_raw_parts(bits as *const u8, px * 4);
             let mut rgba = Vec::with_capacity(px * 4);
             // DIB is BGRA.
-            for chunk in src.chunks_exact(4) {
+            for chunk in src.as_chunks::<4>().0 {
                 rgba.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
             }
             Some(ProcessIcon {

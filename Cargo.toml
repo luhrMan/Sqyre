@@ -78,7 +78,7 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.rten-imageproc]
 opt-level = 3
-[profile.dev.package.rten-model-file]
+[profile.dev.package.rten-sequence]
 opt-level = 3
 [profile.dev.package.rten-onnx]
 opt-level = 3
@@ -114,7 +114,7 @@ opt-level = 3
 opt-level = 3
 
 [workspace.dependencies]
-purecv = { version = "0.11.0", default-features = false, features = ["std", "parallel", "simd"] }
+purecv = { version = "0.12.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.36"
 egui = "0.36"
 egui-phosphor = { version = "0.14", default-features = false, features = ["regular", "fill"] }
@@ -134,7 +134,7 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 proptest = "1"
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
-resvg = { version = "0.49", default-features = false }
+resvg = { version = "0.50", default-features = false }
 rustautogui = { version = "2.5", default-features = false, features = ["lite"] }
 arboard = { version = "3", default-features = false }
 x11 = { version = "2", features = ["xlib", "xinerama", "xfixes", "xrandr", "xtest"] }
@@ -144,7 +144,7 @@ jni = { version = "0.22", default-features = false }
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.26", default-features = false }
-rfd = "0.17"
+rfd = "0.18"
 rustfft = "6.4"
 windows = "0.62"
 serde_json = "1"
@@ -154,11 +154,11 @@ web-time = "1"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.11"
 # OCR engine: pure-Rust NN pipeline on the rten runtime; models are ONNX files.
-ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
-rten = { version = "0.26", features = ["onnx_format"] }
+ocrs = { version = "0.14", default-features = false, features = ["onnx"] }
+rten = { version = "0.28", features = ["onnx_format"] }
 log = "0.4"
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.62", default-features = false }
 # async-io (not default tokio): keep zbus/tokio off accesskit's async-io thread.
-ashpd = { version = "0.13", default-features = false }
+ashpd = { version = "0.14", default-features = false }
 pollster = "1.0"
 libc = "0.2"

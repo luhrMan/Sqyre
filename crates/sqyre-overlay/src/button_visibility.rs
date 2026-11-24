@@ -70,10 +70,7 @@ fn button_is_shown(
             return false;
         }
     }
-    if !relocate && btn.visibility_gated && !found.get(&btn.id).copied().unwrap_or(false) {
-        return false;
-    }
-    true
+    relocate || !btn.visibility_gated || found.get(&btn.id).copied().unwrap_or(false)
 }
 
 fn program_matches(btn: &AndroidButtonSpec, focus: Option<&WindowInfo>) -> bool {

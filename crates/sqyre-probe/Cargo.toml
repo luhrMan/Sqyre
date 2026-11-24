@@ -3,6 +3,8 @@ name = "sqyre-probe"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Desktop capability probe for Sqyre (GNOME / Plasma / Cosmic parity verification)"
 
 [lints]

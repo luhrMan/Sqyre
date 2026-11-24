@@ -9,7 +9,6 @@ mod popup_escape;
 mod screen_click;
 mod system_shortcuts;
 
-#[cfg(all(feature = "hooks", target_os = "windows"))]
 pub use continue_wait::vk_key_name;
 pub use continue_wait::{ContinueSource, ContinueWaitBridge};
 pub use macro_hotkeys::{

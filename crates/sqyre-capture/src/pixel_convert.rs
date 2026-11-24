@@ -96,8 +96,10 @@ pub fn strip_rgba_row_to_rgb(src: &[u8], width: usize, dst: &mut [u8]) {
     let arch = pulp_arch();
     arch.dispatch(|| {
         for (d, s) in dst[..width * 3]
-            .chunks_exact_mut(3)
-            .zip(src[..width * 4].chunks_exact(4))
+            .as_chunks_mut::<3>()
+            .0
+            .iter_mut()
+            .zip(src[..width * 4].as_chunks::<4>().0)
         {
             d.copy_from_slice(&s[..3]);
         }

@@ -374,6 +374,8 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
 fn wlr_activated(bytes: &[u8]) -> bool {
     const ACTIVATED: u32 = 2;
     bytes
-        .chunks_exact(4)
-        .any(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]) == ACTIVATED)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|c| u32::from_le_bytes(*c) == ACTIVATED)
 }
