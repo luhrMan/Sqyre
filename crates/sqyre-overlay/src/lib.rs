@@ -99,9 +99,11 @@ pub use context_menu::{
 };
 #[cfg(feature = "runtime")]
 pub use host_common::{
-    apply_hub_fan_cmd, place_hub_satellite_face, point_in_rounded_rect, spec_contains,
-    spec_contains_rounded, spec_delta, tick_hub_fan, tip_refresh_decision, HubFanHost,
-    OverlayButtonMove, OverlayButtonSpec, SpecDelta, TipButtonView, TipRefreshInput,
+    apply_hosted_visibility, apply_hub_fan_cmd, button_should_show, place_all_satellites,
+    place_hub_satellite_face, point_in_rounded_rect, prepare_hub_satellite_spec,
+    rearm_satellite_input, spec_contains, spec_contains_rounded, spec_delta, tick_hub_fan,
+    tip_refresh_decision, GateVisibilityCtx, HubButtonView, HubFanHost, OverlayButtonMove,
+    OverlayButtonSpec, SpecDelta, TipButtonView, TipRefreshInput,
 };
 #[cfg(all(feature = "runtime", target_os = "linux"))]
 pub use linux_host::{HotkeyChooserResult, HotkeyChooserSpec, LinuxButtonHost};

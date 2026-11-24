@@ -1,7 +1,8 @@
-//! OS-neutral overlay host DTOs and helpers shared by X11 and Windows button hosts.
+//! OS-neutral overlay host DTOs and helpers shared by X11, Windows, and Wayland hosts.
 
-use crate::hub_fan::{hub_origin, satellite_pos, HubFanState};
+use crate::hub_fan::{hub_origin, is_hub_satellite_id, satellite_pos, HubFanState};
 use crate::ButtonFace;
+use std::collections::HashMap;
 
 /// Desired on-screen button (physical pixels, host desktop coordinates).
 #[derive(Debug, Clone, PartialEq)]
@@ -163,6 +164,8 @@ pub fn tip_refresh_decision(
 }
 
 /// Place a hub satellite face at the current fan `t` (rested slot → hub origin).
+///
+/// `spec.face` must hold the **rested** (fully open) top-left when called.
 pub fn place_hub_satellite_face(
     fan: &HubFanState,
     hub_geom: (i32, i32, u32, u32),
@@ -177,17 +180,143 @@ pub fn place_hub_satellite_face(
     spec.input_enabled = fan.fully_open();
 }
 
-/// OS-local hooks for shared hub-fan tick / apply orchestration.
+/// App sends rested satellite slots; remember them and place at the host fan `t`.
+pub fn prepare_hub_satellite_spec(
+    fan: &mut HubFanState,
+    hub_geom: (i32, i32, u32, u32),
+    spec: &mut OverlayButtonSpec,
+) {
+    if !is_hub_satellite_id(&spec.id) {
+        return;
+    }
+    fan.remember_rest(&spec.id, spec.face.x, spec.face.y);
+    place_hub_satellite_face(fan, hub_geom, spec);
+}
+
+/// Live button fields the shared fan / gate loops need (no OS handles).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HubButtonView {
+    pub face_x: i32,
+    pub face_y: i32,
+    pub face_w: u32,
+    pub face_h: u32,
+    pub mapped: bool,
+    pub visibility_gated: bool,
+    pub input_enabled: bool,
+}
+
+/// Capture-omit / relocate / fan / found-map inputs for [`button_should_show`].
+#[derive(Debug, Clone)]
+pub struct GateVisibilityCtx {
+    pub capture_omit: bool,
+    pub relocate: bool,
+    pub fan_open_or_traveling: bool,
+    pub found: HashMap<String, bool>,
+}
+
+/// Whether a hosted button should be mapped right now.
+pub fn button_should_show(id: &str, visibility_gated: bool, ctx: &GateVisibilityCtx) -> bool {
+    let fan_show = !is_hub_satellite_id(id) || ctx.fan_open_or_traveling;
+    !ctx.capture_omit
+        && fan_show
+        && (ctx.relocate || !visibility_gated || ctx.found.get(id).copied().unwrap_or(false))
+}
+
+/// OS-local hooks for shared hub-fan / visibility orchestration.
 ///
-/// Hosts keep window move/paint/hit logic; this trait only supplies the
-/// place / input / visibility / flush side effects the shared orchestrators need.
+/// Place, rearm, and gate-map loops live in this module; hosts only move,
+/// map/unmap, and sync input on real surfaces/windows.
 pub trait HubFanHost {
     fn hub_fan(&mut self) -> &mut HubFanState;
-    fn place_all_satellites(&mut self);
-    fn rearm_satellite_input(&mut self);
-    fn apply_fan_visibility(&mut self);
+    fn hub_face_geom(&self) -> (i32, i32, u32, u32);
+    fn hosted_button_ids(&self) -> Vec<String>;
+    fn button_view(&self, id: &str) -> Option<HubButtonView>;
+    /// Write satellite face top-left into the live spec (no OS move).
+    fn set_satellite_xy(&mut self, id: &str, x: i32, y: i32);
+    fn set_satellite_input_enabled(&mut self, id: &str, enabled: bool);
+    /// OS move/repaint for a button that is already mapped.
+    fn move_mapped_button(&mut self, id: &str);
+    /// Apply `input_enabled` to the OS hit target for a mapped button.
+    fn sync_mapped_input(&mut self, id: &str);
+    /// Map or unmap. Host updates its `mapped` flag and performs OS show/hide.
+    fn set_button_mapped(&mut self, id: &str, show: bool);
+    fn visibility_context(&self) -> GateVisibilityCtx;
     fn sync_dismiss_arm(&mut self);
     fn flush_after_fan(&mut self);
+}
+
+/// Place every remembered satellite at the current fan `t` (mapped ones move on OS).
+pub fn place_all_satellites<H: HubFanHost>(host: &mut H) {
+    let hub = host.hub_face_geom();
+    let (fan_t, ids) = {
+        let fan = host.hub_fan();
+        (fan.t, fan.satellite_ids())
+    };
+    let mut moves: Vec<(String, i32, i32)> = Vec::new();
+    for id in ids {
+        let Some(rest) = host.hub_fan().rest_of(&id) else {
+            continue;
+        };
+        let Some(view) = host.button_view(&id) else {
+            continue;
+        };
+        let origin = hub_origin(hub.0, hub.1, hub.2, hub.3, view.face_w, view.face_h);
+        let (x, y) = satellite_pos(fan_t, rest, origin);
+        if view.face_x == x && view.face_y == y {
+            continue;
+        }
+        moves.push((id, x, y));
+    }
+    for (id, x, y) in moves {
+        let mapped = host.button_view(&id).is_some_and(|v| v.mapped);
+        host.set_satellite_xy(&id, x, y);
+        if mapped {
+            host.move_mapped_button(&id);
+        }
+    }
+}
+
+/// Arm/disarm satellite hit input from fan fully-open state.
+pub fn rearm_satellite_input<H: HubFanHost>(host: &mut H) {
+    let enabled = host.hub_fan().fully_open();
+    let ids = host.hub_fan().satellite_ids();
+    let mut sync: Vec<(String, bool)> = Vec::new();
+    for id in ids {
+        let Some(view) = host.button_view(&id) else {
+            continue;
+        };
+        if view.input_enabled == enabled {
+            continue;
+        }
+        sync.push((id, view.mapped));
+    }
+    for (id, mapped) in sync {
+        host.set_satellite_input_enabled(&id, enabled);
+        if mapped {
+            host.sync_mapped_input(&id);
+        }
+    }
+}
+
+/// Map/unmap all hosted buttons from capture-omit, fan, relocate, and found-map.
+pub fn apply_hosted_visibility<H: HubFanHost>(host: &mut H) {
+    let ctx = host.visibility_context();
+    let ids = host.hosted_button_ids();
+    for id in ids {
+        let Some(view) = host.button_view(&id) else {
+            continue;
+        };
+        let show = button_should_show(&id, view.visibility_gated, &ctx);
+        if show == view.mapped {
+            continue;
+        }
+        host.set_button_mapped(&id, show);
+    }
+}
+
+/// Fan open/close visibility (same gate rules as image-search map/unmap).
+pub fn apply_fan_visibility<H: HubFanHost>(host: &mut H) {
+    apply_hosted_visibility(host);
 }
 
 /// Apply an expand/collapse command, placing immediately when snapped or settled.
@@ -195,12 +324,12 @@ pub fn apply_hub_fan_cmd<H: HubFanHost>(host: &mut H, expanded: bool, snap: bool
     let was_open = host.hub_fan().fully_open();
     host.hub_fan().set_expanded(expanded, snap);
     if snap || !host.hub_fan().animating() {
-        host.place_all_satellites();
+        place_all_satellites(host);
     }
     if was_open != host.hub_fan().fully_open() {
-        host.rearm_satellite_input();
+        rearm_satellite_input(host);
     }
-    host.apply_fan_visibility();
+    apply_fan_visibility(host);
     host.sync_dismiss_arm();
     host.flush_after_fan();
 }
@@ -211,17 +340,17 @@ pub fn tick_hub_fan<H: HubFanHost>(host: &mut H) -> bool {
     let was_traveling = host.hub_fan().open_or_traveling();
     if !host.hub_fan().tick() {
         if was_traveling && !host.hub_fan().open_or_traveling() {
-            host.apply_fan_visibility();
+            apply_fan_visibility(host);
         }
         host.sync_dismiss_arm();
         return false;
     }
     if !was_traveling {
-        host.apply_fan_visibility();
+        apply_fan_visibility(host);
     }
-    host.place_all_satellites();
+    place_all_satellites(host);
     if was_open != host.hub_fan().fully_open() {
-        host.rearm_satellite_input();
+        rearm_satellite_input(host);
     }
     host.sync_dismiss_arm();
     host.flush_after_fan();
@@ -231,6 +360,7 @@ pub fn tick_hub_fan<H: HubFanHost>(host: &mut H) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hub_fan::is_hub_satellite_id;
 
     fn spec() -> OverlayButtonSpec {
         OverlayButtonSpec {
@@ -448,5 +578,175 @@ mod tests {
             })
         )
         .is_none());
+    }
+
+    #[test]
+    fn button_should_show_respects_fan_omit_and_gate() {
+        let mut ctx = GateVisibilityCtx {
+            capture_omit: false,
+            relocate: false,
+            fan_open_or_traveling: false,
+            found: HashMap::new(),
+        };
+        assert!(button_should_show("macro_a", false, &ctx));
+        assert!(!button_should_show("__sqyre_hub_new_point", false, &ctx));
+        ctx.fan_open_or_traveling = true;
+        assert!(button_should_show("__sqyre_hub_new_point", false, &ctx));
+        assert!(!button_should_show("gated", true, &ctx));
+        ctx.found.insert("gated".into(), true);
+        assert!(button_should_show("gated", true, &ctx));
+        ctx.capture_omit = true;
+        assert!(!button_should_show("gated", true, &ctx));
+        ctx.capture_omit = false;
+        ctx.found.insert("gated".into(), false);
+        ctx.relocate = true;
+        assert!(button_should_show("gated", true, &ctx));
+    }
+
+    #[test]
+    fn prepare_hub_satellite_remembers_rest_and_places_closed() {
+        let mut fan = HubFanState::default();
+        let mut sat = OverlayButtonSpec {
+            id: "__sqyre_hub_new_point".into(),
+            face: ButtonFace {
+                x: 200,
+                y: 300,
+                w: 40,
+                h: 40,
+                ..spec().face
+            },
+            ..spec()
+        };
+        assert!(is_hub_satellite_id(&sat.id));
+        prepare_hub_satellite_spec(&mut fan, (100, 100, 48, 48), &mut sat);
+        assert_eq!(fan.rest_of("__sqyre_hub_new_point"), Some((200, 300)));
+        // Closed fan parks on hub origin.
+        assert_eq!(sat.face.x, 100 + (48 - 40) / 2);
+        assert_eq!(sat.face.y, 100 + (48 - 40) / 2);
+        assert!(!sat.input_enabled);
+    }
+
+    #[derive(Default)]
+    struct FakeHost {
+        fan: HubFanState,
+        hub: (i32, i32, u32, u32),
+        buttons: HashMap<String, HubButtonView>,
+        moved: Vec<String>,
+        mapped_ops: Vec<(String, bool)>,
+        input_sync: Vec<String>,
+        relocate: bool,
+        omit: bool,
+        found: HashMap<String, bool>,
+    }
+
+    impl HubFanHost for FakeHost {
+        fn hub_fan(&mut self) -> &mut HubFanState {
+            &mut self.fan
+        }
+        fn hub_face_geom(&self) -> (i32, i32, u32, u32) {
+            self.hub
+        }
+        fn hosted_button_ids(&self) -> Vec<String> {
+            self.buttons.keys().cloned().collect()
+        }
+        fn button_view(&self, id: &str) -> Option<HubButtonView> {
+            self.buttons.get(id).copied()
+        }
+        fn set_satellite_xy(&mut self, id: &str, x: i32, y: i32) {
+            if let Some(b) = self.buttons.get_mut(id) {
+                b.face_x = x;
+                b.face_y = y;
+            }
+        }
+        fn set_satellite_input_enabled(&mut self, id: &str, enabled: bool) {
+            if let Some(b) = self.buttons.get_mut(id) {
+                b.input_enabled = enabled;
+            }
+        }
+        fn move_mapped_button(&mut self, id: &str) {
+            self.moved.push(id.to_string());
+        }
+        fn sync_mapped_input(&mut self, id: &str) {
+            self.input_sync.push(id.to_string());
+        }
+        fn set_button_mapped(&mut self, id: &str, show: bool) {
+            if let Some(b) = self.buttons.get_mut(id) {
+                b.mapped = show;
+            }
+            self.mapped_ops.push((id.to_string(), show));
+        }
+        fn visibility_context(&self) -> GateVisibilityCtx {
+            GateVisibilityCtx {
+                capture_omit: self.omit,
+                relocate: self.relocate,
+                fan_open_or_traveling: self.fan.open_or_traveling(),
+                found: self.found.clone(),
+            }
+        }
+        fn sync_dismiss_arm(&mut self) {}
+        fn flush_after_fan(&mut self) {}
+    }
+
+    #[test]
+    fn shared_place_and_visibility_drive_host_hooks() {
+        let sat = "__sqyre_hub_new_point";
+        let mut host = FakeHost {
+            hub: (10, 20, 48, 48),
+            ..FakeHost::default()
+        };
+        host.fan.remember_rest(sat, 100, 200);
+        host.buttons.insert(
+            sat.into(),
+            HubButtonView {
+                face_x: 10 + (48 - 40) / 2,
+                face_y: 20 + (48 - 40) / 2,
+                face_w: 40,
+                face_h: 40,
+                mapped: false,
+                visibility_gated: false,
+                input_enabled: false,
+            },
+        );
+        host.buttons.insert(
+            sqyre_persist::QUICK_ACCESS_HUB_ID.into(),
+            HubButtonView {
+                face_x: 10,
+                face_y: 20,
+                face_w: 48,
+                face_h: 48,
+                mapped: true,
+                visibility_gated: false,
+                input_enabled: true,
+            },
+        );
+
+        // Closed: satellite stays unmapped; hub stays up.
+        apply_hosted_visibility(&mut host);
+        assert!(host.mapped_ops.is_empty());
+        assert!(!host.buttons[sat].mapped);
+
+        apply_hub_fan_cmd(&mut host, true, true);
+        assert!(host.buttons[sat].mapped);
+        assert!(host.mapped_ops.iter().any(|(id, show)| id == sat && *show));
+        assert_eq!(host.buttons[sat].face_x, 100);
+        assert_eq!(host.buttons[sat].face_y, 200);
+        assert!(host.buttons[sat].input_enabled);
+
+        // Travel with mapped satellite should move OS face (may take a few
+        // ticks before smoothstep changes a pixel).
+        host.fan.set_expanded(false, false);
+        host.moved.clear();
+        for _ in 0..20 {
+            if !tick_hub_fan(&mut host) {
+                break;
+            }
+            if host.moved.iter().any(|id| id == sat) {
+                break;
+            }
+        }
+        assert!(
+            host.moved.iter().any(|id| id == sat),
+            "expected move_mapped_button during collapse"
+        );
     }
 }

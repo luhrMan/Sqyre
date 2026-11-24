@@ -83,7 +83,9 @@ impl UserSettings {
     pub fn load_default() -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
-            Ok(Self::default())
+            let mut s = Self::default();
+            s.clamp();
+            Ok(s)
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -95,7 +97,11 @@ impl UserSettings {
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
-            return Ok(Self::default());
+            // Clamp seeds the Quick Access hub (and other defaults) so first
+            // startup shows chrome without waiting for another settings write.
+            let mut s = Self::default();
+            s.clamp();
+            return Ok(s);
         }
         let text = fs::read_to_string(path)?;
         const MAX_SETTINGS_YAML_BYTES: usize = 1024 * 1024;
@@ -1092,10 +1098,17 @@ overlay:
     }
 
     #[test]
-    fn missing_file_uses_defaults() {
+    fn missing_file_uses_clamped_defaults() {
         let dir = tempdir().unwrap();
         let s = UserSettings::load_from_path(dir.path().join("nope.yaml")).unwrap();
-        assert_eq!(s, UserSettings::default());
+        let mut expected = UserSettings::default();
+        expected.clamp();
+        assert_eq!(s, expected);
+        assert!(s
+            .overlay
+            .overlay_buttons
+            .iter()
+            .any(|b| is_quick_access_hub_id(&b.id)));
     }
 
     #[test]

@@ -68,7 +68,7 @@ impl MacroMetaUi {
         self.delay_open = false;
     }
 
-    /// Name entry row. `edit_limit` caps the field; past that the text scrolls.
+    /// Name entry row. `name_w` is the TextEdit desired width (hug or fill).
     ///
     /// `name_id` stays put when the row wraps, so keyboard focus survives.
     pub fn paint_name_row(
@@ -77,19 +77,13 @@ impl MacroMetaUi {
         m: &mut Macro,
         other_macro_names: &[String],
         enabled: bool,
-        edit_limit: f32,
+        name_w: f32,
         name_id: egui::Id,
     ) -> (MetaMutations, egui::Rect) {
         let mut out = MetaMutations::default();
 
         let framed =
             crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
-                let name_w = crate::widgets::fields::name_edit_width_limited(
-                    ui,
-                    &self.name_draft,
-                    "Macro name",
-                    edit_limit,
-                );
                 let edit = ui.add_enabled(
                     enabled,
                     egui::TextEdit::singleline(&mut self.name_draft)
@@ -133,9 +127,11 @@ impl MacroMetaUi {
     /// field reaches the pane edge the name stops growing and the text scrolls
     /// inside the field.
     ///
-    /// A focused entry, or a row too narrow to show the name, wraps the two
-    /// fields. The focused text then uses the pane width instead of scrolling
-    /// inside a sliver.
+    /// Focus alone does not reflow: wrapping only when the focused field's
+    /// text cannot fit the shared-row budget (or the row is already too narrow)
+    /// keeps a short name from collapsing onto its own row. Wrapped fields then
+    /// take the pane width so the text is editable instead of scrolling in a
+    /// sliver.
     pub(crate) fn paint_name_and_tags(
         &mut self,
         ui: &mut egui::Ui,
@@ -149,9 +145,10 @@ impl MacroMetaUi {
         let tag_id = ui.make_persistent_id("macro_tag_draft");
         // Focus from the previous frame: a click lands during this paint, so
         // the wrap shows on the following frame.
-        let editing = ui
+        let (name_focused, tag_focused) = ui
             .ctx()
-            .memory(|mem| mem.has_focus(name_id) || mem.has_focus(tag_id));
+            .memory(|mem| (mem.has_focus(name_id), mem.has_focus(tag_id)));
+        let editing = name_focused || tag_focused;
         ui.vertical(|ui| {
             let gap = ui.spacing().item_spacing.x;
             let avail = ui.available_width();
@@ -160,16 +157,46 @@ impl MacroMetaUi {
             // One point of slack so rounding cannot push the tag past the clip.
             let budget = (avail - gap - tag_w - 1.0).max(1.0);
             let edit_limit = (budget - chrome).max(1.0);
-            let relax = editing || edit_limit < crate::widgets::fields::name_edit_floor(ui);
+            let floor = crate::widgets::fields::name_edit_floor(ui);
+            // Content widths against the shared-row budget (pane UI, not inside
+            // a wrap_unit) decide whether focus should reflow.
+            let name_want = crate::widgets::fields::name_edit_width_limited(
+                ui,
+                &self.name_draft,
+                "Macro name",
+                f32::INFINITY,
+            );
+            let tag_want = relaxed_tag_width(ui, &self.tag_draft, avail);
+            let name_needs_room = name_want > edit_limit + 0.5;
+            let tag_needs_room = tag_want > crate::widgets::tags::TAG_DRAFT_WIDTH + 0.5;
+            let relax = edit_limit < floor
+                || (name_focused && name_needs_room)
+                || (tag_focused && tag_needs_room);
             let name_limit = if relax {
                 (avail - chrome - 1.0).max(1.0)
             } else {
                 edit_limit
             };
-            let draft_width = relax.then(|| relaxed_tag_width(ui, &self.tag_draft, avail));
+            // Fill the pane only when the name itself overflows (or the row is
+            // already too narrow). Filling on a tag-only wrap leaves a zero-width
+            // strip for the tag's wrap_unit probe and collapses that field.
+            // Exact fill (not hug) also avoids wrap_unit locking a floor-sized
+            // box after a transient Wayland text-input configure shrink.
+            let fill_name = edit_limit < floor || name_needs_room;
+            let draft_width = relax.then_some(tag_want);
             let paint_fields = |ui: &mut egui::Ui| {
+                let name_w = if fill_name {
+                    name_limit
+                } else {
+                    crate::widgets::fields::name_edit_width_limited(
+                        ui,
+                        &self.name_draft,
+                        "Macro name",
+                        name_limit,
+                    )
+                };
                 let (meta, name_rect) =
-                    self.paint_name_row(ui, m, other_macro_names, enabled, name_limit, name_id);
+                    self.paint_name_row(ui, m, other_macro_names, enabled, name_w, name_id);
                 let (tag_edit, tag_rect) = crate::widgets::tag_draft_editor(
                     ui,
                     &mut m.tags,
@@ -779,6 +806,66 @@ mod tests {
                 _ => None,
             })
             .unwrap_or(0.0)
+    }
+
+    #[test]
+    fn focused_short_name_keeps_shared_row() {
+        let ctx = egui::Context::default();
+        let mut meta = MacroMetaUi::default();
+        let mut macro_ = m("Alpha", &["demo"]);
+        meta.sync_selection(0, &macro_);
+        let width = 480.0;
+        let mut before = None;
+        for frame in 0..2 {
+            let (laid, out) = run_header(
+                &ctx,
+                width,
+                frame as f64 * 0.1,
+                vec![],
+                &mut meta,
+                &mut macro_,
+            );
+            before = Some(laid);
+            out.drop_without_applying_deltas();
+        }
+        let before = before.expect("settled");
+        assert!(
+            (before.name_rect.top() - before.tag_rect.top()).abs() < 1.0,
+            "unfocused fields left the shared row: name {:?} tag {:?}",
+            before.name_rect,
+            before.tag_rect
+        );
+        let before_w = before.name_rect.width();
+        let pos = egui::pos2(before.name_rect.center().x, before.name_rect.center().y);
+        let (_, press) = run_header(&ctx, width, 0.3, click(pos, true), &mut meta, &mut macro_);
+        press.drop_without_applying_deltas();
+        let (_, release) = run_header(&ctx, width, 0.4, click(pos, false), &mut meta, &mut macro_);
+        release.drop_without_applying_deltas();
+        let mut after = None;
+        for frame in 0..4 {
+            let (laid, out) = run_header(
+                &ctx,
+                width,
+                0.5 + frame as f64 * 0.1,
+                vec![],
+                &mut meta,
+                &mut macro_,
+            );
+            after = Some(laid);
+            out.drop_without_applying_deltas();
+        }
+        let after = after.expect("focused");
+        assert!(
+            (after.name_rect.top() - after.tag_rect.top()).abs() < 1.0,
+            "short focused name wrapped onto its own row: name {:?} tag {:?}",
+            after.name_rect,
+            after.tag_rect
+        );
+        assert!(
+            after.name_rect.width() + 1.0 >= before_w,
+            "focused name collapsed: before {before_w} after {}",
+            after.name_rect.width()
+        );
     }
 
     #[test]
