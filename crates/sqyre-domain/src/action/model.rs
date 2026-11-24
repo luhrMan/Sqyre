@@ -1125,7 +1125,7 @@ impl NavChords {
             left: vec!["left".into()],
             right: vec!["right".into()],
             select: vec!["enter".into()],
-            back: vec!["esc".into()],
+            back: vec!["backspace".into()],
         }
     }
 }
@@ -1190,6 +1190,17 @@ pub struct NavSelectAction {
     pub press_mode: NavPressMode,
 }
 
+/// Default Navigate Select input/output variable for the atlas name ([`BindingRole::Atlas`]).
+pub const NAV_VAR_ATLAS: &str = "NavSelAtlas";
+/// Default Navigate Select input/output variable for the cell row ([`BindingRole::Row`]).
+pub const NAV_VAR_ROW: &str = "NavSelRow";
+/// Default Navigate Select input/output variable for the cell column ([`BindingRole::Col`]).
+pub const NAV_VAR_COL: &str = "NavSelCol";
+/// Default Navigate Select input/output variable for the collection ([`BindingRole::Collection`]).
+pub const NAV_VAR_COLLECTION: &str = "NavSelCollection";
+/// Default Navigate Select output variable for the selected cell ref ([`BindingRole::Ref`]).
+pub const NAV_VAR_REF: &str = "NavSelRef";
+
 /// Optional start / override sources for Navigate Select.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavInputs {
@@ -1206,6 +1217,18 @@ pub struct NavInputs {
         skip_serializing_if = "String::is_empty"
     )]
     pub collection: String,
+}
+
+impl NavInputs {
+    /// Blank-action seeds: bare names matching [`NavOutputs::blank_defaults`] for passthrough.
+    pub fn blank_defaults() -> Self {
+        Self {
+            atlas: NAV_VAR_ATLAS.into(),
+            row: NAV_VAR_ROW.into(),
+            col: NAV_VAR_COL.into(),
+            collection: NAV_VAR_COLLECTION.into(),
+        }
+    }
 }
 
 /// Output variables written by Navigate Select.
@@ -1244,6 +1267,19 @@ pub struct NavOutputs {
     pub output_collection: String,
 }
 
+impl NavOutputs {
+    /// Blank-action seeds: same role names as [`NavInputs::blank_defaults`] for passthrough.
+    pub fn blank_defaults() -> Self {
+        Self {
+            output_ref: NAV_VAR_REF.into(),
+            output_atlas: NAV_VAR_ATLAS.into(),
+            output_row: NAV_VAR_ROW.into(),
+            output_col: NAV_VAR_COL.into(),
+            output_collection: NAV_VAR_COLLECTION.into(),
+        }
+    }
+}
+
 /// Boxed payload for [`ActionKind::NavigateSelect`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NavigateSelectData {
@@ -1275,8 +1311,8 @@ impl Default for NavigateSelectData {
             chords: NavChords::blank_defaults(),
             options: NavOptions::default(),
             select: NavSelectAction::default(),
-            inputs: NavInputs::default(),
-            outputs: NavOutputs::default(),
+            inputs: NavInputs::blank_defaults(),
+            outputs: NavOutputs::blank_defaults(),
             subactions: Vec::new(),
         }
     }

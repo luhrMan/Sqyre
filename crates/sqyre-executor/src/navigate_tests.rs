@@ -6,6 +6,8 @@ use crate::test_support::{macro_of, ImmediateContinueWaiter, RecordingBackend};
 use crate::test_support::{one_atlas, FixedResolver};
 use sqyre_domain::{
     NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction, NavigateSelectData, PressState,
+    VariableDecl, VariableType, NAV_VAR_ATLAS, NAV_VAR_COL, NAV_VAR_COLLECTION, NAV_VAR_REF,
+    NAV_VAR_ROW,
 };
 
 #[test]
@@ -285,13 +287,90 @@ fn errors_on_unknown_start_collection() {
         atlas: "inventory".into(),
         chords: enter_chords(),
         inputs: NavInputs {
-            collection: "satchel".into(),
+            collection: "startColl".into(),
             ..Default::default()
         },
         ..Default::default()
     });
+    macro_.upsert_variable(VariableDecl {
+        name: "startColl".into(),
+        type_: VariableType::Text,
+        initial_value: "satchel".into(),
+        ..Default::default()
+    });
     let err = err_text(run_nav(&mut macro_, &mut backend, Some(&resolver), None));
     assert!(err.contains("not in atlas"), "{err}");
+}
+
+#[test]
+fn empty_passthrough_vars_fall_through_to_picker() {
+    let waiter = ImmediateContinueWaiter::queued(&[0]);
+    let resolver = one_bag_resolver();
+    let mut backend = RecordingBackend::default();
+    // Blank defaults seed role-name inputs/outputs; vars are unset → picker atlas + cell 1,1.
+    let mut macro_ = nav_macro(nav_select(enter_chords()));
+
+    run_nav(&mut macro_, &mut backend, Some(&resolver), Some(&waiter)).unwrap();
+
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_ATLAS).map(|v| v.as_display()),
+        Some("inventory".into())
+    );
+    assert_eq!(
+        macro_
+            .variables
+            .get(NAV_VAR_COLLECTION)
+            .map(|v| v.as_display()),
+        Some("bag".into())
+    );
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_ROW).map(|v| v.as_display()),
+        Some("1".into())
+    );
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_COL).map(|v| v.as_display()),
+        Some("1".into())
+    );
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_REF).map(|v| v.as_display()),
+        Some("P~bag@1,1-1,1".into())
+    );
+}
+
+#[test]
+fn passthrough_vars_resume_prior_position() {
+    let waiter = ImmediateContinueWaiter::queued(&[0]);
+    let resolver = one_bag_resolver();
+    let mut backend = RecordingBackend::default();
+    let mut macro_ = nav_macro(nav_select(enter_chords()));
+    for (name, type_, initial_value) in [
+        (NAV_VAR_ATLAS, VariableType::Text, "inventory"),
+        (NAV_VAR_COLLECTION, VariableType::Text, "bag"),
+        (NAV_VAR_ROW, VariableType::Number, "2"),
+        (NAV_VAR_COL, VariableType::Number, "3"),
+    ] {
+        macro_.upsert_variable(VariableDecl {
+            name: name.into(),
+            type_,
+            initial_value: initial_value.into(),
+            ..Default::default()
+        });
+    }
+
+    run_nav(&mut macro_, &mut backend, Some(&resolver), Some(&waiter)).unwrap();
+
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_ROW).map(|v| v.as_display()),
+        Some("2".into())
+    );
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_COL).map(|v| v.as_display()),
+        Some("3".into())
+    );
+    assert_eq!(
+        macro_.variables.get(NAV_VAR_REF).map(|v| v.as_display()),
+        Some("P~bag@2,3-2,3".into())
+    );
 }
 
 #[test]

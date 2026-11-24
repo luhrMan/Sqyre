@@ -364,20 +364,22 @@ fn on_nav(
 }
 
 fn resolve_atlas_name(macro_: &Macro, atlas: &str, inputs: &NavInputs) -> Result<String> {
-    if !inputs.atlas.trim().is_empty() {
-        if let Some(v) = macro_.variables.get(inputs.atlas.trim()) {
+    let key = inputs.atlas.trim();
+    if !key.is_empty() {
+        if let Some(v) = macro_.variables.get(key) {
             let s = v.as_display();
             if !s.trim().is_empty() {
                 return Ok(s);
             }
+            // Variable present but empty → use the picker atlas.
+            return Ok(atlas.trim().to_string());
         }
         let resolved = resolve_text(&inputs.atlas, macro_).unwrap_or_else(|_| inputs.atlas.clone());
         if !resolved.trim().is_empty() && resolved != inputs.atlas {
             return Ok(resolved);
         }
-        if !inputs.atlas.trim().is_empty() {
-            return Ok(inputs.atlas.trim().to_string());
-        }
+        // Missing variable / no template expansion → do not treat the key as a
+        // literal atlas name (blank defaults seed role names like "Atlas").
     }
     Ok(atlas.trim().to_string())
 }
@@ -392,9 +394,15 @@ fn resolve_start_collection(macro_: &Macro, inputs: &NavInputs) -> Result<String
         if !s.trim().is_empty() {
             return Ok(s);
         }
+        // Variable present but empty → start at the first atlas node.
+        return Ok(String::new());
     }
     let resolved = resolve_text(t, macro_).unwrap_or_else(|_| t.to_string());
-    Ok(resolved.trim().to_string())
+    if !resolved.trim().is_empty() && resolved != t {
+        return Ok(resolved.trim().to_string());
+    }
+    // Missing variable / no template expansion → empty start (not a literal name).
+    Ok(String::new())
 }
 
 fn resolve_cell_start(macro_: &Macro, field: &str, default: i32) -> Result<i32> {
