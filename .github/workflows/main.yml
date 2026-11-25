@@ -1,5 +1,5 @@
 # CI on push/PR to main. Daily release at 23:00 UTC when main has changed.
-# Releases: Linux binary + AppImage + Flatpak, Windows .exe (MinGW cross), WASM editor zip,
+# Releases: Linux binary + AppImage + Flatpak, Windows .exe (MinGW cross),
 # signed Android APK (arm64).
 # Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 #
@@ -11,8 +11,8 @@
 # - Cargo registry (.cache/cargo): one key for all Linux jobs — warmed once per run.
 #   Fixed per Cargo.lock: lockfiles fully describe deps, so no write-back needed.
 # - Cargo target/: per triple/profile (linux debug / linux dist / windows-gnu /
-#   wasm32 / android) — not cross-shareable. Fixed per lockfile epoch; deps
-#   dominate, workspace crates rebuild anyway.
+#   android) — not cross-shareable. Fixed per lockfile epoch; deps dominate,
+#   workspace crates rebuild anyway.
 # - sccache: GHA cache backend (per-compilation content-addressed blobs). The
 #   ACTIONS_* cache-service vars only exist in the JS action runtime, so the
 #   gha-runtime-env action exports them to GITHUB_ENV; run-in-build-image and
@@ -20,21 +20,21 @@
 #   containers. No save steps; .cache/sccache is only the fallback backend.
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
 # - .devcontainer/Dockerfile is multi-stage: `base` (sqyre-linux-build, slim —
-#   no Android toolchain) for check/test/build-linux/build-wasm; `android`
+#   no Android toolchain) for check/test/build-linux; `android`
 #   (sqyre-android-build = base + SDK/NDK/emulator) for check-android/build-android.
 #   The android stage builds `FROM base` inline, so android-image never needs
 #   the published base image.
 # - OCR models (assets/ocr-models): keyed on the pin hashes in the download script
 # - Flatpak runtimes + builder state, Gradle user home: weekly-epoch keys —
 #   bounded staleness instead of a multi-GB re-save every run
-# - Trunk tools (wasm-bindgen/wasm-opt), AppImage type2-runtime,
-#   Windows rustup toolchains — keyed on the inputs that pin their versions
+# - AppImage type2-runtime, Windows rustup toolchains — keyed on the inputs
+#   that pin their versions
 # Shared cache steps live in .github/actions/setup-rust-caches (composite);
 # the container env contract lives in .github/actions/run-in-build-image.
 # Release builds skip release-gate via SQYRE_SKIP_GATE=1 — the check job already
 # gated the same commit; releases on schedule/dispatch reuse that result.
 # Criterion benches (`make bench`) are local-only; Linux `check` runs fmt/clippy/
-# deny/machete/doctest/smoke/wasm-check, `test` runs instrumented coverage.
+# deny/machete/doctest/smoke, `test` runs instrumented coverage.
 
 name: Build and Release
 
@@ -231,7 +231,7 @@ jobs:
           target: android
           push: ${{ env.GHCR_PUSH }}
 
-  # Quality gates: fmt/clippy/deny/machete + wasm32 check + doctests + smoke.
+  # Quality gates: fmt/clippy/deny/machete + doctests + smoke.
   # Parallel with `test` (coverage) — clippy/debug vs instrumented artifacts.
   # Also gates release events: build jobs skip release-gate (SQYRE_SKIP_GATE),
   # so this is the fmt/clippy guard for schedule/dispatch runs.
@@ -269,7 +269,6 @@ jobs:
         with:
           script: |
             make check
-            make wasm-check
             make doctest
             make smoke
             # Committed cargo-sources.json must match Cargo.lock (flatpak deps).
@@ -712,77 +711,6 @@ jobs:
           path: sqyre-v${{ needs.gate.outputs.version }}-windows-amd64.zip
           retention-days: 3
 
-  build-wasm:
-    if: needs.gate.outputs.should_release == 'true'
-    needs: [gate, cargo-registry, linux-image]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      packages: read
-    outputs:
-      version: ${{ needs.gate.outputs.version }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.gate.outputs.sha }}
-
-      - name: Write VERSION
-        run: echo "${{ needs.gate.outputs.version }}" > VERSION
-
-      - name: Ensure Linux build image
-        uses: ./.github/actions/ensure-linux-image
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          push: "false"
-
-      # index.html maps --release to the `dist` cargo profile: wasm output lands
-      # in target/wasm32-unknown-unknown/dist, host deps in target/dist.
-      - name: Setup Rust caches
-        uses: ./.github/actions/setup-rust-caches
-        with:
-          lock-hash: ${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
-          ocr: "true"
-          target-key-prefix: cargo-target-wasm32-v3
-          target-family: cargo-target-wasm
-          target-paths: |
-            target/wasm32-unknown-unknown
-            target/dist
-          extra-dirs: .cache/xdg-tools
-
-      # Trunk downloads wasm-bindgen + wasm-opt into XDG_CACHE_HOME on first use;
-      # HOME=/tmp in the container would re-download every run.
-      - name: Cache Trunk tools
-        uses: actions/cache@v6
-        with:
-          path: .cache/xdg-tools
-          key: ${{ runner.os }}-trunk-tools-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
-          restore-keys: |
-            ${{ runner.os }}-trunk-tools-v1-
-
-      - name: Build WASM editor
-        uses: ./.github/actions/run-in-build-image
-        with:
-          extra-env: |
-            RELEASE_VERSION=${{ needs.gate.outputs.version }}
-            SQYRE_SKIP_GATE=1
-          script: |
-            make wasm
-            test -f bin/wasm/index.html
-            sccache --show-stats || true
-
-      - name: Zip WASM editor
-        run: |
-          VERSION="${{ needs.gate.outputs.version }}"
-          (cd bin/wasm && zip -9r "../../sqyre-v${VERSION}-wasm.zip" .)
-
-      - name: Upload WASM artifact (zipped)
-        uses: actions/upload-artifact@v7
-        with:
-          name: wasm-editor-zip
-          path: sqyre-v${{ needs.gate.outputs.version }}-wasm.zip
-          retention-days: 3
-
   # Signed arm64 release APK. Needs the SQYRE_ANDROID_* secrets; the release fails
   # without them, same as SQYRE_UPDATE_SIGNING_KEY.
   build-android:
@@ -910,7 +838,7 @@ jobs:
 
   release:
     if: needs.gate.outputs.should_release == 'true'
-    needs: [gate, check, build-linux, build-flatpak, build-windows, build-wasm, build-android]
+    needs: [gate, check, build-linux, build-flatpak, build-windows, build-android]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -950,7 +878,6 @@ jobs:
           cp artifacts/linux-appimage-zip/*.zip release/
           cp artifacts/linux-flatpak/*.flatpak release/
           cp artifacts/windows-binary-zip/*.zip release/
-          cp artifacts/wasm-editor-zip/*.zip release/
           cp artifacts/android-apk/*.apk release/
           (cd release && sha256sum * > SHA256SUMS)
           cat release/SHA256SUMS

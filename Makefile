@@ -3,7 +3,7 @@
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre probe overlay-sandbox overlay-hold-check release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
 	coverage coverage-floors check check-fmt fmt clippy deny machete \
-	clean-sweep release-gate run ocr-models appimage flatpak install-desktop docs-media wasm wasm-check android android-check android-emulator android-emulator-headless android-emulator-stop help
+	clean-sweep release-gate run ocr-models appimage flatpak install-desktop docs-media android android-check android-emulator android-emulator-headless android-emulator-stop help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -99,7 +99,6 @@ help:
 	@echo "  doctest      - cargo test --doc (nextest skips doctests)"
 	@echo "  smoke        - debug build then ./bin/sqyre --version"
 	@echo "  bench        - criterion benches (match, vision, serialize; not run in CI)"
-	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
 	@echo "  android-check - cargo ndk check editor + runtime sqyre-app for arm64-v8a (devcontainer)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
@@ -118,7 +117,6 @@ help:
 	@echo "  flatpak      - fmt + check, then Flatpak bundle -> $(BIN)/com.sqyre.app.flatpak"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
 	@echo "  install-desktop - install .desktop + icon for GNOME/Wayland (Linux dev builds)"
-	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 	@echo "  android      - fmt + check, then sideload APK -> $(BIN)/sqyre-debug.apk"
 	@echo "                 (arm64-v8a + x86_64; ANDROID_ABIS=…; ANDROID_FEATURES=…; ANDROID_PROFILE=release;"
 	@echo "                 see docs/ANDROID.md)"
@@ -257,13 +255,6 @@ bench:
 	$(CARGO) bench -p sqyre-vision --bench vision_hot_paths $(CARGO_FLAGS)
 	$(CARGO) bench -p sqyre-serialize --bench macro_codec $(CARGO_FLAGS)
 
-# Compile-only WASM editor (no Trunk). CI Linux test job runs this.
-# Skip `rustup target add` when the target is already installed (read-only RUSTUP_HOME in CI).
-wasm-check:
-	@rustup target list --installed | grep -q wasm32-unknown-unknown \
-		|| rustup target add wasm32-unknown-unknown
-	$(CARGO) check -p sqyre-app --target wasm32-unknown-unknown --no-default-features $(CARGO_FLAGS)
-
 # Compile-only Android check (devcontainer): editor and runtime sqyre-app, platform crates.
 android-check:
 	@CARGO_FLAGS="$(CARGO_FLAGS)" bash scripts/android/check.sh
@@ -395,16 +386,3 @@ install-desktop: release $(BIN)
 		exit 1; \
 	fi
 	./scripts/linux/packaging/install-desktop.sh $(BIN)/sqyre
-
-# Browser GUI editor (no Run / capture / OCR). Requires: rustup target wasm32-unknown-unknown, trunk.
-wasm: release-gate
-	@command -v trunk >/dev/null 2>&1 || { \
-		echo "trunk not found. Install with:"; \
-		echo "  cargo install --locked trunk@0.22.2"; \
-		echo "Also: rustup target add wasm32-unknown-unknown"; \
-		exit 1; \
-	}
-	rustup target add wasm32-unknown-unknown
-	# Trunk's clap rejects NO_COLOR=1 (expects true/false).
-	cd crates/sqyre-app && env -u NO_COLOR trunk build --release
-	@echo "WASM editor: $(BIN)/wasm/index.html  (serve with: cd crates/sqyre-app && env -u NO_COLOR trunk serve)"

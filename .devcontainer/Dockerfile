@@ -3,7 +3,7 @@
 # Multi-stage:
 #   base    — everything needed for Linux builds/tests/packaging except the
 #             Android toolchain. This is the slim CI image (sqyre-linux-build)
-#             pulled by the test/build-linux/build-appimage/build-wasm jobs,
+#             pulled by the test/build-linux/build-appimage jobs,
 #             and the Desktop devcontainer (.devcontainer/desktop, build.target
 #             base). Day-to-day work uses this stage so image builds skip the SDK.
 #   android — base + JDK/SDK/NDK/Gradle/cargo-ndk + emulator/scrcpy. This is the
@@ -15,14 +15,11 @@
 # so `make windows`, nested AppImage builds, and Flatpak Docker fallbacks work inside
 # the container. Flatpak builds need user namespaces / bwrap (host Docker privileged
 # image when the container itself cannot run flatpak-builder natively).
-# Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
 # Build and test in-container; run the GUI binary on the host (needs X11).
 FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.100.0
-# Trunk 0.22.2 MSRV is 1.96.1; image pins RUST_VERSION (repo toolchain).
-ARG TRUNK_VERSION=0.22.2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
@@ -59,14 +56,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
         --default-toolchain "${RUST_VERSION}" \
         --profile default \
         --component rustfmt,clippy,rust-analyzer,rust-src,llvm-tools-preview \
-    && rustup target add wasm32-unknown-unknown \
     && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
     && rustc --version && cargo --version \
-    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete "trunk@${TRUNK_VERSION}" --locked \
+    && cargo install cargo-nextest cargo-deny cargo-llvm-cov cargo-machete --locked \
     && chmod -R a+rX /usr/local/cargo \
     && cargo nextest --version && cargo deny --version && cargo llvm-cov --version \
-    && cargo machete --version && trunk --version \
-    && rustup target list --installed | grep -q wasm32-unknown-unknown
+    && cargo machete --version
 
 # Host-mounted SCCACHE_DIR reuses rustc outputs across clean target/ trees and CI runners.
 # Wrapper unsets CARGO_INCREMENTAL*: sccache rejects those vars when present at all.
