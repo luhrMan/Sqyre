@@ -1,25 +1,26 @@
-# Dialogs and surfaces size without runaway growth
+# Dialogs and windows do not runaway-grow
 
 ## Rules
 
-- Dialogs use `widgets::fit_dialog_popup` (+ optional tighter `max_size`); bodies that must fill use `fill_resize_body`. Never treat `available_width()` / `available_height()` as a minimum (`set_min_width(available)`, fill `TextEdit` + siblings in a left-to-right row, uncapped `ScrollArea`).
-- Fill leftover width with `desired_width(INFINITY)` and `widgets::fill_row` (trailing controls first).
-- Scroll in dialogs via `pickers::dialog_scroll` / `show_scroll_edge_fit` / `popup_scroll_max_height` — claim `min(content, viewport)`, not full content height.
-- Right-aligned button rows use `confirm_*_row` / `dismiss_row` / `save_row` (`right_button_row`); never `Layout::right_to_left` alone inside auto-sized surfaces.
-- Selection/focus strokes on cells use `StrokeKind::Inside`, not `Outside`.
-- Tips and narrow self-sizing surfaces hug content; they must not expand to fill the window.
+- Resizable dialogs/windows must not expand every frame toward the screen edge because content treated available space as a minimum.
+- Scroll regions inside those surfaces must not inflate the parent by claiming more than `min(content, viewport)`.
+- Right-anchored Save/Confirm/Dismiss rows must not stretch an auto-sized surface to the full constrain width.
 
 ## Examples
 
-- the one where a view tip has narrow content → tip height stays well below the dialog constrain rect  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::view_tip_hugs_narrow_content`
-- the one where a grid cell is selected → selection stroke stays inside the cell  
-  `Test: crates/sqyre-app/src/pickers/icon_grid.rs::selected_cell_stroke_stays_inside_cell`
+_(enforcement incomplete — no dedicated runaway-growth / scroll-claim / footer-inflate green yet; helpers below are the current gate)_
 
 ## Questions
 
-_(none)_
+- Add a headless green that a dialog body cannot ratchet toward `max_size` via available-as-min layout?
+- Add a green that a right-button footer does not expand an auto-sized popup to the constrain width?
 
 ## Out of scope
 
+- Tip hug / tip ratchet (see [tooltip-ratchet.md](tooltip-ratchet.md))
+- Cell selection stroke geometry (see [cell-strokes.md](cell-strokes.md))
 - Overlay picker layout in `sqyre-overlay` (cannot import `sqyre-app`; keep local helpers)
+
+## Implementation note (not acceptance criteria)
+
+Use `fit_dialog_popup` / `fill_resize_body` / `fill_row` (`desired_width(INFINITY)`, trailing controls first). Scroll via `dialog_scroll` / `show_scroll_edge_fit` / `popup_scroll_max_height`. Footers via `save_row` / `confirm_*_row` / `dismiss_row` (`right_button_row`) — never bare `Layout::right_to_left` in auto-sized surfaces. Do not `set_min_width(available)` / uncapped `ScrollArea` / fill `TextEdit` + siblings left-to-right.

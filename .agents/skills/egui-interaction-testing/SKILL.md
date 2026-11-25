@@ -17,9 +17,10 @@ description: >-
 
 | Pattern | Map |
 |---------|-----|
-| 1 — hover tooltips (ratchet) | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
+| 1 — hover tooltips (ratchet + hug) | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
 | 1b — elided label disclosure | [`elided-tooltips.md`](../../../docs/examples/ui/elided-tooltips.md) |
-| 2 — surface geometry | [`dialog-layout.md`](../../../docs/examples/ui/dialog-layout.md) |
+| 2 — dialog runaway growth | [`dialog-layout.md`](../../../docs/examples/ui/dialog-layout.md) |
+| 2b — cell strokes | [`cell-strokes.md`](../../../docs/examples/ui/cell-strokes.md) |
 | 3 — popups that must stay open | [`nested-popups.md`](../../../docs/examples/ui/nested-popups.md) |
 | 4 — keyboard / focus (layer ownership) | [`focus-layers.md`](../../../docs/examples/ui/focus-layers.md) |
 | 4b — search focus on open | [`search-on-open.md`](../../../docs/examples/ui/search-on-open.md) |
