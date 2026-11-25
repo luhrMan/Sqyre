@@ -891,4 +891,59 @@ mod tests {
                 && (event.new_content.width() - 640.0).abs() < 0.5
         );
     }
+
+    /// Adversarial child (`set_min_width(available)`) must not ratchet a
+    /// `fill_resize_body` window toward the constrain rect across frames.
+    #[test]
+    fn fill_resize_body_stops_available_as_min_from_growing_window() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("fill_resize_growth");
+        let mut widths = Vec::new();
+        for frame in 0..8 {
+            let input = RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 700.0),
+                )),
+                time: Some(frame as f64 * 0.05),
+                predicted_dt: 0.05,
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                let ctx = ui.ctx().clone();
+                fit_dialog_popup(
+                    egui::Window::new("dlg")
+                        .resizable(true)
+                        .default_size([420.0, 320.0]),
+                    &ctx,
+                    id,
+                    None,
+                )
+                .show(&ctx, |ui| {
+                    fill_resize_body(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.label("body");
+                    });
+                });
+            })
+            .drop_without_applying_deltas();
+            let w = ctx.memory(|m| m.area_rect(id).map(|r| r.width()).unwrap_or(f32::NAN));
+            widths.push(w);
+        }
+        let first = widths[2]; // skip egui sizing frames
+        let last = *widths.last().unwrap();
+        assert!(
+            first.is_finite() && last.is_finite(),
+            "window area missing: {widths:?}"
+        );
+        let constrain_w = dialog_constrain_rect(&ctx).width();
+        assert!(
+            last < constrain_w * 0.85,
+            "window grew toward constrain ({last} vs {constrain_w}); frames={widths:?}"
+        );
+        assert!(
+            (last - first).abs() < 40.0,
+            "window width ratcheted across frames ({first} → {last}); frames={widths:?}"
+        );
+    }
 }
