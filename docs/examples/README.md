@@ -19,8 +19,11 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 - New or changed UI / feature work: open or update the relevant map under [`ui/`](ui/) **before** coding.
 - Underspecified requests: treat missing rules/examples as **Questions**; batch-ask (see `ask-on-ambiguity`).
 - Implementation: helpers and thin `.mdc` rules point here; the [`egui-interaction-testing`](../../.cursor/skills/egui-interaction-testing/SKILL.md) skill is how to write the tests, not a second copy of the criteria.
+- Usability index: [`ui/usability.md`](ui/usability.md) — pick a story map, don’t treat the index as acceptance criteria.
 
 ## UI maps
+
+### Interaction / layout
 
 | Theme | Map |
 |-------|-----|
@@ -29,12 +32,20 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Elided labels disclose on hover | [ui/elided-tooltips.md](ui/elided-tooltips.md) |
 | Live top surface owns keys | [ui/focus-layers.md](ui/focus-layers.md) |
 | Search-first surfaces focus filter on open | [ui/search-on-open.md](ui/search-on-open.md) |
-| Layout chrome write-back | [ui/persisted-ui.md](ui/persisted-ui.md) |
-| Preference settings (save / nav / search / understand) | [ui/settings-preferences.md](ui/settings-preferences.md) |
 | Dialogs do not runaway-grow | [ui/dialog-layout.md](ui/dialog-layout.md) |
 | Cell selection strokes stay inside | [ui/cell-strokes.md](ui/cell-strokes.md) |
-| Lists / search / icons / disclosure | [ui/usability.md](ui/usability.md) |
+| Layout chrome write-back | [ui/persisted-ui.md](ui/persisted-ui.md) |
+
+### Product UX
+
+| Theme | Map |
+|-------|-----|
+| Usability index (links only) | [ui/usability.md](ui/usability.md) |
+| Lists sort / filter / empty | [ui/list-search-sort.md](ui/list-search-sort.md) |
+| Progressive disclosure (Advanced) | [ui/progressive-disclosure.md](ui/progressive-disclosure.md) |
+| Icon chrome + AccessKit names | [ui/icon-chrome.md](ui/icon-chrome.md) |
+| Preference settings save / nav / search | [ui/settings-preferences.md](ui/settings-preferences.md) |
 
 ## Discovery note
 
-Initial maps encode the **current tested contracts** in `sqyre-app` (helpers + headless tests). Amend via conversation when product intent differs; leave open items under **Questions**.
+Maps encode confirmed Q&A plus current tested contracts. Amend when product intent differs; leave open items under **Questions**.

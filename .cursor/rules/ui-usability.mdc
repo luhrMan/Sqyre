@@ -1,27 +1,28 @@
 ---
-description: Point to Example Map for sortable/searchable/icon-first UI consistency
+description: UI usability checklist; Example Maps own acceptance scenarios
 globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
 alwaysApply: false
 ---
 
 # UI usability
 
-Contract: [`docs/examples/ui/usability.md`](../../docs/examples/ui/usability.md). Related maps: nested popups, tooltips, focus layers, dialog layout, persisted UI — see [`docs/examples/README.md`](../../docs/examples/README.md).
+**Maps (SoT):** start at [`docs/examples/ui/usability.md`](../../docs/examples/ui/usability.md) (index), then the matching story map (`list-search-sort`, `progressive-disclosure`, `icon-chrome`, `settings-preferences`, …). Full index: [`docs/examples/README.md`](../../docs/examples/README.md).
 
-**Agent behavior:** if a change or existing panel violates the map, **warn and suggest** a concrete fix — do not refuse the work or invent large refactors unless asked. When touching a list/panel, briefly audit neighbors on the same surface.
+**Agent behavior:** if a change or existing panel violates a map or this checklist, **warn and suggest** a concrete fix — do not refuse the work or invent large refactors unless asked. When touching a list/panel, briefly audit neighbors on the same surface.
 
 Audience: casual automation beginners first. Prefer existing `theme::*` / `widgets::*` / `pickers::*` / `tip_*` helpers; extend opts instead of raw egui where a helper applies.
 
 ## Checklist (new or touched UI)
 
 - [ ] Relevant Example Map opened/updated; every new green cites a test
-- [ ] List/combo: sorted; filter or searchable combo if the set can grow
+- [ ] List/combo: sorted; filter or searchable combo if the set can grow ([list-search-sort](../../docs/examples/ui/list-search-sort.md))
 - [ ] Empty / no-match states have plain copy
-- [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
-- [ ] Icon-first labels with `h::` / `ht::` tip text where a glyph fits
-- [ ] Beginner path visible; advanced options collapsed by default
+- [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes ([focus-layers](../../docs/examples/ui/focus-layers.md))
+- [ ] Icon-first labels with `h::` / `ht::` tip text where a glyph fits ([icon-chrome](../../docs/examples/ui/icon-chrome.md))
+- [ ] Beginner path visible; advanced options collapsed by default ([progressive-disclosure](../../docs/examples/ui/progressive-disclosure.md))
 - [ ] Reused shared tokens/widgets; layout matches a sibling of the same kind
-- [ ] Icon/custom widgets AccessKit-labeled; stable ids in loops
+- [ ] Density gaps use only `section_gap` / `element_gap` (sizes don’t scale with density)
+- [ ] Icon/custom widgets AccessKit-labeled; stable ids in loops (`id_salt` / domain id, never row index)
 
 ## Out of scope unless asked
 

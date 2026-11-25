@@ -47,7 +47,7 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | WASM editor constraints | `wasm-editor.mdc` |
 | egui layout/popup/focus/scroll helpers → maps | `egui-layout-gotchas.mdc` |
 | Persisted UI write-back → map | `persisted-ui-state.mdc` |
-| UI usability checklist → map | `ui-usability.mdc` |
+| UI usability checklist → map index | `ui-usability.mdc`, [`docs/examples/ui/usability.md`](docs/examples/ui/usability.md) |
 | Devcontainer release parity | `devcontainer-release-parity.mdc` |
 | Debugging from logs | `skills/debug-from-logs` |
 | Headless tooltip/popup/focus/persist tests | `skills/egui-interaction-testing` |
