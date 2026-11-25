@@ -31,6 +31,7 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Hover tip ratchet + hug content | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
 | Elided labels disclose on hover | [ui/elided-tooltips.md](ui/elided-tooltips.md) |
 | Live top surface owns keys | [ui/focus-layers.md](ui/focus-layers.md) |
+| Recording capture owns keys | [ui/recording-input.md](ui/recording-input.md) |
 | Search-first surfaces focus filter on open | [ui/search-on-open.md](ui/search-on-open.md) |
 | Dialogs do not runaway-grow | [ui/dialog-layout.md](ui/dialog-layout.md) |
 | Cell selection strokes stay inside | [ui/cell-strokes.md](ui/cell-strokes.md) |

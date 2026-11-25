@@ -1174,3 +1174,130 @@ pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
         app.run_palette_command(ctx, kind);
     }
 }
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::handle_shortcuts;
+    use crate::SqyreApp;
+    use eframe::egui;
+
+    fn feed(app: &mut SqyreApp, key: egui::Key, modifiers: egui::Modifiers) {
+        let ctx = egui::Context::default();
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events: vec![
+                    // InputState::modifiers follows ModifiersChanged, not the Key event.
+                    egui::Event::ModifiersChanged(modifiers),
+                    egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| handle_shortcuts(app, ui),
+        )
+        .drop_without_applying_deltas();
+    }
+
+    fn assert_shortcuts_idle(app: &mut SqyreApp, scale: f32) {
+        feed(app, egui::Key::K, egui::Modifiers::COMMAND);
+        assert!(!app.command_palette.is_open());
+        feed(app, egui::Key::Minus, egui::Modifiers::COMMAND);
+        assert_eq!(app.settings_ui.settings().ui.ui_scale, scale);
+        feed(app, egui::Key::A, egui::Modifiers::COMMAND);
+        assert!(!app.add_action_picker.open);
+    }
+
+    #[test]
+    fn shortcuts_do_not_fire_while_recorders_open() {
+        let dir = tempfile::tempdir().unwrap();
+        sqyre_persist::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            sqyre_persist::initialize_directories().unwrap();
+
+            let mut idle = SqyreApp::for_docs();
+            let scale = idle.settings_ui.settings().ui.ui_scale;
+            feed(&mut idle, egui::Key::K, egui::Modifiers::COMMAND);
+            assert!(idle.command_palette.is_open());
+            feed(&mut idle, egui::Key::Minus, egui::Modifiers::COMMAND);
+            assert!(idle.settings_ui.settings().ui.ui_scale < scale);
+            feed(&mut idle, egui::Key::A, egui::Modifiers::COMMAND);
+            assert!(idle.add_action_picker.open);
+
+            let mut hotkey = SqyreApp::for_docs();
+            let scale = hotkey.settings_ui.settings().ui.ui_scale;
+            let keys = hotkey.run_session.macro_hotkeys.clone();
+            hotkey.hotkey_record.open(&keys);
+            assert_shortcuts_idle(&mut hotkey, scale);
+
+            let mut key = SqyreApp::for_docs();
+            let scale = key.settings_ui.settings().ui.ui_scale;
+            let keys = key.run_session.macro_hotkeys.clone();
+            key.key_record.open(&keys);
+            assert_shortcuts_idle(&mut key, scale);
+
+            let mut macro_rec = SqyreApp::for_docs();
+            let scale = macro_rec.settings_ui.settings().ui.ui_scale;
+            let keys = macro_rec.run_session.macro_hotkeys.clone();
+            let bridge = macro_rec.hotkey.macro_record_bridge.clone();
+            assert!(macro_rec
+                .macro_record
+                .open(&keys, &bridge, &mut macro_rec.workspace.catalog));
+            assert_shortcuts_idle(&mut macro_rec, scale);
+        });
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "native-runtime",
+    feature = "overlay-buttons",
+    any(target_os = "linux", target_os = "windows")
+))]
+mod overlay_gate_tests {
+    use super::sync_macro_overlay;
+    use crate::SqyreApp;
+    use eframe::egui;
+
+    fn arm_and_sync(app: &mut SqyreApp) {
+        app.quick_access.expanded = true;
+        let ctx = egui::Context::default();
+        sync_macro_overlay(app, &ctx);
+        assert!(!app.quick_access.expanded);
+        assert_eq!(app.overlay.macro_overlay.native_button_count(), Some(0));
+    }
+
+    #[test]
+    fn armed_recording_clears_overlay_buttons() {
+        let mut screen = SqyreApp::for_docs();
+        let mut button = sqyre_persist::OverlayButtonConfig::new("rec-test", "General");
+        button.macro_name = "Demo Macro".into();
+        screen
+            .settings_ui
+            .settings_mut()
+            .overlay
+            .overlay_buttons
+            .push(button);
+        screen.hotkey.screen_click.arm_point();
+        arm_and_sync(&mut screen);
+
+        let mut macro_rec = SqyreApp::for_docs();
+        let mut button = sqyre_persist::OverlayButtonConfig::new("rec-test", "General");
+        button.macro_name = "Demo Macro".into();
+        macro_rec
+            .settings_ui
+            .settings_mut()
+            .overlay
+            .overlay_buttons
+            .push(button);
+        macro_rec.hotkey.macro_record_bridge.arm();
+        arm_and_sync(&mut macro_rec);
+    }
+}

@@ -1220,3 +1220,53 @@ mod highlight_ui_tests {
         assert_eq!(press_pair_highlight(&up, None), RowHighlight::None);
     }
 }
+
+#[cfg(test)]
+mod delete_key_tests {
+    use super::tree_owns_delete;
+    use crate::SqyreApp;
+    use eframe::egui;
+
+    fn owns(app: &SqyreApp) -> bool {
+        let ctx = egui::Context::default();
+        let mut owns = false;
+        ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                owns = tree_owns_delete(app, ui, egui::Id::new("tree"));
+            },
+        )
+        .drop_without_applying_deltas();
+        owns
+    }
+
+    #[test]
+    fn recorders_block_tree_delete() {
+        let idle = SqyreApp::for_docs();
+        assert!(owns(&idle));
+
+        let mut hotkey = SqyreApp::for_docs();
+        let keys = hotkey.run_session.macro_hotkeys.clone();
+        hotkey.hotkey_record.open(&keys);
+        assert!(!owns(&hotkey));
+
+        let mut key = SqyreApp::for_docs();
+        let keys = key.run_session.macro_hotkeys.clone();
+        key.key_record.open(&keys);
+        assert!(!owns(&key));
+
+        let mut macro_rec = SqyreApp::for_docs();
+        let keys = macro_rec.run_session.macro_hotkeys.clone();
+        let bridge = macro_rec.hotkey.macro_record_bridge.clone();
+        assert!(macro_rec
+            .macro_record
+            .open(&keys, &bridge, &mut macro_rec.workspace.catalog));
+        assert!(!owns(&macro_rec));
+    }
+}

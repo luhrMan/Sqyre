@@ -113,6 +113,15 @@ impl SqyreApp {
         *self.run_session.state.status.lock() = "Stop requested…".into();
     }
 
+    /// Main window is unmapped for an armed screen-click or macro-action capture.
+    ///
+    /// `ui` returns before panels and shell shortcuts while this is true.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) fn recording_suppresses_shell(&self) -> bool {
+        self.overlay.hidden_for_recording
+            && (self.hotkey.screen_click.is_armed() || self.hotkey.macro_record_bridge.is_armed())
+    }
+
     /// Hide the main window while a screen-click recording is armed.
     pub(crate) fn update_recording_visibility(&mut self, ctx: &egui::Context) {
         #[cfg(target_arch = "wasm32")]
@@ -705,3 +714,44 @@ pub(crate) use native_run::{
     install_android_overlay_run, refresh_android_overlay_kit, take_android_overlay_started,
     take_android_projection_request,
 };
+
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod visibility_tests {
+    use super::SqyreApp;
+    use eframe::egui;
+
+    fn frame(app: &mut SqyreApp) {
+        let ctx = egui::Context::default();
+        app.update_recording_visibility(&ctx);
+    }
+
+    #[test]
+    fn armed_recording_may_hide_main_window() {
+        let mut app = SqyreApp::for_docs();
+        app.settings_ui.settings_mut().ui.hide_app_during_recording = true;
+        app.hotkey.screen_click.arm_point();
+        frame(&mut app);
+        assert!(app.overlay.hidden_for_recording);
+        assert!(app.recording_suppresses_shell());
+
+        app.hotkey.screen_click.disarm();
+        frame(&mut app);
+        assert!(!app.overlay.hidden_for_recording);
+        assert!(!app.recording_suppresses_shell());
+
+        app.hotkey.macro_record_bridge.arm();
+        frame(&mut app);
+        assert!(app.overlay.hidden_for_recording);
+        assert!(app.recording_suppresses_shell());
+
+        app.hotkey.macro_record_bridge.disarm();
+        frame(&mut app);
+        assert!(!app.overlay.hidden_for_recording);
+
+        app.settings_ui.settings_mut().ui.hide_app_during_recording = false;
+        app.hotkey.screen_click.arm_point();
+        frame(&mut app);
+        assert!(!app.overlay.hidden_for_recording);
+        assert!(!app.recording_suppresses_shell());
+    }
+}

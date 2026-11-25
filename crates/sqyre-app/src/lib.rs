@@ -1109,9 +1109,7 @@ impl eframe::App for SqyreApp {
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-        if self.overlay.hidden_for_recording
-            && (self.hotkey.screen_click.is_armed() || self.hotkey.macro_record_bridge.is_armed())
-        {
+        if self.recording_suppresses_shell() {
             // Poll grab/snapshot while the main window is unmapped. If the
             // completing click lands this frame, fall through so visibility is
             // restored and Data Editor can take the recorded point/area —

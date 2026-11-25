@@ -17,7 +17,7 @@ Audience: casual automation beginners first. Prefer existing `theme::*` / `widge
 - [ ] Relevant Example Map opened/updated; every new green cites a test
 - [ ] List/combo: sorted; filter or searchable combo if the set can grow ([list-search-sort](../../docs/examples/ui/list-search-sort.md))
 - [ ] Empty / no-match states have plain copy
-- [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes ([focus-layers](../../docs/examples/ui/focus-layers.md))
+- [ ] Local ↑↓ / Enter / Esc (or documented why not). Layer Esc: [focus-layers](../../docs/examples/ui/focus-layers.md). Capture Esc and shell shortcuts while recording: [recording-input](../../docs/examples/ui/recording-input.md)
 - [ ] Icon-first labels with `h::` / `ht::` tip text where a glyph fits ([icon-chrome](../../docs/examples/ui/icon-chrome.md))
 - [ ] Beginner path visible; advanced options collapsed by default ([progressive-disclosure](../../docs/examples/ui/progressive-disclosure.md))
 - [ ] Reused shared tokens/widgets; layout matches a sibling of the same kind

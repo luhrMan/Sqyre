@@ -1057,6 +1057,7 @@ pub(crate) fn desktop_marker_points(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui;
 
     #[test]
     fn compress_keeps_last_move_before_click() {
@@ -1233,5 +1234,96 @@ mod tests {
             desktop_marker_points(&review, &bridge, &t),
             vec![(9, 8), (3, 4)]
         );
+    }
+
+    fn pump(
+        ui: &mut MacroRecordUi,
+        hotkeys: &MacroHotkeyBridge,
+        bridge: &MacroRecordBridge,
+        catalog: &mut ProgramCatalog,
+    ) {
+        let ctx = egui::Context::default();
+        let paint = ctx.clone();
+        let mut icons = IconCache::new();
+        let mut previews = PreviewTooltipCache::without_capture();
+        let mut key_record = KeyRecordUi::default();
+        let mut hotkey_record = HotkeyRecordUi::default();
+        let screen_click = ScreenClickBridge::new();
+        let macros = Vec::new();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        ctx.run_ui(input, |_| {
+            let _ =
+                ui.show(MacroRecordShow {
+                    ctx: &paint,
+                    macro_hotkeys: hotkeys,
+                    bridge,
+                    catalog,
+                    icons: &mut icons,
+                    previews: &mut previews,
+                    key_record: &mut key_record,
+                    hotkey_record: &mut hotkey_record,
+                    screen_click: &screen_click,
+                    macros: &macros,
+                    compact_program_headers: false,
+                    pending_scale: None,
+                    thresholds: RecordThresholds::from_settings(
+                        &sqyre_persist::UserSettings::default(),
+                    ),
+                });
+        })
+        .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn macro_record_esc_finishes_resumes_and_omits_esc() {
+        let hotkeys = MacroHotkeyBridge::new();
+        let bridge = MacroRecordBridge::new();
+        let mut catalog = ProgramCatalog::default();
+        let mut ui = MacroRecordUi::default();
+        assert!(ui.open(&hotkeys, &bridge, &mut catalog));
+        assert!(hotkeys.is_suspended());
+        pump(&mut ui, &hotkeys, &bridge, &mut catalog);
+        assert!(hotkeys.is_suspended());
+        assert!(matches!(ui, MacroRecordUi::Recording));
+        assert!(!bridge.on_key("a", true));
+        assert!(!bridge.on_key("a", false));
+        assert!(bridge.on_key("esc", true));
+        pump(&mut ui, &hotkeys, &bridge, &mut catalog);
+        assert!(!hotkeys.is_suspended());
+        let MacroRecordUi::Review(review) = &ui else {
+            panic!("expected review after Esc");
+        };
+        let mut saw_a = false;
+        let mut saw_esc = false;
+        review.draft.root.walk(&mut |action| {
+            if let ActionKind::Key { key, .. } = &action.kind {
+                saw_a |= key == "a";
+                saw_esc |= key == "esc";
+            }
+        });
+        assert!(saw_a);
+        assert!(!saw_esc);
+    }
+
+    #[test]
+    fn macro_record_cancel_resumes_hotkeys() {
+        let hotkeys = MacroHotkeyBridge::new();
+        let bridge = MacroRecordBridge::new();
+        let mut catalog = ProgramCatalog::default();
+        let mut ui = MacroRecordUi::default();
+        assert!(ui.open(&hotkeys, &bridge, &mut catalog));
+        assert!(hotkeys.is_suspended());
+        bridge.on_key("a", true);
+        bridge.cancel();
+        pump(&mut ui, &hotkeys, &bridge, &mut catalog);
+        assert!(!hotkeys.is_suspended());
+        assert!(matches!(ui, MacroRecordUi::Closed));
+        assert!(bridge.peek_events().is_empty());
     }
 }
