@@ -25,13 +25,14 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Theme | Map |
 |-------|-----|
 | Nested parent popups / menus | [ui/nested-popups.md](ui/nested-popups.md) |
-| Hover tip / Area ratchet | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
+| Hover tip ratchet + hug content | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
 | Elided labels disclose on hover | [ui/elided-tooltips.md](ui/elided-tooltips.md) |
 | Live top surface owns keys | [ui/focus-layers.md](ui/focus-layers.md) |
 | Search-first surfaces focus filter on open | [ui/search-on-open.md](ui/search-on-open.md) |
 | Layout chrome write-back | [ui/persisted-ui.md](ui/persisted-ui.md) |
 | Preference settings (save / nav / search / understand) | [ui/settings-preferences.md](ui/settings-preferences.md) |
-| Dialog / layout sizing | [ui/dialog-layout.md](ui/dialog-layout.md) |
+| Dialogs do not runaway-grow | [ui/dialog-layout.md](ui/dialog-layout.md) |
+| Cell selection strokes stay inside | [ui/cell-strokes.md](ui/cell-strokes.md) |
 | Lists / search / icons / disclosure | [ui/usability.md](ui/usability.md) |
 
 ## Discovery note

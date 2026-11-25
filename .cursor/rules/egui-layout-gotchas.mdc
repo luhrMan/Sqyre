@@ -11,11 +11,12 @@ Behavioral contracts live in Example Maps — do not restate scenarios here. Bef
 | Concern | Map |
 |---------|-----|
 | Nested parent popups / menus | [`docs/examples/ui/nested-popups.md`](../../docs/examples/ui/nested-popups.md) |
-| Hover tip / Area ratchet | [`docs/examples/ui/tooltip-ratchet.md`](../../docs/examples/ui/tooltip-ratchet.md) |
+| Hover tip ratchet + hug content | [`docs/examples/ui/tooltip-ratchet.md`](../../docs/examples/ui/tooltip-ratchet.md) |
 | Elided labels disclose on hover | [`docs/examples/ui/elided-tooltips.md`](../../docs/examples/ui/elided-tooltips.md) |
 | Live top surface owns keys | [`docs/examples/ui/focus-layers.md`](../../docs/examples/ui/focus-layers.md) |
 | Search-first focus on open | [`docs/examples/ui/search-on-open.md`](../../docs/examples/ui/search-on-open.md) |
-| Dialog / layout sizing (fill vs ratchet) | [`docs/examples/ui/dialog-layout.md`](../../docs/examples/ui/dialog-layout.md) |
+| Dialogs do not runaway-grow | [`docs/examples/ui/dialog-layout.md`](../../docs/examples/ui/dialog-layout.md) |
+| Cell selection strokes | [`docs/examples/ui/cell-strokes.md`](../../docs/examples/ui/cell-strokes.md) |
 | Layout chrome persistence | [`docs/examples/ui/persisted-ui.md`](../../docs/examples/ui/persisted-ui.md) |
 | Preference settings UX | [`docs/examples/ui/settings-preferences.md`](../../docs/examples/ui/settings-preferences.md) |
 
