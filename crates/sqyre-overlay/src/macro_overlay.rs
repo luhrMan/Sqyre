@@ -853,6 +853,21 @@ impl MacroOverlay {
         self.focus_slot.lock().last_foreign.clone()
     }
 
+    /// Native buttons from the last sync that wrote the hosted list.
+    ///
+    /// `Some(0)` after recording clears that list. `None` before any such sync.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    pub fn native_button_count(&self) -> Option<usize> {
+        #[cfg(target_os = "linux")]
+        {
+            self.last_native_specs.as_ref().map(Vec::len)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.last_win_specs.as_ref().map(Vec::len)
+        }
+    }
+
     /// True when Sqyre’s main window is the sustained front window.
     ///
     /// Overlay chrome clicks are transient shell focus and do not clear this,

@@ -19,7 +19,8 @@ _(none — confirmed: layer-safe key routing + Esc topmost-only are non-negotiab
 
 - Search field focus on open (see [search-on-open.md](search-on-open.md))
 - Context-menu keyboard open (see [nested-popups.md](nested-popups.md))
-- In-panel ↑↓ / recording-mode key policy (see [usability.md](usability.md))
+- In-panel ↑↓ (see [usability.md](usability.md))
+- Recording Esc, suspend, and shell shortcuts while a recorder is open (see [recording-input.md](recording-input.md))
 - Custom widget `request_focus` mechanics (implementation note below)
 
 ## Implementation note (not acceptance criteria)

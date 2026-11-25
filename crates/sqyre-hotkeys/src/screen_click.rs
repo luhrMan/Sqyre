@@ -496,6 +496,26 @@ mod tests {
     }
 
     #[test]
+    fn esc_cancels_armed_session() {
+        for arm in [
+            ScreenClickBridge::arm_point,
+            ScreenClickBridge::arm_color,
+            ScreenClickBridge::arm_search_area,
+        ] {
+            let b = ScreenClickBridge::new();
+            arm(&b);
+            b.on_mouse_move(3, 4);
+            assert!(b.on_escape());
+            assert!(!b.is_armed());
+            assert!(b.take_cancelled());
+            assert!(b.take_point().is_none());
+            assert!(b.take_color_point().is_none());
+            assert!(b.take_search_area().is_none());
+            assert!(!b.on_escape());
+        }
+    }
+
+    #[test]
     fn left_click_at_ignores_absolute_pos() {
         let b = ScreenClickBridge::new();
         b.set_absolute_pos(|| Some((3212, 528)));

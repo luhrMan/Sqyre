@@ -137,3 +137,94 @@ impl HotkeyRecordUi {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eframe::egui;
+    use egui_kittest::kittest::Queryable;
+    use std::collections::HashSet;
+
+    struct Host {
+        ui: HotkeyRecordUi,
+        keys: MacroHotkeyBridge,
+    }
+
+    fn harness() -> egui_kittest::Harness<'static, Host> {
+        egui_kittest::Harness::builder()
+            .with_size(egui::vec2(640.0, 480.0))
+            .build_ui_state(
+                |ui, host: &mut Host| {
+                    let _ = host.ui.show(ui.ctx(), &host.keys, None);
+                },
+                Host {
+                    ui: HotkeyRecordUi::default(),
+                    keys: MacroHotkeyBridge::new(),
+                },
+            )
+    }
+
+    fn open(harness: &mut egui_kittest::Harness<'static, Host>) {
+        let keys = harness.state().keys.clone();
+        harness.state_mut().ui.open(&keys);
+    }
+
+    fn hold(harness: &egui_kittest::Harness<'static, Host>, names: &[&'static str]) {
+        let pressed: HashSet<&'static str> = names.iter().copied().collect();
+        harness.state().keys.on_pressed_keys(&pressed, &|_| {});
+    }
+
+    #[test]
+    fn esc_with_empty_chord_dismisses_and_resumes() {
+        let mut harness = harness();
+        open(&mut harness);
+        harness.run_steps(2);
+        assert!(harness.state().keys.is_suspended());
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        assert!(!harness.state().ui.is_open());
+        assert!(!harness.state().keys.is_suspended());
+    }
+
+    #[test]
+    fn esc_held_joins_chord_without_dismiss() {
+        let mut harness = harness();
+        open(&mut harness);
+        hold(&harness, &["esc"]);
+        harness.run_steps(2);
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        assert!(harness.state().ui.is_open());
+        assert!(harness.state().keys.is_suspended());
+        harness.get_by_label("esc");
+    }
+
+    #[test]
+    fn cancel_while_chord_held_dismisses_and_resumes() {
+        let mut harness = harness();
+        open(&mut harness);
+        hold(&harness, &["ctrl", "a"]);
+        harness.run_steps(2);
+        harness.get_by_label("Cancel").click();
+        harness.run_steps(2);
+        assert!(!harness.state().ui.is_open());
+        assert!(!harness.state().keys.is_suspended());
+    }
+
+    #[test]
+    fn waiting_release_stays_suspended_until_release() {
+        let mut harness = harness();
+        open(&mut harness);
+        harness.state_mut().ui = HotkeyRecordUi::WaitingRelease {
+            chord: vec!["a".into()],
+        };
+        hold(&harness, &["a"]);
+        harness.run_steps(2);
+        assert!(harness.state().ui.is_open());
+        assert!(harness.state().keys.is_suspended());
+        hold(&harness, &[]);
+        harness.run_steps(2);
+        assert!(!harness.state().ui.is_open());
+        assert!(!harness.state().keys.is_suspended());
+    }
+}

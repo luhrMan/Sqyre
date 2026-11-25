@@ -10,6 +10,7 @@ Not a single story — an index of product UX maps. Open the map that matches th
 | Settings preferences save / nav / search / understand | [settings-preferences.md](settings-preferences.md) |
 | Search-first focus on open | [search-on-open.md](search-on-open.md) |
 | Live top surface owns keys | [focus-layers.md](focus-layers.md) |
+| Recording input (Esc, suspend, shell shortcuts) | [recording-input.md](recording-input.md) |
 | Nested parent popups | [nested-popups.md](nested-popups.md) |
 | Variable-ref fields / pills / autocomplete | [var-ref-fields.md](var-ref-fields.md) |
 | Destructive remove confirms | [destructive-confirm.md](destructive-confirm.md) |
