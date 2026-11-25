@@ -5,7 +5,7 @@
 - **Saved** — Changing a preference (checkbox, sort, scale, …) persists and restores on the next open/session.
 - **Navigable** — Settings can be reached and operated with pointer and keyboard; the settings search field keeps focus while typing (including when the clear control appears/disappears).
 - **Searchable** — A filter finds settings and sections by everyday keywords; a section/subsection title hit reveals its settings; Advanced groups open when the query names a knob inside them.
-- **Understandable** — Labels and hover tips use plain language; beginner path first, expert knobs under Advanced.
+- **Understandable** — Labels and hover tips use plain language (see also [progressive-disclosure.md](progressive-disclosure.md) for Advanced placement).
 
 ## Examples
 
@@ -32,11 +32,6 @@
 - the one where the query is “borderless” / “title bar” → OS title bar setting matches  
   `Test: crates/sqyre-app/src/settings/mod.rs::borderless_matches_os_title_bar_setting`
 
-### Understandable
-
-- the one where image-search edit opens → common fields show without expanding Advanced  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::image_search_edit_shows_output_and_wait_without_advanced`
-
 ## Questions
 
 _(none)_
@@ -45,4 +40,5 @@ _(none)_
 
 - Layout chrome write-back / split corruption (see [persisted-ui.md](persisted-ui.md))
 - Search-first focus-on-open for pickers/palettes (see [search-on-open.md](search-on-open.md))
+- Action-editor Advanced placement (see [progressive-disclosure.md](progressive-disclosure.md))
 - Brand / theme redesigns
