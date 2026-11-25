@@ -346,4 +346,86 @@ mod tests {
         );
         assert!(!prompts.any_open());
     }
+
+    #[test]
+    fn draw_confirm_enter_confirms_overwrite() {
+        let cat = sqyre_persist::ProgramCatalog::default();
+        let mut icons = IconCache::default();
+        let pending = PendingConfirm::Overwrite {
+            kind: "Item",
+            name: "Potion".into(),
+        };
+        let mut prompts = EditorPrompts {
+            confirm: Some(pending.clone()),
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        for frame in 0..3 {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.05),
+                    predicted_dt: 0.05,
+                    ..Default::default()
+                },
+                |ui| {
+                    let confirmed = prompts.draw_confirm(
+                        ui.ctx(),
+                        CatalogView::from(&cat),
+                        &mut icons,
+                        ConfirmSubject::default(),
+                        None,
+                    );
+                    assert!(confirmed.is_none(), "no Enter yet");
+                },
+            );
+            out.drop_without_applying_deltas();
+        }
+        assert!(prompts.confirm.is_some(), "still open after sizing");
+        let rect = ctx.memory(|m| m.area_rect(egui::Id::new(("sqyre_confirm", "Overwrite"))));
+        assert!(
+            rect.is_some_and(|r| r.width() > 1.0 && r.height() > 1.0),
+            "overwrite confirm should use the Overwrite title"
+        );
+
+        let mut enter = egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(0.2),
+            predicted_dt: 0.05,
+            ..Default::default()
+        };
+        enter.events.push(egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let mut confirmed = None;
+        let out = ctx.run_ui(enter, |ui| {
+            confirmed = prompts.draw_confirm(
+                ui.ctx(),
+                CatalogView::from(&cat),
+                &mut icons,
+                ConfirmSubject::default(),
+                None,
+            );
+        });
+        let painted_verb = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text.galley.text().contains("Overwrite"),
+            _ => false,
+        });
+        out.drop_without_applying_deltas();
+        assert!(
+            painted_verb,
+            "overwrite confirm should paint the Overwrite verb"
+        );
+        assert_eq!(confirmed, Some(pending));
+        assert!(
+            prompts.confirm.is_none(),
+            "Enter should clear the pending overwrite"
+        );
+        assert!(!prompts.any_open());
+    }
 }

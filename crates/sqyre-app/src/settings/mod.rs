@@ -176,6 +176,28 @@ impl SettingsUi {
         true
     }
 
+    /// Seed the move-data confirm without a folder picker (docs / kittest).
+    pub fn seed_move_data_confirm_for_docs(&mut self, old_dir: PathBuf, new_dir: PathBuf) {
+        self.open = true;
+        self.confirm = Some(PendingConfirm::MoveData { old_dir, new_dir });
+    }
+
+    /// Seed the restore-backup confirm without a file picker (docs / kittest).
+    pub fn seed_restore_backup_confirm_for_docs(&mut self, path: PathBuf) {
+        self.open = true;
+        self.confirm = Some(PendingConfirm::RestoreBackup { path });
+    }
+
+    /// Whether a settings confirm is waiting for Yes/No or Overwrite/Merge.
+    pub fn docs_settings_confirm_pending(&self) -> bool {
+        self.confirm.is_some()
+    }
+
+    /// Settings status line, if one is showing (docs / kittest).
+    pub fn docs_settings_status(&self) -> Option<&str> {
+        self.status_banner.status.as_deref()
+    }
+
     /// Open the settings window (re-arms search focus).
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;

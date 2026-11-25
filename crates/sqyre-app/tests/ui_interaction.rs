@@ -1322,6 +1322,109 @@ fn delete_confirm_visible(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreAp
     harness.query_all_by_label("Cancel").next().is_some()
 }
 
+/// Put the process data-dir override back after a confirm that relocates it.
+struct RestoreSqyreDir {
+    dir: std::path::PathBuf,
+}
+
+impl Drop for RestoreSqyreDir {
+    fn drop(&mut self) {
+        sqyre_persist::set_sqyre_dir_override(Some(self.dir.clone()));
+        let pointer = sqyre_persist::sqyre_config_dir().join("data_dir");
+        let _ = std::fs::remove_file(pointer);
+    }
+}
+
+fn overwrite_label_is_destructive(
+    harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>,
+) -> bool {
+    harness.output().shapes.iter().any(|clipped| {
+        let egui::Shape::Text(text) = &clipped.shape else {
+            return false;
+        };
+        text.galley.text() == "Overwrite"
+            && text
+                .galley
+                .job
+                .sections
+                .iter()
+                .any(|section| section.format.color == sqyre_app::theme::MACRO_STOP)
+    })
+}
+
+const MOVED_DB: &str = "\
+macros:
+  Moved:
+    name: Moved
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+programs: {}
+";
+
+const LIVE_ONLY_DB: &str = "\
+macros:
+  LiveOnly:
+    name: LiveOnly
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+programs: {}
+";
+
+const FROM_BACKUP_DB: &str = "\
+macros:
+  FromBackup:
+    name: FromBackup
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+programs: {}
+";
+
+/// Settings body that pins the data dir so a restore reload stays on `dir`.
+///
+/// A missing `settings.yaml` loads as defaults, and an empty `sqyre_dir` clears
+/// the process override before `db.yaml` is read.
+fn settings_pinning_sqyre_dir(dir: &std::path::Path) -> String {
+    format!("data:\n  sqyre_dir: \"{}\"\n", dir.display())
+}
+
+/// Minimal backup zip (db.yaml + pinned settings + one asset).
+///
+/// `with_sqyre_dir_override` clears the process override on return; the caller
+/// must restore it.
+fn overwrite_fixture_zip(live_dir: &std::path::Path) -> tempfile::NamedTempFile {
+    let src = tempfile::tempdir().unwrap();
+    let icons = src.path().join("images/icons");
+    std::fs::create_dir_all(&icons).unwrap();
+    std::fs::write(src.path().join(sqyre_persist::DB_FILE), FROM_BACKUP_DB).unwrap();
+    std::fs::write(
+        src.path().join(sqyre_persist::SETTINGS_FILE),
+        settings_pinning_sqyre_dir(live_dir),
+    )
+    .unwrap();
+    std::fs::write(icons.join("from-backup.png"), b"from-backup").unwrap();
+    let out = tempfile::NamedTempFile::new().unwrap();
+    sqyre_persist::with_sqyre_dir_override(src.path().to_path_buf(), || {
+        let created = sqyre_persist::create_backup().unwrap();
+        std::fs::copy(&created, out.path()).unwrap();
+    });
+    out
+}
+
 #[test]
 fn delete_key_removes_selected_macro_action() {
     let mut harness = build_docs_harness([1100.0, 640.0], |_| {});
@@ -1414,6 +1517,189 @@ fn delete_key_in_model_name_field_does_not_remove_model() {
     assert!(
         harness.state().docs_catalog().get("Demo Program").is_some(),
         "unsaved name edit must not delete the program"
+    );
+}
+
+#[test]
+fn enter_confirms_macro_list_delete() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        assert!(
+            app.request_delete_selected_macro_for_docs(),
+            "demo fixture should have a selected macro"
+        );
+    });
+    harness.run();
+    let name = harness
+        .state()
+        .docs_selected_macro_name()
+        .expect("selected macro")
+        .to_string();
+    let before = harness.state().docs_macro_count();
+    assert!(
+        before >= 2,
+        "demo fixture should ship with more than one macro"
+    );
+    assert!(
+        delete_confirm_visible(&harness),
+        "macro-list delete should open the confirm"
+    );
+    assert!(
+        harness.query_all_by_label("Delete").next().is_some(),
+        "confirm verb should be Delete"
+    );
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert_eq!(
+        harness.state().docs_macro_count(),
+        before - 1,
+        "Enter should remove the selected macro"
+    );
+    assert_ne!(
+        harness.state().docs_selected_macro_name(),
+        Some(name.as_str()),
+        "{name} should be gone after confirm"
+    );
+    assert!(
+        !delete_confirm_visible(&harness),
+        "confirm should close after Delete"
+    );
+}
+
+#[test]
+fn enter_on_move_data_confirm_moves_data() {
+    let root = tempfile::tempdir().unwrap();
+    let old_dir = root.path().join("old-sqyre");
+    let new_dir = root.path().join("new-sqyre");
+    std::fs::create_dir_all(&old_dir).unwrap();
+    std::fs::write(old_dir.join("marker.txt"), b"moved-yes").unwrap();
+    std::fs::write(old_dir.join(sqyre_persist::DB_FILE), MOVED_DB).unwrap();
+
+    let mut harness = build_docs_harness([1200.0, 800.0], |app| {
+        app.seed_move_data_confirm_for_docs(old_dir.clone(), new_dir.clone());
+    });
+    let restore = RestoreSqyreDir {
+        dir: sqyre_persist::sqyre_dir(),
+    };
+    harness.run();
+    assert!(
+        harness.state().docs_settings_confirm_pending(),
+        "move-data confirm should be pending"
+    );
+    assert!(
+        harness.query_all_by_label("Yes").next().is_some(),
+        "Yes choice should be visible"
+    );
+    assert!(
+        harness.query_all_by_label("No").next().is_some(),
+        "No choice should be visible"
+    );
+    assert!(
+        old_dir.join("marker.txt").is_file(),
+        "marker stays until Enter"
+    );
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert!(
+        !harness.state().docs_settings_confirm_pending(),
+        "Enter should close the move-data confirm"
+    );
+    assert!(!old_dir.exists(), "Yes should move the old directory away");
+    assert_eq!(
+        std::fs::read(new_dir.join("marker.txt")).expect("marker at the new location"),
+        b"moved-yes",
+        "Yes (enter_choice 1) should move existing data, not start fresh"
+    );
+    assert_eq!(
+        harness.state().docs_settings().data.sqyre_dir,
+        new_dir.display().to_string()
+    );
+    let status = harness.state().docs_settings_status().unwrap_or("");
+    assert!(
+        status.contains("Data location changed"),
+        "Yes path should finish the move, status={status:?}"
+    );
+    drop(restore);
+}
+
+#[test]
+fn enter_on_restore_backup_confirm_overwrites() {
+    let mut zip_keep = None;
+    let mut harness = build_docs_harness([1200.0, 800.0], |app| {
+        let data = sqyre_persist::sqyre_dir();
+        let zip = overwrite_fixture_zip(&data);
+        // Zip creation clears the process override. Point it back at the harness
+        // dir and pin settings so Overwrite reloads that same directory.
+        sqyre_persist::set_sqyre_dir_override(Some(data.clone()));
+        std::fs::write(
+            data.join(sqyre_persist::SETTINGS_FILE),
+            settings_pinning_sqyre_dir(&data),
+        )
+        .unwrap();
+        app.docs_settings_mut().data.sqyre_dir = data.display().to_string();
+        std::fs::write(data.join(sqyre_persist::DB_FILE), LIVE_ONLY_DB).unwrap();
+        std::fs::create_dir_all(data.join("images/icons")).unwrap();
+        std::fs::write(data.join("images/icons/live-only.png"), b"live-only").unwrap();
+        app.seed_restore_backup_confirm_for_docs(zip.path().to_path_buf());
+        zip_keep = Some(zip);
+    });
+    let _zip_keep = zip_keep.expect("backup zip");
+    let data = sqyre_persist::sqyre_dir();
+    let _restore = RestoreSqyreDir { dir: data.clone() };
+
+    harness.run();
+    assert!(
+        harness.state().docs_settings_confirm_pending(),
+        "restore confirm should be pending"
+    );
+    assert!(
+        harness.query_all_by_label("Overwrite").next().is_some(),
+        "Overwrite choice should be visible"
+    );
+    assert!(
+        harness.query_all_by_label("Merge").next().is_some(),
+        "Merge choice should be visible"
+    );
+    assert!(
+        overwrite_label_is_destructive(&harness),
+        "Overwrite should use the destructive confirm color"
+    );
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert!(
+        !harness.state().docs_settings_confirm_pending(),
+        "Enter should close the restore confirm"
+    );
+    let status = harness.state().docs_settings_status().unwrap_or("");
+    assert!(
+        status.contains("Overwrote"),
+        "Enter should take Overwrite (index 0), not Merge; status={status:?}"
+    );
+    assert!(
+        !status.contains("Merged"),
+        "Enter must not take the Merge path; status={status:?}"
+    );
+    assert!(
+        !data.join("images/icons/live-only.png").exists(),
+        "Overwrite removes live-only files; Merge would keep them"
+    );
+    assert_eq!(
+        std::fs::read(data.join("images/icons/from-backup.png")).expect("backup asset"),
+        b"from-backup"
+    );
+    assert_eq!(
+        harness.state().docs_macro_count(),
+        1,
+        "Overwrite replaces the library with the archive"
+    );
+    assert_eq!(
+        harness.state().docs_selected_macro_name(),
+        Some("FromBackup")
     );
 }
 

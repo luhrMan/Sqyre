@@ -46,6 +46,8 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Icon chrome + AccessKit names | [ui/icon-chrome.md](ui/icon-chrome.md) |
 | Preference settings save / nav / search | [ui/settings-preferences.md](ui/settings-preferences.md) |
 | Variable-ref fields, autocomplete, pills | [ui/var-ref-fields.md](ui/var-ref-fields.md) |
+| Destructive remove confirms + Delete-key hygiene | [ui/destructive-confirm.md](ui/destructive-confirm.md) |
+| Overwrite / migrate / restore confirms | [ui/choice-confirms.md](ui/choice-confirms.md) |
 
 ## Runtime maps
 
