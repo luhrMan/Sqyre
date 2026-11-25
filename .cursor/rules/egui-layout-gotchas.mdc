@@ -11,7 +11,8 @@ Behavioral contracts live in Example Maps — do not restate scenarios here. Bef
 | Concern | Map |
 |---------|-----|
 | Nested parent popups / menus | [`docs/examples/ui/nested-popups.md`](../../docs/examples/ui/nested-popups.md) |
-| Tooltip / self-sizing Area ratchet | [`docs/examples/ui/tooltip-ratchet.md`](../../docs/examples/ui/tooltip-ratchet.md) |
+| Hover tip / Area ratchet | [`docs/examples/ui/tooltip-ratchet.md`](../../docs/examples/ui/tooltip-ratchet.md) |
+| Elided labels disclose on hover | [`docs/examples/ui/elided-tooltips.md`](../../docs/examples/ui/elided-tooltips.md) |
 | Focus / keys after foreground layers | [`docs/examples/ui/focus-layers.md`](../../docs/examples/ui/focus-layers.md) |
 | Dialog / layout sizing (fill vs ratchet) | [`docs/examples/ui/dialog-layout.md`](../../docs/examples/ui/dialog-layout.md) |
 

@@ -17,7 +17,8 @@ description: >-
 
 | Pattern | Map |
 |---------|-----|
-| 1 — hover tooltips | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
+| 1 — hover tooltips (ratchet) | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
+| 1b — elided label disclosure | [`elided-tooltips.md`](../../../docs/examples/ui/elided-tooltips.md) |
 | 2 — surface geometry | [`dialog-layout.md`](../../../docs/examples/ui/dialog-layout.md) |
 | 3 — popups that must stay open | [`nested-popups.md`](../../../docs/examples/ui/nested-popups.md) |
 | 4 — keyboard / focus | [`focus-layers.md`](../../../docs/examples/ui/focus-layers.md) |
