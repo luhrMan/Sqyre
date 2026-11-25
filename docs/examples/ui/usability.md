@@ -12,6 +12,8 @@ Not a single story — an index of product UX maps. Open the map that matches th
 | Live top surface owns keys | [focus-layers.md](focus-layers.md) |
 | Nested parent popups | [nested-popups.md](nested-popups.md) |
 | Variable-ref fields / pills / autocomplete | [var-ref-fields.md](var-ref-fields.md) |
+| Destructive remove confirms | [destructive-confirm.md](destructive-confirm.md) |
+| Overwrite / migrate / restore confirms | [choice-confirms.md](choice-confirms.md) |
 
 ## Out of scope unless asked
 

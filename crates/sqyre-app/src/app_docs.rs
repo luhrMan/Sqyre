@@ -344,6 +344,31 @@ impl SqyreApp {
         );
     }
 
+    /// Seed Settings → move-data confirm (docs / kittest). Does not open a picker.
+    pub fn seed_move_data_confirm_for_docs(
+        &mut self,
+        old_dir: std::path::PathBuf,
+        new_dir: std::path::PathBuf,
+    ) {
+        self.settings_ui
+            .seed_move_data_confirm_for_docs(old_dir, new_dir);
+    }
+
+    /// Seed Settings → restore-backup confirm (docs / kittest). Does not open a picker.
+    pub fn seed_restore_backup_confirm_for_docs(&mut self, path: std::path::PathBuf) {
+        self.settings_ui.seed_restore_backup_confirm_for_docs(path);
+    }
+
+    /// Whether a settings confirm dialog is pending (docs / kittest).
+    pub fn docs_settings_confirm_pending(&self) -> bool {
+        self.settings_ui.docs_settings_confirm_pending()
+    }
+
+    /// Settings status line, if any (docs / kittest).
+    pub fn docs_settings_status(&self) -> Option<&str> {
+        self.settings_ui.docs_settings_status()
+    }
+
     pub fn data_editor_tab_names_for_docs() -> Vec<&'static str> {
         DOCS_EDITOR_TABS.iter().map(|(name, _)| *name).collect()
     }
@@ -531,6 +556,20 @@ impl SqyreApp {
             .macros
             .get(self.workspace.selected_macro)
             .map(|m| m.name.as_str())
+    }
+
+    /// Open the macro-list delete confirm for the selected macro (docs / kittest).
+    pub fn request_delete_selected_macro_for_docs(&mut self) -> bool {
+        let Some(name) = self
+            .workspace
+            .macros
+            .get(self.workspace.selected_macro)
+            .map(|macro_| macro_.name.clone())
+        else {
+            return false;
+        };
+        self.macro_list.pending_delete = Some(name);
+        true
     }
 
     /// Root-loop child count of the selected macro (docs / interaction harnesses).

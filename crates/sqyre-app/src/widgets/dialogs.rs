@@ -643,6 +643,47 @@ mod tests {
     }
 
     #[test]
+    fn confirm_choice_row_enter_selects_enter_choice() {
+        let choices = [
+            ("Overwrite", ConfirmKind::Destructive),
+            ("Merge", ConfirmKind::Primary),
+        ];
+        let ctx = egui::Context::default();
+        ctx.run_ui(RawInput::default(), |ui| {
+            assert_eq!(
+                confirm_choice_row(ui, &choices, Some(0)),
+                ConfirmChoice::None
+            );
+        })
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(enter_press(), |ui| {
+            assert_eq!(
+                confirm_choice_row(ui, &choices, Some(0)),
+                ConfirmChoice::Choice(0)
+            );
+        })
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(enter_press(), |ui| {
+            assert_eq!(
+                confirm_choice_row(ui, &choices, Some(1)),
+                ConfirmChoice::Choice(1)
+            );
+        })
+        .drop_without_applying_deltas();
+
+        ctx.run_ui(enter_press(), |ui| {
+            assert_eq!(
+                confirm_choice_row(ui, &choices, None),
+                ConfirmChoice::None,
+                "Enter with no enter_choice must not pick a button"
+            );
+        })
+        .drop_without_applying_deltas();
+    }
+
+    #[test]
     fn consume_escape_only_in_top_window() {
         fn frame(ctx: &egui::Context, input: RawInput) -> (bool, bool) {
             let mut hits = (false, false);

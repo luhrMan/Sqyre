@@ -26,6 +26,7 @@ _(none)_
 - Tip hug / tip ratchet (see [tooltip-ratchet.md](tooltip-ratchet.md))
 - Cell selection stroke geometry (see [cell-strokes.md](cell-strokes.md))
 - Overlay picker layout in `sqyre-overlay` (cannot import `sqyre-app`; keep local helpers)
+- When Delete / overwrite must confirm (see [destructive-confirm.md](destructive-confirm.md), [choice-confirms.md](choice-confirms.md))
 
 ## Implementation note (not acceptance criteria)
 
