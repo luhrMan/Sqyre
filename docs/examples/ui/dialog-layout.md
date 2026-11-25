@@ -8,12 +8,18 @@
 
 ## Examples
 
-_(enforcement incomplete — no dedicated runaway-growth / scroll-claim / footer-inflate green yet; helpers below are the current gate)_
+- the one where a dialog body tries `set_min_width(available)` inside `fill_resize_body` → window width stays stable and far below the constrain rect  
+  `Test: crates/sqyre-app/src/widgets/dialogs.rs::fill_resize_body_stops_available_as_min_from_growing_window`
+- the one where a confirm footer is right-aligned in a wide offered rect → row min width does not reach the right edge  
+  `Test: crates/sqyre-app/src/widgets/dialogs.rs::confirm_row_right_aligns_without_inflating_width`
+- the one where an edge-expanded scroll paints into frame margin → parent claim stays inside the original bound  
+  `Test: crates/sqyre-app/src/widgets/scroll.rs::expanded_viewport_does_not_inflate_parent_size`
+- the one where a fill-row hosts TextEdit + trailing button → parent pane is not widened past its max  
+  `Test: crates/sqyre-app/src/widgets/fields.rs::fill_row_keeps_trailing_inside_pane_and_parent_unwidened`
 
 ## Questions
 
-- Add a headless green that a dialog body cannot ratchet toward `max_size` via available-as-min layout?
-- Add a green that a right-button footer does not expand an auto-sized popup to the constrain width?
+_(none)_
 
 ## Out of scope
 
