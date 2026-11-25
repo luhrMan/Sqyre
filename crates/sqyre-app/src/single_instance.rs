@@ -4,7 +4,6 @@
 //! so a second launch cannot slip through after `sqyre_dir` moves.
 //! WASM has no process lock.
 
-#[cfg(not(target_arch = "wasm32"))]
 mod native {
     use fs2::FileExt;
     use std::fs::{self, File};
@@ -40,5 +39,4 @@ mod native {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use native::{try_acquire, InstanceLock};

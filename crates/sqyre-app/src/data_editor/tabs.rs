@@ -25,13 +25,8 @@ impl EditorSection {
         }
     }
 
-    /// Tools (Screen Cap / Match Check) are desktop-only — omitted on WASM.
+    /// Tools (Screen Cap / Match Check) are desktop-only.
     pub(super) fn is_available(self) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            !matches!(self, Self::Tools)
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = self;
             true
@@ -95,11 +90,10 @@ impl EditorTab {
         format!("{} {}", self.icon(), self.label())
     }
 
-    /// Capture / match tools unavailable in the WASM GUI editor.
-    /// Called from `switch_tab` under `cfg(target_arch = "wasm32")`.
+    /// Capture / match tools that need a desktop runtime.
     #[cfg_attr(
-        not(any(test, target_arch = "wasm32")),
-        expect(dead_code, reason = "only the WASM editor hides desktop-only tabs")
+        not(test),
+        expect(dead_code, reason = "helper retained for tests / editor-only builds")
     )]
     pub(crate) fn is_desktop_only(self) -> bool {
         matches!(self, Self::ScreenCap | Self::MatchCheck)

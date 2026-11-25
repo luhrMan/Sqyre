@@ -30,7 +30,7 @@ pub fn install(dir: PathBuf) {
             dir.join(CRASH_LOG_FILE).display()
         ));
     }
-    #[cfg(not(target_arch = "wasm32"))]
+
     crate::mem_diag::install();
 
     let crash_path = dir.join(CRASH_LOG_FILE);

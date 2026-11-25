@@ -61,7 +61,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
-#[cfg(not(target_arch = "wasm32"))]
+
 use paths::{apply_data_dir_pointer, write_data_dir_pointer};
 use sqyre_domain::{rename_coordinate_entity, rename_coordinate_program, CoordinateRef};
 
@@ -81,13 +81,6 @@ pub struct UserSettings {
 
 impl UserSettings {
     pub fn load_default() -> Result<Self> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let mut s = Self::default();
-            s.clamp();
-            Ok(s)
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             apply_data_dir_pointer();
             Self::load_from_path(settings_path())
@@ -118,12 +111,6 @@ impl UserSettings {
     }
 
     pub fn save_default(&self) -> Result<()> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = self;
-            Ok(())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             // The runtime override is set by whoever relocated the data dir
             // (settings UI, pointer file at load, tests); an empty `sqyre_dir`

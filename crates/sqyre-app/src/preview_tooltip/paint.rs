@@ -277,7 +277,7 @@ pub(super) fn log_hover_outline_transition(
     name: &str,
     coords: PreviewCoords,
 ) {
-    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    #[cfg(feature = "native-runtime")]
     {
         use std::sync::Mutex;
         type LastOutline = (String, (i32, i32, i32, i32));
@@ -301,7 +301,7 @@ pub(super) fn log_hover_outline_transition(
             ],
         );
     }
-    #[cfg(any(not(feature = "native-runtime"), target_arch = "wasm32"))]
+    #[cfg(not(feature = "native-runtime"))]
     {
         let _ = (kind, program, name, coords);
     }

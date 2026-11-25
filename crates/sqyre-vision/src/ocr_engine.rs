@@ -1,4 +1,4 @@
-//! ocrs-backed OCR engine (native only; not available on wasm32).
+//! ocrs-backed OCR engine.
 //!
 //! The detection + recognition models are embedded into the binary at compile
 //! time (`include_bytes!` from `assets/ocr-models/` — fetch with

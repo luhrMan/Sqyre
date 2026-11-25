@@ -71,7 +71,7 @@ impl Default for RunState {
     }
 }
 
-#[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+#[cfg(feature = "native-runtime")]
 mod native {
     use super::StopFlag;
     use sqyre_input::OsAutomation;
@@ -189,5 +189,5 @@ mod native {
     }
 }
 
-#[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+#[cfg(feature = "native-runtime")]
 pub(crate) use native::{os_automation, trim_process_heap, tune_process_heap, StopWatchAutomation};

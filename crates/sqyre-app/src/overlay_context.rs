@@ -69,12 +69,7 @@ impl SqyreApp {
         }
         #[cfg(not(target_os = "android"))]
         {
-            #[cfg(not(target_arch = "wasm32"))]
             self.tray.show(ctx);
-            #[cfg(target_arch = "wasm32")]
-            {
-                let _ = ctx;
-            }
         }
     }
 }

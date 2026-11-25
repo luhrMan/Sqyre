@@ -25,7 +25,6 @@ pub enum EmptyCta {
     /// Refresh / arrows-clockwise glyph.
     ///
     /// Constructed from the native permissions panel (gated out of wasm builds).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Refresh(&'static str),
 }
 

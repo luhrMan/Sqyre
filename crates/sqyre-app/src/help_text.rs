@@ -65,10 +65,10 @@ pub const ED_REPLACE_COLLECTION_IMAGE: &str = "Replace collection image from the
 /// Record floater on the capture-region preview — arm a two-click capture.
 pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture region";
 /// Record floater on the Match Check preview — arm a two-click area capture.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub const ED_REC_SEARCH: &str = "Two clicks: opposite corners of the search area";
 /// "Add running programs" icon right of the programs search bar.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub const ED_ADD_ALL_PROGRAMS: &str =
     "Add every program with an open window that has an icon, named after its process. Programs already in the list are skipped.";
 
@@ -108,34 +108,18 @@ pub const YAML_IMPORT_REPLACE: &str = "Replace the selected macro with this YAML
 // --- Permissions ---
 
 /// Refresh button in the desktop panel.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(target_os = "android"),
-    feature = "native-runtime"
-))]
+#[cfg(all(not(target_os = "android"), feature = "native-runtime"))]
 pub const PERM_REFRESH: &str = "Re-run capability checks (portal dialogs may appear on Wayland).";
 /// Open the OS shortcut settings for a hotkey conflict.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(target_os = "android"),
-    feature = "native-runtime"
-))]
+#[cfg(all(not(target_os = "android"), feature = "native-runtime"))]
 pub const PERM_SHORTCUT_SETTINGS: &str =
     "Open your desktop's shortcut settings to choose the keys that run your macros.";
 /// Share-screen button under Wayland.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(target_os = "android"),
-    feature = "native-runtime"
-))]
+#[cfg(all(not(target_os = "android"), feature = "native-runtime"))]
 pub const PERM_PORTAL_PICKER: &str =
     "Open the desktop portal picker to choose which screens Sqyre can capture.";
 /// Revoke the saved portal grant.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(target_os = "android"),
-    feature = "native-runtime"
-))]
+#[cfg(all(not(target_os = "android"), feature = "native-runtime"))]
 pub const PERM_FORGET_GRANT: &str =
     "Stop capturing and forget the saved portal grant. Sqyre will ask again the next time it needs screen access.";
 
@@ -245,33 +229,26 @@ pub const SET_CUE_VOLUME: &str = "Volume for finish and add/delete cue sounds.";
 // --- Settings: data location & backups ---
 
 /// Flatpak host-folder picker.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_HOST_FOLDER: &str =
     "Opens a folder picker (portal grant). Select your host ~/.sqyre folder, or its parent (Home). For a permanent Flatpak permission you can also run:\nflatpak override --user --filesystem=~/.sqyre:create com.sqyre.app";
 /// Reset to the Flatpak sandbox path.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_FLATPAK_RESET: &str =
     "Clear the custom path and return to the private Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).";
 /// Automatic backup toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_AUTO_BACKUP: &str =
     "Periodically zip the data directory into the backups folder when Sqyre is running.";
 /// Backup interval.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_BACKUP_HOURS: &str = "Hours between automatic backups while Sqyre is open.";
 /// Backup retention cap.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_BACKUP_KEEP: &str =
     "Oldest managed sqyre-backup-*.zip files are deleted beyond this count.";
 
 // --- Settings: updates ---
 
 /// Check-on-startup toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_UPDATE_CHECK: &str =
     "Queries GitHub Releases for a newer Sqyre build when the app starts.";
 /// "Check now" button.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_UPDATE_NOW: &str = "Query GitHub Releases for a newer build.";
 
 // --- Settings: appearance ---
@@ -285,7 +262,6 @@ pub const SET_KEEP_HEADERS: &str =
 /// Main-window outline.
 pub const SET_WIN_OUTLINE: &str = "Show a thin gold outline around the edge of the main window.";
 /// OS title bar / decorations.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_WIN_DECORATIONS: &str = "Show the system title bar around the main window. When off, drag the top bar to move, double-click it to maximize, and grab the window edges to resize.";
 /// Run button glow.
 pub const SET_RUN_GLOW: &str =
@@ -323,26 +299,24 @@ pub const SET_SUSPEND_CAPTURE: &str =
 /// Shown while a slept screen-share stream is waking for a capture.
 pub const CAPTURE_WAKE: &str = "Waking screen capture…";
 /// Diagnostic log toggle.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub const SET_DIAG_LOG: &str =
     "Append detailed diagnostics to diag.log in the data folder (same as SQYRE_DIAG=1). Helps troubleshoot capture and input problems.";
 /// Memory log toggle.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub const SET_MEM_LOG: &str =
     "Sample process memory to mem.log in the data folder (same as SQYRE_MEM=1).";
 /// Memory sample interval.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub const SET_MEM_INTERVAL: &str = "Milliseconds between memory samples.";
 /// Close-to-tray toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_CLOSE_TO_TRAY: &str =
     "Closing the window hides Sqyre in the system tray instead of quitting. Use Quit from the tray menu to exit.";
 /// Start minimized toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_START_MINIMIZED: &str =
     "Start with the window hidden in the system tray instead of shown.";
 /// Launch-on-login toggle.
-#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+#[cfg(target_os = "linux")]
 pub const SET_AUTOSTART: &str =
     "Install a desktop autostart entry so Sqyre launches when you log in.";
 /// Restore last macro toggle.
@@ -370,7 +344,6 @@ pub const SET_RESET_ACTION_DEFAULTS: &str =
 pub const SET_DEFAULT_TRIGGER: &str =
     "Whether a new macro's hotkey fires on key press or on release.";
 /// Panic/stop key.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_PANIC_KEY: &str =
     "Key that stops a running macro (pressed alone, with no modifiers). Clear it to disable.";
 /// Hotkey-while-running policy.
@@ -395,31 +368,25 @@ pub const SET_REC_SNAP: &str =
 // --- Settings: sound files ---
 
 /// Custom finish sound file.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_FINISH_FILE: &str =
     "MP3 played when a macro finishes. Empty uses the built-in sound.";
 /// Custom add sound file.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_ADD_FILE: &str = "MP3 played when items are added. Empty uses the built-in sound.";
 /// Custom delete sound file.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_DELETE_FILE: &str =
     "MP3 played when items are deleted. Empty uses the built-in sound.";
 
 // --- Settings: backup folder ---
 
 /// Backup destination folder.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_BACKUP_DIR: &str =
     "Folder that receives automatic and manual backup zips. Empty uses <data folder>/backups.";
 
 // --- Settings: updates ---
 
 /// Update check interval.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_UPDATE_INTERVAL: &str =
     "Hours between automatic update checks while Sqyre is running. 0 checks once per launch.";
 /// Prerelease update toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub const SET_UPDATE_PRERELEASE: &str =
     "Offer beta and release-candidate builds in addition to stable releases.";

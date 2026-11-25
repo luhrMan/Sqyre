@@ -116,7 +116,6 @@ fn active_resize_dir(ctx: &egui::Context) -> Option<ResizeDirection> {
 /// Call from [`eframe::App::logic`] (before any paint) so Wayland gets
 /// `xdg_toplevel.resize` with a fresh button serial. Sets the resize-active
 /// flag so [`eframe::App::clear_color`] stays opaque for the gesture.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn poll_borderless_resize_start(ctx: &egui::Context) {
     if borderless_resize_active_ctx(ctx) {
         if !ctx.input(|i| i.pointer.primary_down()) {
@@ -147,7 +146,6 @@ pub fn poll_borderless_resize_start(ctx: &egui::Context) {
 /// Skipped while maximized. Call after UI so the cursor icon wins over widget
 /// hover cursors on the thin edge strip. [`poll_borderless_resize_start`] owns
 /// the press → `BeginResize` transition.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn handle_borderless_resize(ctx: &egui::Context) {
     let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
     if maximized {
@@ -184,7 +182,6 @@ pub fn handle_borderless_resize(ctx: &egui::Context) {
 /// Interact the bar rect *before* children so later widgets keep click priority.
 /// The interact rect excludes window-edge resize grips so `StartDrag` cannot
 /// fight [`poll_borderless_resize_start`]'s `BeginResize` on the top edge.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn top_bar_window_drag(ui: &mut egui::Ui, bar_rect: egui::Rect) {
     // Never compete with an in-flight BeginResize (move+resize = window lurch).
     if borderless_resize_active_ctx(ui.ctx()) {
@@ -219,7 +216,6 @@ pub fn top_bar_window_drag(ui: &mut egui::Ui, bar_rect: egui::Rect) {
 /// Minimize / maximize / close when the OS title bar is hidden.
 ///
 /// Call inside a right-to-left layout so Close lands rightmost (OS order).
-#[cfg(not(target_arch = "wasm32"))]
 pub fn window_control_buttons(ui: &mut egui::Ui) {
     if crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked() {
         ui.ctx().send_viewport_cmd(ViewportCommand::Close);

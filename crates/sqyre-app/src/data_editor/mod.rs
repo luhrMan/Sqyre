@@ -210,12 +210,6 @@ impl DataEditor {
     }
 
     fn switch_tab(&mut self, tab: EditorTab, catalog: CatalogView<'_>, settings: &UserSettings) {
-        #[cfg(target_arch = "wasm32")]
-        let tab = if tab.is_desktop_only() {
-            EditorTab::Programs
-        } else {
-            tab
-        };
         if self.nav.tab != tab {
             self.nav.tab = tab;
             self.clear_entity_selection();

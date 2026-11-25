@@ -194,7 +194,7 @@ impl MacroRecordUi {
                         paint_revision: 0,
                     }));
                     // Bring the main window back before the review popup.
-                    #[cfg(not(target_arch = "wasm32"))]
+
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);

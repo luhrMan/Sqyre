@@ -6,7 +6,7 @@ use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
 use sqyre_domain::{parse_hex_color, ACTION_COLOR_CATEGORIES};
-#[cfg(not(target_arch = "wasm32"))]
+
 use sqyre_persist::{
     backups_dir, create_backup, import_backup, list_backups, open_sqyre_dir, prune_backups,
 };
@@ -15,7 +15,7 @@ use sqyre_persist::{
     ProgramCatalog, UiDensity, UiFontFamily, UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
     MAX_UI_SCALE, MIN_UI_SCALE,
 };
-#[cfg(not(target_arch = "wasm32"))]
+
 use sqyre_persist::{
     DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, MAX_BACKUP_INTERVAL_HOURS,
     MAX_BACKUP_MAX_KEEP, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
@@ -29,10 +29,10 @@ mod common;
 mod data;
 mod general;
 mod macros;
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 mod permissions;
 mod sound;
-#[cfg(not(target_arch = "wasm32"))]
+
 mod updates;
 
 use common::*;
@@ -63,10 +63,10 @@ enum SettingsSection {
     General,
     Macros,
     Sound,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     Permissions,
     Data,
-    #[cfg(not(target_arch = "wasm32"))]
+
     Updates,
     Appearance,
 }
@@ -77,10 +77,10 @@ impl SettingsSection {
             Self::General => "General",
             Self::Macros => "Macros",
             Self::Sound => "Sound",
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            #[cfg(feature = "native-runtime")]
             Self::Permissions => "Permissions",
             Self::Data => "Data",
-            #[cfg(not(target_arch = "wasm32"))]
+
             Self::Updates => "Updates",
             Self::Appearance => "Appearance",
         }
@@ -91,21 +91,21 @@ impl SettingsSection {
             Self::General => section_visible(q, SECTION_GENERAL, GENERAL_SETTINGS),
             Self::Macros => section_visible(q, SECTION_MACROS, MACROS_SETTINGS),
             Self::Sound => section_visible(q, SECTION_SOUND, SOUND_SETTINGS),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            #[cfg(feature = "native-runtime")]
             Self::Permissions => section_visible(q, SECTION_PERMISSIONS, PERMISSIONS_SETTINGS),
             Self::Data => section_visible(q, SECTION_DATA, DATA_SETTINGS),
-            #[cfg(not(target_arch = "wasm32"))]
+
             Self::Updates => section_visible(q, SECTION_UPDATES, UPDATES_SETTINGS),
             Self::Appearance => appearance_section_visible(q),
         }
     }
 
     fn is_permissions(self) -> bool {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         {
             self == Self::Permissions
         }
-        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        #[cfg(not(feature = "native-runtime"))]
         {
             false
         }
@@ -116,10 +116,9 @@ impl SettingsSection {
             Self::General,
             Self::Macros,
             Self::Sound,
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            #[cfg(feature = "native-runtime")]
             Self::Permissions,
             Self::Data,
-            #[cfg(not(target_arch = "wasm32"))]
             Self::Updates,
             Self::Appearance,
         ]
@@ -141,11 +140,10 @@ pub struct SettingsUi {
     /// Set when the data directory changed and the shell should reload from disk.
     pub reload_requested: bool,
     /// Set when the user asks to restart after applying an update.
-    #[cfg(not(target_arch = "wasm32"))]
     pub restart_requested: bool,
     /// Single-key capture for the panic/stop key (global hotkeys are native-only).
     panic_record: crate::key_record::KeyRecordUi,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     permissions: crate::permissions_panel::PermissionsPanel,
 }
 
@@ -193,24 +191,24 @@ impl SettingsUi {
     }
 
     /// Background permission checks behind the missing-permission badge.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     pub fn tick_permissions(&mut self, ctx: &egui::Context) {
         self.permissions.tick(ctx);
     }
 
     /// Docs / kittest: skip the background permission probe so harness frames settle.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     pub fn suppress_permission_probe_for_docs(&mut self) {
         self.permissions.suppress_for_docs();
     }
 
     /// At least one permission in Settings → Permissions needs the user's action.
     pub fn permissions_missing(&self) -> bool {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         {
             self.permissions.has_missing()
         }
-        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        #[cfg(not(feature = "native-runtime"))]
         {
             false
         }
@@ -276,7 +274,7 @@ impl SettingsUi {
             sqyre_domain::parse_hex_color(settings.ui.accent_color.trim())
                 .map(|[r, g, b, _]| [r, g, b]),
         );
-        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        #[cfg(feature = "native-runtime")]
         {
             // `Some(true)` when the toggle is on; `None` keeps `SQYRE_DIAG` honored.
             sqyre_ports::set_disk_logging(settings.runtime.diagnostic_logging.then_some(true));
@@ -463,7 +461,6 @@ impl SettingsUi {
     }
 
     /// Surface an update-related success message in the settings status line.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_update_status_ok(&mut self, msg: impl Into<String>) {
         self.set_ok(msg);
     }
@@ -472,7 +469,7 @@ impl SettingsUi {
         &mut self,
         ctx: &egui::Context,
         data: &mut SettingsData<'_>,
-        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        update: &mut crate::update::UpdateManager,
         macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
@@ -494,10 +491,7 @@ impl SettingsUi {
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
                 self.ui(ui, ctx, data, update, macro_hotkeys);
-                #[cfg(target_arch = "wasm32")]
-                self.ui(ui, ctx, data, macro_hotkeys);
             });
         });
         // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
@@ -525,7 +519,7 @@ impl SettingsUi {
         ui: &mut egui::Ui,
         ctx: &egui::Context,
         data: &mut SettingsData<'_>,
-        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        update: &mut crate::update::UpdateManager,
         macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
     ) {
         // Esc: clear search first, then close (window already has titlebar close).
@@ -663,10 +657,10 @@ impl SettingsUi {
                         SettingsSection::General => query_matches(&q, SECTION_GENERAL),
                         SettingsSection::Macros => query_matches(&q, SECTION_MACROS),
                         SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
-                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        #[cfg(feature = "native-runtime")]
                         SettingsSection::Permissions => query_matches(&q, SECTION_PERMISSIONS),
                         SettingsSection::Data => query_matches(&q, SECTION_DATA),
-                        #[cfg(not(target_arch = "wasm32"))]
+
                         SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
                         SettingsSection::Appearance => query_matches(&q, SECTION_APPEARANCE),
                     };
@@ -676,13 +670,13 @@ impl SettingsUi {
                             self.draw_macros(ui, &q, section_hit, macro_hotkeys)
                         }
                         SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
-                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        #[cfg(feature = "native-runtime")]
                         SettingsSection::Permissions => {
                             self.draw_permissions(ui, ctx, &q, section_hit)
                         }
                         SettingsSection::Data => {
                             self.draw_data(ui, data.db, data.macros, data.catalog, &q, section_hit);
-                            #[cfg(not(target_arch = "wasm32"))]
+
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
@@ -697,7 +691,7 @@ impl SettingsUi {
                                 section_hit,
                             );
                         }
-                        #[cfg(not(target_arch = "wasm32"))]
+
                         SettingsSection::Updates => self.draw_updates(ui, update, &q, section_hit),
                         SettingsSection::Appearance => {
                             self.draw_appearance(ui, ctx, &q, section_hit)
@@ -772,7 +766,6 @@ mod tests {
         assert!(!setting_visible("detection", false, SETTING_FONT_SIZE));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn borderless_matches_os_title_bar_setting() {
         assert!(appearance_section_visible("borderless"));
@@ -838,7 +831,7 @@ mod tests {
                     let mut db = Database::default();
                     let mut macros = Vec::new();
                     let mut catalog = ProgramCatalog::default();
-                    #[cfg(not(target_arch = "wasm32"))]
+
                     let mut update = crate::update::UpdateManager::default();
                     let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
                     settings.show(
@@ -848,7 +841,6 @@ mod tests {
                             macros: &mut macros,
                             catalog: &mut catalog,
                         },
-                        #[cfg(not(target_arch = "wasm32"))]
                         &mut update,
                         &macro_hotkeys,
                         None,

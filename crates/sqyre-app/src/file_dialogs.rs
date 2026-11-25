@@ -11,21 +11,12 @@
 //! lifecycle callbacks, so the answer arrives asynchronously. SAF folders are
 //! `content://` trees that `std::fs` cannot open, so folder picks are desktop-only.
 //!
-//! WASM: sync `FileDialog` is unavailable and files have no paths; `wasm_io` handles
-//! YAML import / export instead.
-
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 
 /// What a pick is for; decides the filter and where the result goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(
-        dead_code,
-        reason = "backup / data-folder picks are only requested by desktop Settings"
-    )
-)]
+
 pub(crate) enum PickPurpose {
     /// Image for a new icon variant of the selected item (stored as PNG).
     IconVariant,
@@ -93,21 +84,21 @@ struct PickState {
     /// Purpose of the pick still open (Android) or just answered (desktop).
     open: Option<PickPurpose>,
     /// Desktop answer waiting for [`take_picked`].
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     done: Option<PathBuf>,
 }
 
 static PICK: Mutex<PickState> = Mutex::new(PickState {
     open: None,
-    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     done: None,
 });
 
 /// Whether this build can pick files for `purpose` at all (hide the control otherwise).
 pub(crate) fn supported(purpose: PickPurpose) -> bool {
     match purpose.kind() {
-        PickKind::Folder => !cfg!(any(target_arch = "wasm32", target_os = "android")),
-        PickKind::Image | PickKind::Zip | PickKind::Audio => !cfg!(target_arch = "wasm32"),
+        PickKind::Folder => !cfg!(target_os = "android"),
+        PickKind::Image | PickKind::Zip | PickKind::Audio => true,
     }
 }
 
@@ -135,7 +126,7 @@ pub(crate) fn take_picked() -> Option<Picked> {
     path.map(|path| Picked { purpose, path })
 }
 
-#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+#[cfg(not(target_os = "android"))]
 mod platform {
     use super::{PickKind, PickPurpose, PickState};
     use std::path::{Path, PathBuf};
@@ -197,29 +188,6 @@ mod platform {
 
     pub(super) fn take(_state: &mut PickState) -> Option<Option<PathBuf>> {
         sqyre_android::picks().take()
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-mod platform {
-    use super::{PickPurpose, PickState};
-    use std::path::{Path, PathBuf};
-
-    pub(super) fn open(
-        state: &mut PickState,
-        _purpose: PickPurpose,
-        _title: &str,
-        _start: Option<&Path>,
-    ) {
-        state.open = None;
-    }
-
-    pub(super) fn pending(_state: &PickState) -> bool {
-        false
-    }
-
-    pub(super) fn take(_state: &mut PickState) -> Option<Option<PathBuf>> {
-        None
     }
 }
 

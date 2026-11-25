@@ -13,7 +13,7 @@ pub(crate) const SUBSECTION_RECORDING: &[&str] = &["recording", "record"];
 pub(crate) const SUBSECTION_HOTKEYS: &[&str] = &["hotkeys", "hotkey", "shortcuts"];
 pub(crate) const SUBSECTION_IMAGE_SEARCH: &[&str] = &["image search", "detection"];
 pub(crate) const SECTION_SOUND: &[&str] = &["sound", "audio", "cue"];
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const SECTION_PERMISSIONS: &[&str] = &[
     "permissions",
     "permission",
@@ -28,7 +28,7 @@ pub(crate) const SECTION_PERMISSIONS: &[&str] = &[
     "revoke",
 ];
 pub(crate) const SECTION_DATA: &[&str] = &["data", "folder", "backup", "restore", "archive"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SECTION_UPDATES: &[&str] = &["updates", "github", "release", "version"];
 pub(crate) const SECTION_APPEARANCE: &[&str] = &["appearance", "theme", "display"];
 
@@ -88,7 +88,7 @@ pub(crate) const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
     "program",
     "while focused",
 ];
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const SETTING_WORKER_THREADS: &[&str] = &[
     "cpu",
     "cpus",
@@ -140,11 +140,11 @@ pub(crate) const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
 pub(crate) const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
 pub(crate) const SETTING_UI_SOUNDS: &[&str] = &["ui sounds", "adding", "deleting", "add/delete"];
 pub(crate) const SETTING_SOUND_VOLUME: &[&str] = &["volume", "sound volume"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_SOUND_FILES: &[&str] =
     &["sound file", "custom sound", "mp3", "cue file", "built-in"];
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const SETTING_DIAGNOSTICS: &[&str] = &[
     "diagnostic",
     "diagnostics",
@@ -155,7 +155,7 @@ pub(crate) const SETTING_DIAGNOSTICS: &[&str] = &[
     "crash",
     "log file",
 ];
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const SETTING_MEMORY_LOG: &[&str] = &[
     "memory",
     "memory log",
@@ -165,10 +165,10 @@ pub(crate) const SETTING_MEMORY_LOG: &[&str] = &[
     "sample",
     "interval",
 ];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_CLOSE_TO_TRAY: &[&str] =
     &["close", "close to tray", "tray", "minimize", "quit", "exit"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_START_MINIMIZED: &[&str] =
     &["start minimized", "tray", "startup", "launch", "hidden"];
 #[cfg(target_os = "linux")]
@@ -209,7 +209,7 @@ pub(crate) const SETTING_RECORD_THRESHOLDS: &[&str] = &[
     "distance",
     "advanced",
 ];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_PANIC_KEY: &[&str] = &[
     "panic",
     "panic key",
@@ -256,7 +256,6 @@ pub(crate) const SETTING_ACTION_DEFAULTS_RESET: &[&str] = &[
     "save as default",
 ];
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const SETTING_BACKUP_DIR: &[&str] = &[
     "backup folder",
     "backup directory",
@@ -264,7 +263,7 @@ pub(crate) const SETTING_BACKUP_DIR: &[&str] = &[
     "destination",
     "backup location",
 ];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_UPDATE_INTERVAL: &[&str] = &[
     "interval",
     "check every",
@@ -272,7 +271,7 @@ pub(crate) const SETTING_UPDATE_INTERVAL: &[&str] = &[
     "frequency",
     "update check",
 ];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_UPDATE_PRERELEASE: &[&str] = &[
     "prerelease",
     "pre-release",
@@ -293,7 +292,7 @@ pub(crate) const SETTING_FONT_FAMILY: &[&str] =
 pub(crate) const SETTING_MONO_SIZE: &[&str] =
     &["mono", "monospace", "code font", "font size", "yaml"];
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const PERMISSIONS_PANEL: &[&str] = &[
     "permissions",
     "screen recording",
@@ -333,12 +332,11 @@ pub(crate) const DATA_BACKUP: &[&str] = &[
     "zip",
 ];
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const SETTING_UPDATE_VERSION: &[&str] = &["current version", "version"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_AUTO_UPDATE: &[&str] =
     &["check for updates", "startup", "auto update", "automatic"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_UPDATE_ACTIONS: &[&str] = &[
     "check now",
     "download",
@@ -351,7 +349,7 @@ pub(crate) const SETTING_COMPACT_HEADERS: &[&str] =
     &["compact", "program headers", "icons", "headers"];
 pub(crate) const SETTING_EMPTY_HEADERS: &[&str] = &["empty", "program headers", "headers", "hide"];
 pub(crate) const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
-#[cfg(not(target_arch = "wasm32"))]
+
 pub(crate) const SETTING_WINDOW_DECORATIONS: &[&str] = &[
     "os title bar",
     "title bar",
@@ -381,20 +379,18 @@ pub(crate) const SETTING_ACTION_COLORS: &[&str] =
 
 pub(crate) const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_LOG_META,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     SETTING_WORKER_THREADS,
     SETTING_LAST_MACRO,
-    #[cfg(not(target_arch = "wasm32"))]
     SETTING_CLOSE_TO_TRAY,
-    #[cfg(not(target_arch = "wasm32"))]
     SETTING_START_MINIMIZED,
     #[cfg(target_os = "linux")]
     SETTING_AUTOSTART,
     #[cfg(all(target_os = "linux", feature = "native-runtime"))]
     SETTING_SUSPEND_CAPTURE,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     SETTING_DIAGNOSTICS,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     SETTING_MEMORY_LOG,
 ];
 pub(crate) const MACROS_SETTINGS: &[&[&str]] = &[
@@ -414,7 +410,6 @@ pub(crate) const MACROS_SETTINGS: &[&[&str]] = &[
     SETTING_RECORD_THRESHOLDS,
     SUBSECTION_HOTKEYS,
     SETTING_HOTKEY_TAGS_FOCUSED,
-    #[cfg(not(target_arch = "wasm32"))]
     SETTING_PANIC_KEY,
     SETTING_RETRIGGER,
     SETTING_DEFAULT_TRIGGER,
@@ -430,18 +425,12 @@ pub(crate) const SOUND_SETTINGS: &[&[&str]] = &[
     SETTING_FINISH_SOUND,
     SETTING_UI_SOUNDS,
     SETTING_SOUND_VOLUME,
-    #[cfg(not(target_arch = "wasm32"))]
     SETTING_SOUND_FILES,
 ];
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 pub(crate) const PERMISSIONS_SETTINGS: &[&[&str]] = &[PERMISSIONS_PANEL];
-pub(crate) const DATA_SETTINGS: &[&[&str]] = &[
-    DATA_LOCATION,
-    DATA_BACKUP,
-    #[cfg(not(target_arch = "wasm32"))]
-    SETTING_BACKUP_DIR,
-];
-#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const DATA_SETTINGS: &[&[&str]] = &[DATA_LOCATION, DATA_BACKUP, SETTING_BACKUP_DIR];
+
 pub(crate) const UPDATES_SETTINGS: &[&[&str]] = &[
     SETTING_UPDATE_VERSION,
     SETTING_AUTO_UPDATE,
@@ -453,7 +442,6 @@ pub(crate) const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
     SETTING_EMPTY_HEADERS,
     SETTING_WINDOW_BORDER,
-    #[cfg(not(target_arch = "wasm32"))]
     SETTING_WINDOW_DECORATIONS,
     SETTING_RUN_GLOW,
     SETTING_PREVIEW_OUTLINE,
@@ -536,12 +524,11 @@ pub(crate) fn settings_reset_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response
 
 // Folder/file pickers are desktop-only; wasm drops those call sites via `cfg!`
 // / `#[cfg(not(wasm))]`, so the helpers are unused on that target.
-#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
+
 pub(crate) fn settings_choose_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     crate::widgets::pick_icon_button(ui, tip)
 }
 
-#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 pub(crate) fn settings_folder_btn(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     crate::widgets::icon_button(ui, egui_phosphor::regular::FOLDER_OPEN, tip)
 }

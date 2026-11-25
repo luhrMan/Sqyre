@@ -710,7 +710,7 @@ fn tree_owns_delete(app: &SqyreApp, ui: &egui::Ui, tree_id: egui::Id) -> bool {
     {
         return false;
     }
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     if app.lifecycle.permissions_intro.is_some() {
         return false;
     }

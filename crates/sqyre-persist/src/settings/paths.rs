@@ -11,13 +11,11 @@ pub fn settings_path() -> PathBuf {
 }
 
 /// XDG pointer that records a relocated data directory (one path per line).
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn data_dir_pointer_path() -> PathBuf {
     crate::paths::sqyre_config_dir().join("data_dir")
 }
 
 /// Apply a relocated data-dir pointer before loading settings from `.sqyre`.
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn apply_data_dir_pointer() {
     let path = data_dir_pointer_path();
     let Ok(text) = fs::read_to_string(&path) else {
@@ -32,7 +30,6 @@ pub(super) fn apply_data_dir_pointer() {
     crate::set_sqyre_dir_override(Some(PathBuf::from(dir)));
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn write_data_dir_pointer(sqyre_dir: &str) -> Result<()> {
     let path = data_dir_pointer_path();
     let dir = sqyre_dir.trim();

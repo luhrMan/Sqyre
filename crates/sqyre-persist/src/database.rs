@@ -65,11 +65,6 @@ impl Database {
 
     /// Load default `db.yaml`, returning any per-macro decode/validation warnings.
     pub fn load_default_with_warnings() -> Result<(Self, Vec<String>)> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Ok((Self::default(), Vec::new()))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             let path = db_path();
             if !path.exists() {
@@ -81,11 +76,6 @@ impl Database {
     }
 
     pub fn load_default() -> Result<Self> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Ok(Self::default())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         Self::load_from_path(db_path())
     }
 
@@ -193,13 +183,6 @@ impl Database {
     }
 
     pub fn save_default(&self) -> Result<()> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            // In-memory only in the browser; use YAML export to download.
-            let _ = self.to_yaml()?;
-            Ok(())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         self.save_to_path(db_path())
     }
 

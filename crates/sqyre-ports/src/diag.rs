@@ -54,12 +54,8 @@ pub fn log_dir() -> PathBuf {
     if let Some(p) = LOG_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         return p;
     }
-    // `std::env::temp_dir()` panics on wasm32-unknown-unknown.
-    #[cfg(target_arch = "wasm32")]
-    {
-        return PathBuf::from("/sqyre");
-    }
-    #[cfg(not(target_arch = "wasm32"))]
+    // Prefer an explicit temp root when the platform has no default.
+
     {
         std::env::var_os("HOME")
             .map(PathBuf::from)

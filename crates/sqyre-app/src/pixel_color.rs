@@ -21,7 +21,6 @@ pub fn sample_pixel_hex_with(
 }
 
 /// Spawn a background 1×1 capture using an injected capturer; poll from the UI thread.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn spawn_sample_pixel_hex_with<C>(
     capturer: C,
     x: i32,

@@ -340,17 +340,13 @@ impl SettingsUi {
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_HOTKEYS);
         let show_tags = setting_visible(q, hit, SETTING_HOTKEY_TAGS_FOCUSED);
-        #[cfg(not(target_arch = "wasm32"))]
+
         let show_panic = setting_visible(q, hit, SETTING_PANIC_KEY);
         let show_retrigger = setting_visible(q, hit, SETTING_RETRIGGER);
         let show_trigger = setting_visible(q, hit, SETTING_DEFAULT_TRIGGER);
         let _ = macro_hotkeys;
-        #[cfg(not(target_arch = "wasm32"))]
+
         if !(show_tags || show_retrigger || show_trigger || show_panic) {
-            return;
-        }
-        #[cfg(target_arch = "wasm32")]
-        if !(show_tags || show_retrigger || show_trigger) {
             return;
         }
         subsection_heading(ui, first, "Hotkeys");
@@ -365,7 +361,6 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         if show_panic {
             ui.horizontal(|ui| {
                 ui.label("Panic/stop key:").on_hover_text(ht::SET_PANIC_KEY);

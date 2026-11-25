@@ -39,7 +39,7 @@ impl SettingsUi {
             });
         }
 
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         if setting_visible(q, section_hit, SETTING_WORKER_THREADS) {
             ui.horizontal(|ui| {
                 ui.label("CPU threads for image work:");
@@ -80,7 +80,6 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         {
             if setting_visible(q, section_hit, SETTING_CLOSE_TO_TRAY)
                 && dirty_checkbox(
@@ -129,7 +128,7 @@ impl SettingsUi {
             }
         }
 
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         {
             let show_diag = setting_visible(q, section_hit, SETTING_DIAGNOSTICS);
             let show_mem = setting_visible(q, section_hit, SETTING_MEMORY_LOG);

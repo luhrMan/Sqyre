@@ -1,8 +1,5 @@
 //! Full data-directory backup / restore as zip archives under `{sqyre_dir}/backups/`.
 //!
-//! Native only — WASM has no filesystem to archive.
-
-#![cfg(not(target_arch = "wasm32"))]
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};

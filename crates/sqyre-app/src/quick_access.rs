@@ -350,7 +350,6 @@ fn clamp_rect_to_monitor(
 
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 fn primary_monitor_points() -> (f32, f32, f32, f32) {
-    #[cfg(not(target_arch = "wasm32"))]
     {
         let rects = sqyre_ports::preferred_monitor_rects();
         if let Some(r) = rects.first() {
@@ -368,7 +367,6 @@ fn primary_monitor_points() -> (f32, f32, f32, f32) {
 /// Monitor containing `(x, y)`, or primary.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub(crate) fn monitor_for_point(x: f32, y: f32) -> (f32, f32, f32, f32) {
-    #[cfg(not(target_arch = "wasm32"))]
     {
         let rects = sqyre_ports::preferred_monitor_rects();
         for r in &rects {
@@ -523,7 +521,7 @@ impl SqyreApp {
 
     /// Snapshot the focused catalog program for New / Screen Cap targeting.
     pub(crate) fn refresh_focused_program_hint(&mut self) {
-        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        #[cfg(feature = "native-runtime")]
         {
             let hint = self.overlay.macro_overlay.last_foreign_focus();
             let program = crate::hotkey_focus_tags::focused_editor_program(
@@ -532,14 +530,13 @@ impl SqyreApp {
             );
             self.data_editor.set_focused_program_hint(program);
         }
-        #[cfg(any(not(feature = "native-runtime"), target_arch = "wasm32"))]
+        #[cfg(not(feature = "native-runtime"))]
         {
             self.data_editor.set_focused_program_hint(None);
         }
     }
 
     fn quick_access_toggle_window(&mut self, ctx: &egui::Context) {
-        #[cfg(not(target_arch = "wasm32"))]
         {
             // Visible but not front → raise/focus. Hide only when Sqyre is in view.
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -552,15 +549,10 @@ impl SqyreApp {
             }
             self.tray.toggle_visible(ctx);
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = ctx;
-        }
     }
 }
 
 /// Hub eye: focus when mapped but Sqyre is not front; otherwise show/hide toggle.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn hub_toggle_focuses(application_hidden: bool, sqyre_focused: bool) -> bool {
     !application_hidden && !sqyre_focused
 }

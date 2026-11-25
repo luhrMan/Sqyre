@@ -50,7 +50,6 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         if setting_visible(q, section_hit, SETTING_WINDOW_DECORATIONS)
             && dirty_checkbox(
                 ui,

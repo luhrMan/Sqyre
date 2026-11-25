@@ -1001,16 +1001,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5201,7 +5191,6 @@ dependencies = [
 name = "sqyre-app"
 version = "0.1.0"
 dependencies = [
- "console_error_panic_hook",
  "cpal",
  "dhat",
  "eframe",
@@ -5212,7 +5201,6 @@ dependencies = [
  "fs2",
  "image",
  "ksni",
- "log",
  "parking_lot 0.13.0",
  "rayon",
  "resvg",
@@ -5242,8 +5230,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tray-icon",
- "wasm-bindgen-futures",
- "web-sys",
  "web-time",
  "windows",
  "winit",

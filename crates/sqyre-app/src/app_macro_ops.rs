@@ -32,7 +32,6 @@ impl SqyreApp {
         *self.hotkey.hotkey_repaint.lock() = Some(ctx);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_add_sound(&self) {
         let s = self.settings_ui.settings();
         crate::sound::play_add_sound_if(
@@ -42,10 +41,6 @@ impl SqyreApp {
         );
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn play_ui_add_sound(&self) {}
-
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_delete_sound(&self) {
         let s = self.settings_ui.settings();
         crate::sound::play_delete_sound_if(
@@ -54,9 +49,6 @@ impl SqyreApp {
             &s.sound.delete_sound_file,
         );
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn play_ui_delete_sound(&self) {}
 
     pub(crate) fn selected_action_id(&self) -> Option<ActionId> {
         self.tree.selected_actions.last().copied()
@@ -109,7 +101,7 @@ impl SqyreApp {
     }
 
     /// Set the hotkey tag selection (sorted, deduped). Persists and refreshes bindings.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     pub(crate) fn set_hotkey_tag_filters(&mut self, tags: Vec<String>) {
         let mut tags: Vec<String> = tags
             .into_iter()

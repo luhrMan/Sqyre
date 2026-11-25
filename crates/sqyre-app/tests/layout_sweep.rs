@@ -23,10 +23,10 @@ scene_tests! {
     settings_general => "settings_general";
     settings_macros => "settings_macros";
     settings_sound => "settings_sound";
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     settings_permissions => "settings_permissions";
     settings_data => "settings_data";
-    #[cfg(not(target_arch = "wasm32"))]
+
     settings_updates => "settings_updates";
     settings_appearance => "settings_appearance";
 
@@ -80,10 +80,10 @@ scene_tests! {
 #[test]
 fn docs_scene_lists_cover_compiled_sections_tabs_and_action_types() {
     let mut settings = vec!["General", "Macros", "Sound"];
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     settings.push("Permissions");
     settings.push("Data");
-    #[cfg(not(target_arch = "wasm32"))]
+
     settings.push("Updates");
     settings.push("Appearance");
     assert_eq!(
