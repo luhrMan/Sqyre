@@ -18,12 +18,15 @@
   `Test: crates/sqyre-app/src/widgets/context_menu.rs::outside_click_closes_parent_popup`
 - the one where an edit tip sits above a foreground popup click → tip stays open  
   `Test: crates/sqyre-app/src/action_tooltip/mod.rs::edit_tip_click_on_foreground_popup_stays_open`
+- the one where Shift+F10 is pressed on a focused row → context menu opens  
+  `Test: crates/sqyre-app/src/widgets/context_menu.rs::shift_f10_opens_the_menu_for_the_focused_row`
 
 ## Questions
 
-_(none)_
+_(none — confirmed: keep `parent_popup` / `register_nested_popup` for parents with children; leaves may stay raw)_
 
 ## Out of scope
 
 - Tray / OS-native menus
 - Changing egui’s global `Memory::popups` semantics
+- Layer-safe Esc/Enter after foreground dialogs (see [focus-layers.md](focus-layers.md))
