@@ -40,4 +40,4 @@ CI: `clippy --workspace --all-targets -D warnings`. Fix at the source; if unavoi
 - Until ports re-exports exist, existing `sqyre_capture::{note, …}` call sites may stay; **new** non-capture call sites must add/use a ports (or dedicated) re-export in the same change — do not widen app→capture for diag.
 - During a run: `Executor::log` / `log_timing`. `sqyre-app` user-facing stderr: `crate::log::warn`.
 - Lower crates (domain, match, vision, hotkeys, …) return errors; a detached thread with no caller may `eprintln!("sqyre-<crate>: …")`.
-- `println!` only in CLI bins, `--version`/`--help`, `build.rs`. No `tracing`/`env_logger`; `log` is wasm-only (`WebLogger`).
+- `println!` only in CLI bins, `--version`/`--help`, `build.rs`. No `tracing`/`env_logger`/`log`.

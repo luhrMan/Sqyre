@@ -7,7 +7,7 @@
 #
 # Env:
 #   ANDROID_FEATURES  sqyre-app features (default: native-runtime,overlay-buttons;
-#                     empty = editor only, the same surface as `make wasm`)
+#                     empty = editor only, `--no-default-features`)
 #   ANDROID_PROFILE   debug | release (default: debug)
 #   ANDROID_ABIS      space-separated ABIs: arm64-v8a, x86_64 (default: both; x86_64 is
 #                     for the emulator)

@@ -88,7 +88,7 @@ The screen-recording notification has Continue and Stop macro actions. Stop call
 
 ### File picks
 
-Desktop, Android and WASM share one async path in `crates/sqyre-app/src/file_dialogs.rs`: a UI action calls `request(purpose, …)`, and `apply_picked_file` routes the finished pick by purpose on a later frame. Desktop answers synchronously with `rfd`. Android starts `ACTION_OPEN_DOCUMENT` and never blocks the egui thread, which would deadlock `NativeActivity` lifecycle callbacks. The shell copies the document to `cache/picked/` and calls `nativeOnDocumentPicked`; `sqyre_android::DocumentPicks` drops stale or cancelled answers.
+Desktop and Android share one async path in `crates/sqyre-app/src/file_dialogs.rs`: a UI action calls `request(purpose, …)`, and `apply_picked_file` routes the finished pick by purpose on a later frame. Desktop answers synchronously with `rfd`. Android starts `ACTION_OPEN_DOCUMENT` and never blocks the egui thread, which would deadlock `NativeActivity` lifecycle callbacks. The shell copies the document to `cache/picked/` and calls `nativeOnDocumentPicked`; `sqyre_android::DocumentPicks` drops stale or cancelled answers.
 
 ### OCR
 
@@ -100,7 +100,7 @@ Each phase keeps `make fmt && make check && make test` green on the desktop host
 
 ### 1. Editor APK
 
-`ANDROID_FEATURES= make android` (empty) builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a` and `x86_64`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
+`ANDROID_FEATURES= make android` (empty) builds `sqyre-app` with `--no-default-features` (editor-only; no native runtime features) for `arm64-v8a` and `x86_64`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
 
 Exit: the APK installs on an emulator, opens the editor, and persists `db.yaml` across restarts.
 
