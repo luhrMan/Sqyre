@@ -1,11 +1,9 @@
-# Tooltips and self-sizing Areas do not ratchet
+# Hover tips stay readable (no self-sizing ratchet)
 
 ## Rules
 
-- `UiKind::Tooltip` / `Popup` / `Menu` Areas size from last frame’s painted size; layout bounds must **not** be derived from `clip_rect ∩ max_rect` (or the tip’s own painted width) or wrapped text collapses toward one-character rows.
-- Inside tips/popups/menus, size with `widgets::visible_size` / `visible_width` / `visible_height` / `visible_content_width` (constrain-rect aware).
-- Fixed-size preview content inside tips must use those helpers, never a hardcoded display cap that ignores the visible budget.
-- Hover tips that disclose elided labels must show the full text across multiple frames (loop ≥3 frames in tests).
+- Hover tips, popup bodies, and menus must not shrink their layout budget frame-to-frame in a way that collapses wrapped text toward one-character rows.
+- Fixed media inside tips (previews, images) must fit the visible budget — not a hardcoded display size that ignores it.
 
 ## Examples
 
@@ -17,15 +15,16 @@
   `Test: crates/sqyre-app/src/data_editor_preview.rs::collection_image_file_hover_tip_does_not_ratchet`
 - the one where a locked name-tag tip is shown → width does not ratchet  
   `Test: crates/sqyre-app/src/widgets/tags.rs::locked_name_tag_tooltip_width_does_not_ratchet`
-- the one where a program name is elided → hover tip discloses the full text  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::data_editor_program_name_tooltip_discloses_elided_text`
-- the one where a long macro name is elided → hover tip discloses the full text  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::long_macro_name_tooltip_discloses_elided_text`
 
 ## Questions
 
-_(none)_
+_(none — confirmed: no-ratchet is required for all hover tips / popup / menu surfaces)_
 
 ## Out of scope
 
 - Window/dialog growth ratchets (see [dialog-layout.md](dialog-layout.md))
+- Elided label disclosure on hover (see [elided-tooltips.md](elided-tooltips.md))
+
+## Implementation note (not acceptance criteria)
+
+Self-sizing `Area`s (`UiKind::Tooltip` / `Popup` / `Menu`) size from last frame’s paint. Prefer `widgets::visible_size` / `visible_width` / `visible_height` / `visible_content_width` over tip-local `clip ∩ max_rect` math. Cookbook: `egui-interaction-testing` Pattern 1.

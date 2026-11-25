@@ -25,7 +25,8 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Theme | Map |
 |-------|-----|
 | Nested parent popups / menus | [ui/nested-popups.md](ui/nested-popups.md) |
-| Tooltip / self-sizing Area ratchet | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
+| Hover tip / Area ratchet | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
+| Elided labels disclose on hover | [ui/elided-tooltips.md](ui/elided-tooltips.md) |
 | Focus / keys after foreground layers | [ui/focus-layers.md](ui/focus-layers.md) |
 | Persisted UI write-back | [ui/persisted-ui.md](ui/persisted-ui.md) |
 | Dialog / layout sizing | [ui/dialog-layout.md](ui/dialog-layout.md) |
