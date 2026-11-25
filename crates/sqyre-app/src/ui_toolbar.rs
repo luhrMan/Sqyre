@@ -472,25 +472,9 @@ pub fn wasm_editor_note(ui: &mut egui::Ui) {
     crate::widgets::section_separator(ui);
 }
 
-/// Delay popup for the selected macro (validation lives beside Name in the top bar).
+/// Keep the selected-macro index valid before painting the action toolbar / tree.
 /// Returns `false` if macros became empty (caller should stop drawing the editor).
-pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
-    let running = app.run_session.state.running.load(Ordering::SeqCst);
-    app.workspace.selected_macro = app.workspace.selected_macro_index().unwrap_or(0);
-    let meta_enabled = !running;
-    let idx = app.workspace.selected_macro;
-    {
-        let pending = app.viewport_scale.pending;
-        let m = &mut app.workspace.macros[idx];
-        let delay_out =
-            app.workspace
-                .macro_meta
-                .paint_delay_popup(ui, m, meta_enabled, pending.as_ref());
-        if delay_out.persist {
-            app.persist_macro_at(idx);
-        }
-    }
-    // Selection / length may have changed after rename.
+pub fn show_meta_and_hotkey(app: &mut SqyreApp, _ui: &mut egui::Ui) -> bool {
     app.workspace.selected_macro = app.workspace.selected_macro_index().unwrap_or(0);
     !app.workspace.macros.is_empty()
 }
@@ -540,6 +524,39 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
     }
 }
 
+/// Key icon that pops up the chord label and hotkey edit controls.
+fn paint_hotkey_menu(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
+    let resp = app.workspace.macro_meta.paint_hotkey_toggle(ui);
+    let hk_label = {
+        let m = &app.workspace.macros[idx];
+        if m.hotkey.is_empty() {
+            sqyre_domain::EMPTY_NOT_SET.to_string()
+        } else {
+            format_hotkey(&m.hotkey)
+        }
+    };
+    // Local open flag so the popup borrow does not overlap `&mut app` inside.
+    let mut open = app.workspace.macro_meta.hotkey_open;
+    egui::Popup::from_response(&resp)
+        .id(egui::Id::new("macro_hotkey_popup"))
+        .kind(egui::PopupKind::Popup)
+        .align(egui::RectAlign::TOP_END)
+        .align_alternatives(&[
+            egui::RectAlign::TOP_START,
+            egui::RectAlign::TOP,
+            egui::RectAlign::LEFT_END,
+        ])
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .open_bool(&mut open)
+        .show(|ui| {
+            ui.horizontal(|ui| {
+                ui.weak(hk_label);
+                paint_hotkey_controls(app, ui, idx, running);
+            });
+        });
+    app.workspace.macro_meta.hotkey_open = open;
+}
+
 /// Single icon that pops up the AI and YAML Macro Builder entries.
 fn paint_builder_menu(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let resp = toolbar_icon(
@@ -565,8 +582,8 @@ fn paint_builder_menu(app: &mut SqyreApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Floating delay / hotkey / builder buttons pinned to the central panel's
-/// bottom-right corner. Replaces the old reserved footer strip.
+/// Floating delay / hotkey / builder icons pinned to the central panel's
+/// bottom-right corner. Each opens a popup from its icon.
 pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
     if app.workspace.macros.is_empty() {
         return;
@@ -574,27 +591,17 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let idx = app.workspace.selected_macro_index().unwrap_or(0);
     crate::widgets::float_bottom_right(ui, ui.clip_rect(), |ui| {
-        // Right-to-left: builder menu rightmost; then hotkey controls, chord,
-        // key toggle, delay — the same left-to-right order the footer strip had.
+        // Right-to-left: builder, hotkey, delay (each pops its own panel).
         paint_builder_menu(app, ui);
-        // Same row as the other icons. A section frame around `ui.horizontal`
-        // is offered the strip's full width, and that row becomes the chip.
-        if app.workspace.macro_meta.hotkey_open {
-            paint_hotkey_controls(app, ui, idx, running);
+        paint_hotkey_menu(app, ui, idx, running);
+        let delay_out = app.workspace.macro_meta.paint_delay_control(
+            ui,
+            &mut app.workspace.macros[idx],
+            !running,
+        );
+        if delay_out.persist {
+            app.persist_macro_at(idx);
         }
-        let hk_label = {
-            let m = &app.workspace.macros[idx];
-            if m.hotkey.is_empty() {
-                sqyre_domain::EMPTY_NOT_SET.to_string()
-            } else {
-                format_hotkey(&m.hotkey)
-            }
-        };
-        ui.weak(hk_label);
-        app.workspace.macro_meta.paint_hotkey_toggle(ui);
-        app.workspace
-            .macro_meta
-            .paint_delay_button(ui, &app.workspace.macros[idx], !running);
         // Native: run status lives on the play/stop tip. Wasm has no run button,
         // so keep the hoverable INFO glyph here for import/export messages.
         #[cfg(target_arch = "wasm32")]
@@ -792,10 +799,63 @@ mod tests {
         );
     }
 
-    /// Opening the hotkey controls must not stretch the footer chip across the pane
-    /// or make it taller than the icon row.
+    /// Delay popup fields appear when open, without resizing the footer chip.
     #[test]
-    fn hotkey_controls_keep_footer_chip_hugged() {
+    fn delay_popup_opens_from_timer_icon() {
+        let mut app = crate::SqyreApp::for_docs();
+        app.workspace.macro_meta.open_delay_for_docs();
+        let ctx = eframe::egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
+        crate::theme::apply(&ctx);
+        crate::settings::SettingsUi::apply_appearance(&ctx, app.settings_ui.settings());
+        let screen = eframe::egui::Rect::from_min_size(
+            eframe::egui::Pos2::ZERO,
+            eframe::egui::vec2(900.0, 600.0),
+        );
+        let popup_id = eframe::egui::Id::new("macro_delay_popup");
+        let mut chip = eframe::egui::Rect::NOTHING;
+        // First frame is a sizing pass; assert on the settled popup.
+        for frame in 0..3 {
+            let out = ctx.run_ui(
+                eframe::egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 * 0.1),
+                    ..Default::default()
+                },
+                |ui| super::footer_floats(&mut app, ui),
+            );
+            chip = eframe::egui::Rect::NOTHING;
+            for clipped in &out.shapes {
+                if let eframe::egui::Shape::Rect(rect) = &clipped.shape {
+                    let r = rect.rect;
+                    if r.top() > 540.0 && r.height() > 8.0 && r.width() > chip.width() {
+                        chip = r;
+                    }
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        let popup = ctx
+            .memory(|m| m.area_rect(popup_id))
+            .expect("delay popup area should be open");
+        assert!(
+            popup.width() > 100.0 && popup.height() > 40.0,
+            "delay popup too small: {popup:?}"
+        );
+        // Anchored near the footer icons (egui may flip above/beside to fit).
+        assert!(
+            popup.right() + 8.0 >= chip.left() && popup.left() <= chip.right() + 8.0,
+            "delay popup should stay near the footer icons: popup {popup:?} chip {chip:?}"
+        );
+        assert!(
+            chip.width() > 40.0 && chip.width() < 200.0,
+            "delay popup must not inflate the footer chip: {chip:?}"
+        );
+    }
+
+    /// Hotkey / delay popups must not grow the footer chip — only the icons stay in-chip.
+    #[test]
+    fn hotkey_popup_keeps_footer_chip_hugged() {
         let mut app = crate::SqyreApp::for_docs();
         app.workspace.macros[0].hotkey = vec!["ctrl".into(), "shift".into(), "f1".into()];
         let ctx = eframe::egui::Context::default();
@@ -835,13 +895,28 @@ mod tests {
             "closed chip not found: {closed:?}"
         );
         assert!(
-            open.height() <= closed.height() + 2.0,
-            "hotkey controls grew the chip taller: closed {closed:?} open {open:?}"
+            (open.width() - closed.width()).abs() < 2.0
+                && (open.height() - closed.height()).abs() < 2.0,
+            "hotkey popup must not resize the footer chip: closed {closed:?} open {open:?}"
         );
-        assert!(
-            open.width() < closed.width() + 120.0 && open.width() < 400.0,
-            "hotkey controls stretched the chip: closed {closed:?} open {open:?}"
+        // Popup content (chord text) lives outside the chip layer.
+        let mut saw_chord = false;
+        let out = ctx.run_ui(
+            eframe::egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| super::footer_floats(&mut app, ui),
         );
+        for clipped in &out.shapes {
+            if let eframe::egui::Shape::Text(text) = &clipped.shape {
+                if text.galley.text().contains("Ctrl") || text.galley.text().contains("ctrl") {
+                    saw_chord = true;
+                }
+            }
+        }
+        out.drop_without_applying_deltas();
+        assert!(saw_chord, "open hotkey popup should show the chord");
     }
 
     /// Run status used to live on a floating INFO icon; hover the play button instead.
