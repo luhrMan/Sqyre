@@ -56,7 +56,6 @@ _(none)_
 
 - Wait / move / tap / snap thresholds (Settings → Recording; runtime)
 - Wayland / X11 grab implementation and overlay drawing
-- WASM editor recording surfaces — future `wasm-editor-surface` map
 - Layer-stack Esc / Enter (see [focus-layers.md](focus-layers.md))
 
 ## Implementation note (not acceptance criteria)
