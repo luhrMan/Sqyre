@@ -77,3 +77,4 @@ sqyre-timelapse.mp4
 
 # Graphify local knowledge graph (generated; rebuild with `graphify update .`)
 /graphify-out/
+.cargo-target/
