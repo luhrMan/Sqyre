@@ -865,31 +865,42 @@ fn data_editor_search_and_program_pairs_swap() {
     });
     harness.run();
     use eframe::egui::accesskit::Role;
-    let combo = |h: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>| {
-        h.query_all_by_role(Role::ComboBox).next().is_some()
+    // Tab selector is always a ComboBox; the program pair adds a second one.
+    let combo_count = |h: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>| {
+        h.query_all_by_role(Role::ComboBox).count()
     };
 
-    // Collapsed: magnifier + program icon only — no field, no combo.
+    // Collapsed: magnifier + program icon + tab combo — no search field, no
+    // program combo.
     harness.get_by_label("Search this tab's list");
     harness.get_by_label("Program: Demo Program");
     assert!(harness.query_by_label("Search Points…").is_none());
-    assert!(
-        !combo(&harness),
-        "program combo is part of the expanded pair"
+    assert_eq!(
+        combo_count(&harness),
+        1,
+        "only the tab combo is present while pairs are collapsed"
     );
 
-    // Expanding the program pair shows the combo; the magnifier stays as the
+    // Expanding the program pair shows its combo; the magnifier stays as the
     // collapsed form of the search pair.
     harness.get_by_label("Program: Demo Program").click();
     harness.run();
-    assert!(combo(&harness));
+    assert_eq!(
+        combo_count(&harness),
+        2,
+        "program combo joins the always-visible tab combo"
+    );
 
     // Opening search replaces the program pair — but the program toggle stays
     // adjacent to the magnifier, left of the expanded field.
     harness.get_by_label("Search this tab's list").click();
     harness.run();
     harness.get_by_label("Search Points…");
-    assert!(!combo(&harness), "search pair replaced the program pair");
+    assert_eq!(
+        combo_count(&harness),
+        1,
+        "search pair replaced the program pair"
+    );
     let program_x = harness.get_by_label("Program: Demo Program").rect().min.x;
     let field_x = harness.get_by_label("Search Points…").rect().min.x;
     assert!(
@@ -1422,7 +1433,11 @@ fn masks_tab_opens_for_selected_program() {
         "Masks tab should start inactive on Programs"
     );
 
-    harness.get_by_label("Masks").click();
+    use eframe::egui::accesskit::Role;
+    harness.get_by_role(Role::ComboBox).click();
+    harness.run();
+    let masks = sqyre_app::SqyreApp::docs_data_editor_tab_choice("masks");
+    harness.get_by_label(masks.as_str()).click();
     harness.run();
 
     assert_eq!(

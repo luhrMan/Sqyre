@@ -1,4 +1,4 @@
-//! Data Editor header: search/program toggles, search controls, section bar.
+//! Data Editor header: search/program toggles, search controls, tab combo.
 
 use super::tabs::{EditorSection, EditorTab, SearchScope};
 use super::{helpers, DataEditor};
@@ -7,10 +7,10 @@ use eframe::egui;
 use sqyre_persist::{CatalogView, ProgramCatalog, UserSettings};
 
 impl DataEditor {
-    /// Tab strip under the standard window title bar: the search and program
+    /// Header under the standard window title bar: the search and program
     /// toggle icons stay adjacent on the left so expanding a pair never moves
     /// the other icon — its controls open to the right of both toggles. The
-    /// section/subtab icons follow in an overflow scroll.
+    /// active-tab combo follows.
     pub(super) fn ui_tab_bar(
         &mut self,
         ui: &mut egui::Ui,
@@ -28,9 +28,7 @@ impl DataEditor {
                 self.ui_program_combo(ui, CatalogView::new(catalog), icons, settings);
             }
             crate::widgets::section_separator(ui);
-            crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
-                ui.horizontal(|ui| self.paint_section_bar(ui, CatalogView::new(catalog), settings));
-            });
+            self.paint_tab_combo(ui, CatalogView::new(catalog), settings);
         });
     }
 
@@ -215,46 +213,87 @@ impl DataEditor {
         self.paint_search_expand_collapse(ui, CatalogView::from(catalog));
     }
 
-    /// Every section's subtab buttons in one row — the subsection buttons are
-    /// self-explanatory, so there are no section-level icons — with separators
-    /// between the sections.
-    fn paint_section_bar(
+    /// Closed set of Data Editor tabs as a combo: each choice is the tab's
+    /// phosphor glyph plus its human title, grouped by section.
+    fn paint_tab_combo(
         &mut self,
         ui: &mut egui::Ui,
         catalog: CatalogView<'_>,
         settings: &UserSettings,
     ) {
-        let mut items = Vec::new();
-        let mut targets = Vec::new();
-        for sec in [
-            EditorSection::Programs,
-            EditorSection::Items,
-            EditorSection::Coordinates,
-            EditorSection::Tools,
-        ] {
-            if !sec.is_available() {
-                continue;
-            }
-            if !items.is_empty() {
-                items.push(crate::widgets::OverflowItem::Separator);
-                // Separators never register a click; the slot only keeps
-                // `targets` index-aligned with `items`.
-                targets.push(sec.default_tab());
-            }
-            for &tab in sec.subtabs() {
-                items.push(crate::widgets::OverflowItem::Choice {
-                    label: tab.label(),
-                    icon: tab.icon(),
-                    selected: self.nav.tab == tab,
-                });
-                targets.push(tab);
-            }
+        let mut tab = self.nav.tab;
+        egui::ComboBox::from_id_salt("de_tab")
+            .selected_text(tab.choice_label())
+            .truncate()
+            .show_ui(ui, |ui| {
+                let mut first_section = true;
+                for sec in [
+                    EditorSection::Programs,
+                    EditorSection::Items,
+                    EditorSection::Coordinates,
+                    EditorSection::Tools,
+                ] {
+                    if !sec.is_available() {
+                        continue;
+                    }
+                    if !first_section {
+                        ui.separator();
+                    }
+                    first_section = false;
+                    for &t in sec.subtabs() {
+                        ui.selectable_value(&mut tab, t, t.choice_label());
+                    }
+                }
+            });
+        if tab != self.nav.tab {
+            self.switch_tab(tab, catalog, settings);
         }
-        if let Some(i) = crate::widgets::always_bar(ui, &items) {
-            let next = targets[i];
-            if next != self.nav.tab {
-                self.switch_tab(next, catalog, settings);
-            }
-        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn tab_combo_lists_icon_and_name_and_switches() {
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(480.0, 320.0))
+            .build_ui_state(
+                |ui, tab: &mut EditorTab| {
+                    let selected = tab.choice_label();
+                    egui::ComboBox::from_id_salt("de_tab_test")
+                        .selected_text(selected)
+                        .show_ui(ui, |ui| {
+                            for sec in [
+                                EditorSection::Programs,
+                                EditorSection::Items,
+                                EditorSection::Coordinates,
+                                EditorSection::Tools,
+                            ] {
+                                if !sec.is_available() {
+                                    continue;
+                                }
+                                for &t in sec.subtabs() {
+                                    ui.selectable_value(tab, t, t.choice_label());
+                                }
+                            }
+                        });
+                },
+                EditorTab::Programs,
+            );
+        harness.run();
+        harness.get_by_role(Role::ComboBox).click();
+        harness.run();
+        let points = EditorTab::Points.choice_label();
+        harness.get_by_label(points.as_str()).click();
+        harness.run();
+        assert_eq!(*harness.state(), EditorTab::Points);
+        assert!(
+            points.contains(EditorTab::Points.icon()) && points.contains("Points"),
+            "choice face keeps glyph + title: {points}"
+        );
     }
 }

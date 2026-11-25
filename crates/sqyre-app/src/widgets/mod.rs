@@ -57,7 +57,7 @@ pub(crate) use num_or_var::{
     variable_entry,
 };
 pub use num_or_var::{num_or_var_field, NumOrVarOpts};
-pub use overflow::{always_bar, text_width, OverflowItem};
+pub use overflow::text_width;
 pub(crate) use pair::pair_slots;
 pub use pair::{pair_icon, pair_labeled, pair_leading, PAIR_SLOT_GAP};
 pub use row_ids::{remove_row_id, stable_row_ids};
