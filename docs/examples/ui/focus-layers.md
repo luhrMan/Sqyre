@@ -1,29 +1,27 @@
-# Focus and keys respect the live top layer
+# The live top surface owns keys
 
 ## Rules
 
-- Foreground surfaces (palette, confirm, modal pickers) may leave a closed `Area` in egui’s layer order; “may this surface take keys?” uses `focus_nav::is_top_layer`, never `top_layer_id(Foreground).is_none()`.
-- Esc closes the topmost layer only (`widgets::consume_escape`); do not raw-`consume_key(Escape)` across the app.
-- After a foreground dialog closes, underlying surfaces must accept activation keys again (e.g. Enter to save).
-- Custom focusable widgets must `request_focus()` on pointer down/click (`ui.interact` does not) and paint a visible focus state when `has_focus()`.
-- Prefer in-panel keys (↑↓ / Enter / Esc); do not steal keys while recording macros/hotkeys/chords.
-- Search-first surfaces focus the search field on open when that is the main job.
+- Only the live top surface may handle Esc / Enter / in-panel activation keys.
+- Closed foreground Areas may linger in egui’s layer order; that must not permanently block or steal keys from the surface underneath.
+- Esc closes the topmost layer only — never a raw app-wide Escape consume that skips the stack.
 
 ## Examples
 
 - the one where Enter saves a dirty program after a foreground dialog was Esc-closed → save still works  
   `Test: crates/sqyre-app/tests/ui_interaction.rs::data_editor_enter_saves_after_foreground_dialog_closed`
-- the one where the add-action picker opens → search field has focus  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::add_action_picker_focuses_search_on_open`
-- the one where Shift+F10 is pressed on a focused row → context menu opens  
-  `Test: crates/sqyre-app/src/widgets/context_menu.rs::shift_f10_opens_the_menu_for_the_focused_row`
-- the one where the command palette is reopened after click-outside → rows still respond to mouse  
-  `Test: crates/sqyre-app/tests/ui_interaction.rs::command_palette_reopened_after_click_outside_responds_to_mouse_click`
 
 ## Questions
 
-_(none)_
+_(none — confirmed: layer-safe key routing + Esc topmost-only are non-negotiable)_
 
 ## Out of scope
 
-- New global application hotkey schemes
+- Search field focus on open (see [search-on-open.md](search-on-open.md))
+- Context-menu keyboard open (see [nested-popups.md](nested-popups.md))
+- In-panel ↑↓ / recording-mode key policy (see [usability.md](usability.md))
+- Custom widget `request_focus` mechanics (implementation note below)
+
+## Implementation note (not acceptance criteria)
+
+Gate “may this surface take keys?” with `focus_nav::is_top_layer`, not `top_layer_id(Foreground).is_none()`. Prefer `widgets::consume_escape`. Arrow focus is locked to the top window via `focus_nav::lock_to_window`. Custom controls that need keys must `request_focus()` on pointer down/click and paint a visible focus state — `ui.interact` does not opt in. Cookbook: `egui-interaction-testing` Pattern 4.

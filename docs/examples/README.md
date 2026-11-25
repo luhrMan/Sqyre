@@ -27,7 +27,8 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Nested parent popups / menus | [ui/nested-popups.md](ui/nested-popups.md) |
 | Hover tip / Area ratchet | [ui/tooltip-ratchet.md](ui/tooltip-ratchet.md) |
 | Elided labels disclose on hover | [ui/elided-tooltips.md](ui/elided-tooltips.md) |
-| Focus / keys after foreground layers | [ui/focus-layers.md](ui/focus-layers.md) |
+| Live top surface owns keys | [ui/focus-layers.md](ui/focus-layers.md) |
+| Search-first surfaces focus filter on open | [ui/search-on-open.md](ui/search-on-open.md) |
 | Persisted UI write-back | [ui/persisted-ui.md](ui/persisted-ui.md) |
 | Dialog / layout sizing | [ui/dialog-layout.md](ui/dialog-layout.md) |
 | Lists / search / icons / disclosure | [ui/usability.md](ui/usability.md) |
