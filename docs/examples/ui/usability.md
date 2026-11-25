@@ -11,6 +11,7 @@ Not a single story — an index of product UX maps. Open the map that matches th
 | Search-first focus on open | [search-on-open.md](search-on-open.md) |
 | Live top surface owns keys | [focus-layers.md](focus-layers.md) |
 | Nested parent popups | [nested-popups.md](nested-popups.md) |
+| Variable-ref fields / pills / autocomplete | [var-ref-fields.md](var-ref-fields.md) |
 
 ## Out of scope unless asked
 

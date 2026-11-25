@@ -1,8 +1,9 @@
 //! Shared scaffold for the detection actions (Image Search, OCR, Find Pixel).
 //!
 //! Primary fields stay visible, including output coords and wait/order (common
-//! path). Image Search match method and OCR preprocess flags stay under a
-//! collapsed Advanced section.
+//! path). Wait mode is Once / Until appears / Until disappears; repeat-as-loop
+//! sits under a named disclosure. Image Search match method and OCR preprocess
+//! flags stay under a collapsed Advanced section.
 
 use super::edit_fields::{
     coords_editor, detection_branch_editor, search_area_section, var_ref_field,

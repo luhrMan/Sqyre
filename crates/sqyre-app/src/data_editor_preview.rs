@@ -314,7 +314,7 @@ pub(crate) fn paint_preview_coord_chip(
         resp
     } else {
         // Manual child layout (same as `ui.place`) so `TextEditOutput` — and
-        // therefore `${` autocomplete — stays reachable.
+        // therefore `${` / `{` autocomplete — stays reachable.
         let keys = var_pills::var_ref_autocomplete_keys(ui, id);
         let mut edit = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
             egui::Layout::centered_and_justified(egui::Direction::TopDown),

@@ -144,6 +144,12 @@ pub const CELL_COORDINATES: &str = "Cell Coordinates";
 /// `General` search area that resolves to the current ForEachCell bounds.
 pub const CELL_BOUNDS: &str = "Cell Bounds";
 
+/// `General` search area: centered square covering 25% of monitor 1's area.
+///
+/// Blank Image Search / OCR / Find Pixel actions point here so new detections
+/// start region-first instead of full-desktop.
+pub const DEFAULT_SEARCH_AREA: &str = "Monitor 1 Center Square";
+
 /// Variant suffix from an icon path stem relative to `item`.
 ///
 /// `Item.png` → `""`; `Item~Blue.png` → `"Blue"`. Stems that do not follow the

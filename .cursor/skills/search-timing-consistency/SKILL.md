@@ -13,6 +13,8 @@ description: >-
 
 Prioritize **identical control flow across detection kinds** and **no wasted work per attempt**. Searches are a hot path; inconsistency or redundant capture/match work is a product bug.
 
+**Behavioral SoT:** [`docs/examples/runtime/search-detection.md`](../../../docs/examples/runtime/search-detection.md) — wait modes, region default, dirty-bit, frame-token reuse, no second shell. This skill is how/measure, not a second acceptance list.
+
 ## Scope
 
 | Layer | Path | Role |
@@ -33,9 +35,11 @@ Detection kinds: **Image Search**, **OCR**, **Find Pixel**. Treat them as one pr
 3. **Wait timeout → one final search** — after `wait_until_found` / `wait_while_found` times out, re-run `try_once` once (shell already does this). Keep that contract.
 4. **Same defaults** — `DetectionCtx` wait/repeat intervals default to `100` ms unless the action config overrides via `WaitTilFoundConfig`.
 5. **Backoff only in `retry_until`** — interval doubles up to `min(interval*5, 2000)`. Repeat loops use a fixed interval. Do not copy backoff into one kind only.
-6. **`fresh` semantics** — first attempt: Image Search is fresh only when input dirtied the screen (`mark_capture_dirty` → `take_capture_fresh`), else it crops the cache; OCR / Find Pixel crop (`fresh=false`). All wait/repeat recaptures use `fresh=true`. Do not change without updating all kinds + tests.
-7. **Interruptibility** — sleeps go through `interruptible_sleep`; check `stop_flag` / `check_stopped` on long match work. Never block stop on a search.
-8. **Hit application** — outputs, highlights, and branch children go through `apply_detection_hits` / shared helpers. No kind-specific coordinate side effects.
+6. **Dirty-bit / fresh** — after input that may change the screen (`mark_capture_dirty` → `take_capture_fresh`), the next search may request a new frame; clean nested searches and OCR/Find Pixel one-shots may crop the cache. All wait/repeat recaptures request a newer frame. Product rule: “recapture when the screen may have changed; reuse when it hasn’t.” Portal token details stay here — do not fork per-kind always-fresh stacks.
+7. **Frame-token skip** — equal capture tokens for the same rect mean byte-identical pixels; kinds must reuse via `FrameMemo` instead of re-matching. Do not remove that memo path.
+8. **Interruptibility** — sleeps go through `interruptible_sleep`; check `stop_flag` / `check_stopped` on long match work. Never block stop on a search.
+9. **Hit application** — outputs, highlights, and branch children go through `apply_detection_hits` / shared helpers. No kind-specific coordinate side effects.
+10. **Region-first** — blank detection actions use `DEFAULT_SEARCH_AREA` (`General~Monitor 1 Center Square`, 25% centered). Prefer smaller areas over full-desktop polls; do not “fix” defaults back to full monitor.
 
 When adding a search feature: implement once in `common.rs` (or shared match/cache APIs), then wire all three kinds. Divergent behavior needs an explicit comment **and** tests in `search/tests/` for each kind affected.
 
@@ -53,6 +57,7 @@ Every wait/repeat poll is a full attempt. Minimize work **per attempt** and **ac
 | Rely on `clear_search_cache` → `clear_match_scratch` for Rayon FFT TLS | Leave full-screen DFT buffers in worker TLS across runs |
 | Keep pipeline image clones behind `log_images_enabled()` | Clone full frames for logs on every attempt |
 | Prefer smaller search areas / early exits on stop | Full-desktop search + ignore `stop_flag` mid-parallel |
+| Reuse `FrameMemo` when frame token + rect match | Re-run OCR/match on an unchanged capture |
 
 `sqyre-match` perf budgets are load-bearing (see `testing`); fix the path (FFT vs direct, packing, prep reuse).
 
@@ -108,3 +113,4 @@ Before landing search-related edits:
 - Logging every frame/attempt with `diag::note` on the hot path
 - Kind-specific interval/backoff “tuning” that makes one search feel different
 - Adding a second cache beside `search_cache.rs`
+- Adding a second wait/search stack beside `run_detection_shell`

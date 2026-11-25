@@ -62,8 +62,8 @@ mod tests {
     use super::*;
     use crate::{
         action_type_label, PressState, ScalarValue, ACTION_KIND_COUNT, CELL_COORDINATES,
-        DEFAULT_SMOOTH_LOW, DEFAULT_WAIT_TIME_MS, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
-        PROGRAM_DELIMITER,
+        DEFAULT_SEARCH_AREA, DEFAULT_SMOOTH_LOW, DEFAULT_WAIT_TIME_MS, GENERAL_PROGRAM,
+        IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
     };
 
     #[test]
@@ -144,12 +144,16 @@ mod tests {
     fn blank_detection_kinds_seed_move_to_match() {
         for key in ["imagesearch", "ocr", "findpixel"] {
             let a = blank_action(key).unwrap();
-            let subs = match &a.kind {
-                ActionKind::ImageSearch(d) => &d.detection.subactions,
-                ActionKind::Ocr(d) => &d.detection.subactions,
-                ActionKind::FindPixel(d) => &d.detection.subactions,
+            let (search_area, subs) = match &a.kind {
+                ActionKind::ImageSearch(d) => (&d.search_area, &d.detection.subactions),
+                ActionKind::Ocr(d) => (&d.search_area, &d.detection.subactions),
+                ActionKind::FindPixel(d) => (&d.search_area, &d.detection.subactions),
                 other => panic!("expected detection kind for {key}, got {other:?}"),
             };
+            assert_eq!(
+                search_area.as_str(),
+                format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{DEFAULT_SEARCH_AREA}")
+            );
             assert_seeded_move(subs, IMAGE_SEARCH_REFERENCE);
         }
     }

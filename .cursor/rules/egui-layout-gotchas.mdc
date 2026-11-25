@@ -37,5 +37,6 @@ Index: [`docs/examples/README.md`](../../docs/examples/README.md). Headless test
 | `show_overflow` | Paint chrome when it fits; scroll after measured overflow |
 | `focus_nav::is_top_layer` | "May this surface take keys" — immune to lingering closed Areas |
 | `consume_escape` | Esc closes the topmost layer only |
+| `validated_var_ref_*` / `var_name_text_edit` / `show_var_ref_autocomplete` | Variable-ref fields — see [`var-ref-fields`](../../docs/examples/ui/var-ref-fields.md) |
 
 `sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).

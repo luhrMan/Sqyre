@@ -346,31 +346,79 @@ fn should_show_var_name_overlay(text: &str, focused: bool) -> bool {
     !focused && !text.trim().is_empty()
 }
 
-/// Incomplete `${prefix` at the caret (no closing `}` yet).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct IncompleteDollarRef {
-    /// Character index of `$` in `${`.
-    start_char: usize,
-    /// Text after `${` up to the caret.
-    prefix: String,
+/// Brace style for an incomplete / completed variable ref.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefBraceStyle {
+    /// `${name}`
+    Dollar,
+    /// `{name}` (not preceded by `$`, not an `{{` escape)
+    Brace,
 }
 
-/// Find an open `${…` span ending at `cursor_char` (character index).
-fn find_incomplete_dollar_ref(text: &str, cursor_char: usize) -> Option<IncompleteDollarRef> {
+/// Incomplete `${prefix` / `{prefix` at the caret (no closing `}` yet).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncompleteVarRef {
+    /// Character index of `$` (`${`) or `{` (bare).
+    start_char: usize,
+    /// Text after the opener up to the caret.
+    prefix: String,
+    style: RefBraceStyle,
+}
+
+/// Identifier-shaped incomplete prefix (empty, or `[A-Za-z_][A-Za-z0-9_]*`).
+fn is_incomplete_ref_prefix(after: &str) -> bool {
+    if after.is_empty() {
+        return true;
+    }
+    let mut chars = after.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Find an open `${…` / `{…` span ending at `cursor_char` (character index).
+/// Prefers `${` when both could match.
+fn find_incomplete_var_ref(text: &str, cursor_char: usize) -> Option<IncompleteVarRef> {
+    find_incomplete_dollar_ref(text, cursor_char)
+        .or_else(|| find_incomplete_bare_brace_ref(text, cursor_char))
+}
+
+fn find_incomplete_dollar_ref(text: &str, cursor_char: usize) -> Option<IncompleteVarRef> {
     let before: String = text.chars().take(cursor_char).collect();
     let start_byte = before.rfind("${")?;
     let after = &before[start_byte + 2..];
-    if after.contains('}') {
-        return None;
-    }
-    // Abort if the prefix looks like it left the name (whitespace / newline).
-    if after.chars().any(|c| c.is_whitespace()) {
+    if after.contains('}') || !is_incomplete_ref_prefix(after) {
         return None;
     }
     let start_char = before[..start_byte].chars().count();
-    Some(IncompleteDollarRef {
+    Some(IncompleteVarRef {
         start_char,
         prefix: after.to_string(),
+        style: RefBraceStyle::Dollar,
+    })
+}
+
+fn find_incomplete_bare_brace_ref(text: &str, cursor_char: usize) -> Option<IncompleteVarRef> {
+    let before: String = text.chars().take(cursor_char).collect();
+    let start_byte = before.rfind('{')?;
+    // `${` is handled by the dollar path; `{{` is a literal-`{` escape.
+    if start_byte > 0 {
+        let prev = before[..start_byte].chars().next_back()?;
+        if prev == '$' || prev == '{' {
+            return None;
+        }
+    }
+    let after = &before[start_byte + 1..];
+    if after.contains('}') || !is_incomplete_ref_prefix(after) {
+        return None;
+    }
+    let start_char = before[..start_byte].chars().count();
+    Some(IncompleteVarRef {
+        start_char,
+        prefix: after.to_string(),
+        style: RefBraceStyle::Brace,
     })
 }
 
@@ -393,15 +441,23 @@ fn var_completion_options(prefix: &str, known: &KnownVariableNames, limit: usize
         .collect()
 }
 
+fn format_ref_insertion(style: RefBraceStyle, name: &str) -> String {
+    match style {
+        RefBraceStyle::Dollar => format!("${{{name}}}"),
+        RefBraceStyle::Brace => format!("{{{name}}}"),
+    }
+}
+
 fn apply_var_completion(
     value: &mut String,
     start_char: usize,
     cursor_char: usize,
     name: &str,
+    style: RefBraceStyle,
 ) -> usize {
     let start_byte = byte_index_from_char_index(value, start_char);
     let end_byte = byte_index_from_char_index(value, cursor_char);
-    let insertion = format!("${{{name}}}");
+    let insertion = format_ref_insertion(style, name);
     value.replace_range(start_byte..end_byte, &insertion);
     start_char + insertion.chars().count()
 }
@@ -457,7 +513,7 @@ pub(crate) fn validation_icon_reserve(ui: &egui::Ui, validation: &EntryValidatio
     }
 }
 
-/// Nav keys for the `${` autocomplete popup owned by TextEdit `id`.
+/// Nav keys for the `${` / `{` autocomplete popup owned by TextEdit `id`.
 ///
 /// Call before the editor widget is shown so an open popup's nav keys never
 /// reach it; pass the result to [`show_var_ref_autocomplete`].
@@ -476,7 +532,7 @@ pub(crate) fn var_ref_autocomplete_keys(ui: &mut egui::Ui, id: egui::Id) -> Auto
     }
 }
 
-/// TextEdit + `${` autocomplete popup.
+/// TextEdit + `${` / `{` autocomplete popup.
 fn var_ref_text_edit(
     ui: &mut egui::Ui,
     id: egui::Id,
@@ -528,7 +584,7 @@ pub(crate) struct AutocompleteKeys {
     dismiss: bool,
 }
 
-/// `${` popup anchored to an already-shown TextEdit (`response`, `id`) —
+/// `${` / `{` popup anchored to an already-shown TextEdit (`response`, `id`) —
 /// shared by [`var_ref_text_edit`] and overlaid editors like preview coord
 /// chips that place the widget manually.
 pub(crate) fn show_var_ref_autocomplete(
@@ -552,7 +608,7 @@ pub(crate) fn show_var_ref_autocomplete(
             .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
         return;
     };
-    let Some(incomplete) = find_incomplete_dollar_ref(value, cursor_char) else {
+    let Some(incomplete) = find_incomplete_var_ref(value, cursor_char) else {
         ui.ctx()
             .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
         return;
@@ -616,7 +672,7 @@ pub(crate) fn show_var_ref_autocomplete(
                 ui.set_max_width(popup_width);
                 for (i, name) in suggestions.iter().enumerate() {
                     let selected = i == nav.selected;
-                    let label = format!("${{{name}}}");
+                    let label = format_ref_insertion(incomplete.style, name);
                     let resp =
                         ui.selectable_label(selected, egui::RichText::new(label).monospace());
                     if resp.clicked() {
@@ -630,7 +686,13 @@ pub(crate) fn show_var_ref_autocomplete(
         });
 
     if let Some(name) = chosen {
-        let new_cursor = apply_var_completion(value, incomplete.start_char, cursor_char, &name);
+        let new_cursor = apply_var_completion(
+            value,
+            incomplete.start_char,
+            cursor_char,
+            &name,
+            incomplete.style,
+        );
         if let Some(mut state) = TextEditState::load(ui.ctx(), edit_id) {
             state
                 .cursor
@@ -1156,18 +1218,37 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_dollar_ref_at_caret() {
-        let r = find_incomplete_dollar_ref("${", 2).unwrap();
+    fn incomplete_var_ref_at_caret() {
+        let r = find_incomplete_var_ref("${", 2).unwrap();
         assert_eq!(r.start_char, 0);
         assert_eq!(r.prefix, "");
+        assert_eq!(r.style, RefBraceStyle::Dollar);
 
-        let r = find_incomplete_dollar_ref("x=${co", 6).unwrap();
+        let r = find_incomplete_var_ref("x=${co", 6).unwrap();
         assert_eq!(r.start_char, 2);
         assert_eq!(r.prefix, "co");
+        assert_eq!(r.style, RefBraceStyle::Dollar);
 
-        assert!(find_incomplete_dollar_ref("${count}", 8).is_none());
-        assert!(find_incomplete_dollar_ref("plain", 5).is_none());
-        assert!(find_incomplete_dollar_ref("${a b", 5).is_none());
+        let r = find_incomplete_var_ref("x={co", 5).unwrap();
+        assert_eq!(r.start_char, 2);
+        assert_eq!(r.prefix, "co");
+        assert_eq!(r.style, RefBraceStyle::Brace);
+
+        let r = find_incomplete_var_ref("{", 1).unwrap();
+        assert_eq!(r.start_char, 0);
+        assert_eq!(r.prefix, "");
+        assert_eq!(r.style, RefBraceStyle::Brace);
+
+        assert!(find_incomplete_var_ref("${count}", 8).is_none());
+        assert!(find_incomplete_var_ref("{count}", 7).is_none());
+        assert!(find_incomplete_var_ref("plain", 5).is_none());
+        assert!(find_incomplete_var_ref("${a b", 5).is_none());
+        assert!(find_incomplete_var_ref("{a b", 4).is_none());
+        // `{{` is a literal-`{` escape, not an open bare ref.
+        assert!(find_incomplete_var_ref("{{co", 4).is_none());
+        // Prefer `${` when both openers could apply.
+        let r = find_incomplete_var_ref("a=${b", 5).unwrap();
+        assert_eq!(r.style, RefBraceStyle::Dollar);
     }
 
     #[test]
@@ -1177,9 +1258,14 @@ mod tests {
         assert_eq!(opts, vec!["Cols".to_string(), "Count".to_string()]);
 
         let mut text = "1+${co".to_string();
-        let cursor = apply_var_completion(&mut text, 2, 6, "Count");
+        let cursor = apply_var_completion(&mut text, 2, 6, "Count", RefBraceStyle::Dollar);
         assert_eq!(text, "1+${Count}");
         assert_eq!(cursor, 10);
+
+        let mut bare = "1+{co".to_string();
+        let cursor = apply_var_completion(&mut bare, 2, 5, "Count", RefBraceStyle::Brace);
+        assert_eq!(bare, "1+{Count}");
+        assert_eq!(cursor, 9);
     }
 
     #[test]
