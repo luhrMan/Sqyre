@@ -1,13 +1,14 @@
 ---
-description: Point to Example Map for gesture-only persisted UI write-back
+description: Point to Example Maps for layout chrome persistence and preference settings
 globs: crates/sqyre-app/**/*.rs, crates/sqyre-persist/**/*.rs
 alwaysApply: false
 ---
 
-# Persisted UI state
+# Persisted UI / preferences
 
-Contract: [`docs/examples/ui/persisted-ui.md`](../../docs/examples/ui/persisted-ui.md).
+| Concern | Map |
+|---------|-----|
+| Layout chrome write-back (splits, fractions) | [`docs/examples/ui/persisted-ui.md`](../../docs/examples/ui/persisted-ui.md) |
+| Preference settings (saved / navigable / searchable / understandable) | [`docs/examples/ui/settings-preferences.md`](../../docs/examples/ui/settings-preferences.md) |
 
-Write on user gestures only; persist semantic values; no per-frame / settling write-back; restore clamps are read-side only; defaults on the owning settings type. Prefer partitioned settings structs (`crate-boundaries`).
-
-New persisted fields: round-trip test (precedent `crates/sqyre-app/tests/macro_list_split.rs`); for gesture-gated writes also assert idle resize does not alter the store. Cookbook: `egui-interaction-testing` skill (Pattern 5).
+Layout: gesture or settled lifecycle only; semantic values; read-side clamps. Preferences: persist toggles/sorts/scale; settings search + plain language. Cookbook: `egui-interaction-testing` Pattern 5.

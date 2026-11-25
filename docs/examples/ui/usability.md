@@ -33,3 +33,5 @@ _(none)_
 - New global hotkey schemes (see [focus-layers.md](focus-layers.md))
 - Search field focus on open (see [search-on-open.md](search-on-open.md))
 - Nested parent popup survival (see [nested-popups.md](nested-popups.md))
+- Settings preference save/search (see [settings-preferences.md](settings-preferences.md))
+- Layout chrome persistence (see [persisted-ui.md](persisted-ui.md))

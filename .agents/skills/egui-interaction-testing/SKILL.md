@@ -23,7 +23,8 @@ description: >-
 | 3 — popups that must stay open | [`nested-popups.md`](../../../docs/examples/ui/nested-popups.md) |
 | 4 — keyboard / focus (layer ownership) | [`focus-layers.md`](../../../docs/examples/ui/focus-layers.md) |
 | 4b — search focus on open | [`search-on-open.md`](../../../docs/examples/ui/search-on-open.md) |
-| 5 — persisted UI state | [`persisted-ui.md`](../../../docs/examples/ui/persisted-ui.md) |
+| 5 — persisted layout chrome | [`persisted-ui.md`](../../../docs/examples/ui/persisted-ui.md) |
+| 5b — preference settings UX | [`settings-preferences.md`](../../../docs/examples/ui/settings-preferences.md) |
 
 ## Where tests live
 

@@ -16,6 +16,8 @@ Behavioral contracts live in Example Maps — do not restate scenarios here. Bef
 | Live top surface owns keys | [`docs/examples/ui/focus-layers.md`](../../docs/examples/ui/focus-layers.md) |
 | Search-first focus on open | [`docs/examples/ui/search-on-open.md`](../../docs/examples/ui/search-on-open.md) |
 | Dialog / layout sizing (fill vs ratchet) | [`docs/examples/ui/dialog-layout.md`](../../docs/examples/ui/dialog-layout.md) |
+| Layout chrome persistence | [`docs/examples/ui/persisted-ui.md`](../../docs/examples/ui/persisted-ui.md) |
+| Preference settings UX | [`docs/examples/ui/settings-preferences.md`](../../docs/examples/ui/settings-preferences.md) |
 
 Index: [`docs/examples/README.md`](../../docs/examples/README.md). Headless test cookbook: `egui-interaction-testing` skill.
 
