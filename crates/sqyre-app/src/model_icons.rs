@@ -1,7 +1,7 @@
 //! Canonical Phosphor glyph per model — one icon per entity kind, app-wide.
 //!
-//! Field labels, picker buttons, Data Editor tabs, and list rows must all use
-//! these consts so the same model reads as the same icon everywhere.
+//! Field labels, picker buttons, Data Editor tab combo choices, and list rows
+//! must all use these consts so the same model reads as the same icon everywhere.
 
 use egui_phosphor::regular;
 

@@ -14,7 +14,7 @@ pub struct MacroMetaUi {
     name_error: Option<String>,
     tag_draft: String,
     delay_open: bool,
-    /// Hotkey controls expanded beside the key toggle; kept across macro switches.
+    /// Hotkey popup open beside the key icon; kept across macro switches.
     pub(crate) hotkey_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
@@ -258,96 +258,84 @@ impl MacroMetaUi {
         .inner
     }
 
-    /// Icon button toggling the delay popup ([`Self::paint_delay_popup`]).
-    pub fn paint_delay_button(&mut self, ui: &mut egui::Ui, m: &Macro, enabled: bool) {
+    /// Timer icon; opens a popup of delay fields anchored to the icon.
+    pub fn paint_delay_control(
+        &mut self,
+        ui: &mut egui::Ui,
+        m: &mut Macro,
+        enabled: bool,
+    ) -> MetaMutations {
         let tip = format_delay_tooltip(m);
-        if crate::ui_toolbar::toolbar_icon(ui, egui_phosphor::regular::TIMER, &tip, enabled)
-            .clicked()
-        {
+        let resp = ui.add_enabled(
+            enabled,
+            crate::widgets::IconButton::new(
+                egui_phosphor::regular::TIMER,
+                &tip,
+                self.delay_open.then_some(crate::theme::accent()),
+            ),
+        );
+        if resp.clicked() {
             self.delay_open = !self.delay_open;
         }
+
+        let mut out = MetaMutations::default();
+        // Footer float sits at the bottom-right — prefer above the icon.
+        egui::Popup::from_response(&resp)
+            .id(egui::Id::new("macro_delay_popup"))
+            .kind(egui::PopupKind::Popup)
+            .align(egui::RectAlign::TOP_END)
+            .align_alternatives(&[
+                egui::RectAlign::TOP_START,
+                egui::RectAlign::TOP,
+                egui::RectAlign::LEFT_END,
+            ])
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .open_bool(&mut self.delay_open)
+            .show(|ui| {
+                let delay_w = crate::widgets::FLOATER_MIN_COMPACT[0];
+                ui.set_min_width(delay_w);
+                ui.add_enabled_ui(enabled, |ui| {
+                    if delay_row(
+                        ui,
+                        egui_phosphor::regular::TIMER,
+                        "Global",
+                        "Pause after every action (ms).",
+                        &mut m.global_delay,
+                    ) {
+                        out.persist = true;
+                    }
+                    if delay_row(
+                        ui,
+                        egui_phosphor::regular::KEYBOARD,
+                        "Keyboard",
+                        "Extra pause after keyboard actions (ms).",
+                        &mut m.keyboard_delay,
+                    ) {
+                        out.persist = true;
+                    }
+                    if delay_row(
+                        ui,
+                        egui_phosphor::regular::MOUSE,
+                        "Mouse",
+                        "Extra pause after mouse actions (ms).",
+                        &mut m.mouse_delay,
+                    ) {
+                        out.persist = true;
+                    }
+                });
+            });
+        out
     }
 
-    /// Key icon toggle; returns whether the hotkey controls should be shown beside it.
-    pub fn paint_hotkey_toggle(&mut self, ui: &mut egui::Ui) -> bool {
+    /// Key icon toggle; returns the response so the caller can anchor a popup.
+    pub fn paint_hotkey_toggle(&mut self, ui: &mut egui::Ui) -> egui::Response {
         crate::widgets::icon_toggle(
             ui,
             &mut self.hotkey_open,
             "Hotkey",
             egui_phosphor::regular::KEY,
             egui_phosphor::fill::KEY,
-        );
-        self.hotkey_open
-    }
-
-    pub fn paint_delay_popup(
-        &mut self,
-        ui: &mut egui::Ui,
-        m: &mut Macro,
-        enabled: bool,
-        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
-    ) -> MetaMutations {
-        let mut out = MetaMutations::default();
-        if !self.delay_open {
-            return out;
-        }
-
-        let mut close = false;
-        // Avoid `.auto_sized()`: egui paints the title Frame at title+close width
-        // without allocating it, so the header stroke outruns the body. Content
-        // `set_min_width` matches the title on the first paint (window-level
-        // min_width grows across frames and trips the layout ratchet).
-        let delay_w = crate::widgets::FLOATER_MIN_COMPACT[0];
-        crate::widgets::fit_dialog_popup(
-            egui::Window::new("Delay between actions")
-                .collapsible(false)
-                .resizable(false)
-                .open(&mut self.delay_open),
-            ui.ctx(),
-            egui::Id::new("Delay between actions"),
-            pending_scale,
         )
-        .show(ui.ctx(), |ui| {
-            ui.set_min_width(delay_w);
-            ui.add_enabled_ui(enabled, |ui| {
-                if delay_row(
-                    ui,
-                    egui_phosphor::regular::TIMER,
-                    "Global",
-                    "Pause after every action (ms).",
-                    &mut m.global_delay,
-                ) {
-                    out.persist = true;
-                }
-                if delay_row(
-                    ui,
-                    egui_phosphor::regular::KEYBOARD,
-                    "Keyboard",
-                    "Extra pause after keyboard actions (ms).",
-                    &mut m.keyboard_delay,
-                ) {
-                    out.persist = true;
-                }
-                if delay_row(
-                    ui,
-                    egui_phosphor::regular::MOUSE,
-                    "Mouse",
-                    "Extra pause after mouse actions (ms).",
-                    &mut m.mouse_delay,
-                ) {
-                    out.persist = true;
-                }
-            });
-            // Title-bar ✕ closes via `.open`; Esc only — no painted Cancel twin.
-            if crate::widgets::consume_escape(ui) {
-                close = true;
-            }
-        });
-        if close {
-            self.delay_open = false;
-        }
-
-        out
     }
 }
 

@@ -255,6 +255,16 @@ impl SqyreApp {
         self.data_editor.nav.tab.label()
     }
 
+    /// Icon+title face for a Data Editor tab combo choice (interaction harnesses).
+    pub fn docs_data_editor_tab_choice(name: &str) -> String {
+        let tab = DOCS_EDITOR_TABS
+            .iter()
+            .find(|(tab_name, _)| *tab_name == name)
+            .map(|(_, tab)| *tab)
+            .unwrap_or_else(|| panic!("unknown data editor tab: {name}"));
+        tab.choice_label()
+    }
+
     /// Program catalog (docs / interaction harnesses).
     pub fn docs_catalog(&self) -> &sqyre_persist::ProgramCatalog {
         &self.workspace.catalog

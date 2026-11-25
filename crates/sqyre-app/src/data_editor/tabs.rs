@@ -10,16 +10,7 @@ pub(crate) enum EditorSection {
 }
 
 impl EditorSection {
-    pub(super) fn default_tab(self) -> EditorTab {
-        match self {
-            Self::Programs => EditorTab::Programs,
-            Self::Items => EditorTab::Items,
-            Self::Coordinates => EditorTab::Points,
-            Self::Tools => EditorTab::ScreenCap,
-        }
-    }
-
-    /// Tabs under this section, in row order.
+    /// Tabs under this section, in menu order.
     pub(super) fn subtabs(self) -> &'static [EditorTab] {
         match self {
             Self::Programs => &[EditorTab::Programs, EditorTab::Overlay],
@@ -80,9 +71,9 @@ impl EditorTab {
         }
     }
 
-    /// Semantic glyph for the icon tab face; [`Self::label`] stays the
-    /// tooltip / combo fallback text. Entity tabs use the canonical
-    /// [`crate::model_icons`] glyph so the same model looks the same app-wide.
+    /// Semantic glyph prefixed onto the tab combo face. Entity tabs use the
+    /// canonical [`crate::model_icons`] glyph so the same model looks the same
+    /// app-wide.
     pub(super) fn icon(self) -> &'static str {
         use egui_phosphor::regular::*;
         match self {
@@ -97,6 +88,11 @@ impl EditorTab {
             Self::Atlases => crate::model_icons::ATLAS,
             Self::Overlay => crate::model_icons::OVERLAY,
         }
+    }
+
+    /// Closed-combo / menu face: phosphor glyph + human title.
+    pub(crate) fn choice_label(self) -> String {
+        format!("{} {}", self.icon(), self.label())
     }
 
     /// Capture / match tools unavailable in the WASM GUI editor.
@@ -160,6 +156,13 @@ mod tests {
         assert_eq!(EditorTab::MatchCheck.label(), "Match Check");
         assert_eq!(EditorTab::SearchAreas.label(), "Search Areas");
         assert_eq!(EditorTab::Programs.label(), "Programs");
+    }
+
+    #[test]
+    fn choice_label_prefixes_icon_onto_title() {
+        let face = EditorTab::SearchAreas.choice_label();
+        assert!(face.starts_with(EditorTab::SearchAreas.icon()));
+        assert!(face.ends_with("Search Areas"));
     }
 
     #[test]

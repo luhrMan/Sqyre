@@ -1203,10 +1203,15 @@ impl SqyreApp {
 
         egui::CentralPanel::default()
             .frame(
-                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(
-                    crate::theme::SPACE_8 as i8,
-                    crate::theme::SPACE_4 as i8,
-                )),
+                // Right margin is 0 so the action tree meets the macro-list
+                // separator; floating scrollbars overlay that edge. Left/top/
+                // bottom keep the usual breathing room from the window chrome.
+                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin {
+                    left: crate::theme::SPACE_8 as i8,
+                    right: 0,
+                    top: crate::theme::SPACE_4 as i8,
+                    bottom: crate::theme::SPACE_4 as i8,
+                }),
             )
             .show(ui, |ui| {
                 #[cfg(target_arch = "wasm32")]

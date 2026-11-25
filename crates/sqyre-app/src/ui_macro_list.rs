@@ -777,10 +777,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         tag_icons: &tag_icons,
                         compact,
                     };
+                    let mut first_top = true;
                     for (seg, child) in &tree.children {
+                        if !first_top {
+                            crate::widgets::list_item_separator(ui);
+                        }
+                        first_top = false;
                         paint_tag_node(ui, &mut ctx, seg, seg, child);
                     }
                     if !untagged.is_empty() {
+                        if !first_top {
+                            crate::widgets::list_item_separator(ui);
+                        }
                         let untagged_node = TagTreeNode {
                             macros: untagged,
                             children: BTreeMap::new(),
