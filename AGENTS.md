@@ -35,6 +35,7 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | Topic | File |
 |-------|------|
 | Ask before consequential guesses | `ask-on-ambiguity.mdc` |
+| Example Maps (UI/feature behavior SoT) | [`docs/examples/README.md`](docs/examples/README.md), `example-mapping.mdc` |
 | No compat shims | `no-backwards-compatibility.mdc` |
 | Crate layering, hubs, capture/diag | `crate-boundaries.mdc` |
 | Commit per bullet/surface — bisectable | `incremental-commits.mdc` |
@@ -43,9 +44,9 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | Rust style, errors, unsafe, logging | `rust-style.mdc` |
 | Quality gate | `verify-new-code.mdc` |
 | Tests, coverage floors, perf budgets | `testing.mdc` |
-| egui layout/popup/focus/scroll pitfalls | `egui-layout-gotchas.mdc` |
-| Persisted UI state write-back | `persisted-ui-state.mdc` |
-| UI usability/consistency | `ui-usability.mdc` |
+| egui layout/popup/focus/scroll helpers → maps | `egui-layout-gotchas.mdc` |
+| Persisted UI write-back → map | `persisted-ui-state.mdc` |
+| UI usability checklist → map | `ui-usability.mdc` |
 | Devcontainer release parity | `devcontainer-release-parity.mdc` |
 | Debugging from logs | `skills/debug-from-logs` |
 | Headless tooltip/popup/focus/persist tests | `skills/egui-interaction-testing` |

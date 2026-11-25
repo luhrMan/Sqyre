@@ -1,21 +1,13 @@
 ---
-description: Persist UI state (splits, sizes, toggles) only on explicit user gestures — never recompute-and-save derived values per frame
+description: Point to Example Map for gesture-only persisted UI write-back
 globs: crates/sqyre-app/**/*.rs, crates/sqyre-persist/**/*.rs
 alwaysApply: false
 ---
 
 # Persisted UI state
 
-Settings round-trips have already regressed once: a split fraction recomputed `pixels / win_w` and **saved every frame** silently rewrote itself on every WM startup transient, maximize, or manual resize — the next launch restored whatever corrupted value was last written.
+Contract: [`docs/examples/ui/persisted-ui.md`](../../docs/examples/ui/persisted-ui.md).
 
-## Rules
+Write on user gestures only; persist semantic values; no per-frame / settling write-back; restore clamps are read-side only; defaults on the owning settings type. Prefer partitioned settings structs (`crate-boundaries`).
 
-- **Write on user gestures only** — drag release, click, Enter, explicit Save, or a debounced "settled" signal. Never `settings.save()` inside unconditional per-frame draw code.
-- **Persist semantic values, not transient measurements** — store a fraction/ratio/enumerated state, not raw pixels sampled mid-layout. If pixels are what you have, convert at gesture time from the final dragged position, not from whatever the current frame happens to report.
-- **No writes during settling** — first frames, one-frame transient window sizes, and restore-in-progress must not write back. Loading a value and immediately persisting a re-derived copy is a corruption path.
-- **Restore clamps are read-side only** — clamp/validate when loading; never feed the clamped value back into the store as a write.
-- **`#[serde(default)]` on each settings *type* that owns the field**, not sprinkled `unwrap_or` at read sites — that type defines the fallback. Prefer **partitioned** settings structs (e.g. runtime / search prefs vs UI layout fracs vs sound chrome) over growing one mega-`UserSettings`. New fields join the partition that owns them; nest partitions under a root only if serde round-trips need a single file. See `crate-boundaries`.
-
-## Test
-
-Every new persisted field gets a round-trip test (precedent: `crates/sqyre-app/tests/macro_list_split.rs`): set via the same code path the UI uses → save → fresh load → assert the restored value. For gesture-gated writes, also assert an idle frame with a different window size does **not** alter the stored value.
+New persisted fields: round-trip test (precedent `crates/sqyre-app/tests/macro_list_split.rs`); for gesture-gated writes also assert idle resize does not alter the store. Cookbook: `egui-interaction-testing` skill (Pattern 5).

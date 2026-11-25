@@ -13,6 +13,16 @@ description: >-
 
 `layout_sweep` only proves static scenes don't clip. Every regression class below is invisible to it — each has a cheap headless repro pattern. Add one test **per dynamic state you touch** when editing `sqyre-app` UI (required by `verify-new-code`).
 
+**Acceptance criteria** live in Example Maps ([`docs/examples/README.md`](../../../docs/examples/README.md)), not in this skill. Map each new green to a `Test:` citation; this file is only how to assert.
+
+| Pattern | Map |
+|---------|-----|
+| 1 — hover tooltips | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
+| 2 — surface geometry | [`dialog-layout.md`](../../../docs/examples/ui/dialog-layout.md) |
+| 3 — popups that must stay open | [`nested-popups.md`](../../../docs/examples/ui/nested-popups.md) |
+| 4 — keyboard / focus | [`focus-layers.md`](../../../docs/examples/ui/focus-layers.md) |
+| 5 — persisted UI state | [`persisted-ui.md`](../../../docs/examples/ui/persisted-ui.md) |
+
 ## Where tests live
 
 - Inline `#[cfg(test)] mod tests` beside the widget — **prefer this** for `egui::Context`-level checks that need no full app (tooltip areas, painted shapes, area rects, extracted panel types). Do not force new coverage through `SqyreApp` when the subsystem can be exercised alone (`crate-boundaries`).

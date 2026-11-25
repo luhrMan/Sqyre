@@ -17,6 +17,7 @@ Ask if any of these are unclear and would materially change the work:
 - Destructive or hard-to-reverse actions (deletes, renames, schema breaks, force push)
 - Missing inputs that cannot be inferred from the repo or conversation
 - **Blast radius / hub growth** — work that would add fields or call sites to `SqyreApp`, `ProgramCatalog`, `UserSettings`, or multi-thousand-line platform files when extracting a narrower type/module is a plausible alternative (see `crate-boundaries`)
+- **Example Map reds** — open **Questions** on a map under `docs/examples/` (or a missing rule/example that would change UI/feature behavior). Treat those as blocking until answered or explicitly deferred; see `example-mapping` and [`docs/examples/README.md`](../../docs/examples/README.md)
 
 ## When not to ask
 

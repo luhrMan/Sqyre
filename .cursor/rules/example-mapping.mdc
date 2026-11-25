@@ -1,0 +1,22 @@
+---
+description: Use Example Maps as the behavioral SoT for features and UI before coding
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs, docs/examples/**/*.md
+alwaysApply: false
+---
+
+# Example Mapping
+
+Behavioral source of truth: [`docs/examples/README.md`](../../docs/examples/README.md) and maps under `docs/examples/ui/`.
+
+## Before coding (UI / feature work)
+
+1. Open or create the relevant map (story / rules / examples / questions / out of scope).
+2. Unresolved **Questions** are red cards — batch-ask (`ask-on-ambiguity`); do not silently invent consequential behavior.
+3. Every new or changed **Example** cites a real `Test: path::fn` and that test is added or updated in the same change.
+4. Prefer widget-local `#[cfg(test)]`; full-app harness only when shell wiring is required (`egui-interaction-testing` skill).
+
+## Do not
+
+- Duplicate scenario prose into `.mdc` rules or skills — keep thin pointers to maps
+- Ship greens without tests
+- Grow hub types to “make the map easier” when a narrower module works (`crate-boundaries`)
