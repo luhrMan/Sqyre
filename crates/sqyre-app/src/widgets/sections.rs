@@ -76,6 +76,39 @@ fn pane(ui: &mut egui::Ui, content: Rect, span: Rangef) -> egui::Ui {
     pane
 }
 
+/// Soft hairline between top-level rows in sidebar lists (macro list, Data
+/// Editor). Accent at 20% opacity; compact so dense lists stay readable.
+///
+/// Prefer this over [`section_separator`] between list entries — section rules
+/// use a full [`crate::theme::section_gap`] band meant for chrome, not rows.
+pub fn list_item_separator(ui: &mut egui::Ui) -> egui::Response {
+    let stroke = egui::Stroke::new(1.0, crate::theme::accent().gamma_multiply(0.2));
+    if ui.layout().main_dir().is_horizontal() {
+        return ui
+            .scope(|ui| {
+                ui.visuals_mut().widgets.noninteractive.bg_stroke = stroke;
+                ui.add(egui::Separator::default().spacing(SPACE_2))
+            })
+            .inner;
+    }
+    // Cancel leading `item_spacing`; trailing spacing before the next row stays.
+    let auto = ui.spacing().item_spacing.y;
+    ui.add_space(-auto);
+    let slot = SPACE_2.max(1.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(0.0, slot), Sense::hover());
+    let span = section_span(ui).unwrap_or_else(|| ui.max_rect().x_range());
+    let line = Rect::from_x_y_ranges(span, rect.y_range());
+    if ui.is_rect_visible(line) {
+        let clip = Rect::from_x_y_ranges(span, ui.clip_rect().y_range());
+        egui::Painter::new(ui.ctx().clone(), ui.layer_id(), clip).hline(
+            span,
+            rect.center().y,
+            stroke,
+        );
+    }
+    response
+}
+
 /// Horizontal separator that spans its section edge-to-edge: the nearest framed
 /// ancestor (panel, window, card, popup) through its inner margin, or a
 /// [`split_view`] pane up to the splitter line.
@@ -288,4 +321,28 @@ fn section_span(ui: &egui::Ui) -> Option<Rangef> {
         });
     }
     pane
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eframe::egui;
+
+    #[test]
+    fn list_item_separator_paints_accent_at_20_percent() {
+        let ctx = egui::Context::default();
+        ctx.set_visuals(crate::theme::dark_visuals());
+        let want = crate::theme::accent().gamma_multiply(0.2);
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label("a");
+            list_item_separator(ui);
+            ui.label("b");
+        });
+        let found = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::LineSegment { stroke, .. } => stroke.color == want,
+            _ => false,
+        });
+        out.drop_without_applying_deltas();
+        assert!(found, "expected 20% accent hairline between list rows");
+    }
 }

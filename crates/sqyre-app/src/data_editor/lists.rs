@@ -160,10 +160,15 @@ impl DataEditor {
                             }
                         });
                     }
+                    let mut first_top = true;
                     for name in editor_program_names(catalog) {
                         if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
                             continue;
                         }
+                        if !first_top {
+                            crate::widgets::list_item_separator(ui);
+                        }
+                        first_top = false;
                         visible += 1;
                         let selected = self.nav.selected_program.as_deref() == Some(name.as_str());
                         let resp = crate::icon_cache::paint_program_label(
@@ -287,6 +292,7 @@ impl DataEditor {
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
                     };
+                    let mut first_top = true;
                     for prog in &progs {
                         let entities = self.entity_names(catalog, prog);
                         if entities.is_empty() && !settings.ui.show_empty_program_headers {
@@ -305,8 +311,13 @@ impl DataEditor {
                             self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = entities.len();
                         if grouped {
+                            if !first_top {
+                                crate::widgets::list_item_separator(ui);
+                            }
+                            first_top = false;
                             visible += 1;
                         }
+                        let separate_rows = !grouped;
                         let rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
                             visible += entity_rows(
                                 ui,
@@ -321,6 +332,7 @@ impl DataEditor {
                                 self.nav.selected_entity.as_deref(),
                                 q,
                                 prog_match,
+                                separate_rows,
                                 &scroll_to,
                                 &did_scroll,
                                 &mut clicked_entity,
@@ -342,6 +354,7 @@ impl DataEditor {
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
                     };
+                    let mut first_top = true;
                     for prog in &progs {
                         let search_areas = self.entity_names(catalog, prog);
                         let collections: Vec<ProgramCollection> = catalog
@@ -369,18 +382,30 @@ impl DataEditor {
                             self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = search_areas.len() + collections.len();
                         if grouped {
+                            if !first_top {
+                                crate::widgets::list_item_separator(ui);
+                            }
+                            first_top = false;
                             visible += 1;
                         }
+                        let separate_rows = !grouped;
                         let rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
                             let in_collection =
                                 sqyre_domain::CoordinateRef(self.drafts.search_area.clone())
                                     .is_collection();
+                            let mut first_row = true;
                             for ent in &search_areas {
                                 if !q.is_empty()
                                     && !pickers::fuzzy_match_fold(q, ent)
                                     && !prog_match
                                 {
                                     continue;
+                                }
+                                if separate_rows {
+                                    if !first_row {
+                                        crate::widgets::list_item_separator(ui);
+                                    }
+                                    first_row = false;
                                 }
                                 visible += 1;
                                 let selected = prog_selected
@@ -410,6 +435,12 @@ impl DataEditor {
                                     && !prog_match
                                 {
                                     continue;
+                                }
+                                if separate_rows {
+                                    if !first_row {
+                                        crate::widgets::list_item_separator(ui);
+                                    }
+                                    first_row = false;
                                 }
                                 visible += 1;
                                 let current =
@@ -455,6 +486,7 @@ impl DataEditor {
                         did_scroll: &did_scroll,
                         clicked_program: &mut clicked_program,
                     };
+                    let mut first_top = true;
                     for prog in &progs {
                         let mut buttons: Vec<_> = settings
                             .overlay
@@ -484,8 +516,13 @@ impl DataEditor {
                             self.nav.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = buttons.len();
                         if grouped {
+                            if !first_top {
+                                crate::widgets::list_item_separator(ui);
+                            }
+                            first_top = false;
                             visible += 1;
                         }
+                        let separate_rows = !grouped;
                         let rows = |ui: &mut egui::Ui, _icons: &mut IconCache| {
                             visible += overlay_button_rows(
                                 ui,
@@ -496,6 +533,7 @@ impl DataEditor {
                                 self.nav.selected_entity.as_deref(),
                                 q,
                                 prog_match,
+                                separate_rows,
                                 &scroll_to,
                                 &did_scroll,
                                 &mut clicked_overlay,
@@ -866,15 +904,23 @@ fn entity_rows(
     selected_entity: Option<&str>,
     q: &str,
     prog_match: bool,
+    separate_rows: bool,
     scroll_to: &Cell<bool>,
     did_scroll: &Cell<bool>,
     clicked_entity: &mut Option<(String, String)>,
     delete_target: &mut Option<(String, Option<String>)>,
 ) -> usize {
     let mut visible = 0;
+    let mut first_row = true;
     for ent in entities {
         if !q.is_empty() && !pickers::fuzzy_match_fold(q, ent) && !prog_match {
             continue;
+        }
+        if separate_rows {
+            if !first_row {
+                crate::widgets::list_item_separator(ui);
+            }
+            first_row = false;
         }
         visible += 1;
         let selected = prog_selected && selected_entity == Some(ent.as_str());
@@ -1030,6 +1076,7 @@ fn overlay_button_rows(
     selected_entity: Option<&str>,
     q: &str,
     prog_match: bool,
+    separate_rows: bool,
     scroll_to: &Cell<bool>,
     did_scroll: &Cell<bool>,
     clicked_overlay: &mut Option<(String, String)>,
@@ -1037,6 +1084,7 @@ fn overlay_button_rows(
     delete_target: &mut Option<(String, Option<String>)>,
 ) -> usize {
     let mut visible = 0;
+    let mut first_row = true;
     for btn in buttons {
         let display_name = btn.display_name();
         if !q.is_empty()
@@ -1045,6 +1093,12 @@ fn overlay_button_rows(
             && !prog_match
         {
             continue;
+        }
+        if separate_rows {
+            if !first_row {
+                crate::widgets::list_item_separator(ui);
+            }
+            first_row = false;
         }
         visible += 1;
         let selected = prog_selected && selected_entity == Some(btn.id.as_str());

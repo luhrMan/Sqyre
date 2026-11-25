@@ -933,8 +933,8 @@ fn build_tree(
             .filter(|(id, _)| *id == action_id)
             .map_or(0.0, |(_, dx)| dx);
         let row_min = ui.cursor().min;
-        let row_right =
-            ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
+        // Match `paint_action_row`: fill to the clip edge; floating bars overlay.
+        let row_right = ui.clip_rect().right();
         let swipe_rect =
             egui::Rect::from_min_max(row_min, egui::pos2(row_right, row_min.y + row_h));
         let interaction = tree_swipe::paint_row(ui, action_id, swipe_rect, swipe_offset, |ui| {

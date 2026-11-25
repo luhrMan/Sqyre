@@ -220,6 +220,7 @@ pub fn paint_items_icon_grid(
     let pane_w = ui.available_width();
     ui.set_max_width(pane_w);
     let mut did_scroll = false;
+    let mut first_top = true;
     for prog in catalog.program_names() {
         let Some(pdata) = catalog.get(prog) else {
             continue;
@@ -231,6 +232,11 @@ pub fn paint_items_icon_grid(
         if targets.is_empty() && !keep_empty {
             continue;
         }
+
+        if !first_top {
+            crate::widgets::list_item_separator(ui);
+        }
+        first_top = false;
 
         let prog_selected = selected_program == Some(prog.as_str());
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.

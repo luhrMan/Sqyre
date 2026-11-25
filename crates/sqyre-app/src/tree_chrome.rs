@@ -298,9 +298,10 @@ pub fn paint_action_row(
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
-    // clip rect, inset so a floating scrollbar cannot cover trailing pills.
+    // clip rect so chrome stays on-screen. Floating scrollbars overlay the edge (see
+    // `theme::scroll_style`) — do not reserve a gutter that reads as gray padding.
     let spacing = ui.spacing().item_spacing.x;
-    let visible_end = ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
+    let visible_end = ui.clip_rect().right();
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);
@@ -811,21 +812,21 @@ mod tests {
     }
 
     #[test]
-    fn row_chrome_clears_floating_scrollbar_overlay() {
+    fn row_chrome_fills_to_clip_edge_without_scrollbar_gutter() {
         with_ui(|ui| {
-            // Default egui scroll style is floating with zero allocated width.
+            // Floating bars overlay content (floating_allocated_width == 0); rows
+            // must not reserve bar_width as gray padding beside a panel separator.
             assert!(ui.spacing().scroll.floating);
             assert_eq!(ui.spacing().scroll.floating_allocated_width, 0.0);
-            let bar = ui.spacing().scroll.bar_width;
             let area = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(220.0, 40.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
                 ui.set_clip_rect(area);
                 let result = paint_image_search_row(ui);
                 assert!(
-                    result.row_rect.right() <= area.right() - bar + 1.0,
-                    "logs/delete under scrollbar: row right {} > clear edge {}",
+                    (result.row_rect.right() - area.right()).abs() <= 1.0,
+                    "row should fill to clip edge (right {}, clip {})",
                     result.row_rect.right(),
-                    area.right() - bar
+                    area.right()
                 );
             });
         });
