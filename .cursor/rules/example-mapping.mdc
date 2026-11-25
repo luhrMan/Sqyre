@@ -1,12 +1,12 @@
 ---
 description: Use Example Maps as the behavioral SoT for features and UI before coding
-globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs, docs/examples/**/*.md
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs, crates/sqyre-executor/src/search/**/*.rs, crates/sqyre-domain/src/action/**/*.rs, crates/sqyre-persist/src/programs/seed_general.rs, docs/examples/**/*.md
 alwaysApply: false
 ---
 
 # Example Mapping
 
-Behavioral source of truth: [`docs/examples/README.md`](../../docs/examples/README.md) and maps under `docs/examples/ui/`.
+Behavioral source of truth: [`docs/examples/README.md`](../../docs/examples/README.md) and maps under `docs/examples/ui/` / `docs/examples/runtime/`.
 
 ## Before coding (UI / feature work)
 

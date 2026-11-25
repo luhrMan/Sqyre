@@ -11,8 +11,8 @@ pub use wire_keys::WIRE_TYPE_KEYS;
 
 pub use crate::match_method::MatchMethod;
 use crate::{
-    CoordinateRef, ScalarValue, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
-    PROGRAM_DELIMITER,
+    CoordinateRef, ScalarValue, CELL_COORDINATES, DEFAULT_SEARCH_AREA, GENERAL_PROGRAM,
+    IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -1355,8 +1355,8 @@ pub const FOREACH_CELL_BUILTIN_VARS: &[&str] = &[
     FOREACH_CELL_BUILTIN_BOTTOM,
 ];
 
-/// `General~<name>` ref for a seeded well-known point ([`GENERAL_PROGRAM`]).
-fn general_point_ref(name: &str) -> CoordinateRef {
+/// `General~<name>` ref for a seeded well-known point or search area ([`GENERAL_PROGRAM`]).
+fn general_entity_ref(name: &str) -> CoordinateRef {
     CoordinateRef(format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{name}"))
 }
 
@@ -1375,7 +1375,7 @@ fn move_children(point: CoordinateRef) -> Vec<Action> {
 /// Detection branch whose child moves to each hit ([`IMAGE_SEARCH_REFERENCE`]).
 fn detection_with_move() -> DetectionBranch {
     DetectionBranch {
-        subactions: move_children(general_point_ref(IMAGE_SEARCH_REFERENCE)),
+        subactions: move_children(general_entity_ref(IMAGE_SEARCH_REFERENCE)),
         ..DetectionBranch::default()
     }
 }
@@ -1441,17 +1441,20 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
             blur: 5,
             match_scale_percent: DEFAULT_MATCH_SCALE_PERCENT,
             match_method: MatchMethod::CcoeffNormed,
+            search_area: general_entity_ref(DEFAULT_SEARCH_AREA),
             detection: detection_with_move(),
             ..Default::default()
         })),
         "ocr" => ActionKind::Ocr(Box::new(OcrData {
             target: "template".into(),
             resize: 1.0,
+            search_area: general_entity_ref(DEFAULT_SEARCH_AREA),
             detection: detection_with_move(),
             ..Default::default()
         })),
         "findpixel" => ActionKind::FindPixel(Box::new(FindPixelData {
             target_color: "ffffff".into(),
+            search_area: general_entity_ref(DEFAULT_SEARCH_AREA),
             detection: detection_with_move(),
             ..Default::default()
         })),
@@ -1468,7 +1471,7 @@ fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "foreachcell" => ActionKind::ForEachCell {
             name: String::new(),
             cells: CoordinateRef::default(),
-            subactions: move_children(general_point_ref(CELL_COORDINATES)),
+            subactions: move_children(general_entity_ref(CELL_COORDINATES)),
         },
         "savevariable" => ActionKind::SaveVariable {
             variable_name: String::new(),

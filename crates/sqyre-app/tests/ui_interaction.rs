@@ -322,7 +322,7 @@ fn image_search_edit_shows_output_and_wait_without_advanced() {
     // Common-path detection fields stay outside collapsed Advanced.
     harness.get_by_label("Output X");
     harness.get_by_label("Output Y");
-    harness.get_by_label("Repeat mode");
+    harness.get_by_label("Wait mode");
 }
 
 #[test]

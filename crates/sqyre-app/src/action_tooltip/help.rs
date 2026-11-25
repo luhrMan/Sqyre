@@ -127,12 +127,15 @@ pub const FOREACH_CELLS: &str =
 
 // --- Detection shared ---
 
-pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor). Required to run.";
-pub const REPEAT_MODE: &str =
-    "once = single try; wait* = silent poll then one branch; repeat* = run branch each pass.";
+pub const SEARCH_AREA: &str =
+    "Screen region to scan (from the Data Editor). New actions default to a centered 25% square.";
+pub const WAIT_MODE: &str =
+    "Once = single try; Until appears / Until disappears = silent poll then one branch.";
+pub const WAIT_LOOP_MODE: &str =
+    "Advanced: run the then-branch each pass until found / while found (caps via Max iterations).";
 pub const WAIT_SECONDS: &str = "How long to keep retrying (seconds). Required for wait modes.";
 pub const WAIT_INTERVAL: &str = "Milliseconds between detection retries.";
-pub const WAIT_MAX_ITER: &str = "Cap on repeat-mode iterations (0 = default 100).";
+pub const WAIT_MAX_ITER: &str = "Cap on repeat-as-loop iterations (0 = default 100).";
 pub const OUT_X: &str = "Variable that receives the match X coordinate.";
 pub const OUT_Y: &str = "Variable that receives the match Y coordinate.";
 pub const ORDER_GROUPING: &str =

@@ -35,7 +35,7 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | Topic | File |
 |-------|------|
 | Ask before consequential guesses | `ask-on-ambiguity.mdc` |
-| Example Maps (UI/feature behavior SoT) | [`docs/examples/README.md`](docs/examples/README.md), `example-mapping.mdc` |
+| Example Maps (UI/runtime behavior SoT) | [`docs/examples/README.md`](docs/examples/README.md), `example-mapping.mdc` |
 | No compat shims | `no-backwards-compatibility.mdc` |
 | Crate layering, hubs, capture/diag | `crate-boundaries.mdc` |
 | Commit per bullet/surface — bisectable | `incremental-commits.mdc` |

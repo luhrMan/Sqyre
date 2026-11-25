@@ -1,6 +1,6 @@
 # Example Maps
 
-Behavioral source of truth for Sqyre features — especially UI. Agents and humans use these maps instead of long scenario prose in `.cursor/rules`.
+Behavioral source of truth for Sqyre features (UI and runtime). Agents and humans use these maps instead of long scenario prose in `.cursor/rules`.
 
 ## Card legend
 
@@ -16,9 +16,9 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 
 ## When to use
 
-- New or changed UI / feature work: open or update the relevant map under [`ui/`](ui/) **before** coding.
+- New or changed UI / feature work: open or update the relevant map under [`ui/`](ui/) or [`runtime/`](runtime/) **before** coding.
 - Underspecified requests: treat missing rules/examples as **Questions**; batch-ask (see `ask-on-ambiguity`).
-- Implementation: helpers and thin `.mdc` rules point here; the [`egui-interaction-testing`](../../.cursor/skills/egui-interaction-testing/SKILL.md) skill is how to write the tests, not a second copy of the criteria.
+- Implementation: helpers and thin `.mdc` rules point here; skills teach how (tests, benches), not a second copy of acceptance criteria.
 - Usability index: [`ui/usability.md`](ui/usability.md) — pick a story map, don’t treat the index as acceptance criteria.
 
 ## UI maps
@@ -45,6 +45,13 @@ Rules may stand without examples when the constraint is obvious. Every **Example
 | Progressive disclosure (Advanced) | [ui/progressive-disclosure.md](ui/progressive-disclosure.md) |
 | Icon chrome + AccessKit names | [ui/icon-chrome.md](ui/icon-chrome.md) |
 | Preference settings save / nav / search | [ui/settings-preferences.md](ui/settings-preferences.md) |
+| Variable-ref fields, autocomplete, pills | [ui/var-ref-fields.md](ui/var-ref-fields.md) |
+
+## Runtime maps
+
+| Theme | Map |
+|-------|-----|
+| Image Search / OCR / Find Pixel wait + region defaults | [runtime/search-detection.md](runtime/search-detection.md) |
 
 ## Discovery note
 

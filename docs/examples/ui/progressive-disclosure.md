@@ -8,7 +8,7 @@
 
 ## Examples
 
-- the one where image-search edit opens → output and wait are visible without expanding Advanced  
+- the one where image-search edit opens → output and Wait mode are visible without expanding Advanced  
   `Test: crates/sqyre-app/tests/ui_interaction.rs::image_search_edit_shows_output_and_wait_without_advanced`
 
 ## Questions

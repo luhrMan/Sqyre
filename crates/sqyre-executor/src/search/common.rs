@@ -667,3 +667,41 @@ pub(super) fn maybe_repeat_until_found(
         iteration,
     )
 }
+
+#[cfg(test)]
+mod frame_memo_tests {
+    use super::FrameMemo;
+    use crate::backends::DesktopRect;
+
+    fn rect() -> DesktopRect {
+        DesktopRect {
+            x: 10,
+            y: 20,
+            w: 100,
+            h: 80,
+        }
+    }
+
+    #[test]
+    fn reuses_result_when_token_and_rect_match() {
+        let mut memo = FrameMemo::new();
+        memo.put(0xabc, rect(), 7_u32);
+        assert_eq!(memo.get(0xabc, rect()).copied(), Some(7));
+    }
+
+    #[test]
+    fn misses_when_frame_token_changes() {
+        let mut memo = FrameMemo::new();
+        memo.put(0xabc, rect(), 7_u32);
+        assert!(memo.get(0xabd, rect()).is_none());
+    }
+
+    #[test]
+    fn misses_when_search_rect_changes() {
+        let mut memo = FrameMemo::new();
+        memo.put(0xabc, rect(), 7_u32);
+        let mut other = rect();
+        other.x += 1;
+        assert!(memo.get(0xabc, other).is_none());
+    }
+}

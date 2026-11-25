@@ -3,14 +3,17 @@
 use super::{MonitorRect, ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
 use crate::Result;
 use sqyre_domain::{
-    ScalarValue, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+    ScalarValue, CELL_BOUNDS, CELL_COORDINATES, DEFAULT_SEARCH_AREA, GENERAL_PROGRAM,
+    IMAGE_SEARCH_REFERENCE,
 };
 
-/// Create/update the `General` program with one search area + 2×2 Collection
-/// per monitor (quadrants / halves via cell ranges), and per-monitor corner / center /
-/// corner-mid Points. Coordinates are **monitor-relative** (origin at each slot's top-left).
+/// Create/update the `General` program with full-monitor + centered 25%-area square
+/// search areas + 2×2 Collection per monitor (quadrants / halves via cell ranges),
+/// and per-monitor corner / center / corner-mid Points. Coordinates are
+/// **monitor-relative** (origin at each slot's top-left).
 /// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`),
 /// [`CELL_COORDINATES`] (`${CellX}` / `${CellY}`), and [`CELL_BOUNDS`] are present.
+/// Blank detection actions default to [`DEFAULT_SEARCH_AREA`] (`Monitor 1 Center Square`).
 ///
 /// Re-runs against the live (shared) monitor list so displays are added or
 /// removed after capture changes, and generated coordinates stay aligned.
@@ -135,8 +138,10 @@ fn usable_monitors(monitors: &[MonitorRect]) -> Vec<MonitorRect> {
     }
 }
 
-/// Current generated monitor entity: `Monitor N` (search area + collection).
+/// Current generated monitor entity: `Monitor N` (full search area + collection).
 const GENERATED_MONITOR_SUFFIXES: [&str; 1] = [""];
+/// Generated per-monitor center squares (25% area) used as the detection default.
+const GENERATED_CENTER_SQUARE_SUFFIXES: [&str; 1] = [" Center Square"];
 /// Previous named halves / quadrants / whole-screen areas — dropped in favor of collections.
 const OBSOLETE_AREA_SUFFIXES: [&str; 9] = [
     " Whole Screen",
@@ -180,6 +185,19 @@ fn stale_monitor_area(name: &str, monitor_count: usize) -> bool {
     generated_monitor_index(name, &OBSOLETE_AREA_SUFFIXES).is_some()
         || generated_monitor_index(name, &GENERATED_MONITOR_SUFFIXES)
             .is_some_and(|n| n > monitor_count)
+        || generated_monitor_index(name, &GENERATED_CENTER_SQUARE_SUFFIXES)
+            .is_some_and(|n| n > monitor_count)
+}
+
+/// Centered square covering 25% of the monitor's pixel area (`side = ½√(w·h)`).
+fn center_quarter_square(w: i32, h: i32) -> (i32, i32, i32, i32) {
+    let w = w.max(1);
+    let h = h.max(1);
+    let side = (((w as f64) * (h as f64)).sqrt() * 0.5).round() as i32;
+    let side = side.clamp(1, w.min(h));
+    let left = (w - side) / 2;
+    let top = (h - side) / 2;
+    (left, top, left + side, top + side)
 }
 
 fn stale_monitor_entity(name: &str, suffixes: &[&str], monitor_count: usize) -> bool {
@@ -248,11 +266,27 @@ fn seed_search_areas(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> 
         if upsert_area(catalog, &format!("Monitor {n}"), n, 0, 0, w, h)? {
             changed = true;
         }
+        let (lx, ty, rx, by) = center_quarter_square(w, h);
+        if upsert_area(
+            catalog,
+            &format!("Monitor {n} Center Square"),
+            n,
+            lx,
+            ty,
+            rx,
+            by,
+        )? {
+            changed = true;
+        }
     }
     // Drop legacy virtual-desktop union if still present.
     if prune_named_area(catalog, "Whole Screen")? {
         changed = true;
     }
+    debug_assert_eq!(
+        DEFAULT_SEARCH_AREA, "Monitor 1 Center Square",
+        "blank detection default must match seeded monitor-1 center square"
+    );
     Ok(changed)
 }
 
@@ -473,8 +507,9 @@ mod tests {
         let areas = p.search_areas.get(res).expect("areas");
         assert!(!areas.contains_key("Whole Screen"));
         assert!(areas.contains_key("Monitor 1"));
+        assert!(areas.contains_key(DEFAULT_SEARCH_AREA));
         assert!(!areas.contains_key("Monitor 1 Left Half"));
-        assert_eq!(areas.len(), 2);
+        assert_eq!(areas.len(), 3);
         assert!(areas.contains_key(CELL_BOUNDS));
         let cell_bounds = &areas[CELL_BOUNDS];
         assert_eq!(
@@ -492,6 +527,13 @@ mod tests {
         assert_eq!(monitor.top_y, ScalarValue::Int(0));
         assert_eq!(monitor.right_x, ScalarValue::Int(1920));
         assert_eq!(monitor.bottom_y, ScalarValue::Int(1080));
+
+        let center = &areas[DEFAULT_SEARCH_AREA];
+        assert_eq!(center.monitor, 1);
+        assert_eq!(center.left_x, ScalarValue::Int(600));
+        assert_eq!(center.top_y, ScalarValue::Int(180));
+        assert_eq!(center.right_x, ScalarValue::Int(1320));
+        assert_eq!(center.bottom_y, ScalarValue::Int(900));
 
         let col = p.collections.get("Monitor 1").expect("collection");
         assert_eq!(col.name, "Monitor 1");
@@ -534,9 +576,11 @@ mod tests {
 
         let p = cat.get(GENERAL_PROGRAM).expect("General");
         let areas = p.search_areas.get("2560x1440").expect("areas");
-        assert_eq!(areas.len(), 3);
+        assert_eq!(areas.len(), 5);
         assert!(areas.contains_key(CELL_BOUNDS));
         assert!(!areas.contains_key("Whole Screen"));
+        assert!(areas.contains_key("Monitor 1 Center Square"));
+        assert!(areas.contains_key("Monitor 2 Center Square"));
 
         let m2 = &areas["Monitor 2"];
         assert_eq!(m2.monitor, 2);
@@ -623,9 +667,20 @@ mod tests {
         assert!(points.contains_key("Monitor 1 Center"));
         assert!(!points.contains_key("Monitor 2 Center"));
         assert!(!areas.contains_key("Monitor 2"));
+        assert!(!areas.contains_key("Monitor 2 Center Square"));
         assert!(!p.collections.contains_key("Monitor 2"));
         assert!(areas.contains_key("Monitor 1"));
+        assert!(areas.contains_key(DEFAULT_SEARCH_AREA));
         assert!(p.collections.contains_key("Monitor 1"));
+    }
+
+    #[test]
+    fn center_quarter_square_covers_quarter_area() {
+        let (lx, ty, rx, by) = center_quarter_square(1920, 1080);
+        assert_eq!((lx, ty, rx, by), (600, 180, 1320, 900));
+        let side = rx - lx;
+        assert_eq!(side, by - ty);
+        assert_eq!(side * side, 1920 * 1080 / 4);
     }
 
     #[test]

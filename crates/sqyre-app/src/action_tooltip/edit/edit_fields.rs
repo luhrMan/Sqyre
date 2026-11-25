@@ -9,8 +9,8 @@ use crate::preview_tooltip::PreviewKind;
 use crate::theme;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
-    combo_condition_operator, combo_enum, combo_str_labeled, drag_field_enabled, num_or_var_field,
-    pair_labeled, text_field, NumOrVarOpts, W_TEXT, W_VAR,
+    collapsible_header, combo_condition_operator, combo_enum, combo_str_labeled,
+    drag_field_enabled, num_or_var_field, pair_labeled, text_field, NumOrVarOpts, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -421,91 +421,72 @@ pub(super) fn search_area_section(
 }
 
 pub(super) fn detection_branch_editor(ui: &mut egui::Ui, detection: &mut DetectionBranch) {
-    tip_wrapped_section(ui, |ui| wait_editor(ui, &mut detection.wait));
+    tip_wrapped_section(ui, |ui| wait_editor_primary(ui, &mut detection.wait));
+    // Named disclosure must sit outside `tip_wrapped_section` — collapsing
+    // headers inside wrap rows clip their title at narrow tip widths.
+    wait_editor_repeat_loop(ui, &mut detection.wait);
     tip_wrapped_section(ui, |ui| order_editor(ui, &mut detection.order));
 }
 
-/// Spaced repeat-mode label; *Until* italic, **While** bold.
-pub(super) fn repeat_mode_label(ui: &egui::Ui, mode: RepeatMode) -> egui::WidgetText {
-    let style = ui.style();
-    let color = style.visuals.text_color();
-    let (prefix, mid, mid_italics, suffix) = match mode {
-        RepeatMode::Once => return "Once".into(),
-        RepeatMode::WaitUntilFound => ("Wait ", "Until", true, " Found"),
-        RepeatMode::WaitWhileFound => ("Wait ", "While", false, " Found"),
-        RepeatMode::RepeatUntilFound => ("Repeat ", "Until", true, " Found"),
-        RepeatMode::RepeatWhileFound => ("Repeat ", "While", false, " Found"),
-    };
-    let mut job = egui::text::LayoutJob::default();
-    egui::RichText::new(prefix).color(color).append_to(
-        &mut job,
-        style,
-        egui::FontSelection::Default,
-        egui::Align::LEFT,
-    );
-    let mid_rt = if mid_italics {
-        egui::RichText::new(mid).italics().color(color)
-    } else {
-        egui::RichText::new(mid).strong().color(color)
-    };
-    mid_rt.append_to(
-        &mut job,
-        style,
-        egui::FontSelection::Default,
-        egui::Align::LEFT,
-    );
-    egui::RichText::new(suffix).color(color).append_to(
-        &mut job,
-        style,
-        egui::FontSelection::Default,
-        egui::Align::LEFT,
-    );
-    job.into()
-}
-
+/// Author-facing wait mode label (primary + advanced).
 pub(super) fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
     match mode {
         RepeatMode::Once => "Once",
-        RepeatMode::WaitUntilFound => "Wait Until Found",
-        RepeatMode::WaitWhileFound => "Wait While Found",
-        RepeatMode::RepeatUntilFound => "Repeat Until Found",
-        RepeatMode::RepeatWhileFound => "Repeat While Found",
+        RepeatMode::WaitUntilFound => "Until appears",
+        RepeatMode::WaitWhileFound => "Until disappears",
+        RepeatMode::RepeatUntilFound => "Repeat until found",
+        RepeatMode::RepeatWhileFound => "Repeat while found",
     }
 }
 
-pub(super) fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    pair_labeled(ui, egui_phosphor::regular::REPEAT, "Repeat mode", |ui| {
-        let selected = repeat_mode_label(ui, wait.repeat_mode);
+const PRIMARY_WAIT_MODES: [RepeatMode; 3] = [
+    RepeatMode::Once,
+    RepeatMode::WaitUntilFound,
+    RepeatMode::WaitWhileFound,
+];
+
+const REPEAT_LOOP_MODES: [RepeatMode; 2] =
+    [RepeatMode::RepeatUntilFound, RepeatMode::RepeatWhileFound];
+
+pub(super) fn wait_editor_primary(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
+    let is_repeat = wait.uses_max_iterations();
+    pair_labeled(ui, egui_phosphor::regular::TIMER, "Wait mode", |ui| {
         let selected_plain = repeat_mode_plain(wait.repeat_mode);
-        let response = egui::ComboBox::from_id_salt("Repeat mode")
-            .selected_text(selected)
+        let response = egui::ComboBox::from_id_salt("Wait mode")
+            .selected_text(selected_plain)
             .truncate()
             .show_ui(ui, |ui| {
-                for mode in [
-                    RepeatMode::Once,
-                    RepeatMode::WaitUntilFound,
-                    RepeatMode::WaitWhileFound,
-                    RepeatMode::RepeatUntilFound,
-                    RepeatMode::RepeatWhileFound,
-                ] {
+                for mode in PRIMARY_WAIT_MODES {
                     if ui
-                        .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
+                        .selectable_label(wait.repeat_mode == mode, repeat_mode_plain(mode))
                         .clicked()
                     {
                         wait.repeat_mode = mode;
                     }
                 }
+                // Keep the active repeat mode selectable in the primary combo so
+                // existing macros don't look "unset" when the loop disclosure is collapsed.
+                if is_repeat {
+                    ui.separator();
+                    for mode in REPEAT_LOOP_MODES {
+                        if ui
+                            .selectable_label(wait.repeat_mode == mode, repeat_mode_plain(mode))
+                            .clicked()
+                        {
+                            wait.repeat_mode = mode;
+                        }
+                    }
+                }
             })
             .response;
         if crate::widgets::elide::combo_text_elided(ui, &response, selected_plain) {
-            response.on_hover_text(format!("{selected_plain}\n\n{}", h::REPEAT_MODE));
+            response.on_hover_text(format!("{selected_plain}\n\n{}", h::WAIT_MODE));
         } else {
-            help::tip(response, h::REPEAT_MODE);
+            help::tip(response, h::WAIT_MODE);
         }
     });
-    // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
+    // Once → timing off; wait/repeat modes → timing.
     let timing_enabled = wait.uses_timing();
-    let max_enabled = wait.uses_max_iterations();
     drag_field_enabled(
         ui,
         egui_phosphor::regular::CLOCK,
@@ -527,15 +508,62 @@ pub(super) fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
                 .range(MIN_DETECTION_INTERVAL_MS..=MAX_DETECTION_INTERVAL_MS)
         },
     );
-    drag_field_enabled(
-        ui,
-        egui_phosphor::regular::REPEAT,
-        "Max iterations",
-        h::WAIT_MAX_ITER,
-        &mut wait.max_iterations,
-        max_enabled,
-        |d| d.speed(1).range(0..=MAX_WHILE_MAX_ITERATIONS),
-    );
+}
+
+/// Repeat-as-loop disclosure (same shell, fewer common-path cards).
+pub(super) fn wait_editor_repeat_loop(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
+    let is_repeat = wait.uses_max_iterations();
+    let mut loop_header = collapsible_header("Repeat as loop", "wait_repeat_loop");
+    if is_repeat {
+        loop_header = loop_header.open(Some(true));
+    }
+    let response = loop_header.show(ui, |ui| {
+        tip_wrapped_section(ui, |ui| {
+            pair_labeled(ui, egui_phosphor::regular::REPEAT, "Loop mode", |ui| {
+                let selected_plain = if is_repeat {
+                    repeat_mode_plain(wait.repeat_mode)
+                } else {
+                    "Off (use Wait mode)"
+                };
+                let response = egui::ComboBox::from_id_salt("Loop mode")
+                    .selected_text(selected_plain)
+                    .truncate()
+                    .show_ui(ui, |ui| {
+                        if ui
+                            .selectable_label(!is_repeat, "Off (use Wait mode)")
+                            .clicked()
+                            && is_repeat
+                        {
+                            wait.repeat_mode = RepeatMode::WaitUntilFound;
+                        }
+                        for mode in REPEAT_LOOP_MODES {
+                            if ui
+                                .selectable_label(wait.repeat_mode == mode, repeat_mode_plain(mode))
+                                .clicked()
+                            {
+                                wait.repeat_mode = mode;
+                            }
+                        }
+                    })
+                    .response;
+                help::tip(response, h::WAIT_LOOP_MODE);
+            });
+            drag_field_enabled(
+                ui,
+                egui_phosphor::regular::REPEAT,
+                "Max iterations",
+                h::WAIT_MAX_ITER,
+                &mut wait.max_iterations,
+                is_repeat,
+                |d| d.speed(1).range(0..=MAX_WHILE_MAX_ITERATIONS),
+            );
+        });
+    });
+    // Collapsed headers need a section gap before the next sibling (open bodies
+    // already end with tip_* framing).
+    if response.body_returned.is_none() {
+        theme::add_section_gap(ui);
+    }
 }
 
 pub(super) fn coords_editor(
