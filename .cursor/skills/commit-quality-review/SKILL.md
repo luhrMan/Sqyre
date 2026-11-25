@@ -24,7 +24,7 @@ Read the full diff. Ignore lockfile-only noise unless inconsistent with the mani
 
 ## What to check (in the hunks only)
 
-Apply the rules rather than restating them: `rust-style`, `cross-platform`, `crate-boundaries`, `no-backwards-compatibility`, `git-identity`, and for UI `ui-usability` / `egui-layout-gotchas`, for search `search-timing-consistency`.
+Apply the rules rather than restating them: `rust-style`, `cross-platform`, `crate-boundaries`, `no-backwards-compatibility`, `git-identity`, and for UI Example Maps (`docs/examples/ui/`) via `example-mapping` / `ui-usability` / `egui-layout-gotchas`, for search `search-timing-consistency`.
 
 Beyond the rules, flag:
 

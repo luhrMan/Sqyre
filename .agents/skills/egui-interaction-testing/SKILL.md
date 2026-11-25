@@ -13,6 +13,16 @@ description: >-
 
 `layout_sweep` only proves static scenes don't clip. Every regression class below is invisible to it — each has a cheap headless repro pattern. Add one test **per dynamic state you touch** when editing `sqyre-app` UI (required by `verify-new-code`).
 
+**Acceptance criteria** live in Example Maps ([`docs/examples/README.md`](../../../docs/examples/README.md)), not in this skill. Map each new green to a `Test:` citation; this file is only how to assert.
+
+| Pattern | Map |
+|---------|-----|
+| 1 — hover tooltips | [`tooltip-ratchet.md`](../../../docs/examples/ui/tooltip-ratchet.md) |
+| 2 — surface geometry | [`dialog-layout.md`](../../../docs/examples/ui/dialog-layout.md) |
+| 3 — popups that must stay open | [`nested-popups.md`](../../../docs/examples/ui/nested-popups.md) |
+| 4 — keyboard / focus | [`focus-layers.md`](../../../docs/examples/ui/focus-layers.md) |
+| 5 — persisted UI state | [`persisted-ui.md`](../../../docs/examples/ui/persisted-ui.md) |
+
 ## Where tests live
 
 - `crates/sqyre-app/tests/ui_interaction.rs` — full-app flows via `common::build_docs_harness([w, h], |app| app.open_*_for_docs())` → `egui_kittest::Harness<'_, SqyreApp>`. Drive with `get_by_label(..).click()`, `key_press(Key::Enter/Escape)`, `query_all_by_role(..)` + `.focus()` / `.type_text(..)`, then `harness.run()` / `run_steps(n)` and assert on `harness.state().docs_*()` accessors.
