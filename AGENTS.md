@@ -1,6 +1,6 @@
 # Agent guide
 
-Sqyre is a Rust Cargo workspace (egui desktop automation app + WASM editor); the repo may still be named Squire. Full workflow: [`docs/DEVELOPING.md`](docs/DEVELOPING.md). Do not add a second implementation language or dual-build stack.
+Sqyre is a Rust Cargo workspace (egui desktop automation app + Android); the repo may still be named Squire. Full workflow: [`docs/DEVELOPING.md`](docs/DEVELOPING.md). Do not add a second implementation language or dual-build stack.
 
 ## Layout
 
@@ -13,13 +13,13 @@ Sqyre is a Rust Cargo workspace (egui desktop automation app + WASM editor); the
 ## Build
 
 - `make` (debug) / `make release` → `./bin/sqyre`; `make dev` = release opts without LTO; `make help` lists all targets.
-- Release artifacts: `make appimage` / `flatpak` / `windows` / `wasm` (Desktop devcontainer) and `make android` (Android devcontainer).
+- Release artifacts: `make appimage` / `flatpak` / `windows` (Desktop devcontainer) and `make android` (Android devcontainer).
 - Linux `make` builds add `--features portal-capture` (Wayland); plain `cargo build/clippy -p sqyre-app` skips that code.
 - Toolchain pinned in `rust-toolchain.toml`; edition 2021. New shared deps go in `[workspace.dependencies]` (`default-features = false` when defaults are heavy) and must pass `cargo deny` and `make machete`. Features unify workspace-wide — native-only deps via target `cfg`.
 
 ## Essentials
 
-- Done means `make fmt && make check && make test` pass on the tip (plus `make wasm-check` when touching `sqyre-app` or crates it uses).
+- Done means `make fmt && make check && make test` pass on the tip.
 - Commit during the change: when a unit is independently correct, commit it before the next unit starts (`incremental-commits.mdc`). One concern per commit. Do not wait to be asked, and do not batch a list into one uncommitted diff.
 - No backwards compatibility: change APIs and call sites directly; no shims, aliases, or dual code paths.
 - Platform code uses `#[cfg(...)]` modules, never platform APIs inside `if cfg!(...)`. One OS-neutral public surface (`OsCapturer`, `OsWindowFocuser`); shared OS-neutral logic lives beside platform files (`cross-platform`).
@@ -43,7 +43,6 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | Rust style, errors, unsafe, logging | `rust-style.mdc` |
 | Quality gate | `verify-new-code.mdc` |
 | Tests, coverage floors, perf budgets | `testing.mdc` |
-| WASM editor constraints | `wasm-editor.mdc` |
 | egui layout/popup/focus/scroll pitfalls | `egui-layout-gotchas.mdc` |
 | Persisted UI state write-back | `persisted-ui-state.mdc` |
 | UI usability/consistency | `ui-usability.mdc` |

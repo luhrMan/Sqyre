@@ -2,7 +2,7 @@
 # Devcontainer: binary is in the image; `lefthook install` runs on every attach
 # (see .devcontainer/post-start.sh). Host: https://lefthook.dev then `lefthook install`.
 #
-# CI still runs `make check` + wasm-check + doctest + smoke + cargo-sources;
+# CI still runs `make check` + doctest + smoke + cargo-sources;
 # `make test` / coverage stay CI-only.
 
 pre-push:
@@ -16,7 +16,5 @@ pre-push:
       run: make deny
     machete:
       run: make machete
-    wasm-check:
-      run: make wasm-check
     cargo-sources:
       run: scripts/linux/packaging/flatpak/check-cargo-sources.sh

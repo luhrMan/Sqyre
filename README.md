@@ -12,7 +12,7 @@
   <a href="https://luhrman.dev/sqyre/"><img src="https://img.shields.io/badge/website-luhrman.dev%2Fsqyre-5865F2" alt="Sqyre website" /></a>
   <a href="https://github.com/luhrMan/Sqyre/releases/latest"><img src="https://img.shields.io/github/v/release/luhrMan/Sqyre?label=release" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0 license" /></a>
-  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Web-informational" alt="Platforms: Linux, Windows, Web" />
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-informational" alt="Platforms: Linux, Windows, Android" />
 </p>
 
 <p align="center">
@@ -44,7 +44,7 @@ Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on 
 | **Linux** | Shipped on **X11** and **Wayland** (portal ScreenCast / RemoteDesktop + EIS where the session supports them; Permissions settings in-app) |
 | **Windows** | Released `.exe` (GDI capture, window focus, selection outline, hotkeys, tray; no MSI) |
 | **macOS** | Capture/focus and releases not shipped yet |
-| **WASM** | Browser editor zip for editing macros (no Run / capture / OCR) |
+| **Android** | Sideload APK (editor + runtime); see [docs/ANDROID.md](docs/ANDROID.md) |
 
 **Stack:** [egui](https://github.com/emilk/egui) · PureCV · [ocrs](https://github.com/robertknight/ocrs).
 
@@ -91,8 +91,8 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 
 **End users** — grab a build from [GitHub Releases](https://github.com/luhrMan/Sqyre/releases) (overview and docs at [luhrman.dev/sqyre](https://luhrman.dev/sqyre/)):
 
-1. Download the Linux binary / AppImage / Flatpak, Windows `sqyre.exe`, or the WASM editor zip.
-2. Run the binary (or open the WASM editor in a static file server).
+1. Download the Linux binary / AppImage / Flatpak, or Windows `sqyre.exe`.
+2. Run the binary.
 3. Create a macro — the root is always a **loop** — add actions from the picker or command palette, then **Run** from the toolbar, a hotkey, or an overlay button.
 
 **Developers** — open the repo in the **dev container** (Rust and X11 link deps are preinstalled), then:
@@ -114,7 +114,7 @@ make run        # cargo run -p sqyre-app
 |----------|--------|
 | Linux binary / AppImage / Flatpak | Native automation on X11 / Wayland |
 | Windows `sqyre.exe` | Portable; no MSI installer |
-| WASM editor zip | Edit macros in the browser; no Run / capture / OCR |
+| Android APK | Sideload build; see [docs/ANDROID.md](docs/ANDROID.md) |
 
 Shipped Linux/Windows builds can check GitHub Releases for updates (Ed25519-signed checksums). Local `0.0.0-dev` builds skip update checks.
 
@@ -128,7 +128,7 @@ make release         # release → ./bin/sqyre
 make appimage        # → bin/Sqyre-*.AppImage
 make flatpak         # → bin/com.sqyre.app.flatpak
 make windows         # → bin/sqyre.exe (Docker MinGW cross on Linux)
-make wasm            # → bin/wasm/ (Trunk)
+make android         # → bin/sqyre-debug.apk (Android devcontainer)
 ```
 
 | Goal | Command |
@@ -139,7 +139,7 @@ make wasm            # → bin/wasm/ (Trunk)
 | Windows / macOS | `make windows` · `make macos` (macOS host only) |
 | AppImage | `make appimage` |
 | Flatpak | `make flatpak` |
-| WASM editor | `make wasm` → `bin/wasm/` |
+| Android APK | `make android` → `bin/sqyre-debug.apk` |
 | ocrs ONNX models (compile-time embed) | `make ocr-models` |
 
 Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.100.0, clang, X11 libs) is documented in [docs/DEVELOPING.md](docs/DEVELOPING.md) and [docs/RUST.md](docs/RUST.md).
@@ -214,17 +214,6 @@ OCR (region, pattern) → If match → Type / Key
 For each row (table) → Move / Click using row variables
 ```
 
-### Browser editor
-
-```bash
-make wasm
-# serve bin/wasm/ with any static file server
-```
-
-Import/export `db.yaml` in the browser. Automation (Run, capture, OCR) requires a native build.
-
----
-
 ## 🧪 Running tests
 
 ```bash
@@ -282,7 +271,7 @@ Helpful docs:
 - [Rust workspace](docs/RUST.md) — crate map
 - [Documentation index](docs/README.md)
 
-Pre-push hooks ([lefthook](https://lefthook.dev)): the devcontainer image includes the binary and runs `lefthook install` on attach (`make check` pieces + `make wasm-check` + flatpak cargo-sources sync). On the host, install lefthook then `lefthook install`.
+Pre-push hooks ([lefthook](https://lefthook.dev)): the devcontainer image includes the binary and runs `lefthook install` on attach (`make check` pieces + flatpak cargo-sources sync). On the host, install lefthook then `lefthook install`.
 
 ---
 

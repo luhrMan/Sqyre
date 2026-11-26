@@ -12,8 +12,7 @@ pub trait OcrEngine: Send + Sync {
     fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError>;
 }
 
-/// ocrs-backed engine (native only; not available on wasm32).
-#[cfg(not(target_arch = "wasm32"))]
+/// ocrs-backed engine.
 impl OcrEngine for sqyre_vision::OcrsEngine {
     fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError> {
         sqyre_vision::OcrsEngine::recognize(self, image)

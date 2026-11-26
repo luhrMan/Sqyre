@@ -72,7 +72,6 @@ fn settings_checkbox_toggles_highlight_active_action() {
     );
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn settings_checkbox_toggles_os_title_bar() {
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {

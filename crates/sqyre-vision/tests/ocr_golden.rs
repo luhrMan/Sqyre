@@ -2,8 +2,6 @@
 //!
 //! Update expected text with `SQYRE_UPDATE_OCR_GOLDENS=1 cargo test -p sqyre-vision --test ocr_golden`.
 
-#![cfg(not(target_arch = "wasm32"))]
-
 use image::{Rgb, RgbImage};
 use sqyre_vision::{preprocess_for_ocr, rgba_to_rgb_buf, OcrPreprocessOptions, OcrsEngine};
 use std::path::PathBuf;

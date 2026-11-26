@@ -83,7 +83,7 @@ fn parse_resolution_wh(key: &str) -> Option<(i32, i32)> {
 pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
     let monitors = seed_monitor_rects(catalog);
     catalog.set_monitor_rects(monitors.clone());
-    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    #[cfg(feature = "native-runtime")]
     {
         let n = monitors.len();
         let layout = monitors

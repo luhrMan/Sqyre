@@ -31,7 +31,6 @@ pub(crate) struct PendingProjectionRun {
 }
 
 impl SqyreApp {
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
         let Some(idx) = self.workspace.selected_macro_index() else {
             return;
@@ -63,7 +62,7 @@ impl SqyreApp {
             crate::hotkey_chooser::partition_pending(&pending, &self.workspace.macros);
         for name in direct {
             if self.dispatch_quick_access_token(&name, ctx) {
-                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                #[cfg(feature = "native-runtime")]
                 sqyre_ports::event_log("SQYRE_HUB", &[("fire", name.as_str())]);
                 // Push hub fan map/unmap to the overlay host in this same drain —
                 // don't wait for the later paint-path sync (lags under game focus).
@@ -71,7 +70,7 @@ impl SqyreApp {
                 crate::ui_overlays::sync_macro_overlay(self, ctx);
                 continue;
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            #[cfg(feature = "native-runtime")]
             sqyre_ports::event_log(
                 "SQYRE_OVERLAY",
                 &[("fire", "direct"), ("name", name.as_str())],
@@ -82,7 +81,7 @@ impl SqyreApp {
             let chord = (chord_key, trigger);
             if names.len() <= 1 {
                 if let Some(name) = names.into_iter().next() {
-                    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                    #[cfg(feature = "native-runtime")]
                     sqyre_ports::event_log(
                         "SQYRE_HOTKEY",
                         &[("fire", "start"), ("name", name.as_str())],
@@ -91,7 +90,7 @@ impl SqyreApp {
                 }
                 continue;
             }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            #[cfg(feature = "native-runtime")]
             sqyre_ports::event_log(
                 "SQYRE_HOTKEY",
                 &[
@@ -107,7 +106,7 @@ impl SqyreApp {
     }
 
     pub(crate) fn request_stop(&mut self) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         sqyre_ports::mark_site("run:stop:requested");
         self.run_session.state.stop.request_stop();
         *self.run_session.state.status.lock() = "Stop requested…".into();
@@ -115,11 +114,6 @@ impl SqyreApp {
 
     /// Hide the main window while a screen-click recording is armed.
     pub(crate) fn update_recording_visibility(&mut self, ctx: &egui::Context) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = ctx;
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             // Android has one window; hiding it leaves a black screen with nothing to pick on.
             let should_hide = !cfg!(target_os = "android")
@@ -152,7 +146,7 @@ impl SqyreApp {
     /// Live selection outline + coords HUD while recording, or while a tooltip
     /// preview requests the desktop outline for a point / search area.
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         {
             self.assets.preview_tooltips.set_desktop_outlines_enabled(
                 self.settings_ui.settings().ui.preview_desktop_outline,
@@ -176,7 +170,7 @@ impl SqyreApp {
                 .screen_pick
                 .sync(ctx, &self.hotkey.screen_click);
         }
-        #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
+        #[cfg(not(feature = "native-runtime"))]
         let _ = ctx;
     }
 
@@ -187,7 +181,7 @@ impl SqyreApp {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 mod native_run {
     use super::*;
     use crate::app_backends::{

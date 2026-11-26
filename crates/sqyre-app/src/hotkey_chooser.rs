@@ -114,11 +114,11 @@ pub(crate) fn partition_pending(
 
 /// Desktop cursor in physical pixels, when available.
 fn desktop_cursor_physical() -> Option<(i32, i32)> {
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     {
         sqyre_ports::desktop_cursor_position()
     }
-    #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+    #[cfg(not(feature = "native-runtime"))]
     {
         None
     }
@@ -288,7 +288,7 @@ impl SqyreApp {
 
     /// Start a macro picked in the chooser, stopping the current run first.
     pub(crate) fn start_chosen_macro(&mut self, name: String, ctx: &egui::Context) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         sqyre_ports::event_log(
             "SQYRE_HOTKEY",
             &[("fire", "chosen"), ("name", name.as_str())],

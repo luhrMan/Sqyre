@@ -64,7 +64,7 @@ impl YamlValidateReport {
 
 fn with_compiled_schema<R>(f: impl FnOnce(&jsonschema::Validator) -> R) -> R {
     // `jsonschema` without resolve features uses `Rc` (not Sync) — thread_local
-    // keeps a compiled schema per thread and works on wasm32.
+    // keeps a compiled schema per thread.
     thread_local! {
         static VALIDATOR: OnceCell<jsonschema::Validator> = const { OnceCell::new() };
     }

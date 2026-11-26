@@ -35,11 +35,6 @@ pub struct MacroYamlBuilderDrafts {
 
 impl MacroYamlBuilderDrafts {
     pub fn load_default() -> Result<Self> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            Ok(Self::default())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             Self::load_from_path(macro_yaml_builder_path())
         }
@@ -62,12 +57,6 @@ impl MacroYamlBuilderDrafts {
     }
 
     pub fn save_default(&self) -> Result<()> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = self;
-            Ok(())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
         {
             self.save_to_path(macro_yaml_builder_path())
         }

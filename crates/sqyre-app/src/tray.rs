@@ -3,10 +3,10 @@
 //! The title-bar close button quits Sqyre. Hide the window from the tray menu only.
 
 use egui::Context;
-#[cfg(not(target_arch = "wasm32"))]
+
 use egui::ViewportCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(not(target_arch = "wasm32"))]
+
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -28,9 +28,9 @@ enum TrayCommand {
 pub struct SystemTray {
     cmd_rx: Option<Receiver<TrayCommand>>,
     wake_poller: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
-    #[cfg(not(target_arch = "wasm32"))]
+
     root_window: Option<Arc<winit::window::Window>>,
-    #[cfg(not(target_arch = "wasm32"))]
+
     application_hidden: AtomicBool,
     #[cfg(target_os = "linux")]
     _handle: Option<ksni::blocking::Handle<LinuxTray>>,
@@ -40,7 +40,6 @@ pub struct SystemTray {
 
 impl SystemTray {
     /// Install the tray. Failures are logged; the UI keeps running.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn install(ctx: Context, root_window: Option<Arc<winit::window::Window>>) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         match install_inner(ctx, cmd_tx, cmd_rx, root_window) {
@@ -53,22 +52,18 @@ impl SystemTray {
     }
 
     /// True after the user hid Sqyre from the tray menu.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn application_hidden(&self) -> bool {
         self.application_hidden.load(Ordering::SeqCst)
     }
 
     /// True when a tray icon was installed (close-to-tray needs a way back).
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        any(not(target_os = "android"), feature = "native-runtime")
-    ))]
+    #[cfg(any(not(target_os = "android"), feature = "native-runtime"))]
     pub fn is_active(&self) -> bool {
         self.cmd_rx.is_some()
     }
 
     /// Hide the app into the tray exactly like the Hide menu item.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     pub fn hide(&self, ctx: &Context, frame: &eframe::Frame) {
         let window = frame.winit_window().or(self.root_window.as_ref());
         set_application_visible(ctx, window, false);
@@ -78,7 +73,7 @@ impl SystemTray {
 
     /// Hide into the tray before the first frame (start-minimized preference);
     /// no-op when no tray icon was installed.
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     pub fn hide_at_start(&self, ctx: &Context) {
         if !self.is_active() {
             return;
@@ -89,7 +84,7 @@ impl SystemTray {
     }
 
     /// Root winit window (for immediate unmap on quit).
-    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    #[cfg(feature = "native-runtime")]
     pub fn root_window(&self) -> Option<&Arc<winit::window::Window>> {
         self.root_window.as_ref()
     }
@@ -99,13 +94,11 @@ impl SystemTray {
     /// Recording hide must call this (not only `ViewportCommand::Visible`) —
     /// on XWayland, viewport cmds alone can leave the window unmapped after
     /// search-area / point recording finishes, which looks like a freeze.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
         set_application_visible(ctx, self.root_window.as_ref(), visible);
     }
 
     /// Show and focus the main window (overlay context menu → Open settings).
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn show(&self, ctx: &Context) {
         set_application_visible(ctx, self.root_window.as_ref(), true);
         self.application_hidden.store(false, Ordering::SeqCst);
@@ -114,7 +107,6 @@ impl SystemTray {
     }
 
     /// Toggle main-window visibility like the tray Hide/Show item.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn toggle_visible(&self, ctx: &Context) {
         let show = self.application_hidden();
         set_application_visible(ctx, self.root_window.as_ref(), show);
@@ -124,7 +116,7 @@ impl SystemTray {
         } else {
             self.start_wake_poller(ctx);
         }
-        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        #[cfg(feature = "native-runtime")]
         sqyre_ports::event_log(
             "SQYRE_TRAY",
             &[("visible", if show { "yes" } else { "no" }), ("via", "hub")],
@@ -133,7 +125,6 @@ impl SystemTray {
     }
 
     /// Apply tray menu actions on the egui/UI thread (`App::logic`, including while hidden).
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn poll_commands(&self, ctx: &Context, frame: &eframe::Frame) {
         let Some(rx) = &self.cmd_rx else {
             return;
@@ -149,7 +140,7 @@ impl SystemTray {
                     } else {
                         self.start_wake_poller(ctx);
                     }
-                    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+                    #[cfg(feature = "native-runtime")]
                     sqyre_ports::event_log(
                         "SQYRE_TRAY",
                         &[("visible", if visible { "yes" } else { "no" })],
@@ -170,9 +161,9 @@ impl SystemTray {
         Self {
             cmd_rx: None,
             wake_poller: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
+
             root_window: None,
-            #[cfg(not(target_arch = "wasm32"))]
+
             application_hidden: AtomicBool::new(false),
             #[cfg(target_os = "linux")]
             _handle: None,
@@ -222,7 +213,7 @@ impl Default for SystemTray {
 
 impl Drop for SystemTray {
     fn drop(&mut self) {
-        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        #[cfg(feature = "native-runtime")]
         sqyre_ports::mark_site("tray:drop:start");
         self.stop_wake_poller();
         #[cfg(target_os = "linux")]
@@ -247,12 +238,11 @@ impl Drop for SystemTray {
                 drop(handle);
             }
         }
-        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        #[cfg(feature = "native-runtime")]
         sqyre_ports::mark_site("tray:drop:done");
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
         #[cfg(target_os = "windows")]
@@ -266,7 +256,6 @@ fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     ctx.request_repaint();
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn hide_application(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
         #[cfg(target_os = "windows")]
@@ -276,12 +265,11 @@ fn hide_application(ctx: &Context, window: Option<&Arc<winit::window::Window>>) 
         win.set_visible(false);
     }
     ctx.send_viewport_cmd(ViewportCommand::Visible(false));
-    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    #[cfg(feature = "native-runtime")]
     sqyre_ports::event_log("SQYRE_TRAY", &[("hide", "unmap")]);
     ctx.request_repaint();
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn set_application_visible(
     ctx: &Context,
     window: Option<&Arc<winit::window::Window>>,
@@ -294,7 +282,6 @@ fn set_application_visible(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     #[cfg(feature = "native-runtime")]
     {
@@ -542,10 +529,7 @@ fn install_inner(
     })
 }
 
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(any(target_os = "linux", target_os = "windows", target_os = "macos"))
-))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 fn install_inner(
     _wake: Context,
     _cmd_tx: Sender<TrayCommand>,

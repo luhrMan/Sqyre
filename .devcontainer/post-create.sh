@@ -8,7 +8,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bash "${SCRIPT_DIR}/post-start.sh"
 
 rustup component add rust-src 2>/dev/null || true
-rustup target add wasm32-unknown-unknown 2>/dev/null || true
 
 if docker version >/dev/null 2>&1; then
   echo "docker: ok"

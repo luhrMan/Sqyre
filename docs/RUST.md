@@ -1,6 +1,6 @@
 # Sqyre Rust workspace
 
-Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage + Flatpak, Windows `sqyre.exe` (MinGW cross), and the WASM editor zip. macOS is not CI-checked yet.
+Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage + Flatpak, Windows `sqyre.exe` (MinGW cross), and the Android APK. macOS is not CI-checked yet.
 
 ## Layout
 
@@ -33,7 +33,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 
 ## Develop
 
-Requires **Rust ≥ 1.100.0** (egui 0.36 / PureCV / Trunk 0.22). The repo pins `1.100.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` and Windows cross image match that; OCR is pure-Rust ocrs — no Tesseract/leptonica system libs.
+Requires **Rust ≥ 1.100.0** (egui 0.36 / PureCV). The repo pins `1.100.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` and Windows cross image match that; OCR is pure-Rust ocrs — no Tesseract/leptonica system libs.
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`, `libxinerama-dev`, `libxfixes-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
@@ -56,12 +56,10 @@ make check           # fmt --check + clippy (-D warnings) + cargo deny
 make test            # cargo nextest (falls back to cargo test)
 make smoke           # debug bin/sqyre --version
 make bench           # criterion (match / vision / serialize; not CI)
-make wasm-check      # cargo check wasm32 sqyre-app --no-default-features
 make coverage        # llvm-cov nextest → HTML + lcov + summary.json under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 make appimage        # fmt + check, then Linux AppImage
 make flatpak         # fmt + check, then Flatpak bundle
-make wasm            # fmt + check, then bin/wasm/ GUI-only browser editor
 ```
 
 Or directly:
@@ -73,7 +71,7 @@ cargo run -p sqyre-app
 
 Optional host tools (also installed in the `.devcontainer` image): `cargo-nextest`, `cargo-deny`, `cargo-llvm-cov`, `cargo-machete`, `lefthook`.
 
-Pre-push hooks: the image runs `lefthook install` on attach (`make check-fmt` / `clippy` / `deny` / `machete`, `make wasm-check`, and flatpak cargo-sources sync). On the host, install [lefthook](https://lefthook.dev) then `lefthook install`.
+Pre-push hooks: the image runs `lefthook install` on attach (`make check-fmt` / `clippy` / `deny` / `machete`, and flatpak cargo-sources sync). On the host, install [lefthook](https://lefthook.dev) then `lefthook install`.
 
 Do not expect X11 inside the container — build there, run the binary on the host.
 

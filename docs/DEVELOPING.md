@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in a dev container. **Desktop** (`.devcontainer/desktop/`) is the one to use day to day. It builds the Dockerfile `base` stage: Rust 1.100.0, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. It does not install the Android SDK, NDK, Gradle, or emulator. **Android** (`.devcontainer/android/`) is that image plus JDK 17, the SDK/NDK, Gradle, **cargo-ndk**, and the emulator/scrcpy (`android` stage) for `make android` and `make android-emulator`. Pick it only when you are building the APK — that stage is slow to build. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in a dev container. **Desktop** (`.devcontainer/desktop/`) is the one to use day to day. It builds the Dockerfile `base` stage: Rust 1.100.0, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. It does not install the Android SDK, NDK, Gradle, or emulator. **Android** (`.devcontainer/android/`) is that image plus JDK 17, the SDK/NDK, Gradle, **cargo-ndk**, and the emulator/scrcpy (`android` stage) for `make android` and `make android-emulator`. Pick it only when you are building the APK — that stage is slow to build. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -16,7 +16,7 @@ On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the
 
 After pulling these changes, **Rebuild Container** (not just reopen). If `target/` or `.cache/` were created as root on another machine, delete them on the host or let `post-start.sh` chown them once they are unwritable.
 
-[lefthook](https://lefthook.dev) is installed in the image; `post-start.sh` runs `lefthook install` so pre-push hooks (`make check-fmt` / `clippy` / `deny` / `machete`, `make wasm-check`, flatpak cargo-sources sync) are wired in both Desktop and Android containers. Rebuild once after pulling this change so the binary is present.
+[lefthook](https://lefthook.dev) is installed in the image; `post-start.sh` runs `lefthook install` so pre-push hooks (`make check-fmt` / `clippy` / `deny` / `machete`, flatpak cargo-sources sync) are wired in both Desktop and Android containers. Rebuild once after pulling this change so the binary is present.
 
 From the repo root:
 
@@ -28,7 +28,6 @@ make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
 make bench      # criterion: match, vision (no OCR), serialize (not in CI)
-make wasm-check # cargo check -p sqyre-app --target wasm32-unknown-unknown --no-default-features
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
 make clean-sweep # cargo-sweep target/ (+ target-dhat/) down to 20GB (SWEEP_MAXSIZE=…)
@@ -37,7 +36,6 @@ make appimage   # fmt + check, then bin/*.AppImage (Linux)
 make flatpak    # fmt + check, then bin/com.sqyre.app.flatpak (Linux; Docker fallback if needed)
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
 make macos      # fmt + check, then bin/sqyre (macOS host)
-make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make android-check  # cargo ndk check (editor + runtime) for arm64-v8a (Android devcontainer)
 make android    # fmt + check, then bin/sqyre-debug.apk (Android devcontainer; see ANDROID.md)
 make android-emulator  # boot an x86_64 emulator (needs /dev/kvm), install and launch the APK
@@ -83,7 +81,6 @@ Build caches (all gitignored):
 | `test` | `cargo nextest run --workspace` (falls back to `cargo test`) |
 | `smoke` | Debug `bin/sqyre --version` (no display) |
 | `bench` | Criterion benches for `sqyre-match`, `sqyre-vision`, `sqyre-serialize` (local only; not CI) |
-| `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
 | `coverage` | llvm-cov nextest → HTML + `lcov.info` + `summary.json` under `target/coverage/` (no % gate) |
 | `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
 | `clean-sweep` | `cargo-sweep --maxsize 20GB` on `target/` (and `target-dhat/` if present); override with `SWEEP_MAXSIZE=` |
@@ -96,7 +93,6 @@ Build caches (all gitignored):
 | `release-bundle-dhat` | `bin/sqyre-bundle-dhat/` (same + `dhat-heap`; local leak hunts only) |
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
 | `macos` | `bin/sqyre` (release; macOS host only) |
-| `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `android-check` | `cargo ndk check` of `sqyre-app` (editor and `native-runtime,overlay-buttons`) and the Android backends for `arm64-v8a` |
 | `android` | Sideload APK → `bin/sqyre-debug.apk` (`ANDROID_FEATURES` default `native-runtime,overlay-buttons`, empty = editor only; `ANDROID_PROFILE`, `ANDROID_ABIS`; [ANDROID.md](./ANDROID.md)) |
 | `android-emulator` / `android-emulator-headless` / `android-emulator-stop` | x86_64 API 35 emulator (window or headless) that installs and launches `bin/sqyre-debug.apk`; needs `/dev/kvm` and an APK that includes x86_64, which `make android` builds by default ([ANDROID.md](./ANDROID.md#emulator)) |
@@ -110,29 +106,9 @@ OCR runs on [ocrs](https://github.com/robertknight/ocrs) (pure Rust, RTen runtim
 
 `SQYRE_OCR_MODELS=<dir>` overrides the embedded pair with a directory containing both files — for testing different weights without a rebuild.
 
-### WASM editor (`make wasm`)
-
-Browser-only macro editor (import/export `db.yaml`). Does not run automation. The **dev container** already has Trunk and the `wasm32-unknown-unknown` target — rebuild the container after pulling those Dockerfile changes, then:
-
-```bash
-make wasm-check    # cargo check wasm32 editor (no Trunk; also run on Linux CI)
-make wasm          # → bin/wasm/index.html  (deployable; use this, not trunk serve's dist)
-cd crates/sqyre-app && env -u NO_COLOR trunk serve   # local preview + reload only
-```
-
-Serve the release output with any static file server (`python3 -m http.server` from `bin/wasm/`, etc.). Do **not** copy `dist/` from a running `trunk serve` — that injects an unreplaced autoreload WebSocket stub and floods the console.
-On a bare host (no container), install once:
-
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install --locked trunk@0.22.2  # MSRV 1.96.1; matches .devcontainer pin
-```
-
-Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
-
 ### CI and GitHub Releases
 
-Push/PR to `main` runs a `check` job (fmt/clippy/deny/machete, doctests, `make smoke`, `make wasm-check`, and a `cargo-sources.json` ↔ `Cargo.lock` drift check), a parallel `test` job running instrumented coverage (`make coverage` + floors), an `android-check` job on the Android image, and a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
+Push/PR to `main` runs a `check` job (fmt/clippy/deny/machete, doctests, `make smoke`, and a `cargo-sources.json` ↔ `Cargo.lock` drift check), a parallel `test` job running instrumented coverage (`make coverage` + floors), an `android-check` job on the Android image, and a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
@@ -143,11 +119,11 @@ Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml)
 
 The `gate` job sets `should_release=true` only when there is no prior `v*` tag, or the released ref (`main` on schedule, the dispatched ref on manual runs) has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. It also fails fast if `crates/sqyre-update/update_pubkey.hex` is unconfigured, before any build job spins up. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
 
-Release build jobs set `SQYRE_SKIP_GATE=1` so `make android` / `make wasm` skip `release-gate` (fmt + check) — the `check` job already gated the exact same commit, and `release` itself requires `check` to succeed.
+Release build jobs set `SQYRE_SKIP_GATE=1` so `make android` skips `release-gate` (fmt + check) — the `check` job already gated the exact same commit, and `release` itself requires `check` to succeed.
 
 **Tag shape:** `vYYYY.MM.DD` (UTC date). If that tag already exists, CI uses `vYYYY.MM.DD.HHMM`.
 
-**Artifacts:** Linux binary + AppImage + Flatpak (`com.sqyre.app.flatpak`), Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). `make macos` stays native; MSI/DMG packaging is not shipped yet.
+**Artifacts:** Linux binary + AppImage + Flatpak (`com.sqyre.app.flatpak`), Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the Android APK (`make android`). `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
 Shipped Linux AppImage/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks). Flatpak installs use `flatpak update` instead of in-app self-replace.
 
@@ -166,13 +142,13 @@ CI caches (shared where possible):
 | Cache | Shared by | Notes |
 |-------|-----------|--------|
 | Cargo registry (`.cache/cargo`) | All Linux jobs | One key on `Cargo.lock`; warmed once per run via `cargo-registry` |
-| Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / `android` — not cross-shareable |
+| Cargo `target/` | Per triple | `linux` / `windows-gnu` / `android` — not cross-shareable |
 | sccache | All containerized jobs | GitHub Actions cache backend: per-compilation content-addressed blobs, no save steps; `.cache/sccache` is only the in-container disk fallback |
-| Linux build image (`base` stage) | `check`, `test`, `build-linux` (+AppImage), `build-wasm` | Slim: no Android toolchain. Content-hash tag on GHCR + Buildx layers |
+| Linux build image (`base` stage) | `check`, `test`, `build-linux` (+AppImage) | Slim: no Android toolchain. Content-hash tag on GHCR + Buildx layers |
 | Android build image (`android` stage) | `check-android`, `build-android` | `base` + SDK/NDK/Gradle/emulator/scrcpy; builds `FROM base` inline in one Buildx invocation — no dependency on the pushed base image, so it runs in parallel with `linux-image` |
 | Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
 | Flatpak runtimes + builder state | `build-flatpak` | Weekly-epoch key on the manifest — bounded staleness instead of a multi-GB re-save every release |
-| OCR models / Trunk tools / AppImage runtime / Gradle / rustup toolchains | Across runs | Keyed on the inputs that pin their versions |
+| OCR models / AppImage runtime / Gradle / rustup toolchains | Across runs | Keyed on the inputs that pin their versions |
 
 Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>`, `…-android-build:<dockerfile-hash>`, and `…-windows-cross:<scripts-hash>` (also `:latest`). `.devcontainer/Dockerfile` is multi-stage. The Desktop devcontainer and most CI jobs build `--target base`; the Android devcontainer and the Android CI jobs build `--target android`. `docker build` without `--target` still produces the `android` image because that stage is last.
 
@@ -182,7 +158,7 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Multi-stage: `base` = Rust + AppImage/Flatpak tools + Trunk/wasm32; `android` = base + SDK/NDK/Gradle/emulator/scrcpy |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Multi-stage: `base` = Rust + AppImage/Flatpak tools; `android` = base + SDK/NDK/Gradle/emulator/scrcpy |
 | [.devcontainer/desktop/devcontainer.json](../.devcontainer/desktop/devcontainer.json) | Desktop devcontainer (`base`) + Docker-outside-of-Docker for `make windows` / packaging fallbacks |
 | [.devcontainer/android/devcontainer.json](../.devcontainer/android/devcontainer.json) | Android devcontainer (`android` stage) for `make android` / the emulator |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |

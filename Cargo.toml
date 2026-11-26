@@ -126,7 +126,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 # Event-level pre-parse guard for untrusted YAML (safe Rust libyaml port).
 libyaml-safer = "0.3"
-uuid = { version = "1", features = ["v4", "js"] }
+uuid = { version = "1", features = ["v4"] }
 regex = "1"
 dirs = "7"
 tempfile = "3"
@@ -148,7 +148,7 @@ rfd = "0.18"
 rustfft = "6.4"
 windows = "0.62"
 serde_json = "1"
-# Instant/SystemTime that work on wasm32-unknown-unknown (std panics there).
+# Instant/SystemTime via web-time (shared Instant across native targets).
 web-time = "1"
 # Blocking HTTPS with rustls+ring (MinGW-friendly; avoids aws-lc-sys).
 ureq = { version = "3", default-features = false, features = ["rustls"] }
@@ -156,7 +156,6 @@ sha2 = "0.11"
 # OCR engine: pure-Rust NN pipeline on the rten runtime; models are ONNX files.
 ocrs = { version = "0.14", default-features = false, features = ["onnx"] }
 rten = { version = "0.28", features = ["onnx_format"] }
-log = "0.4"
 jsonschema = { version = "0.62", default-features = false }
 # async-io (not default tokio): keep zbus/tokio off accesskit's async-io thread.
 ashpd = { version = "0.14", default-features = false }

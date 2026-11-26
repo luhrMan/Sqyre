@@ -451,15 +451,8 @@ fn catalog_kinds() -> &'static [CatalogKind] {
 
 fn catalog_kinds_visible() -> impl Iterator<Item = &'static CatalogKind> {
     catalog_kinds().iter().filter(|kind| {
-        #[cfg(target_arch = "wasm32")]
-        {
-            !kind.tab.is_desktop_only()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = kind;
-            true
-        }
+        let _ = kind;
+        true
     })
 }
 

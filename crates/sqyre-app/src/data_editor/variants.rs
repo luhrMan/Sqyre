@@ -230,14 +230,12 @@ impl DataEditor {
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
-                #[cfg(not(target_arch = "wasm32"))]
+
                 crate::sound::play_add_sound_if(
                     settings.sound.play_add_sound,
                     settings.sound.sound_volume,
                     &settings.sound.add_sound_file,
                 );
-                #[cfg(target_arch = "wasm32")]
-                let _ = settings;
             }
             Err(AddVariantError::Exists(e)) => {
                 self.prompts.confirm = Some(PendingConfirm::OverwriteVariant {
@@ -305,14 +303,12 @@ impl DataEditor {
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
-                #[cfg(not(target_arch = "wasm32"))]
+
                 crate::sound::play_delete_sound_if(
                     settings.sound.play_delete_sound,
                     settings.sound.sound_volume,
                     &settings.sound.delete_sound_file,
                 );
-                #[cfg(target_arch = "wasm32")]
-                let _ = settings;
             }
             Err(e) => self.set_err(e),
         }
@@ -660,14 +656,11 @@ impl DataEditor {
                     if let Err(e) = self.persist(db, macros, catalog) {
                         self.set_err(e);
                     } else {
-                        #[cfg(not(target_arch = "wasm32"))]
                         crate::sound::play_add_sound_if(
                             settings.sound.play_add_sound,
                             settings.sound.sound_volume,
                             &settings.sound.add_sound_file,
                         );
-                        #[cfg(target_arch = "wasm32")]
-                        let _ = settings;
                         self.set_ok(format!(
                             "{}: created item “{name}” with Original from capture.",
                             EditorTab::ScreenCap.label()

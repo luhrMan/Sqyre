@@ -1,12 +1,11 @@
-//! In-memory placeholder icons for WASM demo items / collections.
+//! In-memory placeholder icons for demo items / collections in tests.
 //!
-//! Native builds leave this store empty unless tests register icons. On WASM,
-//! [`crate::wasm_demo_seed`] fills it so the editor can show tiles without a filesystem.
+//! Production builds leave this store empty unless tests register icons.
 
-// Registration helpers are only called from the wasm seed / unit tests.
+// Registration helpers are only called from unit tests.
 #![cfg_attr(
-    not(any(test, target_arch = "wasm32")),
-    expect(dead_code, reason = "demo icons are seeded only on wasm and in tests")
+    not(test),
+    expect(dead_code, reason = "demo icons are seeded only in tests")
 )]
 
 use image::{Rgba, RgbaImage};

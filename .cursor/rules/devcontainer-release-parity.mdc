@@ -16,7 +16,6 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 | `make appimage` | Native AppImage tools in the image, or Docker fallback |
 | `make flatpak` | Native `flatpak-builder` when bwrap/userns work; else privileged Flatpak builder image via **host Docker socket** |
 | `make windows` | Docker MinGW cross (`scripts/windows/`) via **host Docker socket** |
-| `make wasm` | Trunk + `wasm32-unknown-unknown` in the image (`bin/wasm/`) |
 
 `make macos` stays macOS-host-only — do not claim the Linux devcontainer builds it.
 
@@ -26,7 +25,7 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 2. If a target needs Docker (`make windows`, AppImage/Flatpak Docker fallback), keep the **docker-outside-of-docker** feature (or equivalent CLI + `/var/run/docker.sock`) in [`.devcontainer/desktop/devcontainer.json`](.devcontainer/desktop/devcontainer.json) and [`.devcontainer/android/devcontainer.json`](.devcontainer/android/devcontainer.json). Desktop builds the `base` stage (no Android SDK). Android builds the `android` stage for `make android` / the emulator.
 3. Keep nested images self-contained ([`scripts/windows/Dockerfile`](scripts/windows/Dockerfile), AppImage path, Flatpak builder image) — the outer container only needs the Docker client + enough deps for native Linux builds.
 4. Update [`docs/DEVELOPING.md`](docs/DEVELOPING.md) if the developer workflow changes.
-5. Smoke-check from the container mindset: `make release`, `make appimage`, `make flatpak` (or its Docker path), `make windows`, and `make wasm` must remain reachable.
+5. Smoke-check from the container mindset: `make release`, `make appimage`, `make flatpak` (or its Docker path), and `make windows` must remain reachable.
 6. Toolchain bumps move together: `rust-toolchain.toml`, `ARG RUST_VERSION` in `.devcontainer/Dockerfile` and `scripts/windows/Dockerfile`, every `dtolnay/rust-toolchain@…` in `.github/workflows/main.yml`.
 7. `Cargo.lock` changed → rerun `scripts/linux/packaging/flatpak/generate-cargo-sources.sh` (Flatpak builds offline; CI reuses the committed `cargo-sources.json`).
 8. `.devcontainer/Dockerfile` is also the CI Linux build image: any tool a Make target or CI step calls is installed there with `cargo install --locked`.

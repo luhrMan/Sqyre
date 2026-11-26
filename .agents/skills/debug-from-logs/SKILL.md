@@ -61,9 +61,7 @@ event_log("SQYRE_SESSION", &[("backend", "x11"), ("display", "yes")]);
 cap_log("CAP", "fail", "error=portal-denied");  // → SQYRE_CAP=fail error=…
 ```
 
-Desktop shell user warnings: `crate::log::warn(...)`.
-
-WASM editor: no diag files; `crate::log::warn` is `eprintln!` and is dropped in the browser — wasm diagnostics go through `log` → `WebLogger`. Never log restore tokens, typed text, or clipboard contents.
+Desktop shell user warnings: `crate::log::warn(...)`. Never log restore tokens, typed text, or clipboard contents.
 
 Executor run path: `ctx.log` / `log_with` / `log_timing` / `timed_step` — never spam `note` on the hot path of every action.
 

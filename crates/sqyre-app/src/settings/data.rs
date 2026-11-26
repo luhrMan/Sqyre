@@ -17,14 +17,7 @@ impl SettingsUi {
         if !setting_visible(q, section_hit, DATA_LOCATION) {
             return;
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (db, macros, catalog);
-            ui.label(
-                "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
-            );
-        }
-        #[cfg(not(target_arch = "wasm32"))]
+
         {
             let current = if self.settings.data.sqyre_dir.trim().is_empty() {
                 sqyre_dir()
@@ -86,11 +79,7 @@ impl SettingsUi {
         if !setting_visible(q, section_hit, DATA_BACKUP) {
             return;
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (ui, db, macros, catalog);
-        }
-        #[cfg(not(target_arch = "wasm32"))]
+
         {
             let _ = (db, macros, catalog);
 
@@ -199,7 +188,6 @@ impl SettingsUi {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn run_manual_backup(&mut self) {
         match create_backup() {
             Ok(path) => {
@@ -221,7 +209,6 @@ impl SettingsUi {
 
     /// Record a failed automatic backup in the Settings status line (the log
     /// keeps the same warning so diagnostics don't regress).
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn note_backup_failure(&mut self, err: &str) {
         crate::log::warn(format_args!("automatic backup failed: {err}"));
         self.set_err(format!(
@@ -245,7 +232,6 @@ impl SettingsUi {
     }
 
     /// Pick a backup zip; [`Self::apply_pick`] opens Settings on the restore confirm.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn request_restore_backup(&mut self) {
         let start = backups_dir();
         let start = if start.exists() { start } else { sqyre_dir() };
@@ -289,7 +275,6 @@ impl SettingsUi {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn choose_sqyre_location(&mut self) {
         let start = sqyre_dir()
             .parent()
@@ -303,7 +288,6 @@ impl SettingsUi {
     }
 
     /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn choose_host_sqyre_location(&mut self) {
         let start = std::env::var_os("HOME")
             .map(PathBuf::from)
@@ -325,7 +309,6 @@ impl SettingsUi {
     }
 
     /// Clear a custom data path and reload from the default Flatpak/native location.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn reset_sqyre_to_sandbox(
         &mut self,
         db: &mut Database,
@@ -464,7 +447,6 @@ impl SettingsUi {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn apply_restore_backup(
         &mut self,
         path: PathBuf,
@@ -528,17 +510,6 @@ impl SettingsUi {
                 ));
             }
         }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(super) fn apply_restore_backup(
-        &mut self,
-        _path: PathBuf,
-        _mode: ImportMode,
-        _db: &mut Database,
-        _macros: &mut Vec<Macro>,
-        _catalog: &mut ProgramCatalog,
-    ) {
     }
 
     pub(super) fn apply_sqyre_location(
@@ -609,7 +580,6 @@ impl SettingsUi {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn format_last_backup(unix: i64) -> String {
     if unix <= 0 {
         return "Last backup: never".into();

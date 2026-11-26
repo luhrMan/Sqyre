@@ -4,7 +4,7 @@ mod find_pixel;
 mod image_util;
 mod match_scale;
 mod ocr_boxes;
-#[cfg(not(target_arch = "wasm32"))]
+
 mod ocr_engine;
 mod ocr_preprocess;
 mod search_cache;
@@ -19,7 +19,7 @@ pub use ocr_boxes::{
     find_target_occurrences, ocr_text_matches, text_from_ocr_boxes, OcrMatch, OcrMatchError,
     OcrRecognition, OcrWordBox, TargetOccurrence,
 };
-#[cfg(not(target_arch = "wasm32"))]
+
 pub use ocr_engine::{shared_ocrs, OcrsEngine};
 pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,

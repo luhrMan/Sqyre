@@ -15,25 +15,19 @@ use sqyre_persist::{
 use sqyre_validate::validate_entity_name;
 
 pub(super) fn play_ui_add_sound(settings: &UserSettings) {
-    #[cfg(not(target_arch = "wasm32"))]
     crate::sound::play_add_sound_if(
         settings.sound.play_add_sound,
         settings.sound.sound_volume,
         &settings.sound.add_sound_file,
     );
-    #[cfg(target_arch = "wasm32")]
-    let _ = settings;
 }
 
 fn play_ui_delete_sound(settings: &UserSettings) {
-    #[cfg(not(target_arch = "wasm32"))]
     crate::sound::play_delete_sound_if(
         settings.sound.play_delete_sound,
         settings.sound.sound_volume,
         &settings.sound.delete_sound_file,
     );
-    #[cfg(target_arch = "wasm32")]
-    let _ = settings;
 }
 
 /// Status after a successful save/delete when filesystem cascades may have failed.

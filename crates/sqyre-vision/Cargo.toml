@@ -20,8 +20,6 @@ thiserror = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ports = { path = "../sqyre-ports" }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ocrs = { workspace = true }
 rten = { workspace = true }
 

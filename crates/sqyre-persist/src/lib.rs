@@ -1,6 +1,5 @@
 //! Persistence for `~/.sqyre` (db.yaml, settings, program catalog).
 
-#[cfg(not(target_arch = "wasm32"))]
 mod backup;
 mod database;
 mod error;
@@ -25,10 +24,9 @@ pub use paths::{
     variables_path, with_sqyre_dir_override, with_sqyre_dirs_override, DB_FILE, MAX_DB_YAML_BYTES,
     MAX_MACROS, SETTINGS_FILE,
 };
-#[cfg(not(target_arch = "wasm32"))]
+
 pub use paths::{set_home_dir, sqyre_config_dir};
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use backup::{
     backups_dir, create_backup, import_backup, list_backups, prune_backups, restore_backup,
     BackupError,

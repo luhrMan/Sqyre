@@ -14,7 +14,7 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::recording_overlay::RecordingOverlay;
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
-#[cfg(not(target_arch = "wasm32"))]
+
 use crate::tray;
 use crate::tree_state::TreeState;
 use crate::variables_panel;
@@ -161,7 +161,7 @@ impl SqyreApp {
                 macro_record_bridge: MacroRecordBridge::new(),
                 pending_hotkey_macros,
                 hotkey_repaint,
-                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                #[cfg(feature = "native-runtime")]
                 hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
                 hotkey_chooser: None,
                 panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
@@ -182,7 +182,6 @@ impl SqyreApp {
             macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
             overlay: crate::OverlayShell {
-                #[cfg(not(target_arch = "wasm32"))]
                 hidden_for_recording: false,
                 #[cfg(feature = "native-runtime")]
                 recording_overlay: RecordingOverlay::new(),
@@ -196,35 +195,29 @@ impl SqyreApp {
                 overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
             },
             lifecycle: crate::NativeLifecycle {
-                #[cfg(not(target_arch = "wasm32"))]
                 tasks: crate::BackgroundTasks::default(),
                 // Screenshots never run the probe; mark it already finished.
-                #[cfg(all(
-                    not(target_arch = "wasm32"),
-                    feature = "native-runtime",
-                    target_os = "linux"
-                ))]
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 portal_probe: crate::PortalProbe::finished(),
-                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                #[cfg(feature = "native-runtime")]
                 permissions_intro: None,
-                #[cfg(not(target_arch = "wasm32"))]
+
                 instance_lock: None,
-                pending_import: crate::wasm_io::new_pending_import(),
                 #[cfg(all(target_os = "android", feature = "native-runtime"))]
                 pending_projection_run: None,
-                #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                #[cfg(feature = "native-runtime")]
                 hotkeys_deferred: None,
             },
             quick_access: crate::quick_access::QuickAccessFan::default(),
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list: crate::ui_macro_list::MacroListPanel::default(),
-            #[cfg(not(target_arch = "wasm32"))]
+
             tray: tray::SystemTray::default(),
             viewport_scale: crate::widgets::ViewportScaleState::default(),
-            #[cfg(not(target_arch = "wasm32"))]
+
             update: crate::update::UpdateManager::default(),
         };
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        #[cfg(feature = "native-runtime")]
         app.settings_ui.suppress_permission_probe_for_docs();
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);

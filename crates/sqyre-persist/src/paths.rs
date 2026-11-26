@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use parking_lot::{Mutex, RwLock};
-#[cfg(not(target_arch = "wasm32"))]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -21,7 +21,6 @@ pub const MAX_MACROS: usize = 2_000;
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 static BACKUP_DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-#[cfg(not(target_arch = "wasm32"))]
 static HOME_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 /// Serializes tests that mutate [`set_sqyre_dir_override`].
@@ -45,13 +44,11 @@ pub fn backup_dir_override() -> Option<PathBuf> {
 /// Replace the user home for Sqyre paths (Android app-private storage has no `$HOME`).
 ///
 /// Call once at startup, before any path lookup.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn set_home_dir(path: PathBuf) {
     // A recreated Android activity re-enters startup in the same process with the same path.
     let _ = HOME_DIR.set(path);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn home_dir() -> PathBuf {
     HOME_DIR
         .get()
@@ -64,7 +61,6 @@ fn home_dir() -> PathBuf {
 ///
 /// Holds the data-dir pointer and the single-instance lock — paths that must
 /// not move when the relocatable data directory changes.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn sqyre_config_dir() -> PathBuf {
     let base = match HOME_DIR.get() {
         Some(home) => home.join(".config"),
@@ -98,12 +94,7 @@ pub fn sqyre_dir() -> PathBuf {
     if let Some(p) = DIR_OVERRIDE.read().clone() {
         return p;
     }
-    // `std::env::temp_dir()` panics on wasm32-unknown-unknown ("no filesystem").
-    #[cfg(target_arch = "wasm32")]
-    {
-        PathBuf::from("/").join(SQYRE_DIR)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
+
     {
         home_dir().join(SQYRE_DIR)
     }
@@ -130,11 +121,6 @@ pub fn screen_cap_trash_path() -> PathBuf {
 }
 
 pub fn initialize_directories() -> Result<()> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        Ok(())
-    }
-    #[cfg(not(target_arch = "wasm32"))]
     {
         for p in [
             sqyre_dir().join("images/icons"),

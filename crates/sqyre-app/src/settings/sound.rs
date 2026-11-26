@@ -49,7 +49,6 @@ impl SettingsUi {
             });
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
         if setting_visible(q, section_hit, SETTING_SOUND_FILES) {
             self.sound_file_row(
                 ui,
@@ -76,7 +75,6 @@ impl SettingsUi {
     }
 
     /// Cue-sound file row: current file name, a picker, and a built-in reset.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn sound_file_row(
         &mut self,
         ui: &mut egui::Ui,

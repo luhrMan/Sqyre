@@ -884,13 +884,7 @@ pub fn window_is_our_process(win: &WindowInfo) -> bool {
     if win.process_path.trim() == ANDROID_APP_PACKAGE {
         return true;
     }
-    // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = win;
-        return false;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
+
     {
         let Ok(exe) = std::env::current_exe() else {
             return false;

@@ -315,7 +315,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.data_editor.take_hotkey_refresh() {
         app.refresh_macro_hotkey_bindings();
     }
-    #[cfg(not(target_arch = "wasm32"))]
+
     {
         app.settings_ui.show(
             ctx,
@@ -332,19 +332,6 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             app.settings_ui.restart_requested = false;
             crate::update::restart_app(&mut app.lifecycle.instance_lock);
         }
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        app.settings_ui.show(
-            ctx,
-            &mut crate::settings::SettingsData {
-                db: &mut app.workspace.db,
-                macros: &mut app.workspace.macros,
-                catalog: &mut app.workspace.catalog,
-            },
-            &app.run_session.macro_hotkeys,
-            pending_scale,
-        );
     }
     if !app.workspace.macros.is_empty() {
         let idx = app
@@ -448,32 +435,20 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             .unwrap_or_else(|| ctx.content_rect().center());
         app.insert_blank_action(action, anchor);
     }
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     show_permissions_intro(app, ctx);
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "android"
-    ))]
+    #[cfg(all(feature = "native-runtime", target_os = "android"))]
     show_projection_run_gate(app, ctx);
 }
 
 /// How often the consent gate repaints while it waits on the system dialog.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    feature = "native-runtime",
-    target_os = "android"
-))]
+#[cfg(all(feature = "native-runtime", target_os = "android"))]
 const PROJECTION_GATE_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Android: a screen-reading macro was asked to run without MediaProjection
 /// consent. The modal explains, fires the system dialog on Continue, and the
 /// queued run starts itself once the projection reports `Running`.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    feature = "native-runtime",
-    target_os = "android"
-))]
+#[cfg(all(feature = "native-runtime", target_os = "android"))]
 fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
     use crate::app_run::{PendingProjectionRun, ProjectionGate};
     use crate::help_text as ht;
@@ -613,7 +588,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// First-start permissions popup. Confirming saves the flag; once every prompt has been
 /// shown the deferred startup work (portal probe on Linux, hotkeys) resumes.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
     let Some(intro) = app.lifecycle.permissions_intro.as_mut() else {
         return;
@@ -642,11 +617,7 @@ fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
 /// Runs once: `shared_capturer_open_may_block()` stays true for the whole Wayland
 /// session, so treating a finished probe as idle would spawn a thread and
 /// `request_repaint()` every frame.
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    feature = "native-runtime",
-    target_os = "linux"
-))]
+#[cfg(all(feature = "native-runtime", target_os = "linux"))]
 fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
@@ -723,23 +694,18 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// Outside runs, previews / color picks re-enable the portal frame mirror; drop it
 /// after this long without captures so PipeWire frames stop being copied.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 const IDLE_FRAME_CACHE_RELEASE: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
-    #[cfg(not(target_arch = "wasm32"))]
     poll_scheduled_backup(app, ctx);
-    #[cfg(not(target_arch = "wasm32"))]
+
     poll_update(app, ctx);
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
+    #[cfg(all(feature = "native-runtime", target_os = "linux"))]
     poll_deferred_capture_probe(app, ctx);
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     if app.lifecycle.permissions_intro.is_none() {
         app.settings_ui.tick_permissions(ctx);
     }
@@ -789,7 +755,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     // Sample color before restoring visibility so the app isn't under the cursor.
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     {
         use std::sync::mpsc::TryRecvError;
 
@@ -837,19 +803,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                     Err(e) => note_pixel_sample_failure(app, &e.to_string()),
                 }
             }
-        }
-    }
-    #[cfg(all(target_arch = "wasm32", feature = "native-runtime"))]
-    if let Some((x, y)) = app.hotkey.screen_click.take_color_point() {
-        match crate::native_capture::open_shared_run()
-            .map_err(|e| e.to_string())
-            .and_then(|mut c| pixel_color::sample_pixel_hex_with(&mut c, x, y))
-        {
-            Ok(hex) => {
-                app.tree.tooltip.apply_recorded_color(hex.clone());
-                app.add_action_picker.apply_recorded_color(hex);
-            }
-            Err(e) => note_pixel_sample_failure(app, &e.to_string()),
         }
     }
     app.update_recording_visibility(ctx);
@@ -922,7 +875,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     if !running {
         if let Some(wait) = sqyre_ports::release_idle_capture_frame_cache(IDLE_FRAME_CACHE_RELEASE)
         {
@@ -953,7 +906,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         // Overlay focus-gating + native click drain into pending macros.
         ctx.request_repaint_after(std::time::Duration::from_millis(1000));
     } else {
-        #[cfg(not(target_arch = "wasm32"))]
         {
             // While an update worker is running, poll_update already scheduled a short wake.
             if !app.update.is_busy()
@@ -969,7 +921,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// Pixel dropper failed: keep the diagnostic log line, and surface it where the
 /// sample was going (edit dialogs) plus the toolbar status line.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(feature = "native-runtime")]
 fn note_pixel_sample_failure(app: &mut SqyreApp, detail: &str) {
     crate::log::warn(format!("sample pixel color: {detail}"));
     let msg = format!(
@@ -981,7 +933,6 @@ fn note_pixel_sample_failure(app: &mut SqyreApp, detail: &str) {
     *app.run_session.state.status.lock() = msg;
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc;
     use std::thread;
@@ -1043,7 +994,6 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     ctx.request_repaint_after(std::time::Duration::from_millis(250));
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.update.poll() {
         match &app.update.state {

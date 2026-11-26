@@ -34,9 +34,8 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::top("app_top_bar")
         .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
-            #[cfg(not(target_arch = "wasm32"))]
             let undecorated = !app.settings_ui.settings().ui.window_decorations;
-            #[cfg(not(target_arch = "wasm32"))]
+
             if undecorated {
                 // Interact first so later chrome keeps click priority; empty
                 // gaps still drag/double-click the native window.
@@ -61,7 +60,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         let list_reserve = list_side + gap;
 
         // Top-right window chrome / update banner (native only).
-        #[cfg(not(target_arch = "wasm32"))]
+
         let mid_right = {
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 if !app.settings_ui.settings().ui.window_decorations {
@@ -76,8 +75,6 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             };
             chrome_left.min(ui.max_rect().right() - list_reserve)
         };
-        #[cfg(target_arch = "wasm32")]
-        let mid_right = ui.max_rect().right() - list_reserve;
 
         let stack_id = ui.make_persistent_id("name_tag_stack_h");
         let estimate = ui.spacing().interact_size.y * 2.0
@@ -176,17 +173,6 @@ fn paint_left_chrome(app: &mut SqyreApp, ui: &mut egui::Ui) {
         }
         if settings_btn.clicked() {
             app.settings_ui.request_open(ui.ctx());
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true).clicked()
-            {
-                app.export_db_yaml();
-            }
-            if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true).clicked()
-            {
-                app.request_db_import();
-            }
         }
     });
 }
@@ -345,7 +331,6 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
 /// Halo behind the Run / Stop button, painted into a slot reserved before the button.
 /// Pulses only when `animate`; otherwise it holds full strength so idle frames need no
 /// repaint.
-#[cfg(not(target_arch = "wasm32"))]
 fn paint_run_glow(
     ui: &egui::Ui,
     slot: egui::layers::ShapeIdx,
@@ -362,7 +347,6 @@ fn paint_run_glow(
 /// Run button that becomes a red-glowing Stop button while a macro runs, followed by a separator.
 ///
 /// Macro run status (formerly a floating INFO icon) lives in this button's hover tip.
-#[cfg(not(target_arch = "wasm32"))]
 fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
     let status = app.run_session.state.status.lock().clone();
     let glow = (running || app.settings_ui.settings().ui.run_button_glow)
@@ -430,7 +414,6 @@ fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
     crate::widgets::section_separator(ui);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
     use crate::update::UpdateState;
 
@@ -459,17 +442,6 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.update.dismiss_banner();
         }
     });
-}
-
-/// Browser editor note at the top of the central panel.
-/// Chrome controls (Data Editor / Settings under the brand, list toggle right)
-/// live in [`top_bar`]; run/stop sits in [`action_toolbar`].
-#[cfg(target_arch = "wasm32")]
-pub fn wasm_editor_note(ui: &mut egui::Ui) {
-    ui.small(
-        "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",
-    );
-    crate::widgets::section_separator(ui);
 }
 
 /// Keep the selected-macro index valid before painting the action toolbar / tree.
@@ -604,18 +576,6 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         }
         // Native: run status lives on the play/stop tip. Wasm has no run button,
         // so keep the hoverable INFO glyph here for import/export messages.
-        #[cfg(target_arch = "wasm32")]
-        {
-            let status = app.run_session.state.status.lock().clone();
-            if !status.is_empty() {
-                crate::widgets::controls::status_icon(
-                    ui,
-                    egui_phosphor::regular::INFO,
-                    sqyre_ui_theme::accent(),
-                    &status,
-                );
-            }
-        }
     });
 }
 
@@ -630,7 +590,6 @@ pub fn action_toolbar(
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal_wrapped(|ui| {
-        #[cfg(not(target_arch = "wasm32"))]
         paint_run_stop(app, ui, running);
         let can_copy = app.can_copy_selection();
         let can_paste = app.can_paste_clipboard();
@@ -920,7 +879,6 @@ mod tests {
     }
 
     /// Run status used to live on a floating INFO icon; hover the play button instead.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn run_button_tooltip_shows_status() {
         let mut app = crate::SqyreApp::for_docs();
@@ -988,7 +946,6 @@ mod tests {
     }
 
     /// Native: status must not reappear as an INFO glyph in the footer float.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn footer_floats_omit_status_info_icon() {
         let mut app = crate::SqyreApp::for_docs();

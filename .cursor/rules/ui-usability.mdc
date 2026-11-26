@@ -6,7 +6,7 @@ alwaysApply: false
 
 # UI usability (sort / search / navigate / icons / understand / look alike)
 
-Apply when **adding, changing, or reviewing** any user-visible UI in `sqyre-app` or `sqyre-overlay` (desktop, wasm editor, overlays, trays, dialogs, pickers, tooltips). Prefer existing helpers over one-off widgets.
+Apply when **adding, changing, or reviewing** any user-visible UI in `sqyre-app` or `sqyre-overlay` (desktop, overlays, trays, dialogs, pickers, tooltips). Prefer existing helpers over one-off widgets.
 
 **Agent behavior:** if a change or existing panel violates these principles, **warn and suggest** a concrete fix — do not refuse the work or invent large refactors unless asked. When touching a list/panel, briefly audit neighbors in the same surface.
 

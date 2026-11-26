@@ -4,7 +4,7 @@ use super::common::*;
 use super::*;
 
 impl SettingsUi {
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(feature = "native-runtime")]
     pub(super) fn draw_permissions(
         &mut self,
         ui: &mut egui::Ui,
