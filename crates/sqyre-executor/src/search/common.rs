@@ -33,6 +33,10 @@ pub(super) struct DetectionCtx<'a> {
     pub wait_interval_ms: i32,
     pub repeat_interval_ms: i32,
     pub run_children: RunChildrenFn,
+    /// Noun after `until` / `while` in the shared wait-intent log.
+    /// `None` → `"found"` (Image Search / Find Pixel); OCR sets
+    /// `text contains "…"`.
+    pub wait_condition: Option<&'a str>,
 }
 
 impl<'a> DetectionCtx<'a> {
@@ -53,6 +57,7 @@ impl<'a> DetectionCtx<'a> {
             wait_interval_ms: default_poll_interval_ms(),
             repeat_interval_ms: default_poll_interval_ms(),
             run_children,
+            wait_condition: None,
         }
     }
 }
@@ -450,6 +455,7 @@ pub(super) fn run_detection_shell<T>(
     let wait_started = Instant::now();
     let mut did_wait = false;
     if wait.wait_until_found_active() && !is_hit(&state) {
+        log_wait_intent(exec, ctx, true);
         did_wait = true;
         let timeout = wait.timeout().unwrap_or(Duration::ZERO);
         // Short window: one sleep + one fresh search (avoids interval poll + timeout final).
@@ -472,6 +478,7 @@ pub(super) fn run_detection_shell<T>(
             }
         }
     } else if wait.wait_while_found_active() && is_hit(&state) {
+        log_wait_intent(exec, ctx, false);
         did_wait = true;
         let mut wait_timed_out = false;
         if !maybe_wait_while_found(exec, wait, true, wait_interval_ms, |exec| {
@@ -520,6 +527,20 @@ pub(super) enum DetectionPass {
     RepeatWhile { refresh: bool },
     RepeatUntil { refresh: bool },
     Final,
+}
+
+/// One wait-intent line when the shell arms until/while retries (kinds must not
+/// fork their own pre-shell copies — see `docs/examples/runtime/search-detection.md`).
+fn log_wait_intent(exec: &mut Executor<'_>, ctx: &DetectionCtx<'_>, until: bool) {
+    let when = if until { "until" } else { "while" };
+    let cond = ctx.wait_condition.unwrap_or("found");
+    exec.log(
+        ctx.action_id,
+        format!(
+            "{}: waiting up to {}s {when} {cond}",
+            ctx.label, ctx.branch.wait.wait_til_found_seconds
+        ),
+    );
 }
 
 /// Poll until `done` returns true or the wait timeout elapses.

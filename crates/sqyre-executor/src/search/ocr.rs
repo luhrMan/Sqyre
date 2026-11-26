@@ -40,7 +40,6 @@ pub(crate) fn execute_ocr(
     } = d.as_ref();
     let action_id = action.id;
     let label = action_type_label(action.type_key());
-    let wait = &detection.wait;
     let ocr_params = OcrRunParams {
         target,
         match_mode: *match_mode,
@@ -57,7 +56,8 @@ pub(crate) fn execute_ocr(
     } else {
         vec![target.clone()]
     };
-    let ctx = DetectionCtx::new(
+    let wait_condition = format!("text contains {target:?}");
+    let mut ctx = DetectionCtx::new(
         action_id,
         label,
         search_area,
@@ -65,36 +65,14 @@ pub(crate) fn execute_ocr(
         detection,
         run_children,
     );
+    ctx.wait_condition = Some(wait_condition.as_str());
 
     let mut memo = FrameMemo::new();
-    let attempt0 = ocr_attempt(exec, &ctx, &ocr_params, macro_, false, &mut memo);
-    if wait.wait_until_found_active() && attempt0.hits.is_empty() {
-        exec.log(
-            action_id,
-            format!(
-                "{label}: waiting up to {}s until text contains {target:?}",
-                wait.wait_til_found_seconds
-            ),
-        );
-    } else if wait.wait_while_found_active() && !attempt0.hits.is_empty() {
-        exec.log(
-            action_id,
-            format!(
-                "{label}: waiting up to {}s while text contains {target:?}",
-                wait.wait_til_found_seconds
-            ),
-        );
-    }
-
-    let mut initial = Some(attempt0);
     run_detection_shell(
         exec,
         macro_,
         &ctx,
         |exec, macro_, fresh| {
-            if let Some(first) = initial.take() {
-                return Ok(first);
-            }
             Ok(ocr_attempt(
                 exec,
                 &ctx,

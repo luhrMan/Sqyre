@@ -26,6 +26,8 @@ Authors get one wait/branch story across detection kinds; searches stay region-f
   `Test: crates/sqyre-persist/src/programs/seed_general.rs::center_quarter_square_covers_quarter_area`
 - the one where wait/repeat polls see the same frame token + rect → prior hits are reused without re-matching  
   `Test: crates/sqyre-executor/src/search/common.rs::frame_memo_tests::reuses_result_when_token_and_rect_match`
+- the one where Image Search wait-until arms after a miss → the shared shell logs wait intent once  
+  `Test: crates/sqyre-executor/src/search/tests/image.rs::image_search_wait_until_found_retries_then_succeeds`
 - the one where image-search edit opens → Wait mode is on the common path (not under tip Advanced)  
   `Test: crates/sqyre-app/tests/ui_interaction.rs::image_search_edit_shows_output_and_wait_without_advanced`
 
@@ -41,4 +43,4 @@ _(none)_
 
 ## Implementation note (not acceptance criteria)
 
-Shared shell: `sqyre-executor/src/search/common.rs`. Efficiency how-to and measurement: [`.cursor/skills/search-timing-consistency/SKILL.md`](../../../.cursor/skills/search-timing-consistency/SKILL.md). Seeded geometry: `ensure_general_program` / `DEFAULT_SEARCH_AREA`.
+Shared shell: `sqyre-executor/src/search/common.rs` (including the wait-intent log when until/while arms — kinds must not fork pre-shell copies). Efficiency how-to and measurement: [`.cursor/skills/search-timing-consistency/SKILL.md`](../../../.cursor/skills/search-timing-consistency/SKILL.md). Seeded geometry: `ensure_general_program` / `DEFAULT_SEARCH_AREA`.

@@ -324,6 +324,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         let mut capturer = capturer_frames(vec![miss], Some(hit));
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
+        let logger = SharedActionLog::new();
         let search_id = ActionId::new();
         let mut macro_ = fast_macro_of(vec![Action {
             id: search_id,
@@ -350,9 +351,18 @@ fn image_search_wait_until_found_retries_then_succeeds() {
                 .capturer(&mut capturer)
                 .resolver(&resolver)
                 .icons(&icons)
-                .close_matches_distance(close_matches),
+                .close_matches_distance(close_matches)
+                .logger(&logger),
         )
         .unwrap();
+
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("waiting up to") && l.contains("until found")),
+            "shared shell must log wait intent once when until-found arms: {lines:?}"
+        );
 
         assert!(
             capturer.log.len() >= 2,

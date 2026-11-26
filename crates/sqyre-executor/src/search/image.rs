@@ -82,7 +82,6 @@ pub(crate) fn execute_image_search(
         detection,
         run_children,
     );
-    let wait = &detection.wait;
     let macro_name = macro_.name.clone();
     let result = (|| {
         let mut memo = FrameMemo::new();
@@ -93,35 +92,11 @@ pub(crate) fn execute_image_search(
             match_method: *match_method,
             plane_flip: *plane_flip,
         };
-        // Log wait intent once before the shared shell arms retries.
-        let results0 = capture_and_match(exec, &ctx, &params, false, &mut memo, macro_)?;
-        if wait.wait_until_found_active() && results0.is_empty() {
-            exec.log(
-                action_id,
-                format!(
-                    "{label}: waiting up to {}s until found",
-                    wait.wait_til_found_seconds
-                ),
-            );
-        } else if wait.wait_while_found_active() && !results0.is_empty() {
-            exec.log(
-                action_id,
-                format!(
-                    "{label}: waiting up to {}s while found",
-                    wait.wait_til_found_seconds
-                ),
-            );
-        }
-
-        let mut initial = Some(results0);
         run_detection_shell(
             exec,
             macro_,
             &ctx,
             |exec, macro_, force_fresh| {
-                if let Some(first) = initial.take() {
-                    return Ok(first);
-                }
                 capture_and_match(exec, &ctx, &params, force_fresh, &mut memo, macro_)
             },
             |results| !results.is_empty(),
