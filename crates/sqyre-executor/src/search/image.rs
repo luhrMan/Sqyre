@@ -83,26 +83,24 @@ pub(crate) fn execute_image_search(
         run_children,
     );
     let macro_name = macro_.name.clone();
-    let result = (|| {
-        let mut memo = FrameMemo::new();
-        let params = MatchParams {
-            tolerance: *tolerance,
-            blur: *blur,
-            match_scale_percent: *match_scale_percent,
-            match_method: *match_method,
-            plane_flip: *plane_flip,
-        };
-        run_detection_shell(
-            exec,
-            macro_,
-            &ctx,
-            |exec, macro_, force_fresh| {
-                capture_and_match(exec, &ctx, &params, force_fresh, &mut memo, macro_)
-            },
-            |results| !results.is_empty(),
-            |exec, macro_, results, pass| apply_detection_hits(exec, &ctx, results, macro_, pass),
-        )
-    })();
+    let mut memo = FrameMemo::new();
+    let params = MatchParams {
+        tolerance: *tolerance,
+        blur: *blur,
+        match_scale_percent: *match_scale_percent,
+        match_method: *match_method,
+        plane_flip: *plane_flip,
+    };
+    let result = run_detection_shell(
+        exec,
+        macro_,
+        &ctx,
+        |exec, macro_, force_fresh| {
+            capture_and_match(exec, &ctx, &params, force_fresh, &mut memo, macro_)
+        },
+        |results| !results.is_empty(),
+        |exec, macro_, results, pass| apply_detection_hits(exec, &ctx, results, macro_, pass),
+    );
     highlight_clear(exec.deps.highlighter, &macro_name, action_id);
     result
 }
