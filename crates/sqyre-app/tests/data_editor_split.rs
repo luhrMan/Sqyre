@@ -4,7 +4,7 @@
 
 mod common;
 use common::build_docs_harness;
-use egui_kittest::kittest::{NodeT, Queryable};
+use egui_kittest::kittest::Queryable;
 
 const DIVIDER_LABEL: &str = "Pane divider — drag, or press Left/Right arrows while focused, to resize the list and editor panes";
 
