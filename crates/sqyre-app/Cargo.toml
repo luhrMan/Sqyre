@@ -10,6 +10,8 @@ description = "Sqyre desktop shell (egui / eframe)"
 [lib]
 name = "sqyre_app"
 path = "src/lib.rs"
+# cdylib: Android NativeActivity (`cargo ndk` → libsqyre_app.so). rlib: desktop/tests.
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "sqyre"

@@ -55,6 +55,14 @@ JNI_LIBS="$REPO_ROOT/android/app/src/main/jniLibs"
 rm -rf "$JNI_LIBS"
 (cd "$REPO_ROOT" && cargo ndk "${ndk_targets[@]}" --platform "$MIN_SDK" -o "$JNI_LIBS" "${cargo_args[@]}")
 
+# cargo-ndk also copies transitive .so deps (ocrs/rten); the app itself must be a cdylib.
+for abi in $ABIS; do
+	[ -f "$JNI_LIBS/$abi/libsqyre_app.so" ] || {
+		echo "missing $JNI_LIBS/$abi/libsqyre_app.so (sqyre-app [lib] needs crate-type cdylib)" >&2
+		exit 1
+	}
+done
+
 if [ "$PROFILE" = release ]; then
 	gradle_task=assembleRelease
 else
