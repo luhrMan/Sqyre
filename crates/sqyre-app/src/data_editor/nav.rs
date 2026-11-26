@@ -32,6 +32,9 @@ pub struct EditorNav {
     pub(crate) items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     pub(crate) left_width: f32,
+    /// Pointer is mid-drag on the pane divider — skip re-deriving width from
+    /// settings until `drag_stopped` writes the settled fraction.
+    pub(crate) split_gesture_active: bool,
     /// Set when the pane divider was moved via arrow keys; persisted on key release.
     pub(crate) split_key_moved: bool,
     /// Selected program name (all tabs).
@@ -58,6 +61,7 @@ impl Default for EditorNav {
             search_scope: SearchScope::default(),
             items_tag_priority_draft: String::new(),
             left_width: 0.0,
+            split_gesture_active: false,
             split_key_moved: false,
             selected_program: None,
             focused_program_hint: None,

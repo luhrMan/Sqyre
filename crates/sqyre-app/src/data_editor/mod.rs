@@ -588,12 +588,17 @@ impl DataEditor {
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
-        self.nav.left_width = EditorNav::left_width_from_frac(
-            avail_w,
-            env.settings.ui.data_editor_left_split,
-            MIN_DATA_EDITOR_LEFT_FRAC,
-            MAX_DATA_EDITOR_LEFT_FRAC,
-        );
+        // Re-derive from the saved fraction only when idle. Mid-drag / mid-key
+        // resize keeps the absolute left_width so a gesture is not reset from
+        // stale settings (persisted-ui: write settings only when settled).
+        if !self.nav.split_gesture_active && !self.nav.split_key_moved {
+            self.nav.left_width = EditorNav::left_width_from_frac(
+                avail_w,
+                env.settings.ui.data_editor_left_split,
+                MIN_DATA_EDITOR_LEFT_FRAC,
+                MAX_DATA_EDITOR_LEFT_FRAC,
+            );
+        }
         let crate::widgets::SplitView {
             left: mut left_ui,
             right: mut right_ui,
@@ -646,16 +651,9 @@ impl DataEditor {
             egui::Stroke::new(1.0, stroke.color),
         );
         if split_resp.dragged() {
+            self.nav.split_gesture_active = true;
             if let Some(pos) = split_resp.interact_pointer_pos() {
                 self.nav.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
-                if avail_w > 1.0 {
-                    env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
-                        avail_w,
-                        self.nav.left_width,
-                        MIN_DATA_EDITOR_LEFT_FRAC,
-                        MAX_DATA_EDITOR_LEFT_FRAC,
-                    );
-                }
             }
         }
         // Keyboard equivalent of the drag: arrows nudge the divider while the
@@ -681,14 +679,6 @@ impl DataEditor {
                 let next = (self.nav.left_width + dx).clamp(min_left, max_left);
                 if next != self.nav.left_width {
                     self.nav.left_width = next;
-                    if avail_w > 1.0 {
-                        env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
-                            avail_w,
-                            self.nav.left_width,
-                            MIN_DATA_EDITOR_LEFT_FRAC,
-                            MAX_DATA_EDITOR_LEFT_FRAC,
-                        );
-                    }
                     self.nav.split_key_moved = true;
                 }
             }
@@ -697,6 +687,14 @@ impl DataEditor {
                     i.key_released(egui::Key::ArrowLeft) || i.key_released(egui::Key::ArrowRight)
                 })
             {
+                if avail_w > 1.0 {
+                    env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
+                        avail_w,
+                        self.nav.left_width,
+                        MIN_DATA_EDITOR_LEFT_FRAC,
+                        MAX_DATA_EDITOR_LEFT_FRAC,
+                    );
+                }
                 self.nav.split_key_moved = false;
                 env.settings.clamp();
                 if let Err(e) = env.settings.save_default() {
@@ -708,6 +706,15 @@ impl DataEditor {
             }
         }
         if split_resp.drag_stopped() {
+            if avail_w > 1.0 {
+                env.settings.ui.data_editor_left_split = EditorNav::frac_from_left_width(
+                    avail_w,
+                    self.nav.left_width,
+                    MIN_DATA_EDITOR_LEFT_FRAC,
+                    MAX_DATA_EDITOR_LEFT_FRAC,
+                );
+            }
+            self.nav.split_gesture_active = false;
             env.settings.clamp();
             if let Err(e) = env.settings.save_default() {
                 self.set_err(format!(

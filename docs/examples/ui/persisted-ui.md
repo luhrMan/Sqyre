@@ -15,6 +15,10 @@
   `Test: crates/sqyre-app/tests/macro_list_split.rs::macro_list_window_resize_keeps_saved_split`
 - the one where stale eframe `PanelState` disagrees with settings → settings fraction wins  
   `Test: crates/sqyre-app/tests/macro_list_split.rs::macro_list_stale_panel_state_yields_to_settings`
+- the one where the user drags the Data Editor list/editor divider → fraction is written only on drag end and restores after restart  
+  `Test: crates/sqyre-app/tests/data_editor_split.rs::data_editor_drag_persists_split_to_settings`
+- the one where the Data Editor window is resized without dragging the divider → saved split fraction is unchanged  
+  `Test: crates/sqyre-app/tests/data_editor_split.rs::data_editor_window_resize_keeps_saved_split`
 
 ## Questions
 
