@@ -9,6 +9,8 @@
 
 - the one where the add-action picker opens → search field has focus  
   `Test: crates/sqyre-app/tests/ui_interaction.rs::add_action_picker_focuses_search_on_open`
+- the one where the command palette opens → search field has focus and type-to-filter works  
+  `Test: crates/sqyre-app/tests/ui_interaction.rs::command_palette_focuses_search_on_open`
 - the one where a searchable combo opens → search focuses once and keeps the query  
   `Test: crates/sqyre-app/src/widgets/fields.rs::searchable_combo_focuses_search_once_and_keeps_query`
 

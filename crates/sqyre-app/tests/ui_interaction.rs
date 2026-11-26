@@ -567,6 +567,44 @@ fn press_release(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, a
 }
 
 #[test]
+fn command_palette_focuses_search_on_open() {
+    let mut harness = build_docs_harness([1000.0, 600.0], |app| {
+        app.open_command_palette_for_docs();
+    });
+    harness.run();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("settings".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Open Settings");
+    assert!(
+        harness
+            .query_all_by_label("Open Data Editor")
+            .next()
+            .is_none(),
+        "typed text should land in the palette search field on open"
+    );
+
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(4);
+    assert!(!harness.state().docs_command_palette_open());
+
+    harness.state_mut().open_command_palette_for_docs();
+    harness.run_steps(4);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("variables".into()));
+    harness.run_steps(2);
+    harness.get_by_label("Open Variables");
+    assert!(
+        harness.query_all_by_label("Open Settings").next().is_none(),
+        "search focuses again when the palette reopens"
+    );
+}
+
+#[test]
 fn command_palette_row_responds_to_mouse_click() {
     let mut harness = build_docs_harness([1000.0, 600.0], |_| {});
     harness.run_steps(4);
