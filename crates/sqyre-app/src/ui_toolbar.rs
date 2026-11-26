@@ -451,9 +451,14 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, _ui: &mut egui::Ui) -> bool {
     !app.workspace.macros.is_empty()
 }
 
-fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
+/// Returns `true` when the hotkey floater should close (record modal opened).
+fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) -> bool {
+    let mut dismiss_floater = false;
     if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
         app.hotkey_record.open(&app.run_session.macro_hotkeys);
+        // Record opens a separate modal — dismiss the floater so it does not
+        // linger under the recorder (nested-popups: parent closes when leaving).
+        dismiss_floater = true;
     }
     if toolbar_icon_colored(
         ui,
@@ -494,6 +499,7 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         let chord = app.workspace.macros[idx].hotkey.clone();
         app.apply_hotkey_to_selected(chord, Some(trigger));
     }
+    dismiss_floater
 }
 
 /// Key icon that pops up the chord label and hotkey edit controls.
@@ -509,6 +515,7 @@ fn paint_hotkey_menu(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running:
     };
     // Local open flag so the popup borrow does not overlap `&mut app` inside.
     let mut open = app.workspace.macro_meta.hotkey_open;
+    let mut dismiss = false;
     egui::Popup::from_response(&resp)
         .id(egui::Id::new("macro_hotkey_popup"))
         .kind(egui::PopupKind::Popup)
@@ -523,9 +530,12 @@ fn paint_hotkey_menu(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running:
         .show(|ui| {
             ui.horizontal(|ui| {
                 ui.weak(hk_label);
-                paint_hotkey_controls(app, ui, idx, running);
+                dismiss = paint_hotkey_controls(app, ui, idx, running);
             });
         });
+    if dismiss {
+        open = false;
+    }
     app.workspace.macro_meta.hotkey_open = open;
 }
 
