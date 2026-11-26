@@ -375,12 +375,7 @@ impl AddActionPicker {
                                 .unwrap_or_else(|| tmpl.create());
                             let resp = picker_tile(ui, tmpl, &sample, is_dark, tile_w);
                             if selected {
-                                ui.painter().rect_stroke(
-                                    resp.rect.expand(2.0),
-                                    4.0,
-                                    egui::Stroke::new(1.5, crate::theme::accent()),
-                                    egui::StrokeKind::Outside,
-                                );
+                                paint_tile_selection(ui.painter(), resp.rect);
                             }
                             if resp.secondary_clicked() {
                                 edit_request =
@@ -677,6 +672,17 @@ fn reassign_uids(action: &mut Action) {
 const PICKER_TILE_PAD_X: f32 = 8.0;
 const PICKER_TILE_PAD_Y: f32 = 4.0;
 
+/// Selection ring for the focused Add Action tile — always `Inside` so it
+/// does not spill into the wrap gap (see `docs/examples/ui/cell-strokes.md`).
+fn paint_tile_selection(painter: &egui::Painter, rect: egui::Rect) {
+    painter.rect_stroke(
+        rect,
+        CornerRadius::same(5),
+        egui::Stroke::new(1.5, crate::theme::accent()),
+        egui::StrokeKind::Inside,
+    );
+}
+
 fn picker_tile(
     ui: &mut egui::Ui,
     tmpl: &ActionTemplate,
@@ -880,5 +886,36 @@ mod tests {
             search_input(&harness).is_focused(),
             "search focuses again the next time Add Action opens"
         );
+    }
+
+    /// Selection ring must stay inside the tile (cell-strokes), not expand Outside.
+    #[test]
+    fn selected_tile_stroke_stays_inside_cell() {
+        let ctx = egui::Context::default();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(96.0, 28.0), Sense::hover());
+            paint_tile_selection(ui.painter(), rect);
+        });
+        let accent = crate::theme::accent();
+        let outside = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                rect.stroke.color == accent && rect.stroke_kind == egui::StrokeKind::Outside
+            }
+            _ => false,
+        });
+        assert!(!outside, "selected tile stroke painted Outside the cell");
+        let inside = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                rect.stroke.color == accent
+                    && (rect.stroke.width - 1.5).abs() < f32::EPSILON
+                    && rect.stroke_kind == egui::StrokeKind::Inside
+            }
+            _ => false,
+        });
+        assert!(
+            inside,
+            "expected an Inside selection stroke on the selected tile"
+        );
+        out.drop_without_applying_deltas();
     }
 }

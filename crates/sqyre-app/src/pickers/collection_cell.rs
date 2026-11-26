@@ -168,7 +168,7 @@ fn paint_cell_selection_painter(
         sel_rect,
         0.0,
         egui::Stroke::new(2.0, cell_selection_stroke()),
-        egui::StrokeKind::Outside,
+        egui::StrokeKind::Inside,
     );
 }
 
@@ -181,4 +181,36 @@ fn cell_at(rect: egui::Rect, rows: i32, cols: i32, pos: Pos2) -> Option<(i32, i3
     let c = (((pos.x - rect.left()) / rect.width()) * cols).floor() as i32 + 1;
     let r = (((pos.y - rect.top()) / rect.height()) * rows).floor() as i32 + 1;
     Some((r.clamp(1, rows as i32), c.clamp(1, cols as i32)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Selection ring must not spill past the cell into the grid gap.
+    #[test]
+    fn selected_cell_stroke_stays_inside_cell() {
+        let ctx = egui::Context::default();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(200.0, 200.0));
+            paint_cell_selection_painter(ui.painter(), rect, 4, 4, (2, 2, 2, 2));
+        });
+        let outside = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                rect.stroke == egui::Stroke::new(2.0, cell_selection_stroke())
+                    && rect.stroke_kind == egui::StrokeKind::Outside
+            }
+            _ => false,
+        });
+        assert!(!outside, "collection cell selection stroke painted Outside");
+        let inside = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                rect.stroke == egui::Stroke::new(2.0, cell_selection_stroke())
+                    && rect.stroke_kind == egui::StrokeKind::Inside
+            }
+            _ => false,
+        });
+        assert!(inside, "expected an Inside selection stroke");
+        out.drop_without_applying_deltas();
+    }
 }
