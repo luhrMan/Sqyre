@@ -33,7 +33,7 @@ sqyre-persist = { path = "../sqyre-persist" }
 sqyre-ports = { path = "../sqyre-ports" }
 web-time = { workspace = true }
 fontdue = "0.9"
-epaint_default_fonts = "0.36"
+epaint_default_fonts = "0.37"
 image = { workspace = true }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
 eframe = { workspace = true, optional = true, features = ["glow"] }
